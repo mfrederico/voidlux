@@ -24,8 +24,11 @@ mkdir -p "${DATA_DIR}"
 # Build seed list: all nodes seed to emperor's P2P port
 EMPEROR_SEED="127.0.0.1:${P2P_PORTS[0]}"
 
-# Kill existing session
+# Kill existing session and orphan agent sessions
 tmux kill-session -t "$SESSION" 2>/dev/null || true
+for s in $(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^vl-'); do
+    tmux kill-session -t "$s" 2>/dev/null || true
+done
 
 # Create tmux session
 tmux new-session -d -s "$SESSION" -x 200 -y 50
