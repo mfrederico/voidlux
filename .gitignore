@@ -1,0 +1,8 @@
+/vendor/
+/build/
+/data/
+*.db
+*.db-wal
+*.db-shm
+.env
+.phpunit.result.cache

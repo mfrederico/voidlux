@@ -1,0 +1,205 @@
+#!/usr/bin/env php
+<?php
+/**
+ * VoidLux CLI
+ *
+ * Commands:
+ *   demo          -- Run the graffiti wall demo
+ *   swarm         -- Run the swarm orchestration server
+ *   compile <dir> -- Compile a PHP app into a static binary
+ *   detect <dir>  -- Detect required extensions
+ */
+
+declare(strict_types=1);
+
+// Find and load autoloader
+$autoloadPaths = [
+    __DIR__ . '/../vendor/autoload.php',
+    __DIR__ . '/../../../autoload.php',
+];
+
+$autoloaded = false;
+foreach ($autoloadPaths as $path) {
+    if (file_exists($path)) {
+        require $path;
+        $autoloaded = true;
+        break;
+    }
+}
+
+if (!$autoloaded) {
+    // Fallback: simple PSR-4 autoloader for development
+    spl_autoload_register(function (string $class): void {
+        $prefix = 'VoidLux\\';
+        if (!str_starts_with($class, $prefix)) {
+            return;
+        }
+        $relative = substr($class, strlen($prefix));
+        $file = __DIR__ . '/../src/' . str_replace('\\', '/', $relative) . '.php';
+        if (file_exists($file)) {
+            require $file;
+        }
+    });
+}
+
+use VoidLux\Compat\OpenSwooleShim;
+
+// Register OpenSwoole compatibility
+if (class_exists('Swoole\\Http\\Server', false)) {
+    OpenSwooleShim::register();
+}
+
+// Parse CLI arguments
+$args = $argv;
+array_shift($args); // Remove script name
+
+$command = array_shift($args) ?? 'help';
+
+// Parse --key=value options
+$options = [];
+$positional = [];
+foreach ($args as $arg) {
+    if (str_starts_with($arg, '--')) {
+        $parts = explode('=', substr($arg, 2), 2);
+        $key = $parts[0];
+        $value = $parts[1] ?? true;
+        $options[$key] = $value;
+    } else {
+        $positional[] = $arg;
+    }
+}
+
+switch ($command) {
+    case 'demo':
+        runDemo($options);
+        break;
+
+    case 'swarm':
+        runSwarm($options);
+        break;
+
+    case 'compile':
+        runCompile($positional, $options);
+        break;
+
+    case 'detect':
+        runDetect($positional);
+        break;
+
+    case 'help':
+    case '--help':
+    case '-h':
+        showHelp();
+        break;
+
+    default:
+        echo "Unknown command: {$command}\n\n";
+        showHelp();
+        exit(1);
+}
+
+function runDemo(array $options): void
+{
+    $httpPort = (int) ($options['http-port'] ?? 8080);
+    $p2pPort = (int) ($options['p2p-port'] ?? 7001);
+    $discoveryPort = (int) ($options['discovery-port'] ?? 6001);
+    $seeds = isset($options['seeds']) ? explode(',', $options['seeds']) : [];
+    $dataDir = $options['data-dir'] ?? './data';
+
+    $server = new \VoidLux\App\GraffitiWall\Server(
+        httpHost: '0.0.0.0',
+        httpPort: $httpPort,
+        p2pPort: $p2pPort,
+        discoveryPort: $discoveryPort,
+        seedPeers: $seeds,
+        dataDir: $dataDir,
+    );
+
+    $server->run();
+}
+
+function runSwarm(array $options): void
+{
+    $httpPort = (int) ($options['http-port'] ?? 9090);
+    $p2pPort = (int) ($options['p2p-port'] ?? 7101);
+    $discoveryPort = (int) ($options['discovery-port'] ?? 6101);
+    $seeds = isset($options['seeds']) ? explode(',', $options['seeds']) : [];
+    $dataDir = $options['data-dir'] ?? './data';
+    $role = $options['role'] ?? 'emperor';
+
+    $server = new \VoidLux\Swarm\Server(
+        httpHost: '0.0.0.0',
+        httpPort: $httpPort,
+        p2pPort: $p2pPort,
+        discoveryPort: $discoveryPort,
+        seedPeers: $seeds,
+        dataDir: $dataDir,
+        role: $role,
+    );
+
+    $server->run();
+}
+
+function runCompile(array $positional, array $options): void
+{
+    $appDir = $positional[0] ?? '.';
+    $output = $options['output'] ?? '';
+    $entryPoint = $options['entry-point'] ?? '';
+    $appName = $options['app-name'] ?? '';
+
+    $compiler = new \VoidLux\Compiler\Compiler();
+    $success = $compiler->compile($appDir, $output, $entryPoint, $appName);
+
+    exit($success ? 0 : 1);
+}
+
+function runDetect(array $positional): void
+{
+    $appDir = $positional[0] ?? '.';
+
+    $compiler = new \VoidLux\Compiler\Compiler();
+    $extensions = $compiler->detect($appDir);
+
+    echo "Detected extensions in: {$appDir}\n";
+    foreach ($extensions as $ext) {
+        echo "  - {$ext}\n";
+    }
+    echo "\nTotal: " . count($extensions) . " extensions\n";
+}
+
+function showHelp(): void
+{
+    echo <<<HELP
+VoidLux - P2P OpenSwoole Compiler & Swarm Orchestration
+
+Usage:
+  voidlux <command> [options]
+
+Commands:
+  demo                    Run the graffiti wall P2P demo
+  swarm                   Run the swarm orchestration server
+  compile <app-dir>       Compile a PHP app into a static binary
+  detect <app-dir>        Detect required PHP extensions
+
+Demo Options:
+  --http-port=PORT        HTTP server port (default: 8080)
+  --p2p-port=PORT         P2P TCP mesh port (default: 7001)
+  --discovery-port=PORT   UDP discovery port (default: 6001)
+  --seeds=HOST:PORT,...   Comma-separated seed peers
+  --data-dir=DIR          Data directory (default: ./data)
+
+Swarm Options:
+  --http-port=PORT        HTTP/WS port (default: 9090)
+  --p2p-port=PORT         P2P TCP mesh port (default: 7101)
+  --discovery-port=PORT   UDP discovery port (default: 6101)
+  --seeds=HOST:PORT,...   Comma-separated seed peers
+  --data-dir=DIR          Data directory (default: ./data)
+  --role=ROLE             Role: emperor or worker (default: emperor)
+
+Compile Options:
+  --output=PATH           Output binary path
+  --entry-point=FILE      PHP entry point file
+  --app-name=NAME         Application name
+
+HELP;
+}

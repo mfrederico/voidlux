@@ -1,0 +1,27 @@
+{
+    "name": "voidlux/voidlux",
+    "description": "P2P OpenSwoole Compiler & Swarm Orchestration",
+    "type": "project",
+    "license": "MIT",
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "require": {
+        "php": ">=8.1",
+        "ext-openswoole": "*",
+        "ext-pdo_sqlite": "*",
+        "ext-sockets": "*",
+        "myctobot/aoe-php": "dev-master"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../aoe-php"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "VoidLux\\": "src/"
+        }
+    },
+    "bin": ["bin/voidlux"]
+}
