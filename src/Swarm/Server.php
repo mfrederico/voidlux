@@ -22,6 +22,7 @@ use VoidLux\Swarm\Agent\AgentMonitor;
 use VoidLux\Swarm\Agent\AgentRegistry;
 use VoidLux\Swarm\Gossip\TaskAntiEntropy;
 use VoidLux\Swarm\Gossip\TaskGossipEngine;
+use VoidLux\Swarm\Leadership\LeaderElection;
 use VoidLux\Swarm\Orchestrator\ClaimResolver;
 use VoidLux\Swarm\Orchestrator\EmperorController;
 use VoidLux\Swarm\Orchestrator\TaskQueue;
@@ -48,6 +49,7 @@ class Server
     private AgentBridge $agentBridge;
     private AgentMonitor $agentMonitor;
     private EmperorController $controller;
+    private LeaderElection $leaderElection;
     private ?SwarmWebSocketHandler $wsHandler = null;
     private float $startTime;
 
@@ -58,7 +60,7 @@ class Server
         private readonly int $discoveryPort = 6101,
         private readonly array $seedPeers = [],
         private readonly string $dataDir = './data',
-        private readonly string $role = 'emperor',
+        private string $role = 'emperor',
     ) {
         $this->startTime = microtime(true);
     }
@@ -129,6 +131,7 @@ class Server
         $this->claimResolver = new ClaimResolver($this->db, $this->nodeId);
         $this->agentBridge = new AgentBridge($this->db);
         $this->agentRegistry = new AgentRegistry($this->db, $this->taskGossip, $this->clock, $this->nodeId);
+        $this->agentRegistry->setTaskQueue($this->taskQueue);
         $this->agentMonitor = new AgentMonitor($this->db, $this->agentBridge, $this->taskQueue, $this->agentRegistry, $this->nodeId);
         $this->peerExchange = new PeerExchange($this->mesh, $this->peerManager);
 
@@ -140,6 +143,23 @@ class Server
             $this->nodeId,
             $this->startTime,
         );
+        $this->controller->setAgentMonitor($this->agentMonitor);
+
+        $this->leaderElection = new LeaderElection(
+            $this->mesh,
+            $this->peerManager,
+            $this->clock,
+            $this->nodeId,
+            $this->httpPort,
+            $this->p2pPort,
+            $this->role,
+        );
+        $this->leaderElection->onPromoted(function (string $nodeId, int $httpPort, int $p2pPort) {
+            $this->promote();
+        });
+        $this->leaderElection->onLog(function (string $msg) {
+            $this->log($msg);
+        });
 
         // Wire agent monitor events to WebSocket
         $this->agentMonitor->onEvent(function (string $taskId, string $agentId, string $event, array $data) {
@@ -159,6 +179,7 @@ class Server
                 'node_id' => $this->nodeId,
                 'p2p_port' => $this->p2pPort,
                 'http_port' => $this->httpPort,
+                'role' => $this->role,
             ]);
         });
 
@@ -214,6 +235,23 @@ class Server
 
     private function startSwarm(): void
     {
+        // Requeue orphaned tasks from previous runs
+        $orphaned = $this->db->getOrphanedTasks($this->nodeId);
+        foreach ($orphaned as $task) {
+            $this->taskQueue->requeue($task->id, 'Requeued on node restart');
+            $this->log("Requeued orphaned task: {$task->id} '{$task->title}'");
+        }
+        if (count($orphaned) > 0) {
+            $this->log("Requeued " . count($orphaned) . " orphaned task(s) from previous run");
+        }
+
+        // Startup wellness check — prune stale agents from previous runs
+        $wellness = $this->agentMonitor->wellnessCheck();
+        if (count($wellness['pruned']) > 0) {
+            $this->log("Wellness check pruned " . count($wellness['pruned']) . " dead agent(s)");
+        }
+        $this->log("Wellness: " . count($wellness['alive']) . " alive, " . count($wellness['pruned']) . " pruned");
+
         // Task anti-entropy
         Coroutine::create(function () {
             $this->taskAntiEntropy->start();
@@ -227,6 +265,11 @@ class Server
         // Agent monitor (polls busy agents)
         Coroutine::create(function () {
             $this->agentMonitor->start();
+        });
+
+        // Leader election (heartbeats + failover)
+        Coroutine::create(function () {
+            $this->leaderElection->start();
         });
 
         // Periodic status to WS + clock persistence
@@ -253,8 +296,19 @@ class Server
             case MessageTypes::HELLO:
                 $nodeId = $msg['node_id'] ?? '';
                 $p2pPort = $msg['p2p_port'] ?? $this->p2pPort;
+                $peerRole = $msg['role'] ?? 'worker';
                 $this->peerManager->registerPeer($conn, $nodeId, $conn->remoteHost, $p2pPort);
-                $this->log("Peer connected: {$nodeId} at {$conn->address()}");
+                $this->log("Peer connected: {$nodeId} at {$conn->address()} (role: {$peerRole})");
+
+                // If the connecting peer is the emperor, update election state
+                if ($peerRole === 'emperor') {
+                    $this->leaderElection->handleHeartbeat([
+                        'node_id' => $nodeId,
+                        'http_port' => $msg['http_port'] ?? 0,
+                        'p2p_port' => $p2pPort,
+                        'lamport_ts' => $this->clock->value(),
+                    ]);
+                }
                 break;
 
             case MessageTypes::PEX:
@@ -338,6 +392,14 @@ class Server
                 $this->taskGossip->receiveAgentHeartbeat($msg, $conn->address());
                 break;
 
+            case MessageTypes::AGENT_DEREGISTER:
+                $removedId = $this->taskGossip->receiveAgentDeregister($msg, $conn->address());
+                if ($removedId) {
+                    $this->log("Agent deregistered: {$removedId}");
+                    $this->wsHandler?->pushAgentEvent('agent_deregistered', ['agent_id' => $removedId]);
+                }
+                break;
+
             // --- Swarm sync messages ---
             case MessageTypes::TASK_SYNC_REQ:
                 $this->taskAntiEntropy->handleSyncRequest($conn, $msg);
@@ -349,6 +411,77 @@ class Server
                     $this->log("Synced {$count} tasks from {$conn->address()}");
                 }
                 break;
+
+            // --- Leader election messages ---
+            case MessageTypes::EMPEROR_HEARTBEAT:
+                $this->leaderElection->handleHeartbeat($msg);
+                break;
+
+            case MessageTypes::ELECTION_START:
+                $this->leaderElection->handleElectionStart($msg);
+                break;
+
+            case MessageTypes::ELECTION_VICTORY:
+                $this->leaderElection->handleElectionVictory($msg);
+                $this->wsHandler?->pushStatus([
+                    'emperor' => $msg['node_id'] ?? '',
+                    'emperor_http_port' => $msg['http_port'] ?? 0,
+                ]);
+                break;
+        }
+    }
+
+    private function promote(): void
+    {
+        $this->role = 'emperor';
+        $this->leaderElection->setRole('emperor');
+        $this->log("Promoted to emperor role");
+
+        $this->wsHandler?->pushStatus([
+            'emperor' => $this->nodeId,
+            'emperor_http_port' => $this->httpPort,
+            'promoted' => true,
+        ]);
+
+        // Spawn a replacement worker process
+        $this->spawnReplacementWorker();
+    }
+
+    private function spawnReplacementWorker(): void
+    {
+        $newHttpPort = $this->httpPort + 10;
+        $newP2pPort = $this->p2pPort + 10;
+        $binPath = realpath(__DIR__ . '/../../bin/voidlux');
+
+        if (!$binPath) {
+            $this->log("Cannot spawn replacement worker: bin/voidlux not found");
+            return;
+        }
+
+        $cmd = sprintf(
+            'php %s swarm --role=worker --http-port=%d --p2p-port=%d --seeds=%s --data-dir=%s',
+            escapeshellarg($binPath),
+            $newHttpPort,
+            $newP2pPort,
+            escapeshellarg("127.0.0.1:{$this->p2pPort}"),
+            escapeshellarg($this->dataDir)
+        );
+
+        $this->log("Spawning replacement worker: {$cmd}");
+
+        $descriptors = [
+            0 => ['file', '/dev/null', 'r'],
+            1 => ['file', '/dev/null', 'w'],
+            2 => ['file', '/dev/null', 'w'],
+        ];
+
+        $process = proc_open($cmd, $descriptors, $pipes);
+        if (is_resource($process)) {
+            // Detach — we don't wait for the child
+            proc_close($process);
+            $this->log("Replacement worker spawned on HTTP:{$newHttpPort} P2P:{$newP2pPort}");
+        } else {
+            $this->log("Failed to spawn replacement worker");
         }
     }
 

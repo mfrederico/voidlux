@@ -259,6 +259,46 @@ class SwarmDatabase
         return null;
     }
 
+    /**
+     * Reset a task back to pending so another agent can claim it.
+     */
+    public function requeueTask(string $taskId, int $lamportTs, string $reason): bool
+    {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $stmt = $this->pdo->prepare('
+            UPDATE tasks SET
+                status = :status, assigned_to = NULL, assigned_node = NULL,
+                progress = NULL, error = :error, lamport_ts = :lamport_ts,
+                claimed_at = NULL, updated_at = :updated_at
+            WHERE id = :id AND status IN (\'claimed\', \'in_progress\')
+        ');
+
+        $stmt->execute([
+            ':id' => $taskId,
+            ':status' => TaskStatus::Pending->value,
+            ':error' => $reason,
+            ':lamport_ts' => $lamportTs,
+            ':updated_at' => $now,
+        ]);
+
+        return $stmt->rowCount() > 0;
+    }
+
+    /**
+     * Get tasks assigned to a node that are still in active (non-terminal) states.
+     * Used for startup cleanup of orphaned tasks.
+     *
+     * @return TaskModel[]
+     */
+    public function getOrphanedTasks(string $nodeId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM tasks WHERE assigned_node = :node_id AND status IN (\'claimed\', \'in_progress\') ORDER BY created_at ASC'
+        );
+        $stmt->execute([':node_id' => $nodeId]);
+        return array_map(fn(array $row) => TaskModel::fromArray($row), $stmt->fetchAll());
+    }
+
     // --- Agent operations ---
 
     public function insertAgent(AgentModel $agent): bool

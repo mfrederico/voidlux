@@ -134,6 +134,13 @@ body {
 
 .empty { text-align: center; padding: 30px; color: #444; }
 
+.emperor-banner {
+    padding: 8px 24px; font-size: 0.8rem; display: flex; align-items: center; gap: 8px;
+}
+.emperor-banner.online { background: #0a1a0a; color: #66cc66; border-bottom: 1px solid #1a3a1a; }
+.emperor-banner.offline { background: #1a0a0a; color: #ff6666; border-bottom: 1px solid #3a1a1a; }
+.emperor-banner.self { background: #0a0a1a; color: #66aaff; border-bottom: 1px solid #1a1a3a; }
+
 /* Pane viewer modal */
 .modal-overlay {
     display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8);
@@ -167,6 +174,10 @@ body {
         <span>Agents: <span id="agent-count">0</span></span>
         <span>WS: <span id="ws-status">connecting</span></span>
     </div>
+</div>
+<div class="emperor-banner self" id="emperor-banner">
+    <span class="dot dot-green"></span>
+    Emperor: <span id="emperor-id">this node</span>
 </div>
 
 <div class="main">
@@ -205,6 +216,19 @@ body {
     </div>
 
     <div class="section">
+        <h2>Register Agents</h2>
+        <form class="task-form" id="bulk-agent-form" onsubmit="bulkRegister(event)" style="grid-template-columns: 80px 1fr 120px auto;">
+            <input type="number" name="count" value="5" min="1" max="50" title="Count" />
+            <input type="text" name="project_path" placeholder="Project path" />
+            <select name="tool" style="background:#1a1a1a;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:4px;font-family:inherit;">
+                <option value="claude">claude</option>
+                <option value="opencode">opencode</option>
+            </select>
+            <button type="submit">Register</button>
+        </form>
+    </div>
+
+    <div class="section">
         <h2>Agents</h2>
         <div class="card-grid" id="agent-list">
             <div class="empty">No agents registered</div>
@@ -231,6 +255,28 @@ body {
 HTML
         . "\nconst NODE_ID = {$nodeIdJs};\n" . <<<'JS'
 document.getElementById('node-id').textContent = NODE_ID.substring(0, 8);
+
+let emperorNodeId = NODE_ID;
+function updateEmperorBanner(empId) {
+    const banner = document.getElementById('emperor-banner');
+    const label = document.getElementById('emperor-id');
+    if (!empId) {
+        banner.className = 'emperor-banner offline';
+        banner.querySelector('.dot').className = 'dot dot-orange';
+        label.textContent = 'unknown (offline?)';
+        return;
+    }
+    emperorNodeId = empId;
+    if (empId === NODE_ID) {
+        banner.className = 'emperor-banner self';
+        banner.querySelector('.dot').className = 'dot dot-green';
+        label.textContent = 'this node';
+    } else {
+        banner.className = 'emperor-banner online';
+        banner.querySelector('.dot').className = 'dot dot-green';
+        label.textContent = empId.substring(0, 8);
+    }
+}
 
 let expanded = false;
 function toggleForm() {
@@ -329,6 +375,26 @@ function createTask(e) {
     });
 }
 
+function bulkRegister(e) {
+    e.preventDefault();
+    const f = e.target;
+    const body = {
+        count: parseInt(f.count.value || '5'),
+        tool: f.tool.value,
+        project_path: f.project_path.value,
+        name_prefix: 'agent',
+        capabilities: [],
+    };
+    fetch('/api/swarm/agents/bulk', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    }).then(r=>r.json()).then(agents => {
+        addLog('agent_registered', 'Registered '+agents.length+' agent(s)');
+        refresh();
+    });
+}
+
 function cancelTask(id) {
     fetch('/api/swarm/tasks/'+id+'/cancel', {method:'POST'}).then(()=>refresh());
 }
@@ -371,8 +437,10 @@ function connectWs() {
             refresh();
         }
         if (msg.type === 'status') {
-            document.getElementById('task-count').textContent = msg.status.tasks || 0;
-            document.getElementById('agent-count').textContent = msg.status.agents || 0;
+            if (msg.status.tasks !== undefined) document.getElementById('task-count').textContent = msg.status.tasks;
+            if (msg.status.agents !== undefined) document.getElementById('agent-count').textContent = msg.status.agents;
+            if (msg.status.emperor !== undefined) updateEmperorBanner(msg.status.emperor);
+            if (msg.status.promoted) addLog('election', 'This node promoted to emperor');
         }
     };
 }

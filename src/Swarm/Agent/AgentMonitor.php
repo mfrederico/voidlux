@@ -58,7 +58,13 @@ class AgentMonitor
 
         foreach ($agents as $agent) {
             if (!$agent->currentTaskId) {
-                // Agent has no task — try to auto-assign
+                // Check if the agent's session is still alive before trying to assign
+                $bridgeStatus = $this->bridge->detectStatus($agent);
+                if ($bridgeStatus === Status::Stopped) {
+                    $this->registry->deregister($agent->id);
+                    $this->emit('', $agent->id, 'agent_stopped', ['name' => $agent->name]);
+                    continue;
+                }
                 $this->tryAutoAssign($agent);
                 continue;
             }
@@ -109,9 +115,9 @@ class AgentMonitor
                 break;
 
             case Status::Stopped:
-                $this->taskQueue->fail($taskId, $agent->id, 'Agent session stopped');
-                $this->db->updateAgentStatus($agent->id, 'offline', null);
-                $this->emit($taskId, $agent->id, 'agent_stopped', []);
+                $this->taskQueue->requeue($taskId, 'Agent session stopped');
+                $this->registry->deregister($agent->id);
+                $this->emit($taskId, $agent->id, 'agent_stopped', ['name' => $agent->name]);
                 break;
 
             case Status::Starting:
@@ -166,6 +172,62 @@ class AgentMonitor
         if ($this->onEvent) {
             ($this->onEvent)($taskId, $agentId, $event, $data);
         }
+    }
+
+    /**
+     * Wellness check: verify every local agent's tmux session is alive.
+     * Prunes dead agents (deregister + requeue their tasks) and returns a report.
+     *
+     * @return array{alive: array, pruned: array}
+     */
+    public function wellnessCheck(): array
+    {
+        $agents = $this->db->getLocalAgents($this->nodeId);
+        $alive = [];
+        $pruned = [];
+
+        foreach ($agents as $agent) {
+            $status = $this->bridge->detectStatus($agent);
+
+            if ($status === Status::Stopped) {
+                $pruned[] = [
+                    'id' => $agent->id,
+                    'name' => $agent->name,
+                    'session' => $agent->tmuxSessionId,
+                    'had_task' => $agent->currentTaskId,
+                ];
+                $this->registry->deregister($agent->id);
+                $this->emit(
+                    $agent->currentTaskId ?? '',
+                    $agent->id,
+                    'agent_stopped',
+                    ['name' => $agent->name, 'reason' => 'wellness_check'],
+                );
+                continue;
+            }
+
+            $alive[] = [
+                'id' => $agent->id,
+                'name' => $agent->name,
+                'session' => $agent->tmuxSessionId,
+                'status' => $status->value,
+                'task' => $agent->currentTaskId,
+            ];
+
+            // Update DB status to reflect actual bridge state
+            $dbStatus = match ($status) {
+                Status::Idle => 'idle',
+                Status::Running => 'busy',
+                Status::Waiting => 'waiting',
+                Status::Starting => $agent->status,
+                default => $agent->status,
+            };
+            if ($dbStatus !== $agent->status) {
+                $this->db->updateAgentStatus($agent->id, $dbStatus, $agent->currentTaskId);
+            }
+        }
+
+        return ['alive' => $alive, 'pruned' => $pruned];
     }
 
     public function stop(): void

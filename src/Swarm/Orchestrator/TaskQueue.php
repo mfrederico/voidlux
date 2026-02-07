@@ -164,6 +164,22 @@ class TaskQueue
         $this->gossip->gossipTaskFail($taskId, $agentId, $error, $ts);
     }
 
+    /**
+     * Requeue a task back to pending (e.g. agent died mid-task).
+     * Only requeues if the task is in claimed or in_progress state.
+     */
+    public function requeue(string $taskId, string $reason): bool
+    {
+        $ts = $this->clock->tick();
+        $requeued = $this->db->requeueTask($taskId, $ts, $reason);
+
+        if ($requeued) {
+            $this->gossip->gossipTaskUpdate($taskId, '', TaskStatus::Pending->value, null, $ts);
+        }
+
+        return $requeued;
+    }
+
     public function cancel(string $taskId): bool
     {
         $task = $this->db->getTask($taskId);

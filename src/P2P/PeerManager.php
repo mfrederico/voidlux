@@ -60,6 +60,36 @@ class PeerManager
         }
 
         $conn->setPeerId($nodeId);
+
+        // Register in TcpMesh node-id index; returns displaced connection if any
+        $displaced = $this->mesh->registerNodeConnection($nodeId, $conn);
+
+        if ($displaced !== null) {
+            // Tiebreaker: the node with the lower node_id keeps its outbound connection.
+            // If we are the lower node_id, keep our outbound (close inbound).
+            // If we are the higher node_id, keep our inbound (close outbound).
+            $weKeepOutbound = ($this->nodeId < $nodeId);
+            $connToClose = null;
+
+            if ($weKeepOutbound) {
+                // Keep whichever is outbound, close whichever is inbound
+                $connToClose = $conn->inbound ? $conn : $displaced;
+                $connToKeep = $conn->inbound ? $displaced : $conn;
+            } else {
+                // Keep whichever is inbound, close whichever is outbound
+                $connToClose = $conn->inbound ? $displaced : $conn;
+                $connToKeep = $conn->inbound ? $conn : $displaced;
+            }
+
+            // Re-register the keeper if we're closing the one we just registered
+            if ($connToClose === $conn) {
+                $this->mesh->registerNodeConnection($nodeId, $displaced);
+            }
+
+            $connToClose->close();
+            $conn = $connToKeep;
+        }
+
         $this->peers[$nodeId] = [
             'host' => $host,
             'port' => $port,
@@ -70,13 +100,19 @@ class PeerManager
             'host' => $host,
             'port' => $port,
             'last_attempt' => 0,
+            'node_id' => $nodeId,
         ];
     }
 
     public function unregisterPeer(Connection $conn): void
     {
         $nodeId = $conn->getPeerId();
-        if ($nodeId) {
+        if ($nodeId === null) {
+            return;
+        }
+
+        // Only remove the peer if no other valid connection exists for this node
+        if (!$this->mesh->hasNodeConnection($nodeId)) {
             unset($this->peers[$nodeId]);
         }
     }
@@ -134,6 +170,11 @@ class PeerManager
 
             // Skip recently attempted
             if ($now - $info['last_attempt'] < self::RECONNECT_INTERVAL * 3) {
+                continue;
+            }
+
+            // Skip if already connected to this node by node_id
+            if (isset($info['node_id']) && $this->mesh->hasNodeConnection($info['node_id'])) {
                 continue;
             }
 

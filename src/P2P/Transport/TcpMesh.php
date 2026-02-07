@@ -15,6 +15,8 @@ class TcpMesh
     private ?Socket $serverSocket = null;
     /** @var Connection[] keyed by address */
     private array $connections = [];
+    /** @var Connection[] keyed by node_id */
+    private array $nodeConnections = [];
     private bool $running = false;
 
     /** @var callable(Connection): void */
@@ -140,6 +142,12 @@ class TcpMesh
         $conn->close();
         unset($this->connections[$address]);
 
+        // Only unregister node connection if this is the active one for that node
+        $nodeId = $conn->getPeerId();
+        if ($nodeId !== null) {
+            $this->unregisterNodeConnection($nodeId, $conn);
+        }
+
         if ($this->onDisconnect) {
             ($this->onDisconnect)($conn);
         }
@@ -176,6 +184,46 @@ class TcpMesh
         return count($this->connections);
     }
 
+    /**
+     * Register a connection indexed by node_id. Returns displaced connection if one existed.
+     */
+    public function registerNodeConnection(string $nodeId, Connection $conn): ?Connection
+    {
+        $existing = $this->nodeConnections[$nodeId] ?? null;
+        $this->nodeConnections[$nodeId] = $conn;
+        if ($existing !== null && $existing !== $conn && !$existing->isClosed()) {
+            return $existing;
+        }
+        return null;
+    }
+
+    /**
+     * Unregister a node connection, but only if $conn is the current one for that node_id.
+     */
+    public function unregisterNodeConnection(string $nodeId, Connection $conn): void
+    {
+        if (isset($this->nodeConnections[$nodeId]) && $this->nodeConnections[$nodeId] === $conn) {
+            unset($this->nodeConnections[$nodeId]);
+        }
+    }
+
+    public function hasNodeConnection(string $nodeId): bool
+    {
+        if (!isset($this->nodeConnections[$nodeId])) {
+            return false;
+        }
+        if ($this->nodeConnections[$nodeId]->isClosed()) {
+            unset($this->nodeConnections[$nodeId]);
+            return false;
+        }
+        return true;
+    }
+
+    public function getNodeId(): string
+    {
+        return $this->nodeId;
+    }
+
     public function stop(): void
     {
         $this->running = false;
@@ -183,6 +231,7 @@ class TcpMesh
             $conn->close();
         }
         $this->connections = [];
+        $this->nodeConnections = [];
         $this->serverSocket?->close();
     }
 }

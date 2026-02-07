@@ -27,12 +27,18 @@ class MessageTypes
     public const TASK_CANCEL   = 0x15;
 
     // Swarm agent messages
-    public const AGENT_REGISTER  = 0x20;
-    public const AGENT_HEARTBEAT = 0x21;
+    public const AGENT_REGISTER   = 0x20;
+    public const AGENT_HEARTBEAT  = 0x21;
+    public const AGENT_DEREGISTER = 0x22;
 
     // Swarm sync messages
     public const TASK_SYNC_REQ = 0x30;
     public const TASK_SYNC_RSP = 0x31;
+
+    // Leader election messages
+    public const EMPEROR_HEARTBEAT = 0x40;
+    public const ELECTION_START    = 0x41;
+    public const ELECTION_VICTORY  = 0x42;
 
     public const NAMES = [
         self::HELLO    => 'HELLO',
@@ -48,10 +54,14 @@ class MessageTypes
         self::TASK_COMPLETE   => 'TASK_COMPLETE',
         self::TASK_FAIL       => 'TASK_FAIL',
         self::TASK_CANCEL     => 'TASK_CANCEL',
-        self::AGENT_REGISTER  => 'AGENT_REGISTER',
-        self::AGENT_HEARTBEAT => 'AGENT_HEARTBEAT',
+        self::AGENT_REGISTER   => 'AGENT_REGISTER',
+        self::AGENT_HEARTBEAT  => 'AGENT_HEARTBEAT',
+        self::AGENT_DEREGISTER => 'AGENT_DEREGISTER',
         self::TASK_SYNC_REQ   => 'TASK_SYNC_REQ',
         self::TASK_SYNC_RSP   => 'TASK_SYNC_RSP',
+        self::EMPEROR_HEARTBEAT => 'EMPEROR_HEARTBEAT',
+        self::ELECTION_START    => 'ELECTION_START',
+        self::ELECTION_VICTORY  => 'ELECTION_VICTORY',
     ];
 
     public static function name(int $type): string

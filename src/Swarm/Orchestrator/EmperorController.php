@@ -7,6 +7,7 @@ namespace VoidLux\Swarm\Orchestrator;
 use Swoole\Http\Request;
 use Swoole\Http\Response;
 use VoidLux\Swarm\Agent\AgentBridge;
+use VoidLux\Swarm\Agent\AgentMonitor;
 use VoidLux\Swarm\Agent\AgentRegistry;
 use VoidLux\Swarm\Storage\SwarmDatabase;
 use VoidLux\Swarm\SwarmWebUI;
@@ -16,6 +17,8 @@ use VoidLux\Swarm\SwarmWebUI;
  */
 class EmperorController
 {
+    private ?AgentMonitor $agentMonitor = null;
+
     public function __construct(
         private readonly SwarmDatabase $db,
         private readonly TaskQueue $taskQueue,
@@ -24,6 +27,11 @@ class EmperorController
         private readonly string $nodeId,
         private readonly float $startTime,
     ) {}
+
+    public function setAgentMonitor(AgentMonitor $monitor): void
+    {
+        $this->agentMonitor = $monitor;
+    }
 
     public function handle(Request $request, Response $response): void
     {
@@ -81,6 +89,14 @@ class EmperorController
 
             case $path === '/api/swarm/agents' && $method === 'POST':
                 $this->handleRegisterAgent($request, $response);
+                break;
+
+            case $path === '/api/swarm/agents/bulk' && $method === 'POST':
+                $this->handleBulkRegisterAgents($request, $response);
+                break;
+
+            case $path === '/api/swarm/agents/wellness' && $method === 'POST':
+                $this->handleWellnessCheck($response);
                 break;
 
             case preg_match('#^/api/swarm/agents/([^/]+)/send$#', $path, $m) === 1 && $method === 'POST':
@@ -210,6 +226,57 @@ class EmperorController
 
         $response->status(201);
         $this->json($response, $agent->toArray());
+    }
+
+    private function handleWellnessCheck(Response $response): void
+    {
+        if (!$this->agentMonitor) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Agent monitor not available']);
+            return;
+        }
+
+        $report = $this->agentMonitor->wellnessCheck();
+        $this->json($response, [
+            'alive' => count($report['alive']),
+            'pruned' => count($report['pruned']),
+            'agents' => $report['alive'],
+            'removed' => $report['pruned'],
+        ]);
+    }
+
+    private function handleBulkRegisterAgents(Request $request, Response $response): void
+    {
+        $body = json_decode($request->getContent(), true);
+        $count = max(1, min(50, (int) ($body['count'] ?? 1)));
+        $tool = $body['tool'] ?? 'claude';
+        $capabilities = $body['capabilities'] ?? [];
+        $projectPath = $body['project_path'] ?? '';
+        $namePrefix = $body['name_prefix'] ?? 'agent';
+
+        $nodeShort = substr($this->nodeId, 0, 6);
+        $agents = [];
+        for ($i = 0; $i < $count; $i++) {
+            $suffix = substr(bin2hex(random_bytes(4)), 0, 8);
+            $sessionName = 'vl-' . $namePrefix . '-' . $suffix;
+            $agentName = $namePrefix . '-' . $nodeShort . '-' . ($i + 1);
+
+            if ($projectPath) {
+                $this->bridge->ensureSession($sessionName, $projectPath, $tool);
+            }
+
+            $agent = $this->agentRegistry->register(
+                name: $agentName,
+                tool: $tool,
+                capabilities: $capabilities,
+                tmuxSessionId: $projectPath ? $sessionName : null,
+                projectPath: $projectPath,
+            );
+            $agents[] = $agent->toArray();
+        }
+
+        $response->status(201);
+        $this->json($response, $agents);
     }
 
     private function handleDeregisterAgent(string $agentId, Response $response): void

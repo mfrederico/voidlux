@@ -305,16 +305,50 @@ class TaskGossipEngine
         return $agent;
     }
 
-    public function gossipAgentHeartbeat(string $agentId, string $nodeId, string $status, ?string $currentTaskId, int $lamportTs): void
+    public function gossipAgentHeartbeat(AgentModel $agent, int $lamportTs): void
     {
         $this->mesh->broadcast([
             'type' => MessageTypes::AGENT_HEARTBEAT,
-            'agent_id' => $agentId,
-            'node_id' => $nodeId,
-            'status' => $status,
-            'current_task_id' => $currentTaskId,
+            'agent_id' => $agent->id,
+            'node_id' => $agent->nodeId,
+            'name' => $agent->name,
+            'tool' => $agent->tool,
+            'capabilities' => $agent->capabilities,
+            'tmux_session_id' => $agent->tmuxSessionId,
+            'project_path' => $agent->projectPath,
+            'status' => $agent->status,
+            'current_task_id' => $agent->currentTaskId,
             'lamport_ts' => $lamportTs,
         ]);
+    }
+
+    public function gossipAgentDeregister(string $agentId): void
+    {
+        $key = 'agent_deregister:' . $agentId;
+        $this->seenMessages[$key] = true;
+
+        $this->mesh->broadcast([
+            'type' => MessageTypes::AGENT_DEREGISTER,
+            'agent_id' => $agentId,
+        ]);
+    }
+
+    public function receiveAgentDeregister(array $msg, ?string $senderAddress = null): ?string
+    {
+        $agentId = $msg['agent_id'] ?? '';
+        $key = 'agent_deregister:' . $agentId;
+
+        if (!$agentId || isset($this->seenMessages[$key])) {
+            return null;
+        }
+        $this->seenMessages[$key] = true;
+
+        $this->db->updateAgentStatus($agentId, 'offline');
+        $this->db->deleteAgent($agentId);
+
+        $this->mesh->broadcast($msg + ['type' => MessageTypes::AGENT_DEREGISTER], $senderAddress);
+        $this->pruneSeenMessages();
+        return $agentId;
     }
 
     public function receiveAgentHeartbeat(array $msg, ?string $senderAddress = null): void
@@ -325,7 +359,28 @@ class TaskGossipEngine
         }
 
         $this->clock->witness($msg['lamport_ts'] ?? 0);
-        $this->db->updateAgentHeartbeat($agentId, $msg['status'] ?? 'offline', $msg['current_task_id'] ?? null);
+
+        // If we don't know this agent yet, create a stub record from heartbeat data
+        if (!$this->db->getAgent($agentId)) {
+            $agent = AgentModel::fromArray([
+                'id' => $agentId,
+                'node_id' => $msg['node_id'] ?? '',
+                'name' => $msg['name'] ?? $agentId,
+                'tool' => $msg['tool'] ?? 'claude',
+                'capabilities' => $msg['capabilities'] ?? '[]',
+                'tmux_session_id' => $msg['tmux_session_id'] ?? null,
+                'project_path' => $msg['project_path'] ?? '',
+                'max_concurrent_tasks' => 1,
+                'status' => $msg['status'] ?? 'idle',
+                'current_task_id' => $msg['current_task_id'] ?? null,
+                'last_heartbeat' => gmdate('Y-m-d\TH:i:s\Z'),
+                'lamport_ts' => $msg['lamport_ts'] ?? 0,
+                'registered_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            ]);
+            $this->db->insertAgent($agent);
+        } else {
+            $this->db->updateAgentHeartbeat($agentId, $msg['status'] ?? 'offline', $msg['current_task_id'] ?? null);
+        }
 
         $this->mesh->broadcast($msg + ['type' => MessageTypes::AGENT_HEARTBEAT], $senderAddress);
     }

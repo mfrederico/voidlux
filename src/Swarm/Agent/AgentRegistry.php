@@ -8,6 +8,7 @@ use Swoole\Coroutine;
 use VoidLux\P2P\Protocol\LamportClock;
 use VoidLux\Swarm\Gossip\TaskGossipEngine;
 use VoidLux\Swarm\Model\AgentModel;
+use VoidLux\Swarm\Orchestrator\TaskQueue;
 use VoidLux\Swarm\Storage\SwarmDatabase;
 
 /**
@@ -20,12 +21,19 @@ class AgentRegistry
 
     private bool $running = false;
 
+    private ?TaskQueue $taskQueue = null;
+
     public function __construct(
         private readonly SwarmDatabase $db,
         private readonly TaskGossipEngine $gossip,
         private readonly LamportClock $clock,
         private readonly string $nodeId,
     ) {}
+
+    public function setTaskQueue(TaskQueue $taskQueue): void
+    {
+        $this->taskQueue = $taskQueue;
+    }
 
     public function register(
         string $name,
@@ -55,8 +63,19 @@ class AgentRegistry
 
     public function deregister(string $agentId): bool
     {
+        // Requeue any active task before removing the agent
+        $agent = $this->db->getAgent($agentId);
+        if ($agent && $agent->currentTaskId && $this->taskQueue) {
+            $this->taskQueue->requeue($agent->currentTaskId, 'Agent deregistered');
+        }
+
         $this->db->updateAgentStatus($agentId, 'offline');
-        return $this->db->deleteAgent($agentId);
+        $deleted = $this->db->deleteAgent($agentId);
+
+        // Gossip so peers remove the agent too
+        $this->gossip->gossipAgentDeregister($agentId);
+
+        return $deleted;
     }
 
     public function getAgent(string $id): ?AgentModel
@@ -104,13 +123,7 @@ class AgentRegistry
         $ts = $this->clock->tick();
 
         foreach ($agents as $agent) {
-            $this->gossip->gossipAgentHeartbeat(
-                $agent->id,
-                $this->nodeId,
-                $agent->status,
-                $agent->currentTaskId,
-                $ts,
-            );
+            $this->gossip->gossipAgentHeartbeat($agent, $ts);
         }
     }
 
