@@ -315,11 +315,11 @@ function renderTask(t) {
 
 function renderAgent(a) {
     let html = '<div class="card" id="agent-'+a.id+'">';
-    html += '<div class="card-title">'+escapeHtml(a.name)+' '+statusBadge(a.status)+'</div>';
-    html += '<div style="font-size:0.85rem;color:#aaa;">Tool: '+a.tool+' | Node: '+a.node_id.substring(0,8)+'</div>';
+    html += '<div class="card-title" title="Agent ID: '+a.id+'">'+escapeHtml(a.name)+' '+statusBadge(a.status)+'</div>';
+    html += '<div style="font-size:0.85rem;color:#aaa;">Tool: '+a.tool+' | <span title="Worker node running this agent\'s tmux session (full: '+a.node_id+')">Node: '+a.node_id.substring(0,8)+'</span></div>';
     if (a.capabilities && a.capabilities.length) html += '<div style="font-size:0.8rem;color:#686;">Caps: '+a.capabilities.join(', ')+'</div>';
     if (a.current_task_id) html += '<div style="font-size:0.8rem;color:#668;">Task: '+a.current_task_id.substring(0,8)+'</div>';
-    html += '<div class="card-meta">Session: '+(a.tmux_session_id||'none')+'</div>';
+    html += '<div class="card-meta" title="tmux session name for this agent">Session: '+(a.tmux_session_id||'none')+'</div>';
     html += '<div class="card-actions">';
     html += '<button onclick="viewOutput(\''+a.id+'\',\''+escapeHtml(a.name)+'\')">View Output</button>';
     html += '<button onclick="deregisterAgent(\''+a.id+'\')">Remove</button>';

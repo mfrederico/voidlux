@@ -13,6 +13,13 @@ use VoidLux\Swarm\Storage\SwarmDatabase;
 
 /**
  * Manages agent registration, heartbeat broadcasts, and offline detection.
+ *
+ * Each agent belongs to a node (identified by node_id). The node_id is the
+ * persistent identifier of the swarm process that owns the agent's tmux session.
+ * Agent names include a 6-char node_id prefix for uniqueness across workers.
+ *
+ * Deregistration gossips AGENT_DEREGISTER so all peers remove the record.
+ * If the agent has an active task, it is requeued to pending before deletion.
  */
 class AgentRegistry
 {

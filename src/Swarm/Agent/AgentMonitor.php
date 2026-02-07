@@ -12,8 +12,19 @@ use VoidLux\Swarm\Orchestrator\TaskQueue;
 use VoidLux\Swarm\Storage\SwarmDatabase;
 
 /**
- * Coroutine loop that polls busy agents every 5 seconds.
- * Detects task completion, errors, and progress.
+ * Coroutine loop that polls all local agents every 5 seconds.
+ *
+ * For agents without a task: checks tmux session liveness via AgentBridge.
+ * If the session is dead (Status::Stopped), deregisters the agent and gossips
+ * AGENT_DEREGISTER so all peers remove it. If alive, tries to auto-assign
+ * the next pending task.
+ *
+ * For agents with a task: detects completion, errors, progress, and death.
+ * Dead agents' tasks are requeued to pending (not failed) so another agent
+ * can claim them.
+ *
+ * Wellness check: on-demand roll call that verifies all local agents and
+ * returns a report of alive vs pruned. Also runs at startup.
  */
 class AgentMonitor
 {
