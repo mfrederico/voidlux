@@ -51,6 +51,7 @@ class Server
     private EmperorController $controller;
     private LeaderElection $leaderElection;
     private ?SwarmWebSocketHandler $wsHandler = null;
+    private ?WsServer $server = null;
     private float $startTime;
 
     public function __construct(
@@ -82,7 +83,8 @@ class Server
         $this->log("Swarm Node ID: {$this->nodeId}");
         $this->log("Role: {$this->role} | HTTP: {$this->httpHost}:{$this->httpPort} | P2P: {$this->p2pPort} | Discovery: {$this->discoveryPort}");
 
-        $server = new WsServer($this->httpHost, $this->httpPort);
+        $this->server = new WsServer($this->httpHost, $this->httpPort);
+        $server = $this->server;
         $server->set([
             'worker_num' => 1,
             'enable_coroutine' => true,
@@ -144,6 +146,10 @@ class Server
             $this->startTime,
         );
         $this->controller->setAgentMonitor($this->agentMonitor);
+        $this->controller->onShutdown(function () {
+            $this->log("Regicide: shutting down emperor process");
+            $this->server?->shutdown();
+        });
 
         $this->leaderElection = new LeaderElection(
             $this->mesh,

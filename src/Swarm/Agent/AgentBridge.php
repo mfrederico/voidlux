@@ -161,6 +161,22 @@ class AgentBridge
         return $prompt;
     }
 
+    /**
+     * Kill an agent's tmux session and its child processes.
+     * Sends C-c for graceful interrupt, then kills the session (SIGHUP to all children).
+     */
+    public function killSession(AgentModel $agent): bool
+    {
+        $sessionName = $agent->tmuxSessionId;
+        if (!$sessionName || !$this->tmux->sessionExistsByName($sessionName)) {
+            return false;
+        }
+
+        $this->tmux->sendKeysByName($sessionName, 'C-c');
+        usleep(200_000);
+        return $this->tmux->killSessionByName($sessionName);
+    }
+
     public function getTmuxService(): TmuxService
     {
         return $this->tmux;

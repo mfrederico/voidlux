@@ -178,6 +178,10 @@ body {
 <div class="emperor-banner self" id="emperor-banner">
     <span class="dot dot-green"></span>
     Emperor: <span id="emperor-id">this node</span>
+    <span style="margin-left:auto;display:flex;gap:8px;">
+        <button onclick="killPopulation()" style="background:#3a1a1a;border:1px solid #663333;color:#ff6666;padding:4px 12px;border-radius:3px;cursor:pointer;font-family:inherit;font-size:0.75rem;">Kill Population</button>
+        <button onclick="regicide()" style="background:#3a0a0a;border:1px solid #882222;color:#ff3333;padding:4px 12px;border-radius:3px;cursor:pointer;font-family:inherit;font-size:0.75rem;">Regicide</button>
+    </span>
 </div>
 
 <div class="main">
@@ -255,6 +259,7 @@ body {
 HTML
         . "\nconst NODE_ID = {$nodeIdJs};\n" . <<<'JS'
 document.getElementById('node-id').textContent = NODE_ID.substring(0, 8);
+document.getElementById('emperor-id').textContent = NODE_ID.substring(0, 12) + ' (this node)';
 
 let emperorNodeId = NODE_ID;
 function updateEmperorBanner(empId) {
@@ -270,11 +275,11 @@ function updateEmperorBanner(empId) {
     if (empId === NODE_ID) {
         banner.className = 'emperor-banner self';
         banner.querySelector('.dot').className = 'dot dot-green';
-        label.textContent = 'this node';
+        label.textContent = empId.substring(0, 12) + ' (this node)';
     } else {
         banner.className = 'emperor-banner online';
         banner.querySelector('.dot').className = 'dot dot-green';
-        label.textContent = empId.substring(0, 8);
+        label.textContent = empId.substring(0, 12);
     }
 }
 
@@ -392,6 +397,23 @@ function bulkRegister(e) {
     }).then(r=>r.json()).then(agents => {
         addLog('agent_registered', 'Registered '+agents.length+' agent(s)');
         refresh();
+    });
+}
+
+function killPopulation() {
+    if (!confirm('Kill all local agent sessions? Their tasks will be requeued.')) return;
+    fetch('/api/swarm/agents/kill-all', {method:'POST'}).then(r=>r.json()).then(d => {
+        addLog('agent_stopped', 'Killed '+d.killed+' agent(s)');
+        refresh();
+    });
+}
+
+function regicide() {
+    if (!confirm('Kill the emperor process? Workers will elect a new leader.')) return;
+    fetch('/api/swarm/regicide', {method:'POST'}).then(r=>r.json()).then(d => {
+        addLog('election', 'Regicide: '+d.message);
+    }).catch(()=>{
+        addLog('election', 'Emperor process killed');
     });
 }
 

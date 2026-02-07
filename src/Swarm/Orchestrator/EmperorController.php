@@ -19,6 +19,9 @@ class EmperorController
 {
     private ?AgentMonitor $agentMonitor = null;
 
+    /** @var callable|null fn(): void — triggers server shutdown */
+    private $shutdownCallback = null;
+
     public function __construct(
         private readonly SwarmDatabase $db,
         private readonly TaskQueue $taskQueue,
@@ -31,6 +34,11 @@ class EmperorController
     public function setAgentMonitor(AgentMonitor $monitor): void
     {
         $this->agentMonitor = $monitor;
+    }
+
+    public function onShutdown(callable $callback): void
+    {
+        $this->shutdownCallback = $callback;
     }
 
     public function handle(Request $request, Response $response): void
@@ -97,6 +105,14 @@ class EmperorController
 
             case $path === '/api/swarm/agents/wellness' && $method === 'POST':
                 $this->handleWellnessCheck($response);
+                break;
+
+            case $path === '/api/swarm/agents/kill-all' && $method === 'POST':
+                $this->handleKillPopulation($response);
+                break;
+
+            case $path === '/api/swarm/regicide' && $method === 'POST':
+                $this->handleRegicide($response);
                 break;
 
             case preg_match('#^/api/swarm/agents/([^/]+)/send$#', $path, $m) === 1 && $method === 'POST':
@@ -243,6 +259,42 @@ class EmperorController
             'agents' => $report['alive'],
             'removed' => $report['pruned'],
         ]);
+    }
+
+    private function handleKillPopulation(Response $response): void
+    {
+        $agents = $this->agentRegistry->getLocalAgents();
+        $killed = [];
+
+        foreach ($agents as $agent) {
+            $sessionKilled = $this->bridge->killSession($agent);
+            $this->agentRegistry->deregister($agent->id);
+            $killed[] = [
+                'id' => $agent->id,
+                'name' => $agent->name,
+                'session' => $agent->tmuxSessionId,
+                'session_killed' => $sessionKilled,
+            ];
+        }
+
+        $this->json($response, [
+            'killed' => count($killed),
+            'agents' => $killed,
+        ]);
+    }
+
+    private function handleRegicide(Response $response): void
+    {
+        $this->json($response, [
+            'status' => 'dying',
+            'node_id' => $this->nodeId,
+            'message' => 'Emperor process shutting down, workers should elect a new leader',
+        ]);
+
+        // Schedule shutdown after response is sent
+        if ($this->shutdownCallback) {
+            \Swoole\Timer::after(500, $this->shutdownCallback);
+        }
     }
 
     private function handleBulkRegisterAgents(Request $request, Response $response): void
