@@ -236,10 +236,6 @@ class AgentBridge
             $prompt .= "\n\nContext: " . $task->context;
         }
 
-        if ($task->projectPath) {
-            $prompt .= "\n\nProject path: " . $task->projectPath;
-        }
-
         $prompt .= "\n\n---\nTASK ID: " . $task->id;
         $prompt .= "\nWhen finished, call the `task_complete` tool with this task_id and a summary.";
         $prompt .= "\nIf you hit an error, call `task_failed`. Need clarification? Call `task_needs_input`.";
