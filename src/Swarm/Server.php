@@ -643,13 +643,22 @@ class Server
         }
 
         $cmd = sprintf(
-            'php %s swarm --role=worker --http-port=%d --p2p-port=%d --seeds=%s --data-dir=%s',
+            'php %s swarm --role=worker --http-port=%d --p2p-port=%d --seeds=%s --data-dir=%s'
+            . ' --llm-provider=%s --llm-model=%s --llm-host=%s --llm-port=%d',
             escapeshellarg($binPath),
             $newHttpPort,
             $newP2pPort,
             escapeshellarg("127.0.0.1:{$this->p2pPort}"),
-            escapeshellarg($this->dataDir)
+            escapeshellarg($this->dataDir),
+            escapeshellarg($this->llmProvider),
+            escapeshellarg($this->llmModel),
+            escapeshellarg($this->llmHost),
+            $this->llmPort,
         );
+
+        if ($this->claudeApiKey !== '') {
+            $cmd .= ' --claude-api-key=' . escapeshellarg($this->claudeApiKey);
+        }
 
         $this->log("Spawning replacement worker: {$cmd}");
 

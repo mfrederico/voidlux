@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace VoidLux\Swarm\Orchestrator;
 
 use Swoole\Coroutine;
+use Swoole\Coroutine\Channel;
 use VoidLux\P2P\Protocol\LamportClock;
 use VoidLux\P2P\Protocol\MessageTypes;
 use VoidLux\P2P\Transport\TcpMesh;
@@ -14,18 +15,20 @@ use VoidLux\Swarm\Model\TaskStatus;
 use VoidLux\Swarm\Storage\SwarmDatabase;
 
 /**
- * Push-based task dispatcher. Runs on the emperor node.
- * Scans pending tasks, matches them to idle agents, and sends TASK_ASSIGN
- * directly to the target worker via P2P mesh.
+ * Event-driven task dispatcher. Runs on the emperor node.
+ *
+ * Blocks on a Channel until signaled by triggerDispatch(), then matches
+ * pending tasks to idle agents and sends TASK_ASSIGN via P2P mesh.
+ * A 30-second heartbeat timeout acts as a safety net for missed events.
  */
 class TaskDispatcher
 {
-    private const POLL_INTERVAL = 3;
-    private const DEBOUNCE_MS = 100;
+    /** Safety-net interval — dispatch runs even without explicit trigger */
+    private const HEARTBEAT_INTERVAL = 30;
 
     private bool $running = false;
     private int $roundRobinIndex = 0;
-    private bool $triggerPending = false;
+    private ?Channel $signal = null;
 
     public function __construct(
         private readonly SwarmDatabase $db,
@@ -38,36 +41,26 @@ class TaskDispatcher
     public function start(): void
     {
         $this->running = true;
+        $this->signal = new Channel(1);
 
-        // Main dispatch loop
+        // Single dispatch loop — blocks on channel, wakes on event or timeout
         Coroutine::create(function () {
             while ($this->running) {
-                $this->dispatchAll();
-                Coroutine::sleep(self::POLL_INTERVAL);
-            }
-        });
-
-        // Trigger listener (coalesced)
-        Coroutine::create(function () {
-            while ($this->running) {
-                Coroutine::sleep(0.1);
-                if ($this->triggerPending) {
-                    $this->triggerPending = false;
-                    Coroutine::sleep(self::DEBOUNCE_MS / 1000);
-                    if ($this->running) {
-                        $this->dispatchAll();
-                    }
+                $this->signal->pop(self::HEARTBEAT_INTERVAL);
+                if ($this->running) {
+                    $this->dispatchAll();
                 }
             }
         });
     }
 
     /**
-     * Request an immediate dispatch cycle (debounced).
+     * Signal the dispatcher to run immediately.
+     * Non-blocking: if a signal is already pending, this is a no-op (coalesced).
      */
     public function triggerDispatch(): void
     {
-        $this->triggerPending = true;
+        $this->signal?->push(true, 0);
     }
 
     private function dispatchAll(): void
@@ -170,5 +163,7 @@ class TaskDispatcher
     public function stop(): void
     {
         $this->running = false;
+        $this->signal?->push(false, 0); // Wake the loop so it exits
+        $this->signal?->close();
     }
 }
