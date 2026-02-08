@@ -115,6 +115,7 @@ class AgentBridge
         }
 
         $sent = $this->tmux->pasteTextByName($sessionName, $text);
+        usleep(500_000); // Claude Code needs time to render pasted text
         $this->tmux->sendEnterByName($sessionName);
         return $sent;
     }
