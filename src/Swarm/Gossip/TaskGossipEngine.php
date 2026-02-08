@@ -388,6 +388,9 @@ class TaskGossipEngine
 
     public function gossipAgentHeartbeat(AgentModel $agent, int $lamportTs): void
     {
+        $key = 'hb:' . $agent->id . ':' . $lamportTs;
+        $this->seenMessages[$key] = true;
+
         $this->mesh->broadcast([
             'type' => MessageTypes::AGENT_HEARTBEAT,
             'agent_id' => $agent->id,
@@ -441,6 +444,13 @@ class TaskGossipEngine
             return;
         }
 
+        // Dedup: each heartbeat (agent + lamport_ts) processed only once per node
+        $key = 'hb:' . $agentId . ':' . ($msg['lamport_ts'] ?? 0);
+        if (isset($this->seenMessages[$key])) {
+            return;
+        }
+        $this->seenMessages[$key] = true;
+
         // Don't resurrect recently deregistered agents
         if ($this->isAgentTombstoned($agentId)) {
             return;
@@ -471,6 +481,7 @@ class TaskGossipEngine
         }
 
         $this->mesh->broadcast($msg + ['type' => MessageTypes::AGENT_HEARTBEAT], $senderAddress);
+        $this->pruneSeenMessages();
     }
 
     // --- Helpers ---
