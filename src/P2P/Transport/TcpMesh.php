@@ -172,6 +172,22 @@ class TcpMesh
     }
 
     /**
+     * Send a message to a specific node by ID.
+     */
+    public function sendTo(string $nodeId, array $message): bool
+    {
+        if (!isset($this->nodeConnections[$nodeId])) {
+            return false;
+        }
+        $conn = $this->nodeConnections[$nodeId];
+        if ($conn->isClosed()) {
+            unset($this->nodeConnections[$nodeId]);
+            return false;
+        }
+        return $conn->send($message);
+    }
+
+    /**
      * @return Connection[]
      */
     public function getConnections(): array

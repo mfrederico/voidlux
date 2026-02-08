@@ -26,6 +26,11 @@ class TaskModel
         public readonly ?string $completedAt,
         public readonly string $createdAt,
         public readonly string $updatedAt,
+        public readonly ?string $parentId = null,
+        public readonly string $workInstructions = '',
+        public readonly string $acceptanceCriteria = '',
+        public readonly string $reviewStatus = 'none',
+        public readonly string $reviewFeedback = '',
     ) {}
 
     public static function create(
@@ -37,13 +42,17 @@ class TaskModel
         array $requiredCapabilities = [],
         string $projectPath = '',
         string $context = '',
+        ?string $parentId = null,
+        string $workInstructions = '',
+        string $acceptanceCriteria = '',
+        ?TaskStatus $status = null,
     ): self {
         $now = gmdate('Y-m-d\TH:i:s\Z');
         return new self(
             id: self::generateUuid(),
             title: $title,
             description: $description,
-            status: TaskStatus::Pending,
+            status: $status ?? TaskStatus::Pending,
             priority: $priority,
             requiredCapabilities: $requiredCapabilities,
             createdBy: $createdBy,
@@ -59,6 +68,9 @@ class TaskModel
             completedAt: null,
             createdAt: $now,
             updatedAt: $now,
+            parentId: $parentId,
+            workInstructions: $workInstructions,
+            acceptanceCriteria: $acceptanceCriteria,
         );
     }
 
@@ -86,6 +98,11 @@ class TaskModel
             completedAt: $data['completed_at'] ?? null,
             createdAt: $data['created_at'] ?? gmdate('Y-m-d\TH:i:s\Z'),
             updatedAt: $data['updated_at'] ?? gmdate('Y-m-d\TH:i:s\Z'),
+            parentId: $data['parent_id'] ?? null,
+            workInstructions: $data['work_instructions'] ?? '',
+            acceptanceCriteria: $data['acceptance_criteria'] ?? '',
+            reviewStatus: $data['review_status'] ?? 'none',
+            reviewFeedback: $data['review_feedback'] ?? '',
         );
     }
 
@@ -111,6 +128,11 @@ class TaskModel
             'completed_at' => $this->completedAt,
             'created_at' => $this->createdAt,
             'updated_at' => $this->updatedAt,
+            'parent_id' => $this->parentId,
+            'work_instructions' => $this->workInstructions,
+            'acceptance_criteria' => $this->acceptanceCriteria,
+            'review_status' => $this->reviewStatus,
+            'review_feedback' => $this->reviewFeedback,
         ];
     }
 
@@ -136,6 +158,11 @@ class TaskModel
             completedAt: $status->isTerminal() ? gmdate('Y-m-d\TH:i:s\Z') : $this->completedAt,
             createdAt: $this->createdAt,
             updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            parentId: $this->parentId,
+            workInstructions: $this->workInstructions,
+            acceptanceCriteria: $this->acceptanceCriteria,
+            reviewStatus: $this->reviewStatus,
+            reviewFeedback: $this->reviewFeedback,
         );
     }
 

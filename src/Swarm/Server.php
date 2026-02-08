@@ -20,11 +20,16 @@ use VoidLux\P2P\Transport\TcpMesh;
 use VoidLux\Swarm\Agent\AgentBridge;
 use VoidLux\Swarm\Agent\AgentMonitor;
 use VoidLux\Swarm\Agent\AgentRegistry;
+use VoidLux\Swarm\Ai\LlmClient;
+use VoidLux\Swarm\Ai\TaskPlanner;
+use VoidLux\Swarm\Ai\TaskReviewer;
+use VoidLux\Swarm\Gossip\AgentAntiEntropy;
 use VoidLux\Swarm\Gossip\TaskAntiEntropy;
 use VoidLux\Swarm\Gossip\TaskGossipEngine;
 use VoidLux\Swarm\Leadership\LeaderElection;
 use VoidLux\Swarm\Orchestrator\ClaimResolver;
 use VoidLux\Swarm\Orchestrator\EmperorController;
+use VoidLux\Swarm\Orchestrator\TaskDispatcher;
 use VoidLux\Swarm\Orchestrator\TaskQueue;
 use VoidLux\Swarm\Storage\SwarmDatabase;
 
@@ -43,6 +48,7 @@ class Server
     private UdpBroadcast $udpBroadcast;
     private TaskGossipEngine $taskGossip;
     private TaskAntiEntropy $taskAntiEntropy;
+    private AgentAntiEntropy $agentAntiEntropy;
     private TaskQueue $taskQueue;
     private ClaimResolver $claimResolver;
     private AgentRegistry $agentRegistry;
@@ -50,9 +56,11 @@ class Server
     private AgentMonitor $agentMonitor;
     private EmperorController $controller;
     private LeaderElection $leaderElection;
+    private ?TaskDispatcher $taskDispatcher = null;
     private ?SwarmWebSocketHandler $wsHandler = null;
     private ?WsServer $server = null;
     private float $startTime;
+    private bool $running = false;
 
     public function __construct(
         private readonly string $httpHost = '0.0.0.0',
@@ -62,6 +70,11 @@ class Server
         private readonly array $seedPeers = [],
         private readonly string $dataDir = './data',
         private string $role = 'emperor',
+        private readonly string $llmProvider = 'ollama',
+        private readonly string $llmModel = 'qwen3:32b',
+        private readonly string $llmHost = '127.0.0.1',
+        private readonly int $llmPort = 11434,
+        private readonly string $claudeApiKey = '',
     ) {
         $this->startTime = microtime(true);
     }
@@ -129,6 +142,7 @@ class Server
         $this->peerManager = new PeerManager($this->mesh, $this->nodeId);
         $this->taskGossip = new TaskGossipEngine($this->mesh, $this->db, $this->clock);
         $this->taskAntiEntropy = new TaskAntiEntropy($this->mesh, $this->db, $this->taskGossip);
+        $this->agentAntiEntropy = new AgentAntiEntropy($this->mesh, $this->db, $this->nodeId);
         $this->taskQueue = new TaskQueue($this->db, $this->taskGossip, $this->clock, $this->nodeId);
         $this->claimResolver = new ClaimResolver($this->db, $this->nodeId);
         $this->agentBridge = new AgentBridge($this->db);
@@ -147,9 +161,24 @@ class Server
         );
         $this->controller->setAgentMonitor($this->agentMonitor);
         $this->controller->onShutdown(function () {
-            $this->log("Regicide: shutting down emperor process");
+            $this->log("Regicide: stopping all coroutine loops...");
+            $this->running = false;
+            $this->taskDispatcher?->stop();
+            $this->agentMonitor->stop();
+            $this->agentRegistry->stop();
+            $this->leaderElection->stop();
+            $this->taskAntiEntropy->stop();
+            $this->agentAntiEntropy->stop();
+            $this->peerExchange->stop();
+            $this->peerManager->stop();
+            $this->udpBroadcast->stop();
+            $this->mesh->stop();
+            $this->log("Regicide: shutting down server");
             $this->server?->shutdown();
         });
+
+        // Wire leader election into agent monitor for pull-mode fallback
+        // (set after leaderElection is created below)
 
         $this->leaderElection = new LeaderElection(
             $this->mesh,
@@ -166,6 +195,8 @@ class Server
         $this->leaderElection->onLog(function (string $msg) {
             $this->log($msg);
         });
+
+        $this->agentMonitor->setLeaderElection($this->leaderElection);
 
         // Wire agent monitor events to WebSocket
         $this->agentMonitor->onEvent(function (string $taskId, string $agentId, string $event, array $data) {
@@ -213,6 +244,9 @@ class Server
         // UDP discovery
         $this->udpBroadcast = new UdpBroadcast($this->discoveryPort, $this->p2pPort, $this->nodeId);
         $this->udpBroadcast->onPeerDiscovered(function (string $host, int $port, string $nodeId) {
+            if ($nodeId === $this->nodeId) {
+                return; // Don't connect to ourselves
+            }
             if (!$this->peerManager->isConnected($nodeId)) {
                 $this->log("Discovered peer via UDP: {$host}:{$port}");
                 $this->peerManager->addKnownAddress($host, $port);
@@ -258,9 +292,19 @@ class Server
         }
         $this->log("Wellness: " . count($wellness['alive']) . " alive, " . count($wellness['pruned']) . " pruned");
 
+        // Emperor-only: AI components + push dispatcher
+        if ($this->role === 'emperor') {
+            $this->initEmperorAi();
+        }
+
         // Task anti-entropy
         Coroutine::create(function () {
             $this->taskAntiEntropy->start();
+        });
+
+        // Agent anti-entropy
+        Coroutine::create(function () {
+            $this->agentAntiEntropy->start();
         });
 
         // Agent registry heartbeats
@@ -279,8 +323,9 @@ class Server
         });
 
         // Periodic status to WS + clock persistence
+        $this->running = true;
         Coroutine::create(function () {
-            while (true) {
+            while ($this->running) {
                 Coroutine::sleep(5);
                 $this->wsHandler?->pushStatus([
                     'tasks' => $this->db->getTaskCount(),
@@ -315,6 +360,11 @@ class Server
                         'lamport_ts' => $this->clock->value(),
                     ]);
                 }
+
+                // Eager agent sync on every new peer connection
+                if ($peerRole !== 'seneschal') {
+                    $this->agentAntiEntropy->syncFromPeer($conn);
+                }
                 break;
 
             case MessageTypes::PEX:
@@ -341,6 +391,7 @@ class Server
                 if ($task) {
                     $this->log("Received task: {$task->id} '{$task->title}'");
                     $this->wsHandler?->pushTaskEvent('task_created', $task->toArray());
+                    $this->taskDispatcher?->triggerDispatch();
                 }
                 break;
 
@@ -361,6 +412,9 @@ class Server
                 $isNew = $this->taskGossip->receiveTaskUpdate($msg, $conn->address());
                 if ($isNew) {
                     $this->wsHandler?->pushTaskEvent('task_progress', $msg);
+                    if (($msg['status'] ?? '') === 'pending') {
+                        $this->taskDispatcher?->triggerDispatch();
+                    }
                 }
                 break;
 
@@ -368,6 +422,7 @@ class Server
                 $isNew = $this->taskGossip->receiveTaskComplete($msg, $conn->address());
                 if ($isNew) {
                     $this->wsHandler?->pushTaskEvent('task_completed', $msg);
+                    $this->taskDispatcher?->triggerDispatch();
                 }
                 break;
 
@@ -375,6 +430,7 @@ class Server
                 $isNew = $this->taskGossip->receiveTaskFail($msg, $conn->address());
                 if ($isNew) {
                     $this->wsHandler?->pushTaskEvent('task_failed', $msg);
+                    $this->taskDispatcher?->triggerDispatch();
                 }
                 break;
 
@@ -383,6 +439,10 @@ class Server
                 if ($isNew) {
                     $this->wsHandler?->pushTaskEvent('task_cancelled', $msg);
                 }
+                break;
+
+            case MessageTypes::TASK_ASSIGN:
+                $this->handleTaskAssign($msg);
                 break;
 
             // --- Swarm agent messages ---
@@ -434,6 +494,25 @@ class Server
                     'emperor_http_port' => $msg['http_port'] ?? 0,
                 ]);
                 break;
+
+            case MessageTypes::CENSUS_REQUEST:
+                $count = $this->agentRegistry->reannounceAll();
+                if ($count > 0) {
+                    $this->log("Census: re-announced {$count} local agent(s)");
+                }
+                break;
+
+            // --- Agent anti-entropy ---
+            case MessageTypes::AGENT_SYNC_REQ:
+                $this->agentAntiEntropy->handleSyncRequest($conn, $msg);
+                break;
+
+            case MessageTypes::AGENT_SYNC_RSP:
+                $count = $this->agentAntiEntropy->handleSyncResponse($msg);
+                if ($count > 0) {
+                    $this->log("Synced {$count} agent(s) from {$conn->address()}");
+                }
+                break;
         }
     }
 
@@ -443,6 +522,9 @@ class Server
         $this->leaderElection->setRole('emperor');
         $this->log("Promoted to emperor role");
 
+        // Initialize emperor AI + dispatcher on promotion
+        $this->initEmperorAi();
+
         $this->wsHandler?->pushStatus([
             'emperor' => $this->nodeId,
             'emperor_http_port' => $this->httpPort,
@@ -451,6 +533,102 @@ class Server
 
         // Spawn a replacement worker process
         $this->spawnReplacementWorker();
+    }
+
+    private function initEmperorAi(): void
+    {
+        // Create LLM client
+        $llm = new LlmClient(
+            provider: $this->llmProvider,
+            model: $this->llmModel,
+            ollamaHost: $this->llmHost,
+            ollamaPort: $this->llmPort,
+            claudeApiKey: $this->claudeApiKey,
+        );
+
+        // Create AI components
+        $planner = new TaskPlanner($llm, $this->db);
+        $reviewer = new TaskReviewer($llm);
+
+        // Create push dispatcher
+        $this->taskDispatcher = new TaskDispatcher(
+            $this->db,
+            $this->mesh,
+            $this->taskQueue,
+            $this->clock,
+            $this->nodeId,
+        );
+
+        // Wire into controller and task queue
+        $this->controller->setTaskDispatcher($this->taskDispatcher);
+        $this->controller->setTaskPlanner($planner);
+        $this->taskQueue->setReviewer($reviewer);
+
+        // Start dispatcher coroutine
+        Coroutine::create(function () {
+            $this->taskDispatcher->start();
+        });
+
+        $this->log("Emperor AI initialized (LLM: {$this->llmProvider}/{$this->llmModel})");
+    }
+
+    /**
+     * Handle TASK_ASSIGN from emperor: claim task and deliver to local agent.
+     */
+    private function handleTaskAssign(array $msg): void
+    {
+        $taskId = $msg['task_id'] ?? '';
+        $agentId = $msg['agent_id'] ?? '';
+        $targetNode = $msg['node_id'] ?? '';
+
+        if ($targetNode !== $this->nodeId) {
+            return; // Not for us
+        }
+
+        $agent = $this->db->getAgent($agentId);
+        if (!$agent || $agent->nodeId !== $this->nodeId) {
+            $this->log("TASK_ASSIGN: agent {$agentId} not found locally");
+            return;
+        }
+
+        if ($agent->status !== 'idle' || $agent->currentTaskId !== null) {
+            $this->log("TASK_ASSIGN: agent {$agent->name} is busy, rejecting");
+            return;
+        }
+
+        $task = $this->db->getTask($taskId);
+        if (!$task) {
+            $this->log("TASK_ASSIGN: task {$taskId} not found");
+            return;
+        }
+
+        // Claim the task locally
+        $claimed = $this->taskQueue->claim($taskId, $agentId);
+        if (!$claimed) {
+            $this->log("TASK_ASSIGN: could not claim task {$taskId} for {$agent->name}");
+            return;
+        }
+
+        // Update agent status
+        $this->db->updateAgentStatus($agentId, 'busy', $taskId);
+
+        // Deliver to tmux
+        $task = $this->db->getTask($taskId); // Re-read after claim
+        if ($task) {
+            $delivered = $this->agentBridge->deliverTask($agent, $task);
+            if (!$delivered) {
+                $this->taskQueue->fail($taskId, $agentId, 'Failed to deliver task to tmux session');
+                $this->db->updateAgentStatus($agentId, 'idle', null);
+                return;
+            }
+        }
+
+        $this->log("TASK_ASSIGN: delivered task '{$task->title}' to agent {$agent->name}");
+        $this->wsHandler?->pushTaskEvent('task_assigned', [
+            'task_id' => $taskId,
+            'agent_id' => $agentId,
+            'title' => $task->title ?? '',
+        ]);
     }
 
     private function spawnReplacementWorker(): void

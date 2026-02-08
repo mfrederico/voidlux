@@ -76,7 +76,7 @@ class Connection
         // Read more data
         try {
             if ($this->socket instanceof \Swoole\Coroutine\Socket) {
-                $data = $this->socket->recvAll(65536, $timeout);
+                $data = $this->socket->recv(65536, $timeout);
             } else {
                 $data = $this->socket->recv(65536, $timeout);
             }
@@ -86,6 +86,10 @@ class Connection
         }
 
         if ($data === false || $data === '') {
+            // recv returns false on timeout — that's not a disconnect
+            if ($this->socket instanceof \Swoole\Coroutine\Socket && $this->socket->errCode === SOCKET_ETIMEDOUT) {
+                return null;
+            }
             $this->closed = true;
             return null;
         }
@@ -115,7 +119,7 @@ class Connection
 
         try {
             if ($this->socket instanceof \Swoole\Coroutine\Socket) {
-                $data = $this->socket->recvAll(65536, $timeout);
+                $data = $this->socket->recv(65536, $timeout);
             } else {
                 $data = $this->socket->recv(65536, $timeout);
             }

@@ -46,14 +46,19 @@ class AgentBridge
             return false;
         }
 
+        // Clear agent context before new task
+        // Note: usleep (not Coroutine::sleep) to keep delivery atomic —
+        // yielding here lets the monitor poll and see "idle" before the prompt arrives
+        $this->tmux->sendTextByName($sessionName, '/clear');
+        $this->tmux->sendEnterByName($sessionName);
+        usleep(1_500_000);
+
         // Build the task prompt
         $prompt = $this->buildTaskPrompt($task);
 
-        // Send to tmux
+        // Send to tmux — always follow with Enter to submit the prompt
         $sent = $this->tmux->sendTextByName($sessionName, $prompt);
-        if ($sent) {
-            $this->tmux->sendEnterByName($sessionName);
-        }
+        $this->tmux->sendEnterByName($sessionName);
 
         return $sent;
     }
@@ -100,9 +105,7 @@ class AgentBridge
         }
 
         $sent = $this->tmux->sendTextByName($sessionName, $text);
-        if ($sent) {
-            $this->tmux->sendEnterByName($sessionName);
-        }
+        $this->tmux->sendEnterByName($sessionName);
         return $sent;
     }
 
@@ -131,24 +134,92 @@ class AgentBridge
     /**
      * Create a tmux session for an agent if it doesn't exist.
      */
-    public function ensureSession(string $sessionName, string $cwd, string $tool = 'claude'): bool
+    /**
+     * @param array{model?: string, env?: array<string, string>} $options
+     */
+    public function ensureSession(string $sessionName, string $cwd, string $tool = 'claude', array $options = []): bool
     {
         if ($this->tmux->sessionExistsByName($sessionName)) {
             return true;
         }
 
+        $model = $options['model'] ?? '';
+        $env = $options['env'] ?? [];
+
         $command = match ($tool) {
-            'claude' => 'claude',
+            'claude' => 'claude --dangerously-skip-permissions' . ($model ? ' --model ' . escapeshellarg($model) : ''),
             'opencode' => 'opencode',
             default => '',
         };
 
-        return $this->tmux->createSessionWithName($sessionName, $cwd, $command);
+        // Prefix env vars (e.g. ANTHROPIC_AUTH_TOKEN=ollama ANTHROPIC_BASE_URL=...)
+        if (!empty($env) && $command !== '') {
+            $envPrefix = '';
+            foreach ($env as $key => $value) {
+                // Env var names: alphanumeric + underscore only (sanitize, don't quote)
+                $safeKey = preg_replace('/[^A-Za-z0-9_]/', '', $key);
+                $envPrefix .= $safeKey . '=' . escapeshellarg($value) . ' ';
+            }
+            $command = $envPrefix . $command;
+        }
+
+        $created = $this->tmux->createSessionWithName($sessionName, $cwd, $command);
+
+        if ($created) {
+            $this->ensureMcpConfig($cwd);
+        }
+
+        return $created;
+    }
+
+    /**
+     * Ensure the project directory has a .mcp.json with the voidlux-swarm MCP server entry.
+     * Merges into existing config if present, skips if entry already exists.
+     */
+    public function ensureMcpConfig(string $projectPath): void
+    {
+        $mcpFile = rtrim($projectPath, '/') . '/.mcp.json';
+
+        $config = [];
+        if (file_exists($mcpFile)) {
+            $existing = json_decode(file_get_contents($mcpFile), true);
+            if (is_array($existing)) {
+                $config = $existing;
+            }
+        }
+
+        // Skip if already configured
+        if (isset($config['mcpServers']['voidlux-swarm'])) {
+            return;
+        }
+
+        if (!isset($config['mcpServers'])) {
+            $config['mcpServers'] = [];
+        }
+
+        $config['mcpServers']['voidlux-swarm'] = [
+            'type' => 'http',
+            'url' => 'http://localhost:9090/mcp',
+        ];
+
+        file_put_contents(
+            $mcpFile,
+            json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"
+        );
     }
 
     private function buildTaskPrompt(TaskModel $task): string
     {
-        $prompt = $task->description ?: $task->title;
+        $prompt = "## Task: " . $task->title . "\n\n";
+        $prompt .= $task->description ?: $task->title;
+
+        if ($task->workInstructions) {
+            $prompt .= "\n\n## Work Instructions\n" . $task->workInstructions;
+        }
+
+        if ($task->acceptanceCriteria) {
+            $prompt .= "\n\n## Acceptance Criteria\n" . $task->acceptanceCriteria;
+        }
 
         if ($task->context) {
             $prompt .= "\n\nContext: " . $task->context;
@@ -158,12 +229,16 @@ class AgentBridge
             $prompt .= "\n\nProject path: " . $task->projectPath;
         }
 
+        $prompt .= "\n\n---\nTASK ID: " . $task->id;
+        $prompt .= "\nWhen finished, call the `task_complete` tool with this task_id and a summary.";
+        $prompt .= "\nIf you hit an error, call `task_failed`. Need clarification? Call `task_needs_input`.";
+
         return $prompt;
     }
 
     /**
      * Kill an agent's tmux session and its child processes.
-     * Sends C-c for graceful interrupt, then kills the session (SIGHUP to all children).
+     * Captures PIDs before killing session, then explicitly kills orphaned processes.
      */
     public function killSession(AgentModel $agent): bool
     {
@@ -172,9 +247,60 @@ class AgentBridge
             return false;
         }
 
+        // Capture PIDs of all processes in the session before killing it
+        $pids = $this->getSessionPids($sessionName);
+
         $this->tmux->sendKeysByName($sessionName, 'C-c');
         usleep(200_000);
-        return $this->tmux->killSessionByName($sessionName);
+        $killed = $this->tmux->killSessionByName($sessionName);
+
+        // Kill any orphaned processes that survived the tmux SIGHUP
+        usleep(500_000);
+        foreach ($pids as $pid) {
+            if ($this->isProcessAlive($pid)) {
+                posix_kill($pid, SIGTERM);
+            }
+        }
+
+        // Final SIGKILL for stubborn processes
+        usleep(500_000);
+        foreach ($pids as $pid) {
+            if ($this->isProcessAlive($pid)) {
+                posix_kill($pid, SIGKILL);
+            }
+        }
+
+        return $killed;
+    }
+
+    /**
+     * Get PIDs of all processes in a tmux session (pane PID + its children).
+     * @return int[]
+     */
+    private function getSessionPids(string $sessionName): array
+    {
+        $panePid = trim(shell_exec("tmux list-panes -t " . escapeshellarg($sessionName) . " -F '#{pane_pid}' 2>/dev/null") ?: '');
+        if (!$panePid || !is_numeric($panePid)) {
+            return [];
+        }
+
+        // Get all descendants of the pane shell process
+        $tree = trim(shell_exec("pgrep -P $panePid 2>/dev/null") ?: '');
+        $pids = array_filter(array_map('intval', explode("\n", $tree)));
+
+        // Also get grandchildren (claude spawns child processes)
+        $grandchildren = [];
+        foreach ($pids as $pid) {
+            $gc = trim(shell_exec("pgrep -P $pid 2>/dev/null") ?: '');
+            $grandchildren = array_merge($grandchildren, array_filter(array_map('intval', explode("\n", $gc))));
+        }
+
+        return array_unique(array_merge($pids, $grandchildren));
+    }
+
+    private function isProcessAlive(int $pid): bool
+    {
+        return $pid > 0 && posix_kill($pid, 0);
     }
 
     public function getTmuxService(): TmuxService

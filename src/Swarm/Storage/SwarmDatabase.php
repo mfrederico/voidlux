@@ -86,6 +86,23 @@ class SwarmDatabase
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority DESC, created_at ASC)');
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_agents_node ON agents(node_id)');
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status)');
+
+        // Schema migrations for planning + review columns
+        $columns = $this->pdo->query("PRAGMA table_info(tasks)")->fetchAll();
+        $existing = array_column($columns, 'name');
+        $additions = [
+            'parent_id' => 'TEXT',
+            'work_instructions' => "TEXT NOT NULL DEFAULT ''",
+            'acceptance_criteria' => "TEXT NOT NULL DEFAULT ''",
+            'review_status' => "TEXT NOT NULL DEFAULT 'none'",
+            'review_feedback' => "TEXT NOT NULL DEFAULT ''",
+        ];
+        foreach ($additions as $col => $def) {
+            if (!in_array($col, $existing, true)) {
+                $this->pdo->exec("ALTER TABLE tasks ADD COLUMN {$col} {$def}");
+            }
+        }
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id)');
     }
 
     // --- Task operations ---
@@ -96,11 +113,13 @@ class SwarmDatabase
             INSERT OR IGNORE INTO tasks
                 (id, title, description, status, priority, required_capabilities, created_by,
                  assigned_to, assigned_node, result, error, progress, project_path, context,
-                 lamport_ts, claimed_at, completed_at, created_at, updated_at)
+                 lamport_ts, claimed_at, completed_at, created_at, updated_at,
+                 parent_id, work_instructions, acceptance_criteria, review_status, review_feedback)
             VALUES
                 (:id, :title, :description, :status, :priority, :required_capabilities, :created_by,
                  :assigned_to, :assigned_node, :result, :error, :progress, :project_path, :context,
-                 :lamport_ts, :claimed_at, :completed_at, :created_at, :updated_at)
+                 :lamport_ts, :claimed_at, :completed_at, :created_at, :updated_at,
+                 :parent_id, :work_instructions, :acceptance_criteria, :review_status, :review_feedback)
         ');
 
         return $stmt->execute([
@@ -123,6 +142,11 @@ class SwarmDatabase
             ':completed_at' => $task->completedAt,
             ':created_at' => $task->createdAt,
             ':updated_at' => $task->updatedAt,
+            ':parent_id' => $task->parentId,
+            ':work_instructions' => $task->workInstructions,
+            ':acceptance_criteria' => $task->acceptanceCriteria,
+            ':review_status' => $task->reviewStatus,
+            ':review_feedback' => $task->reviewFeedback,
         ]);
     }
 
@@ -136,7 +160,10 @@ class SwarmDatabase
                 result = :result, error = :error, progress = :progress,
                 project_path = :project_path, context = :context,
                 lamport_ts = :lamport_ts, claimed_at = :claimed_at,
-                completed_at = :completed_at, updated_at = :updated_at
+                completed_at = :completed_at, updated_at = :updated_at,
+                parent_id = :parent_id, work_instructions = :work_instructions,
+                acceptance_criteria = :acceptance_criteria, review_status = :review_status,
+                review_feedback = :review_feedback
             WHERE id = :id
         ');
 
@@ -158,6 +185,11 @@ class SwarmDatabase
             ':claimed_at' => $task->claimedAt,
             ':completed_at' => $task->completedAt,
             ':updated_at' => $task->updatedAt,
+            ':parent_id' => $task->parentId,
+            ':work_instructions' => $task->workInstructions,
+            ':acceptance_criteria' => $task->acceptanceCriteria,
+            ':review_status' => $task->reviewStatus,
+            ':review_feedback' => $task->reviewFeedback,
         ]);
     }
 
@@ -270,7 +302,7 @@ class SwarmDatabase
                 status = :status, assigned_to = NULL, assigned_node = NULL,
                 progress = NULL, error = :error, lamport_ts = :lamport_ts,
                 claimed_at = NULL, updated_at = :updated_at
-            WHERE id = :id AND status IN (\'claimed\', \'in_progress\')
+            WHERE id = :id AND status IN (\'claimed\', \'in_progress\', \'waiting_input\')
         ');
 
         $stmt->execute([
@@ -293,10 +325,52 @@ class SwarmDatabase
     public function getOrphanedTasks(string $nodeId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT * FROM tasks WHERE assigned_node = :node_id AND status IN (\'claimed\', \'in_progress\') ORDER BY created_at ASC'
+            'SELECT * FROM tasks WHERE assigned_node = :node_id AND status IN (\'claimed\', \'in_progress\', \'waiting_input\') ORDER BY created_at ASC'
         );
         $stmt->execute([':node_id' => $nodeId]);
         return array_map(fn(array $row) => TaskModel::fromArray($row), $stmt->fetchAll());
+    }
+
+    /**
+     * Get all idle agents across all nodes.
+     * @return AgentModel[]
+     */
+    public function getAllIdleAgents(): array
+    {
+        $stmt = $this->pdo->query(
+            "SELECT * FROM agents WHERE status = 'idle' AND current_task_id IS NULL ORDER BY registered_at ASC"
+        );
+        return array_map(fn(array $row) => AgentModel::fromArray($row), $stmt->fetchAll());
+    }
+
+    /**
+     * Get subtasks for a parent task.
+     * @return TaskModel[]
+     */
+    public function getSubtasks(string $parentId): array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM tasks WHERE parent_id = :parent_id ORDER BY priority DESC, created_at ASC');
+        $stmt->execute([':parent_id' => $parentId]);
+        return array_map(fn(array $row) => TaskModel::fromArray($row), $stmt->fetchAll());
+    }
+
+    /**
+     * Update review status and feedback for a task.
+     */
+    public function updateReviewStatus(string $taskId, string $status, string $feedback = ''): bool
+    {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $stmt = $this->pdo->prepare('
+            UPDATE tasks SET review_status = :review_status, review_feedback = :review_feedback, updated_at = :updated_at
+            WHERE id = :id
+        ');
+        $stmt->execute([
+            ':id' => $taskId,
+            ':review_status' => $status,
+            ':review_feedback' => $feedback,
+            ':updated_at' => $now,
+        ]);
+        return $stmt->rowCount() > 0;
     }
 
     // --- Agent operations ---
@@ -395,9 +469,51 @@ class SwarmDatabase
         return $stmt->rowCount() > 0;
     }
 
+    /**
+     * Delete all agents belonging to a specific node.
+     * @return string[] IDs of deleted agents
+     */
+    public function deleteAgentsByNode(string $nodeId): array
+    {
+        $stmt = $this->pdo->prepare('SELECT id FROM agents WHERE node_id = :node_id');
+        $stmt->execute([':node_id' => $nodeId]);
+        $ids = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+
+        if (!empty($ids)) {
+            $this->pdo->prepare('DELETE FROM agents WHERE node_id = :node_id')
+                ->execute([':node_id' => $nodeId]);
+        }
+
+        return $ids;
+    }
+
     public function getAgentCount(): int
     {
         return (int) $this->pdo->query('SELECT COUNT(*) FROM agents')->fetchColumn();
+    }
+
+    public function getMaxAgentLamportTs(): int
+    {
+        return (int) $this->pdo->query('SELECT COALESCE(MAX(lamport_ts), 0) FROM agents')->fetchColumn();
+    }
+
+    /** @return AgentModel[] */
+    public function getAgentsSince(int $lamportTs): array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM agents WHERE lamport_ts > :ts ORDER BY lamport_ts ASC');
+        $stmt->execute([':ts' => $lamportTs]);
+        return array_map(fn(array $row) => AgentModel::fromArray($row), $stmt->fetchAll());
+    }
+
+    /**
+     * Delete all tasks and return them for archiving.
+     * @return TaskModel[]
+     */
+    public function clearAllTasks(): array
+    {
+        $tasks = $this->getTasksByStatus();
+        $this->pdo->exec('DELETE FROM tasks');
+        return $tasks;
     }
 
     // --- State operations ---

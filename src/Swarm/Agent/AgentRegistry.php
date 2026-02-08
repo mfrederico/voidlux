@@ -109,6 +109,18 @@ class AgentRegistry
     }
 
     /**
+     * Re-gossip AGENT_REGISTER for all local agents (census response).
+     */
+    public function reannounceAll(): int
+    {
+        $agents = $this->db->getLocalAgents($this->nodeId);
+        foreach ($agents as $agent) {
+            $this->gossip->gossipAgentRegister($agent);
+        }
+        return count($agents);
+    }
+
+    /**
      * Start heartbeat loop for local agents.
      */
     public function start(): void

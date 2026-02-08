@@ -22,6 +22,10 @@ class TaskGossipEngine
     private array $seenMessages = [];
     private int $seenLimit = 10000;
 
+    /** @var array<string, int> Agent IDs → deregister timestamp (tombstone to prevent resurrection) */
+    private array $agentTombstones = [];
+    private const TOMBSTONE_TTL = 120; // seconds
+
     public function __construct(
         private readonly TcpMesh $mesh,
         private readonly SwarmDatabase $db,
@@ -125,6 +129,34 @@ class TaskGossipEngine
         }
         $this->seenMessages[$key] = true;
         $this->clock->witness($msg['lamport_ts'] ?? 0);
+
+        // Write to local DB so emperor dashboard reflects the update
+        $task = $this->db->getTask($msg['task_id'] ?? '');
+        if ($task && !$task->status->isTerminal()) {
+            $newStatus = TaskStatus::tryFrom($msg['status'] ?? '') ?? TaskStatus::InProgress;
+            $updated = new TaskModel(
+                id: $task->id,
+                title: $task->title,
+                description: $task->description,
+                status: $newStatus,
+                priority: $task->priority,
+                requiredCapabilities: $task->requiredCapabilities,
+                createdBy: $task->createdBy,
+                assignedTo: $msg['agent_id'] ?? $task->assignedTo,
+                assignedNode: $task->assignedNode,
+                result: $task->result,
+                error: $task->error,
+                progress: $msg['progress'] ?? $task->progress,
+                projectPath: $task->projectPath,
+                context: $task->context,
+                lamportTs: $msg['lamport_ts'] ?? $task->lamportTs,
+                claimedAt: $task->claimedAt,
+                completedAt: $task->completedAt,
+                createdAt: $task->createdAt,
+                updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            );
+            $this->db->updateTask($updated);
+        }
 
         $this->mesh->broadcast($msg + ['type' => MessageTypes::TASK_UPDATE], $senderAddress);
         $this->pruneSeenMessages();
@@ -294,6 +326,9 @@ class TaskGossipEngine
         if (!$id || isset($this->seenMessages[$key])) {
             return null;
         }
+        if ($this->isAgentTombstoned($id)) {
+            return null;
+        }
         $this->seenMessages[$key] = true;
         $this->clock->witness($agentData['lamport_ts'] ?? 0);
 
@@ -326,6 +361,7 @@ class TaskGossipEngine
     {
         $key = 'agent_deregister:' . $agentId;
         $this->seenMessages[$key] = true;
+        $this->agentTombstones[$agentId] = time();
 
         $this->mesh->broadcast([
             'type' => MessageTypes::AGENT_DEREGISTER,
@@ -342,6 +378,7 @@ class TaskGossipEngine
             return null;
         }
         $this->seenMessages[$key] = true;
+        $this->agentTombstones[$agentId] = time();
 
         $this->db->updateAgentStatus($agentId, 'offline');
         $this->db->deleteAgent($agentId);
@@ -355,6 +392,11 @@ class TaskGossipEngine
     {
         $agentId = $msg['agent_id'] ?? '';
         if (!$agentId) {
+            return;
+        }
+
+        // Don't resurrect recently deregistered agents
+        if ($this->isAgentTombstoned($agentId)) {
             return;
         }
 
@@ -395,10 +437,33 @@ class TaskGossipEngine
         ], $excludeAddress);
     }
 
+    /**
+     * Check if an agent was recently deregistered (tombstone prevents resurrection).
+     */
+    private function isAgentTombstoned(string $agentId): bool
+    {
+        if (!isset($this->agentTombstones[$agentId])) {
+            return false;
+        }
+        if ((time() - $this->agentTombstones[$agentId]) > self::TOMBSTONE_TTL) {
+            unset($this->agentTombstones[$agentId]);
+            return false;
+        }
+        return true;
+    }
+
     private function pruneSeenMessages(): void
     {
         if (count($this->seenMessages) > $this->seenLimit) {
             $this->seenMessages = array_slice($this->seenMessages, -($this->seenLimit / 2), null, true);
+        }
+
+        // Prune expired tombstones
+        $now = time();
+        foreach ($this->agentTombstones as $id => $ts) {
+            if (($now - $ts) > self::TOMBSTONE_TTL) {
+                unset($this->agentTombstones[$id]);
+            }
         }
     }
 }

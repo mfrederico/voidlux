@@ -6,6 +6,7 @@ namespace VoidLux\Swarm\Agent;
 
 use Aoe\Session\Status;
 use Swoole\Coroutine;
+use VoidLux\Swarm\Leadership\LeaderElection;
 use VoidLux\Swarm\Model\AgentModel;
 use VoidLux\Swarm\Model\TaskStatus;
 use VoidLux\Swarm\Orchestrator\TaskQueue;
@@ -30,6 +31,7 @@ class AgentMonitor
 {
     private const POLL_INTERVAL = 5;
     private bool $running = false;
+    private ?LeaderElection $leaderElection = null;
 
     /** @var callable|null fn(string $taskId, string $agentId, string $event, array $data): void */
     private $onEvent = null;
@@ -41,6 +43,11 @@ class AgentMonitor
         private readonly AgentRegistry $registry,
         private readonly string $nodeId,
     ) {}
+
+    public function setLeaderElection(LeaderElection $election): void
+    {
+        $this->leaderElection = $election;
+    }
 
     /**
      * Set event callback for task/agent state changes.
@@ -67,7 +74,30 @@ class AgentMonitor
     {
         $agents = $this->db->getLocalAgents($this->nodeId);
 
+        // Build a set of agent IDs that currently own a task
+        $busyAgentIds = [];
         foreach ($agents as $agent) {
+            if ($agent->currentTaskId) {
+                $busyAgentIds[$agent->id] = $agent->currentTaskId;
+            }
+        }
+
+        // Requeue stale claimed tasks: assigned to a local agent that no longer owns them
+        $staleTasks = $this->db->getOrphanedTasks($this->nodeId);
+        foreach ($staleTasks as $task) {
+            if ($task->assignedTo && !isset($busyAgentIds[$task->assignedTo])) {
+                $this->taskQueue->requeue($task->id, 'Agent no longer owns task');
+                $this->emit($task->id, $task->assignedTo ?? '', 'task_requeued', ['title' => $task->title]);
+            }
+        }
+
+        foreach ($agents as $agent) {
+            // Startup grace period: don't poll agents registered less than 15s ago
+            $registeredAgo = time() - strtotime($agent->registeredAt);
+            if ($registeredAgo < 15) {
+                continue;
+            }
+
             if (!$agent->currentTaskId) {
                 // Check if the agent's session is still alive before trying to assign
                 $bridgeStatus = $this->bridge->detectStatus($agent);
@@ -89,6 +119,19 @@ class AgentMonitor
                 continue;
             }
 
+            // MCP manages waiting_input tasks — skip pane polling
+            if ($task->status === TaskStatus::WaitingInput) {
+                continue;
+            }
+
+            // Grace period: don't poll a task that was just claimed (prompt still being delivered)
+            if ($task->claimedAt) {
+                $claimedAgo = time() - strtotime($task->claimedAt);
+                if ($claimedAgo < 10) {
+                    continue;
+                }
+            }
+
             $status = $this->bridge->detectStatus($agent);
             $this->handleAgentStatus($agent, $task->id, $status);
         }
@@ -105,10 +148,9 @@ class AgentMonitor
                 break;
 
             case Status::Idle:
-                // Agent finished — extract result
-                $output = $this->bridge->captureOutput($agent, 50);
-                $result = $this->bridge->extractResult($output);
-                $this->taskQueue->complete($taskId, $agent->id, $result);
+                // Agent finished — capture full output as the task result
+                $output = $this->bridge->captureOutput($agent, 200);
+                $this->taskQueue->complete($taskId, $agent->id, $output);
                 $this->db->updateAgentStatus($agent->id, 'idle', null);
                 $this->emit($taskId, $agent->id, 'task_completed', ['result' => $result]);
                 break;
@@ -140,6 +182,11 @@ class AgentMonitor
     private function tryAutoAssign(AgentModel $agent): void
     {
         if ($agent->status === 'offline') {
+            return;
+        }
+
+        // When emperor is alive, it handles dispatch via push model
+        if ($this->leaderElection !== null && $this->leaderElection->isEmperorAlive()) {
             return;
         }
 

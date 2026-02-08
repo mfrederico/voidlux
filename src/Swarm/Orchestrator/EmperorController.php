@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace VoidLux\Swarm\Orchestrator;
 
+use Swoole\Coroutine;
 use Swoole\Http\Request;
 use Swoole\Http\Response;
 use VoidLux\Swarm\Agent\AgentBridge;
 use VoidLux\Swarm\Agent\AgentMonitor;
 use VoidLux\Swarm\Agent\AgentRegistry;
+use VoidLux\Swarm\Ai\TaskPlanner;
+use VoidLux\Swarm\Mcp\McpHandler;
+use VoidLux\Swarm\Model\TaskStatus;
+use VoidLux\Swarm\Orchestrator\TaskDispatcher;
 use VoidLux\Swarm\Storage\SwarmDatabase;
 use VoidLux\Swarm\SwarmWebUI;
 
@@ -18,6 +23,9 @@ use VoidLux\Swarm\SwarmWebUI;
 class EmperorController
 {
     private ?AgentMonitor $agentMonitor = null;
+    private ?McpHandler $mcpHandler = null;
+    private ?TaskDispatcher $taskDispatcher = null;
+    private ?TaskPlanner $taskPlanner = null;
 
     /** @var callable|null fn(): void — triggers server shutdown */
     private $shutdownCallback = null;
@@ -34,6 +42,16 @@ class EmperorController
     public function setAgentMonitor(AgentMonitor $monitor): void
     {
         $this->agentMonitor = $monitor;
+    }
+
+    public function setTaskDispatcher(TaskDispatcher $dispatcher): void
+    {
+        $this->taskDispatcher = $dispatcher;
+    }
+
+    public function setTaskPlanner(TaskPlanner $planner): void
+    {
+        $this->taskPlanner = $planner;
     }
 
     public function onShutdown(callable $callback): void
@@ -63,6 +81,10 @@ class EmperorController
                 $response->end(SwarmWebUI::render($this->nodeId));
                 break;
 
+            case $path === '/mcp' && $method === 'POST':
+                $this->getMcpHandler()->handle($request, $response);
+                break;
+
             case $path === '/health' && $method === 'GET':
                 $this->json($response, [
                     'status' => 'ok',
@@ -83,12 +105,28 @@ class EmperorController
                 $this->handleCreateTask($request, $response);
                 break;
 
+            case $path === '/api/swarm/tasks/clear' && $method === 'POST':
+                $this->handleClearTasks($response);
+                break;
+
             case preg_match('#^/api/swarm/tasks/([^/]+)/cancel$#', $path, $m) === 1 && $method === 'POST':
                 $this->handleCancelTask($m[1], $response);
                 break;
 
+            case preg_match('#^/api/swarm/tasks/([^/]+)/review$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleReviewTask($m[1], $request, $response);
+                break;
+
+            case preg_match('#^/api/swarm/tasks/([^/]+)/subtasks$#', $path, $m) === 1 && $method === 'GET':
+                $this->handleGetSubtasks($m[1], $response);
+                break;
+
             case preg_match('#^/api/swarm/tasks/([^/]+)$#', $path, $m) === 1 && $method === 'GET':
                 $this->handleGetTask($m[1], $response);
+                break;
+
+            case $path === '/api/swarm/ollama/models' && $method === 'GET':
+                $this->handleOllamaModels($response);
                 break;
 
             case $path === '/api/swarm/agents' && $method === 'GET':
@@ -142,8 +180,11 @@ class EmperorController
             'tasks' => [
                 'total' => $this->db->getTaskCount(),
                 'pending' => $this->db->getTaskCount('pending'),
+                'planning' => $this->db->getTaskCount('planning'),
                 'claimed' => $this->db->getTaskCount('claimed'),
                 'in_progress' => $this->db->getTaskCount('in_progress'),
+                'pending_review' => $this->db->getTaskCount('pending_review'),
+                'waiting_input' => $this->db->getTaskCount('waiting_input'),
                 'completed' => $this->db->getTaskCount('completed'),
                 'failed' => $this->db->getTaskCount('failed'),
             ],
@@ -169,6 +210,71 @@ class EmperorController
             return;
         }
 
+        // If planner is available, create as a planning parent task and decompose
+        if ($this->taskPlanner !== null) {
+            $task = $this->taskQueue->createTask(
+                title: $body['title'],
+                description: $body['description'] ?? '',
+                priority: (int) ($body['priority'] ?? 0),
+                requiredCapabilities: $body['required_capabilities'] ?? [],
+                projectPath: $body['project_path'] ?? '',
+                context: $body['context'] ?? '',
+                createdBy: $body['created_by'] ?? $this->nodeId,
+                status: TaskStatus::Planning,
+            );
+
+            $response->status(201);
+            $this->json($response, $task->toArray());
+
+            // Decompose in background coroutine
+            $taskId = $task->id;
+            $planner = $this->taskPlanner;
+            $taskQueue = $this->taskQueue;
+            $db = $this->db;
+            $dispatcher = $this->taskDispatcher;
+
+            Coroutine::create(function () use ($taskId, $planner, $taskQueue, $db, $dispatcher) {
+                $parentTask = $db->getTask($taskId);
+                if (!$parentTask) {
+                    return;
+                }
+
+                $subtaskDefs = $planner->decompose($parentTask);
+
+                if (empty($subtaskDefs)) {
+                    // Decomposition failed — convert to regular pending task
+                    $updated = $parentTask->withStatus(TaskStatus::Pending, $parentTask->lamportTs);
+                    $db->updateTask($updated);
+                    $dispatcher?->triggerDispatch();
+                    return;
+                }
+
+                foreach ($subtaskDefs as $def) {
+                    $taskQueue->createTask(
+                        title: $def['title'],
+                        description: $def['description'],
+                        priority: $def['priority'],
+                        requiredCapabilities: $def['requiredCapabilities'],
+                        projectPath: $parentTask->projectPath,
+                        context: $parentTask->context,
+                        createdBy: $parentTask->createdBy,
+                        parentId: $parentTask->id,
+                        workInstructions: $def['work_instructions'],
+                        acceptanceCriteria: $def['acceptance_criteria'],
+                    );
+                }
+
+                // Mark parent as pending (decomposed)
+                $updated = $parentTask->withStatus(TaskStatus::Pending, $parentTask->lamportTs);
+                $db->updateTask($updated);
+
+                $dispatcher?->triggerDispatch();
+            });
+
+            return;
+        }
+
+        // No planner — create task directly
         $task = $this->taskQueue->createTask(
             title: $body['title'],
             description: $body['description'] ?? '',
@@ -178,6 +284,8 @@ class EmperorController
             context: $body['context'] ?? '',
             createdBy: $body['created_by'] ?? $this->nodeId,
         );
+
+        $this->taskDispatcher?->triggerDispatch();
 
         $response->status(201);
         $this->json($response, $task->toArray());
@@ -203,6 +311,89 @@ class EmperorController
             return;
         }
         $this->json($response, ['status' => 'cancelled', 'task_id' => $taskId]);
+    }
+
+    private function handleReviewTask(string $taskId, Request $request, Response $response): void
+    {
+        $task = $this->taskQueue->getTask($taskId);
+        if (!$task) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Task not found']);
+            return;
+        }
+
+        $body = json_decode($request->getContent(), true);
+        $accepted = (bool) ($body['accepted'] ?? false);
+        $feedback = (string) ($body['feedback'] ?? '');
+
+        if ($accepted) {
+            $this->db->updateReviewStatus($taskId, 'accepted', $feedback);
+            // Complete the task
+            $ts = $task->lamportTs;
+            $updated = $task->withStatus(TaskStatus::Completed, $ts);
+            $this->db->updateTask($updated);
+            $this->json($response, ['status' => 'accepted', 'task_id' => $taskId]);
+        } else {
+            $this->db->updateReviewStatus($taskId, 'rejected', $feedback);
+            // Requeue with feedback
+            $this->taskQueue->requeue($taskId, "Review rejected: {$feedback}");
+            $this->taskDispatcher?->triggerDispatch();
+            $this->json($response, ['status' => 'rejected', 'task_id' => $taskId, 'feedback' => $feedback]);
+        }
+    }
+
+    private function handleGetSubtasks(string $parentId, Response $response): void
+    {
+        $subtasks = $this->db->getSubtasks($parentId);
+        $this->json($response, array_map(fn($t) => $t->toArray(), $subtasks));
+    }
+
+    private function handleClearTasks(Response $response): void
+    {
+        $tasks = $this->db->clearAllTasks();
+        $count = count($tasks);
+
+        // Write to log file in data directory
+        if ($count > 0) {
+            $dataDir = getcwd() . '/data';
+            if (!is_dir($dataDir)) {
+                mkdir($dataDir, 0755, true);
+            }
+            $logFile = $dataDir . '/tasks-' . date('Y-m-d-His') . '.txt';
+
+            $lines = [];
+            $lines[] = "# Task Archive - " . date('Y-m-d H:i:s');
+            $lines[] = "# Total: $count tasks";
+            $lines[] = str_repeat('=', 60);
+
+            foreach ($tasks as $task) {
+                $lines[] = '';
+                $lines[] = "ID:          {$task->id}";
+                $lines[] = "Title:       {$task->title}";
+                $lines[] = "Status:      {$task->status->value}";
+                $lines[] = "Created:     {$task->createdAt}";
+                if ($task->assignedTo) {
+                    $lines[] = "Assigned To: {$task->assignedTo}";
+                }
+                if ($task->description) {
+                    $lines[] = "Description: {$task->description}";
+                }
+                if ($task->result) {
+                    $lines[] = "Result:      " . substr($task->result, 0, 200);
+                }
+                if ($task->error) {
+                    $lines[] = "Error:       {$task->error}";
+                }
+                $lines[] = str_repeat('-', 60);
+            }
+
+            file_put_contents($logFile, implode("\n", $lines) . "\n");
+        }
+
+        $this->json($response, [
+            'cleared' => $count,
+            'log_file' => isset($logFile) ? basename($logFile) : null,
+        ]);
     }
 
     private function handleListAgents(Response $response): void
@@ -265,16 +456,26 @@ class EmperorController
     {
         $agents = $this->agentRegistry->getLocalAgents();
         $killed = [];
+        $deregisteredIds = [];
 
         foreach ($agents as $agent) {
             $sessionKilled = $this->bridge->killSession($agent);
             $this->agentRegistry->deregister($agent->id);
+            $deregisteredIds[] = $agent->id;
             $killed[] = [
                 'id' => $agent->id,
                 'name' => $agent->name,
                 'session' => $agent->tmuxSessionId,
                 'session_killed' => $sessionKilled,
             ];
+        }
+
+        // Bulk-purge any ghost records for this node (gossip tombstones prevent resurrection)
+        $ghostIds = $this->db->deleteAgentsByNode($this->nodeId);
+        foreach ($ghostIds as $ghostId) {
+            if (!in_array($ghostId, $deregisteredIds, true)) {
+                $this->agentRegistry->deregister($ghostId);
+            }
         }
 
         $this->json($response, [
@@ -297,38 +498,86 @@ class EmperorController
         }
     }
 
+    /**
+     * Bulk register agents. Supports two formats:
+     *
+     * Per-agent config (for external orchestration):
+     *   {"agents": [
+     *     {"project_path": "/path/to/project", "tool": "claude", "name": "my-agent", ...},
+     *     {"project_path": "/other/project", "tool": "opencode", "capabilities": ["php"]},
+     *   ]}
+     *
+     * Uniform batch (backward-compatible):
+     *   {"count": 5, "tool": "claude", "project_path": "/path", ...}
+     */
     private function handleBulkRegisterAgents(Request $request, Response $response): void
     {
         $body = json_decode($request->getContent(), true);
-        $count = max(1, min(50, (int) ($body['count'] ?? 1)));
-        $tool = $body['tool'] ?? 'claude';
-        $capabilities = $body['capabilities'] ?? [];
-        $projectPath = $body['project_path'] ?? '';
-        $namePrefix = $body['name_prefix'] ?? 'agent';
+        if (!$body) {
+            $response->status(400);
+            $this->json($response, ['error' => 'Invalid JSON body']);
+            return;
+        }
 
         $nodeShort = substr($this->nodeId, 0, 6);
+
+        // Per-agent config mode
+        if (isset($body['agents']) && is_array($body['agents'])) {
+            $agents = [];
+            foreach ($body['agents'] as $i => $spec) {
+                $agents[] = $this->registerOneAgent($spec, $nodeShort, $i + 1);
+            }
+            $response->status(201);
+            $this->json($response, $agents);
+            return;
+        }
+
+        // Uniform batch mode (backward-compatible)
+        $count = max(1, min(50, (int) ($body['count'] ?? 1)));
         $agents = [];
         for ($i = 0; $i < $count; $i++) {
-            $suffix = substr(bin2hex(random_bytes(4)), 0, 8);
-            $sessionName = 'vl-' . $namePrefix . '-' . $suffix;
-            $agentName = $namePrefix . '-' . $nodeShort . '-' . ($i + 1);
-
-            if ($projectPath) {
-                $this->bridge->ensureSession($sessionName, $projectPath, $tool);
-            }
-
-            $agent = $this->agentRegistry->register(
-                name: $agentName,
-                tool: $tool,
-                capabilities: $capabilities,
-                tmuxSessionId: $projectPath ? $sessionName : null,
-                projectPath: $projectPath,
-            );
-            $agents[] = $agent->toArray();
+            $agents[] = $this->registerOneAgent($body, $nodeShort, $i + 1);
         }
 
         $response->status(201);
         $this->json($response, $agents);
+    }
+
+    /**
+     * Register a single agent from a spec array.
+     * @param array{tool?: string, project_path?: string, name?: string, name_prefix?: string,
+     *              capabilities?: string[], model?: string, env?: array<string,string>} $spec
+     */
+    private function registerOneAgent(array $spec, string $nodeShort, int $index): array
+    {
+        $tool = $spec['tool'] ?? 'claude';
+        $projectPath = $spec['project_path'] ?? '';
+        $capabilities = $spec['capabilities'] ?? [];
+        $model = $spec['model'] ?? '';
+        $env = $spec['env'] ?? [];
+        $namePrefix = $spec['name_prefix'] ?? 'agent';
+
+        // Explicit name or auto-generated
+        $agentName = $spec['name'] ?? ($namePrefix . '-' . $nodeShort . '-' . $index);
+        $suffix = substr(bin2hex(random_bytes(4)), 0, 8);
+        $sessionName = 'vl-' . $namePrefix . '-' . $suffix;
+
+        if ($projectPath) {
+            $this->bridge->ensureSession($sessionName, $projectPath, $tool, [
+                'model' => $model,
+                'env' => $env,
+            ]);
+        }
+
+        $agent = $this->agentRegistry->register(
+            name: $agentName,
+            tool: $tool,
+            capabilities: $capabilities,
+            tmuxSessionId: $projectPath ? $sessionName : null,
+            projectPath: $projectPath,
+        );
+
+        return $agent->toArray();
     }
 
     private function handleDeregisterAgent(string $agentId, Response $response): void
@@ -381,6 +630,35 @@ class EmperorController
             'status' => $status->value,
             'output' => $output,
         ]);
+    }
+
+    private function handleOllamaModels(Response $response): void
+    {
+        $client = new \Swoole\Coroutine\Http\Client('127.0.0.1', 11434);
+        $client->set(['timeout' => 3]);
+        $client->get('/api/tags');
+
+        if ($client->statusCode !== 200) {
+            $this->json($response, ['models' => [], 'error' => 'Ollama not available']);
+            $client->close();
+            return;
+        }
+
+        $data = json_decode($client->body, true);
+        $client->close();
+
+        $models = [];
+        foreach ($data['models'] ?? [] as $m) {
+            $models[] = $m['name'] ?? $m['model'] ?? '';
+        }
+        sort($models);
+
+        $this->json($response, ['models' => $models]);
+    }
+
+    private function getMcpHandler(): McpHandler
+    {
+        return $this->mcpHandler ??= new McpHandler($this->taskQueue, $this->db);
     }
 
     private function json(Response $response, array $data): void
