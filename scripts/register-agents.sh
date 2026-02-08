@@ -8,11 +8,19 @@
 #   register-agents.sh 3 claude /tmp/test 9092 claude-sonnet-4-5-20250929
 #   OLLAMA=1 register-agents.sh 3 claude /tmp/test 9092 qwen3:32b
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 COUNT=${1:-5}
 TOOL=${2:-claude}
-PROJECT=${3:-$(pwd)}
+PROJECT=${3:-$PROJECT_ROOT/workbench}
 PORT=${4:-9090}
 MODEL=${5:-}
+
+# Ensure workbench exists when using default
+if [ "$PROJECT" = "$PROJECT_ROOT/workbench" ]; then
+    mkdir -p "$PROJECT"
+fi
 
 # Build JSON payload
 JSON="{\"count\":$COUNT,\"tool\":\"$TOOL\",\"capabilities\":[],\"project_path\":\"$PROJECT\",\"name_prefix\":\"agent\""

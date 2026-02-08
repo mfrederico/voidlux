@@ -6,9 +6,13 @@ namespace VoidLux\Swarm;
 
 class SwarmWebUI
 {
-    public static function render(string $nodeId): string
+    public static function render(string $nodeId, string $workbenchPath = ''): string
     {
         $nodeIdJs = json_encode($nodeId);
+        if ($workbenchPath === '') {
+            $workbenchPath = getcwd() . '/workbench';
+        }
+        $workbenchJs = json_encode($workbenchPath);
         return <<<'HTML'
 <!DOCTYPE html>
 <html lang="en">
@@ -216,7 +220,7 @@ body {
         </form>
         <div id="form-extra" style="display:none; margin-bottom:16px;">
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px;">
-                <input type="text" form="task-form" name="project_path" placeholder="Project path" style="background:#1a1a1a;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:4px;font-family:inherit;" />
+                <input type="text" form="task-form" name="project_path" id="task-project-path" placeholder="Project path" style="background:#1a1a1a;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:4px;font-family:inherit;" />
                 <input type="text" form="task-form" name="capabilities" placeholder="Capabilities (comma-sep)" style="background:#1a1a1a;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:4px;font-family:inherit;" />
                 <input type="number" form="task-form" name="priority" placeholder="Priority (0)" value="0" style="background:#1a1a1a;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:4px;font-family:inherit;" />
                 <textarea form="task-form" name="context" placeholder="Additional context" style="background:#1a1a1a;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:4px;font-family:inherit;min-height:60px;"></textarea>
@@ -235,7 +239,7 @@ body {
         <h2>Register Agents</h2>
         <form class="task-form" id="bulk-agent-form" onsubmit="bulkRegister(event)" style="grid-template-columns: 80px 1fr 120px 160px auto;">
             <input type="number" name="count" value="5" min="1" max="50" title="Count" />
-            <input type="text" name="project_path" placeholder="Project path" />
+            <input type="text" name="project_path" id="agent-project-path" placeholder="Project path" />
             <select name="tool" onchange="toggleModelField(this)" style="background:#1a1a1a;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:4px;font-family:inherit;">
                 <option value="claude">claude (API)</option>
                 <option value="claude-ollama">claude (Ollama)</option>
@@ -271,9 +275,11 @@ body {
 
 <script>
 HTML
-        . "\nconst NODE_ID = {$nodeIdJs};\n" . <<<'JS'
+        . "\nconst NODE_ID = {$nodeIdJs};\nconst WORKBENCH = {$workbenchJs};\n" . <<<'JS'
 document.getElementById('node-id').textContent = NODE_ID.substring(0, 8);
 document.getElementById('emperor-id').textContent = NODE_ID.substring(0, 12) + ' (this node)';
+document.getElementById('task-project-path').value = WORKBENCH;
+document.getElementById('agent-project-path').value = WORKBENCH;
 
 let emperorNodeId = NODE_ID;
 function updateEmperorBanner(empId) {
