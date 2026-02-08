@@ -431,6 +431,26 @@ function addLog(event, msg) {
     if (panel.children.length > 100) panel.removeChild(panel.lastChild);
 }
 
+// Save focused input state before DOM replacement
+function saveFocusState() {
+    const active = document.activeElement;
+    if (active && active.tagName === 'INPUT' && active.id) {
+        return { id: active.id, value: active.value, selStart: active.selectionStart, selEnd: active.selectionEnd };
+    }
+    return null;
+}
+
+// Restore focused input after DOM replacement
+function restoreFocusState(state) {
+    if (!state) return;
+    const el = document.getElementById(state.id);
+    if (el && el.tagName === 'INPUT') {
+        el.value = state.value;
+        el.focus();
+        try { el.setSelectionRange(state.selStart, state.selEnd); } catch(e) {}
+    }
+}
+
 function refresh() {
     fetch('/api/swarm/status').then(r=>r.json()).then(s => {
         document.getElementById('task-count').textContent = s.tasks.total;
@@ -448,8 +468,12 @@ function refresh() {
     fetch('/api/swarm/agents').then(r=>r.json()).then(agents => {
         agentMap = {};
         agents.forEach(a => { agentMap[a.id] = a; });
-        const el = document.getElementById('agent-list');
-        el.innerHTML = agents.length ? agents.map(renderAgent).join('') : '<div class="empty">No agents registered</div>';
+
+        // Only re-render agent list if user isn't focused inside it
+        const agentEl = document.getElementById('agent-list');
+        if (!agentEl.contains(document.activeElement)) {
+            agentEl.innerHTML = agents.length ? agents.map(renderAgent).join('') : '<div class="empty">No agents registered</div>';
+        }
 
         // Now render tasks with agent lookup available
         fetch('/api/swarm/tasks').then(r=>r.json()).then(tasks => {
@@ -464,8 +488,10 @@ function refresh() {
                     topLevel.push(t);
                 }
             });
-            const el = document.getElementById('task-list');
-            el.innerHTML = topLevel.length ? topLevel.map(t => renderTask(t, false)).join('') : '<div class="empty">No tasks yet</div>';
+            const taskEl = document.getElementById('task-list');
+            const focusState = saveFocusState();
+            taskEl.innerHTML = topLevel.length ? topLevel.map(t => renderTask(t, false)).join('') : '<div class="empty">No tasks yet</div>';
+            restoreFocusState(focusState);
         }).catch(()=>{});
     }).catch(()=>{});
 }
