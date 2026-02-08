@@ -30,6 +30,9 @@ class EmperorController
     /** @var callable|null fn(): void — triggers server shutdown */
     private $shutdownCallback = null;
 
+    /** @var callable|null fn(string $agentId, string $status): void */
+    private $onAgentStatusChange = null;
+
     public function __construct(
         private readonly SwarmDatabase $db,
         private readonly TaskQueue $taskQueue,
@@ -57,6 +60,11 @@ class EmperorController
     public function onShutdown(callable $callback): void
     {
         $this->shutdownCallback = $callback;
+    }
+
+    public function onAgentStatusChange(callable $callback): void
+    {
+        $this->onAgentStatusChange = $callback;
     }
 
     public function handle(Request $request, Response $response): void
@@ -692,6 +700,9 @@ class EmperorController
             $this->mcpHandler = new McpHandler($this->taskQueue, $this->db);
             if ($this->taskDispatcher !== null) {
                 $this->mcpHandler->setTaskDispatcher($this->taskDispatcher);
+            }
+            if ($this->onAgentStatusChange !== null) {
+                $this->mcpHandler->onAgentStatusChange($this->onAgentStatusChange);
             }
         }
         return $this->mcpHandler;

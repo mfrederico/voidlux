@@ -22,6 +22,9 @@ class McpHandler
 
     private ?TaskDispatcher $taskDispatcher = null;
 
+    /** @var callable|null fn(string $agentId, string $status): void */
+    private $onAgentStatusChange = null;
+
     public function __construct(
         private readonly TaskQueue $taskQueue,
         private readonly SwarmDatabase $db,
@@ -30,6 +33,11 @@ class McpHandler
     public function setTaskDispatcher(TaskDispatcher $dispatcher): void
     {
         $this->taskDispatcher = $dispatcher;
+    }
+
+    public function onAgentStatusChange(callable $callback): void
+    {
+        $this->onAgentStatusChange = $callback;
     }
 
     public function handle(Request $request, Response $response): void
@@ -192,7 +200,13 @@ class McpHandler
 
         if ($agentId) {
             $this->db->updateAgentStatus($agentId, 'idle', null);
+            if ($this->onAgentStatusChange) {
+                ($this->onAgentStatusChange)($agentId, 'idle');
+            }
         }
+
+        // Trigger dispatch so idle agent gets next pending task immediately
+        $this->taskDispatcher?->triggerDispatch();
 
         return $this->toolResult(['status' => 'completed', 'task_id' => $taskId]);
     }
@@ -242,7 +256,13 @@ class McpHandler
 
         if ($agentId) {
             $this->db->updateAgentStatus($agentId, 'idle', null);
+            if ($this->onAgentStatusChange) {
+                ($this->onAgentStatusChange)($agentId, 'idle');
+            }
         }
+
+        // Trigger dispatch so idle agent gets next pending task immediately
+        $this->taskDispatcher?->triggerDispatch();
 
         return $this->toolResult(['status' => 'failed', 'task_id' => $taskId]);
     }

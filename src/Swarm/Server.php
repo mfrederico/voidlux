@@ -161,6 +161,12 @@ class Server
             $this->startTime,
         );
         $this->controller->setAgentMonitor($this->agentMonitor);
+        $this->controller->onAgentStatusChange(function (string $agentId, string $status) {
+            $agent = $this->db->getAgent($agentId);
+            if ($agent) {
+                $this->wsHandler?->pushAgentUpdate('agent_' . $status, $agent->toArray());
+            }
+        });
         $this->controller->onShutdown(function () {
             $this->log("Regicide: stopping all coroutine loops...");
             $this->running = false;
