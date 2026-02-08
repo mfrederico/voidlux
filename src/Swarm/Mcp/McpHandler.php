@@ -6,6 +6,7 @@ namespace VoidLux\Swarm\Mcp;
 
 use Swoole\Http\Request;
 use Swoole\Http\Response;
+use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Orchestrator\TaskDispatcher;
 use VoidLux\Swarm\Orchestrator\TaskQueue;
 use VoidLux\Swarm\Storage\SwarmDatabase;
@@ -21,6 +22,7 @@ class McpHandler
     private const PROTOCOL_VERSION = '2024-11-05';
 
     private ?TaskDispatcher $taskDispatcher = null;
+    private GitWorkspace $git;
 
     /** @var callable|null fn(string $agentId, string $status): void */
     private $onAgentStatusChange = null;
@@ -28,7 +30,10 @@ class McpHandler
     public function __construct(
         private readonly TaskQueue $taskQueue,
         private readonly SwarmDatabase $db,
-    ) {}
+        ?GitWorkspace $git = null,
+    ) {
+        $this->git = $git ?? new GitWorkspace();
+    }
 
     public function setTaskDispatcher(TaskDispatcher $dispatcher): void
     {
@@ -196,6 +201,28 @@ class McpHandler
         }
 
         $agentId = $task->assignedTo ?? '';
+
+        // Git: commit, push, and create PR if workspace is a git repo
+        $prUrl = null;
+        if ($agentId) {
+            $agent = $this->db->getAgent($agentId);
+            if ($agent && $agent->projectPath && $this->git->isGitRepo($agent->projectPath)) {
+                $branchName = $task->gitBranch ?: ('task/' . substr($task->id, 0, 8));
+                $commitMsg = "Task: {$task->title}\n\n{$summary}";
+                $pushed = $this->git->commitAndPush($agent->projectPath, $commitMsg, $branchName);
+                if ($pushed) {
+                    $prUrl = $this->git->createPullRequest(
+                        $agent->projectPath,
+                        $task->title,
+                        "## Task\n{$task->description}\n\n## Summary\n{$summary}",
+                    );
+                    if ($prUrl) {
+                        $summary .= "\n\nPR: {$prUrl}";
+                    }
+                }
+            }
+        }
+
         $this->taskQueue->complete($taskId, $agentId, $summary);
 
         if ($agentId) {
@@ -208,7 +235,12 @@ class McpHandler
         // Trigger dispatch so idle agent gets next pending task immediately
         $this->taskDispatcher?->triggerDispatch();
 
-        return $this->toolResult(['status' => 'completed', 'task_id' => $taskId]);
+        $result = ['status' => 'completed', 'task_id' => $taskId];
+        if ($prUrl) {
+            $result['pr_url'] = $prUrl;
+        }
+
+        return $this->toolResult($result);
     }
 
     private function callTaskProgress(array $args): array
@@ -252,6 +284,15 @@ class McpHandler
         }
 
         $agentId = $task->assignedTo ?? '';
+
+        // Git: reset workspace to default branch (don't push failed work)
+        if ($agentId) {
+            $agent = $this->db->getAgent($agentId);
+            if ($agent && $agent->projectPath && $this->git->isGitRepo($agent->projectPath)) {
+                $this->git->resetToDefault($agent->projectPath);
+            }
+        }
+
         $this->taskQueue->fail($taskId, $agentId, $error);
 
         if ($agentId) {

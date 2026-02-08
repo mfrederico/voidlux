@@ -32,6 +32,7 @@ class TaskModel
         public readonly string $reviewStatus = 'none',
         public readonly string $reviewFeedback = '',
         public readonly bool $archived = false,
+        public readonly string $gitBranch = '',
     ) {}
 
     public static function create(
@@ -105,6 +106,7 @@ class TaskModel
             reviewStatus: $data['review_status'] ?? 'none',
             reviewFeedback: $data['review_feedback'] ?? '',
             archived: !empty($data['archived']),
+            gitBranch: $data['git_branch'] ?? '',
         );
     }
 
@@ -136,6 +138,7 @@ class TaskModel
             'review_status' => $this->reviewStatus,
             'review_feedback' => $this->reviewFeedback,
             'archived' => $this->archived,
+            'git_branch' => $this->gitBranch,
         ];
     }
 
@@ -167,6 +170,7 @@ class TaskModel
             reviewStatus: $this->reviewStatus,
             reviewFeedback: $this->reviewFeedback,
             archived: $this->archived,
+            gitBranch: $this->gitBranch,
         );
     }
 

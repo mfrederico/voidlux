@@ -7,6 +7,7 @@ namespace VoidLux\Swarm\Agent;
 use Aoe\Session\Status;
 use Aoe\Tmux\StatusDetector;
 use Aoe\Tmux\TmuxService;
+use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Model\AgentModel;
 use VoidLux\Swarm\Model\TaskModel;
 use VoidLux\Swarm\Storage\SwarmDatabase;
@@ -19,18 +20,22 @@ class AgentBridge
 {
     private TmuxService $tmux;
     private StatusDetector $detector;
+    private GitWorkspace $git;
 
     public function __construct(
         private readonly SwarmDatabase $db,
         ?TmuxService $tmux = null,
         ?StatusDetector $detector = null,
+        ?GitWorkspace $git = null,
     ) {
         $this->tmux = $tmux ?? new TmuxService('swarm', 'vl');
         $this->detector = $detector ?? new StatusDetector();
+        $this->git = $git ?? new GitWorkspace();
     }
 
     /**
      * Deliver a task to an agent's tmux session.
+     * If the agent's project path is a git repo, prepares a per-task branch first.
      * Returns true if the task was sent successfully.
      */
     public function deliverTask(AgentModel $agent, TaskModel $task): bool
@@ -44,6 +49,15 @@ class AgentBridge
         $status = $this->detectStatus($agent);
         if ($status !== Status::Idle) {
             return false;
+        }
+
+        // Prepare git branch if agent workspace is a git repo
+        if ($agent->projectPath && $this->git->isGitRepo($agent->projectPath)) {
+            $branchName = 'task/' . substr($task->id, 0, 8);
+            $prepared = $this->git->prepareBranch($agent->projectPath, $branchName);
+            if ($prepared) {
+                $this->db->updateGitBranch($task->id, $branchName);
+            }
         }
 
         // Clear agent context before new task

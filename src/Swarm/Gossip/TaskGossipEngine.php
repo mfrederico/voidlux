@@ -160,6 +160,7 @@ class TaskGossipEngine
                 reviewStatus: $task->reviewStatus,
                 reviewFeedback: $task->reviewFeedback,
                 archived: $task->archived,
+                gitBranch: $task->gitBranch,
             );
             $this->db->updateTask($updated);
         }
@@ -221,6 +222,7 @@ class TaskGossipEngine
                 reviewStatus: $task->reviewStatus,
                 reviewFeedback: $task->reviewFeedback,
                 archived: $task->archived,
+                gitBranch: $task->gitBranch,
             );
             $this->db->updateTask($updated);
         }
@@ -281,6 +283,7 @@ class TaskGossipEngine
                 reviewStatus: $task->reviewStatus,
                 reviewFeedback: $task->reviewFeedback,
                 archived: $task->archived,
+                gitBranch: $task->gitBranch,
             );
             $this->db->updateTask($updated);
         }

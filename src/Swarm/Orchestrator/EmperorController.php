@@ -11,6 +11,7 @@ use VoidLux\Swarm\Agent\AgentBridge;
 use VoidLux\Swarm\Agent\AgentMonitor;
 use VoidLux\Swarm\Agent\AgentRegistry;
 use VoidLux\Swarm\Ai\TaskPlanner;
+use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Mcp\McpHandler;
 use VoidLux\Swarm\Model\TaskStatus;
 use VoidLux\Swarm\Orchestrator\TaskDispatcher;
@@ -600,6 +601,16 @@ class EmperorController
         $agentName = $spec['name'] ?? ($namePrefix . '-' . $nodeShort . '-' . $index);
         $suffix = substr(bin2hex(random_bytes(4)), 0, 8);
         $sessionName = 'vl-' . $namePrefix . '-' . $suffix;
+
+        // If project_path is a git URL, clone into per-agent directory
+        $git = new GitWorkspace();
+        if ($git->isGitUrl($projectPath)) {
+            $cloneDir = getcwd() . '/workbench/' . $agentName;
+            $cloned = $git->cloneRepo($projectPath, $cloneDir);
+            if ($cloned) {
+                $projectPath = $cloneDir;
+            }
+        }
 
         if ($projectPath) {
             $this->bridge->ensureSession($sessionName, $projectPath, $tool, [

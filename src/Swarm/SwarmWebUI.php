@@ -389,6 +389,11 @@ function renderTask(t, isSubtask) {
         html += '</details>';
     }
 
+    if (t.git_branch) html += '<div style="font-size:0.8rem;color:#8888cc;margin-top:4px;">Branch: <code>'+escapeHtml(t.git_branch)+'</code></div>';
+    if (t.result && t.result.match(/PR: (https?:\/\/\S+)/)) {
+        const prUrl = t.result.match(/PR: (https?:\/\/\S+)/)[1];
+        html += '<div style="font-size:0.8rem;margin-top:4px;"><a href="'+escapeHtml(prUrl)+'" target="_blank" style="color:#66aaff;text-decoration:underline;">View Pull Request</a></div>';
+    }
     html += '<div class="card-meta">ts:'+t.lamport_ts+' | '+t.created_at+'</div>';
     html += '<div class="card-actions">';
     if (isActive && t.assigned_to) {

@@ -111,6 +111,11 @@ class SwarmDatabase
         }
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived)');
 
+        // Add git_branch column for per-task branch tracking
+        if (!in_array('git_branch', $existing, true)) {
+            $this->pdo->exec("ALTER TABLE tasks ADD COLUMN git_branch TEXT NOT NULL DEFAULT ''");
+        }
+
         // Add model column to agents table
         $agentColumns = $this->pdo->query("PRAGMA table_info(agents)")->fetchAll();
         $agentExisting = array_column($agentColumns, 'name');
@@ -129,13 +134,13 @@ class SwarmDatabase
                  assigned_to, assigned_node, result, error, progress, project_path, context,
                  lamport_ts, claimed_at, completed_at, created_at, updated_at,
                  parent_id, work_instructions, acceptance_criteria, review_status, review_feedback,
-                 archived)
+                 archived, git_branch)
             VALUES
                 (:id, :title, :description, :status, :priority, :required_capabilities, :created_by,
                  :assigned_to, :assigned_node, :result, :error, :progress, :project_path, :context,
                  :lamport_ts, :claimed_at, :completed_at, :created_at, :updated_at,
                  :parent_id, :work_instructions, :acceptance_criteria, :review_status, :review_feedback,
-                 :archived)
+                 :archived, :git_branch)
         ');
 
         return $stmt->execute([
@@ -164,6 +169,7 @@ class SwarmDatabase
             ':review_status' => $task->reviewStatus,
             ':review_feedback' => $task->reviewFeedback,
             ':archived' => $task->archived ? 1 : 0,
+            ':git_branch' => $task->gitBranch,
         ]);
     }
 
@@ -180,7 +186,8 @@ class SwarmDatabase
                 completed_at = :completed_at, updated_at = :updated_at,
                 parent_id = :parent_id, work_instructions = :work_instructions,
                 acceptance_criteria = :acceptance_criteria, review_status = :review_status,
-                review_feedback = :review_feedback, archived = :archived
+                review_feedback = :review_feedback, archived = :archived,
+                git_branch = :git_branch
             WHERE id = :id
         ');
 
@@ -208,6 +215,7 @@ class SwarmDatabase
             ':review_status' => $task->reviewStatus,
             ':review_feedback' => $task->reviewFeedback,
             ':archived' => $task->archived ? 1 : 0,
+            ':git_branch' => $task->gitBranch,
         ]);
     }
 
@@ -414,6 +422,14 @@ class SwarmDatabase
         );
         $stmt->execute([':updated_at' => $now]);
         return $stmt->rowCount();
+    }
+
+    public function updateGitBranch(string $taskId, string $branch): bool
+    {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $stmt = $this->pdo->prepare('UPDATE tasks SET git_branch = :branch, updated_at = :updated_at WHERE id = :id');
+        $stmt->execute([':id' => $taskId, ':branch' => $branch, ':updated_at' => $now]);
+        return $stmt->rowCount() > 0;
     }
 
     // --- Agent operations ---

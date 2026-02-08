@@ -115,6 +115,7 @@ class TaskQueue
             reviewStatus: $task->reviewStatus,
             reviewFeedback: $task->reviewFeedback,
             archived: $task->archived,
+            gitBranch: $task->gitBranch,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::InProgress->value, $progress, $ts);
@@ -155,6 +156,7 @@ class TaskQueue
             reviewStatus: $task->reviewStatus,
             reviewFeedback: $task->reviewFeedback,
             archived: $task->archived,
+            gitBranch: $task->gitBranch,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::WaitingInput->value, $question, $ts);
@@ -196,6 +198,8 @@ class TaskQueue
                 acceptanceCriteria: $task->acceptanceCriteria,
                 reviewStatus: 'pending_review',
                 reviewFeedback: $task->reviewFeedback,
+                archived: $task->archived,
+                gitBranch: $task->gitBranch,
             );
             $this->db->updateTask($updated);
             $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::PendingReview->value, null, $ts);
@@ -233,6 +237,7 @@ class TaskQueue
             reviewStatus: $task->reviewStatus,
             reviewFeedback: $task->reviewFeedback,
             archived: $task->archived,
+            gitBranch: $task->gitBranch,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskComplete($taskId, $agentId, $result, $ts);
@@ -286,6 +291,7 @@ class TaskQueue
                 reviewStatus: 'accepted',
                 reviewFeedback: $reviewResult->feedback,
                 archived: $task->archived,
+                gitBranch: $task->gitBranch,
             );
             $this->db->updateTask($updated);
             $this->gossip->gossipTaskComplete($taskId, $task->assignedTo ?? '', $task->result, $ts);
@@ -346,6 +352,7 @@ class TaskQueue
                 reviewStatus: 'rejected',
                 reviewFeedback: $feedbackHistory,
                 archived: $task->archived,
+                gitBranch: $task->gitBranch,
             );
             $this->db->updateTask($updated);
             $this->gossip->gossipTaskUpdate($taskId, '', TaskStatus::Pending->value, null, $ts);
@@ -387,6 +394,7 @@ class TaskQueue
             reviewStatus: $task->reviewStatus,
             reviewFeedback: $task->reviewFeedback,
             archived: $task->archived,
+            gitBranch: $task->gitBranch,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskFail($taskId, $agentId, $error, $ts);
@@ -454,6 +462,7 @@ class TaskQueue
             reviewStatus: $parent->reviewStatus,
             reviewFeedback: $parent->reviewFeedback,
             archived: $parent->archived,
+            gitBranch: $parent->gitBranch,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskComplete($parentId, '', $result, $ts);
