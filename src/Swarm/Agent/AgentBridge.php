@@ -53,13 +53,6 @@ class AgentBridge
         $this->tmux->sendEnterByName($sessionName);
         usleep(1_500_000);
 
-        // Change to the task's project directory so the agent works in the right place
-        if ($task->projectPath && is_dir($task->projectPath)) {
-            $this->tmux->sendTextByName($sessionName, '/cd ' . $task->projectPath);
-            $this->tmux->sendEnterByName($sessionName);
-            usleep(1_000_000);
-        }
-
         // Build the task prompt
         $prompt = $this->buildTaskPrompt($task);
 
@@ -234,6 +227,10 @@ class AgentBridge
 
         if ($task->context) {
             $prompt .= "\n\nContext: " . $task->context;
+        }
+
+        if ($task->projectPath) {
+            $prompt .= "\n\nWork in this directory: " . $task->projectPath;
         }
 
         $prompt .= "\n\n---\nTASK ID: " . $task->id;
