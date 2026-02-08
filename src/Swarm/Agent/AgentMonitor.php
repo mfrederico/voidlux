@@ -172,11 +172,20 @@ class AgentMonitor
                 break;
 
             case Status::Idle:
-                // Agent finished — capture full output as the task result
-                $output = $this->bridge->captureOutput($agent, 200);
-                $this->taskQueue->complete($taskId, $agent->id, $output);
-                $this->db->updateAgentStatus($agent->id, 'idle', null);
-                $this->emit($taskId, $agent->id, 'task_completed', ['result' => $output]);
+                // Agent is at the prompt while owning a task.
+                // Do NOT auto-complete — wait for the agent to call task_complete via MCP.
+                // If the agent has been idle for a long time, the prompt was likely never
+                // delivered or the agent finished without calling MCP. Requeue the task.
+                $task = $this->db->getTask($taskId);
+                if ($task && $task->claimedAt) {
+                    $claimedAgo = time() - strtotime($task->claimedAt);
+                    if ($claimedAgo > 120) {
+                        // 2 minutes idle with a task = delivery failure, requeue
+                        $this->taskQueue->requeue($taskId, 'Agent idle too long — delivery likely failed');
+                        $this->db->updateAgentStatus($agent->id, 'idle', null);
+                        $this->emit($taskId, $agent->id, 'task_requeued', ['reason' => 'idle_timeout']);
+                    }
+                }
                 break;
 
             case Status::Error:
