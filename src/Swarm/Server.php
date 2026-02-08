@@ -451,6 +451,7 @@ class Server
                 if ($agent) {
                     $this->log("Agent registered: {$agent->name} ({$agent->id})");
                     $this->wsHandler?->pushAgentEvent('agent_registered', $agent->toArray());
+                    $this->taskDispatcher?->triggerDispatch();
                 }
                 break;
 

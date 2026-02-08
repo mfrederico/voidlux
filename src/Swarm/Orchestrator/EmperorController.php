@@ -431,6 +431,8 @@ class EmperorController
             maxConcurrentTasks: (int) ($body['max_concurrent_tasks'] ?? 1),
         );
 
+        $this->taskDispatcher?->triggerDispatch();
+
         $response->status(201);
         $this->json($response, $agent->toArray());
     }
