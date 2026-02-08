@@ -56,8 +56,10 @@ class AgentBridge
         // Build the task prompt
         $prompt = $this->buildTaskPrompt($task);
 
-        // Send to tmux — wait for paste to render, then Enter to submit
-        $sent = $this->tmux->sendTextByName($sessionName, $prompt);
+        // Paste into tmux using load-buffer + paste-buffer (bracketed paste mode).
+        // Unlike send-keys -l, this handles newlines, emojis, and special characters
+        // correctly — the entire text is treated as a single paste operation.
+        $sent = $this->tmux->pasteTextByName($sessionName, $prompt);
         usleep(500_000); // Claude Code needs time to process pasted text
         $this->tmux->sendEnterByName($sessionName);
 
@@ -105,7 +107,7 @@ class AgentBridge
             return false;
         }
 
-        $sent = $this->tmux->sendTextByName($sessionName, $text);
+        $sent = $this->tmux->pasteTextByName($sessionName, $text);
         $this->tmux->sendEnterByName($sessionName);
         return $sent;
     }
