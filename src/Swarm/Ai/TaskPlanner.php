@@ -77,12 +77,18 @@ PROMPT;
         }
         $userPrompt .= "\n## Available Agent Capabilities\n{$capsList}\n";
 
+        $this->log("Decomposing task: {$request->title}");
         $response = $this->llm->chat($systemPrompt, $userPrompt);
         if ($response === null) {
+            $this->log("LLM returned null — decomposition failed");
             return [];
         }
 
-        return $this->parseResponse($response);
+        $this->log("LLM response (" . strlen($response) . " chars): " . substr($response, 0, 200));
+        $subtasks = $this->parseResponse($response);
+        $this->log("Parsed " . count($subtasks) . " subtask(s)");
+
+        return $subtasks;
     }
 
     /**
@@ -174,5 +180,11 @@ PROMPT;
         }
 
         return $subtasks;
+    }
+
+    private function log(string $message): void
+    {
+        $time = date('H:i:s');
+        echo "[{$time}][planner] {$message}\n";
     }
 }

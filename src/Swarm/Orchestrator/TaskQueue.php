@@ -109,6 +109,11 @@ class TaskQueue
             completedAt: $task->completedAt,
             createdAt: $task->createdAt,
             updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            parentId: $task->parentId,
+            workInstructions: $task->workInstructions,
+            acceptanceCriteria: $task->acceptanceCriteria,
+            reviewStatus: $task->reviewStatus,
+            reviewFeedback: $task->reviewFeedback,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::InProgress->value, $progress, $ts);
@@ -143,6 +148,11 @@ class TaskQueue
             completedAt: $task->completedAt,
             createdAt: $task->createdAt,
             updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            parentId: $task->parentId,
+            workInstructions: $task->workInstructions,
+            acceptanceCriteria: $task->acceptanceCriteria,
+            reviewStatus: $task->reviewStatus,
+            reviewFeedback: $task->reviewFeedback,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::WaitingInput->value, $question, $ts);

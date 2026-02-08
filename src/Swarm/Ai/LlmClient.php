@@ -56,6 +56,10 @@ class LlmClient
         $client->post('/v1/messages', $body);
 
         if ($client->statusCode !== 200) {
+            $this->log("LLM error: HTTP {$client->statusCode} from {$this->provider}/{$model}");
+            if ($client->body) {
+                $this->log("LLM response: " . substr($client->body, 0, 200));
+            }
             $client->close();
             return null;
         }
@@ -74,5 +78,11 @@ class LlmClient
     public function getModel(): string
     {
         return $this->model;
+    }
+
+    private function log(string $message): void
+    {
+        $time = date('H:i:s');
+        echo "[{$time}][llm] {$message}\n";
     }
 }

@@ -45,13 +45,24 @@ PROMPT;
         $userPrompt .= "\n## Acceptance Criteria\n{$task->acceptanceCriteria}\n";
         $userPrompt .= "\n## Agent's Result\n{$result}\n";
 
+        $this->log("Reviewing task: {$task->title}");
         $response = $this->llm->chat($systemPrompt, $userPrompt);
         if ($response === null) {
-            // LLM unavailable — auto-accept to avoid blocking
+            $this->log("LLM unavailable — auto-accepting");
             return new ReviewResult(true, 'Auto-accepted: LLM reviewer unavailable.');
         }
 
-        return $this->parseResponse($response);
+        $this->log("Review response: " . substr($response, 0, 200));
+        $result = $this->parseResponse($response);
+        $this->log("Review verdict: " . ($result->accepted ? 'ACCEPTED' : 'REJECTED') . " — {$result->feedback}");
+
+        return $result;
+    }
+
+    private function log(string $message): void
+    {
+        $time = date('H:i:s');
+        echo "[{$time}][reviewer] {$message}\n";
     }
 
     private function parseResponse(string $response): ReviewResult

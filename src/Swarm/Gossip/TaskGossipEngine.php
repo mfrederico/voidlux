@@ -154,6 +154,11 @@ class TaskGossipEngine
                 completedAt: $task->completedAt,
                 createdAt: $task->createdAt,
                 updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+                parentId: $task->parentId,
+                workInstructions: $task->workInstructions,
+                acceptanceCriteria: $task->acceptanceCriteria,
+                reviewStatus: $task->reviewStatus,
+                reviewFeedback: $task->reviewFeedback,
             );
             $this->db->updateTask($updated);
         }
@@ -209,6 +214,11 @@ class TaskGossipEngine
                 completedAt: gmdate('Y-m-d\TH:i:s\Z'),
                 createdAt: $task->createdAt,
                 updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+                parentId: $task->parentId,
+                workInstructions: $task->workInstructions,
+                acceptanceCriteria: $task->acceptanceCriteria,
+                reviewStatus: $task->reviewStatus,
+                reviewFeedback: $task->reviewFeedback,
             );
             $this->db->updateTask($updated);
         }
@@ -263,6 +273,11 @@ class TaskGossipEngine
                 completedAt: gmdate('Y-m-d\TH:i:s\Z'),
                 createdAt: $task->createdAt,
                 updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+                parentId: $task->parentId,
+                workInstructions: $task->workInstructions,
+                acceptanceCriteria: $task->acceptanceCriteria,
+                reviewStatus: $task->reviewStatus,
+                reviewFeedback: $task->reviewFeedback,
             );
             $this->db->updateTask($updated);
         }
