@@ -114,6 +114,7 @@ class TaskQueue
             acceptanceCriteria: $task->acceptanceCriteria,
             reviewStatus: $task->reviewStatus,
             reviewFeedback: $task->reviewFeedback,
+            archived: $task->archived,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::InProgress->value, $progress, $ts);
@@ -153,6 +154,7 @@ class TaskQueue
             acceptanceCriteria: $task->acceptanceCriteria,
             reviewStatus: $task->reviewStatus,
             reviewFeedback: $task->reviewFeedback,
+            archived: $task->archived,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::WaitingInput->value, $question, $ts);
@@ -230,6 +232,7 @@ class TaskQueue
             acceptanceCriteria: $task->acceptanceCriteria,
             reviewStatus: $task->reviewStatus,
             reviewFeedback: $task->reviewFeedback,
+            archived: $task->archived,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskComplete($taskId, $agentId, $result, $ts);
@@ -282,6 +285,7 @@ class TaskQueue
                 acceptanceCriteria: $task->acceptanceCriteria,
                 reviewStatus: 'accepted',
                 reviewFeedback: $reviewResult->feedback,
+                archived: $task->archived,
             );
             $this->db->updateTask($updated);
             $this->gossip->gossipTaskComplete($taskId, $task->assignedTo ?? '', $task->result, $ts);
@@ -341,6 +345,7 @@ class TaskQueue
                 acceptanceCriteria: $task->acceptanceCriteria,
                 reviewStatus: 'rejected',
                 reviewFeedback: $feedbackHistory,
+                archived: $task->archived,
             );
             $this->db->updateTask($updated);
             $this->gossip->gossipTaskUpdate($taskId, '', TaskStatus::Pending->value, null, $ts);
@@ -381,6 +386,7 @@ class TaskQueue
             acceptanceCriteria: $task->acceptanceCriteria,
             reviewStatus: $task->reviewStatus,
             reviewFeedback: $task->reviewFeedback,
+            archived: $task->archived,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskFail($taskId, $agentId, $error, $ts);
@@ -447,6 +453,7 @@ class TaskQueue
             acceptanceCriteria: $parent->acceptanceCriteria,
             reviewStatus: $parent->reviewStatus,
             reviewFeedback: $parent->reviewFeedback,
+            archived: $parent->archived,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskComplete($parentId, '', $result, $ts);
@@ -496,5 +503,51 @@ class TaskQueue
     public function getNextPendingTask(array $capabilities): ?TaskModel
     {
         return $this->db->getNextPendingTask($capabilities);
+    }
+
+    /**
+     * Archive a single terminal task. Returns the updated task or null.
+     */
+    public function archiveTask(string $taskId): ?TaskModel
+    {
+        $task = $this->db->getTask($taskId);
+        if (!$task || !$task->status->isTerminal()) {
+            return null;
+        }
+
+        $ts = $this->clock->tick();
+        $this->db->archiveTask($taskId);
+        $this->gossip->gossipTaskArchive($taskId, $ts);
+
+        return $this->db->getTask($taskId);
+    }
+
+    /**
+     * Archive all terminal tasks. Returns IDs of archived tasks.
+     * @return string[]
+     */
+    public function archiveAllTerminal(): array
+    {
+        // Get terminal tasks that aren't archived yet
+        $tasks = $this->db->getTasksByStatus();
+        $terminalIds = [];
+        foreach ($tasks as $task) {
+            if ($task->status->isTerminal() && !$task->archived) {
+                $terminalIds[] = $task->id;
+            }
+        }
+
+        if (empty($terminalIds)) {
+            return [];
+        }
+
+        $this->db->archiveAllTerminal();
+        $ts = $this->clock->tick();
+
+        foreach ($terminalIds as $id) {
+            $this->gossip->gossipTaskArchive($id, $ts);
+        }
+
+        return $terminalIds;
     }
 }

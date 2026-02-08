@@ -1,0 +1,8 @@
+{
+    "mcpServers": {
+        "voidlux-swarm": {
+            "type": "http",
+            "url": "http://localhost:9090/mcp"
+        }
+    }
+}

@@ -8,6 +8,9 @@ use Swoole\WebSocket\Server as WsServer;
 
 /**
  * WebSocket handler for real-time swarm dashboard updates.
+ *
+ * Pushes full state on connect and incremental updates on events.
+ * The dashboard renders entirely from WS-pushed data — no HTTP polling.
  */
 class SwarmWebSocketHandler
 {
@@ -28,30 +31,72 @@ class SwarmWebSocketHandler
         unset($this->fds[$fd]);
     }
 
-    public function pushTaskEvent(string $event, array $data): void
+    /**
+     * Send full state to a single client (on WS connect/reconnect).
+     * @param array<array> $tasks Array of task toArray() objects
+     * @param array<array> $agents Array of agent toArray() objects
+     */
+    public function pushFullState(int $fd, array $tasks, array $agents, array $status): void
     {
-        $this->broadcast([
-            'type' => 'task_event',
-            'event' => $event,
-            'data' => $data,
+        $this->pushTo($fd, [
+            'type' => 'full_state',
+            'tasks' => $tasks,
+            'agents' => $agents,
+            'status' => $status,
         ]);
     }
 
-    public function pushAgentEvent(string $event, array $data): void
+    /**
+     * Broadcast a full task object on any task state change.
+     */
+    public function pushTaskUpdate(string $event, array $taskData): void
     {
         $this->broadcast([
-            'type' => 'agent_event',
+            'type' => 'task_update',
             'event' => $event,
-            'data' => $data,
+            'task' => $taskData,
         ]);
     }
 
+    /**
+     * Broadcast a full agent object on any agent state change.
+     */
+    public function pushAgentUpdate(string $event, array $agentData): void
+    {
+        $this->broadcast([
+            'type' => 'agent_update',
+            'event' => $event,
+            'agent' => $agentData,
+        ]);
+    }
+
+    /**
+     * Broadcast agent removal.
+     */
+    public function pushAgentRemoved(string $agentId): void
+    {
+        $this->broadcast([
+            'type' => 'agent_removed',
+            'agent_id' => $agentId,
+        ]);
+    }
+
+    /**
+     * Broadcast emperor/election status updates.
+     */
     public function pushStatus(array $status): void
     {
         $this->broadcast([
             'type' => 'status',
             'status' => $status,
         ]);
+    }
+
+    private function pushTo(int $fd, array $payload): void
+    {
+        if ($this->server->isEstablished($fd)) {
+            $this->server->push($fd, json_encode($payload, JSON_UNESCAPED_SLASHES));
+        }
     }
 
     private function broadcast(array $payload): void

@@ -109,6 +109,14 @@ class EmperorController
                 $this->handleClearTasks($response);
                 break;
 
+            case $path === '/api/swarm/tasks/archive-all' && $method === 'POST':
+                $this->handleArchiveAll($response);
+                break;
+
+            case preg_match('#^/api/swarm/tasks/([^/]+)/archive$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleArchiveTask($m[1], $response);
+                break;
+
             case preg_match('#^/api/swarm/tasks/([^/]+)/cancel$#', $path, $m) === 1 && $method === 'POST':
                 $this->handleCancelTask($m[1], $response);
                 break;
@@ -311,6 +319,26 @@ class EmperorController
             return;
         }
         $this->json($response, ['status' => 'cancelled', 'task_id' => $taskId]);
+    }
+
+    private function handleArchiveTask(string $taskId, Response $response): void
+    {
+        $task = $this->taskQueue->archiveTask($taskId);
+        if (!$task) {
+            $response->status(409);
+            $this->json($response, ['error' => 'Cannot archive task (not found or not terminal)']);
+            return;
+        }
+        $this->json($response, $task->toArray());
+    }
+
+    private function handleArchiveAll(Response $response): void
+    {
+        $archivedIds = $this->taskQueue->archiveAllTerminal();
+        $this->json($response, [
+            'archived' => count($archivedIds),
+            'task_ids' => $archivedIds,
+        ]);
     }
 
     private function handleReviewTask(string $taskId, Request $request, Response $response): void

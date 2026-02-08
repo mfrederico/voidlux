@@ -117,6 +117,7 @@ class Server
 
         $server->on('open', function (WsServer $srv, Request $request) {
             $this->wsHandler->onOpen($request->fd);
+            $this->pushFullStateToClient($request->fd);
         });
 
         $server->on('message', function (WsServer $srv, Frame $frame) {
@@ -201,10 +202,20 @@ class Server
         // Wire agent monitor events to WebSocket
         $this->agentMonitor->onEvent(function (string $taskId, string $agentId, string $event, array $data) {
             $this->log("Event: {$event} task={$taskId} agent={$agentId}");
-            $this->wsHandler?->pushTaskEvent($event, array_merge($data, [
-                'task_id' => $taskId,
-                'agent_id' => $agentId,
-            ]));
+            if ($taskId) {
+                $task = $this->db->getTask($taskId);
+                if ($task) {
+                    $this->wsHandler?->pushTaskUpdate($event, $task->toArray());
+                }
+            }
+            if ($agentId && str_starts_with($event, 'agent_')) {
+                $agent = $this->db->getAgent($agentId);
+                if ($agent) {
+                    $this->wsHandler?->pushAgentUpdate($event, $agent->toArray());
+                } elseif ($event === 'agent_stopped') {
+                    $this->wsHandler?->pushAgentRemoved($agentId);
+                }
+            }
         });
     }
 
@@ -322,16 +333,11 @@ class Server
             $this->leaderElection->start();
         });
 
-        // Periodic status to WS + clock persistence
+        // Periodic clock persistence (no WS push — dashboard is fully WS-driven)
         $this->running = true;
         Coroutine::create(function () {
             while ($this->running) {
-                Coroutine::sleep(5);
-                $this->wsHandler?->pushStatus([
-                    'tasks' => $this->db->getTaskCount(),
-                    'agents' => $this->db->getAgentCount(),
-                    'peers' => $this->peerManager->getPeerCount(),
-                ]);
+                Coroutine::sleep(30);
                 $this->db->setState('lamport_clock', (string) $this->clock->value());
             }
         });
@@ -390,7 +396,7 @@ class Server
                 $task = $this->taskGossip->receiveTaskCreate($msg['task'] ?? [], $conn->address());
                 if ($task) {
                     $this->log("Received task: {$task->id} '{$task->title}'");
-                    $this->wsHandler?->pushTaskEvent('task_created', $task->toArray());
+                    $this->wsHandler?->pushTaskUpdate('task_created', $task->toArray());
                     $this->taskDispatcher?->triggerDispatch();
                 }
                 break;
@@ -404,14 +410,14 @@ class Server
                         $msg['node_id'] ?? '',
                         $msg['lamport_ts'] ?? 0,
                     );
-                    $this->wsHandler?->pushTaskEvent('task_claimed', $msg);
+                    $this->pushTaskToWs('task_claimed', $msg['task_id'] ?? '');
                 }
                 break;
 
             case MessageTypes::TASK_UPDATE:
                 $isNew = $this->taskGossip->receiveTaskUpdate($msg, $conn->address());
                 if ($isNew) {
-                    $this->wsHandler?->pushTaskEvent('task_progress', $msg);
+                    $this->pushTaskToWs('task_progress', $msg['task_id'] ?? '');
                     if (($msg['status'] ?? '') === 'pending') {
                         $this->taskDispatcher?->triggerDispatch();
                     }
@@ -421,7 +427,7 @@ class Server
             case MessageTypes::TASK_COMPLETE:
                 $isNew = $this->taskGossip->receiveTaskComplete($msg, $conn->address());
                 if ($isNew) {
-                    $this->wsHandler?->pushTaskEvent('task_completed', $msg);
+                    $this->pushTaskToWs('task_completed', $msg['task_id'] ?? '');
                     $this->taskDispatcher?->triggerDispatch();
                 }
                 break;
@@ -429,7 +435,7 @@ class Server
             case MessageTypes::TASK_FAIL:
                 $isNew = $this->taskGossip->receiveTaskFail($msg, $conn->address());
                 if ($isNew) {
-                    $this->wsHandler?->pushTaskEvent('task_failed', $msg);
+                    $this->pushTaskToWs('task_failed', $msg['task_id'] ?? '');
                     $this->taskDispatcher?->triggerDispatch();
                 }
                 break;
@@ -437,7 +443,14 @@ class Server
             case MessageTypes::TASK_CANCEL:
                 $isNew = $this->taskGossip->receiveTaskCancel($msg, $conn->address());
                 if ($isNew) {
-                    $this->wsHandler?->pushTaskEvent('task_cancelled', $msg);
+                    $this->pushTaskToWs('task_cancelled', $msg['task_id'] ?? '');
+                }
+                break;
+
+            case MessageTypes::TASK_ARCHIVE:
+                $isNew = $this->taskGossip->receiveTaskArchive($msg, $conn->address());
+                if ($isNew) {
+                    $this->pushTaskToWs('task_archived', $msg['task_id'] ?? '');
                 }
                 break;
 
@@ -450,15 +463,24 @@ class Server
                 $agent = $this->taskGossip->receiveAgentRegister($msg, $conn->address());
                 if ($agent) {
                     $this->log("Agent registered: {$agent->name} ({$agent->id})");
-                    $this->wsHandler?->pushAgentEvent('agent_registered', $agent->toArray());
+                    $this->wsHandler?->pushAgentUpdate('agent_registered', $agent->toArray());
                     $this->taskDispatcher?->triggerDispatch();
                 }
                 break;
 
             case MessageTypes::AGENT_HEARTBEAT:
+                $prevAgent = $this->db->getAgent($msg['agent_id'] ?? '');
+                $prevStatus = $prevAgent?->status;
                 $this->taskGossip->receiveAgentHeartbeat($msg, $conn->address());
-                // Idle agent heartbeat may mean a new agent is ready for work
-                if (($msg['status'] ?? '') === 'idle') {
+                $newStatus = $msg['status'] ?? '';
+                // Push agent update if status changed
+                if ($prevStatus !== $newStatus) {
+                    $agent = $this->db->getAgent($msg['agent_id'] ?? '');
+                    if ($agent) {
+                        $this->wsHandler?->pushAgentUpdate('agent_heartbeat', $agent->toArray());
+                    }
+                }
+                if ($newStatus === 'idle') {
                     $this->taskDispatcher?->triggerDispatch();
                 }
                 break;
@@ -467,7 +489,7 @@ class Server
                 $removedId = $this->taskGossip->receiveAgentDeregister($msg, $conn->address());
                 if ($removedId) {
                     $this->log("Agent deregistered: {$removedId}");
-                    $this->wsHandler?->pushAgentEvent('agent_deregistered', ['agent_id' => $removedId]);
+                    $this->wsHandler?->pushAgentRemoved($removedId);
                 }
                 break;
 
@@ -518,6 +540,33 @@ class Server
                     $this->log("Synced {$count} agent(s) from {$conn->address()}");
                 }
                 break;
+        }
+    }
+
+    private function pushFullStateToClient(int $fd): void
+    {
+        $tasks = array_map(fn($t) => $t->toArray(), $this->taskQueue->getTasks());
+        $agents = array_map(fn($a) => $a->toArray(), $this->db->getAllAgents());
+        $status = [
+            'node_id' => $this->nodeId,
+            'tasks' => $this->db->getTaskCount(),
+            'agents' => $this->db->getAgentCount(),
+            'peers' => $this->peerManager->getPeerCount(),
+        ];
+        $this->wsHandler->pushFullState($fd, $tasks, $agents, $status);
+    }
+
+    /**
+     * Read a task from DB and push it to all WS clients.
+     */
+    private function pushTaskToWs(string $event, string $taskId): void
+    {
+        if (!$taskId) {
+            return;
+        }
+        $task = $this->db->getTask($taskId);
+        if ($task) {
+            $this->wsHandler?->pushTaskUpdate($event, $task->toArray());
         }
     }
 
@@ -633,11 +682,11 @@ class Server
         }
 
         $this->log("TASK_ASSIGN: delivered task '{$task->title}' to agent {$agent->name}");
-        $this->wsHandler?->pushTaskEvent('task_assigned', [
-            'task_id' => $taskId,
-            'agent_id' => $agentId,
-            'title' => $task->title ?? '',
-        ]);
+        $this->pushTaskToWs('task_assigned', $taskId);
+        $agent = $this->db->getAgent($agentId);
+        if ($agent) {
+            $this->wsHandler?->pushAgentUpdate('agent_busy', $agent->toArray());
+        }
     }
 
     private function spawnReplacementWorker(): void

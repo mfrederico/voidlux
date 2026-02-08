@@ -139,6 +139,21 @@ body {
 .log-entry.event-task_assigned { color: #66aaff; }
 .log-entry.event-agent_waiting { color: #cccc66; }
 
+.archive-btn {
+    background: #1a1a2a !important; border: 1px solid #334466 !important; color: #6688cc !important;
+}
+.archive-btn:hover { background: #2a2a3a !important; color: #88aaee !important; }
+.job-log-toggle {
+    background: none; border: 1px solid #333; color: #888; padding: 4px 12px;
+    border-radius: 3px; cursor: pointer; font-size: 0.75rem; font-family: inherit; margin-left: 8px;
+}
+.job-log-toggle:hover { border-color: #666; color: #ccc; }
+.job-log-card {
+    background: #0d0d0d; border: 1px solid #1a1a1a; border-radius: 4px;
+    padding: 10px 14px; margin-bottom: 6px;
+}
+.job-log-card .card-title { font-size: 0.85rem; margin-bottom: 4px; }
+.job-log-card .card-meta { font-size: 0.7rem; }
 .empty { text-align: center; padding: 30px; color: #444; }
 .subtask-card { border-left: 3px solid #444; margin-left: 16px; }
 .parent-card { border-left: 3px solid #cc6600; }
@@ -229,10 +244,15 @@ body {
     </div>
 
     <div class="section">
-        <h2>Tasks</h2>
+        <h2>Tasks <button class="archive-btn" onclick="archiveAll()" style="font-size:0.7rem;padding:3px 10px;border-radius:3px;cursor:pointer;font-family:inherit;" id="archive-all-btn">Archive All</button></h2>
         <div class="card-grid" id="task-list">
             <div class="empty">No tasks yet</div>
         </div>
+    </div>
+
+    <div class="section" id="job-log-section" style="display:none;">
+        <h2>Job Log <button class="job-log-toggle" id="job-log-toggle" onclick="toggleJobLog()">show</button> <span style="font-size:0.75rem;color:#666;" id="job-log-count"></span></h2>
+        <div id="job-log-list" style="display:none;"></div>
     </div>
 
     <div class="section">
@@ -281,6 +301,9 @@ document.getElementById('emperor-id').textContent = NODE_ID.substring(0, 12) + '
 document.getElementById('task-project-path').value = WORKBENCH;
 document.getElementById('agent-project-path').value = WORKBENCH;
 
+// ---- Client-side state (populated entirely via WebSocket) ----
+let state = { tasks: {}, agents: {}, status: {} };
+
 let emperorNodeId = NODE_ID;
 function updateEmperorBanner(empId) {
     const banner = document.getElementById('emperor-banner');
@@ -316,16 +339,14 @@ function statusBadge(status) {
     return '<span class="card-status status-'+status+'">'+status+'</span>';
 }
 
-let agentMap = {}; // id -> {name, ...}
-let taskChildren = {}; // parent_id -> [subtasks]
-
 function renderTask(t, isSubtask) {
-    const agentName = t.assigned_to ? (agentMap[t.assigned_to]?.name || t.assigned_to.substring(0,8)) : null;
+    const agent = state.agents[t.assigned_to];
+    const agentName = t.assigned_to ? (agent?.name || t.assigned_to.substring(0,8)) : null;
     const isActive = t.status === 'claimed' || t.status === 'in_progress' || t.status === 'waiting_input';
-    const cardClass = isSubtask ? 'card subtask-card' : (t.parent_id === null && taskChildren[t.id] ? 'card parent-card' : 'card');
+    const children = getTaskChildren(t.id);
+    const cardClass = isSubtask ? 'card subtask-card' : (t.parent_id === null && children.length ? 'card parent-card' : 'card');
     let html = '<div class="'+cardClass+'" id="task-'+t.id+'">';
 
-    // Planning spinner
     if (t.status === 'planning') {
         html += '<div class="card-title">'+escapeHtml(t.title)+' '+statusBadge(t.status)+' <span class="planning-spinner" style="font-size:0.8rem;">&#9881;</span></div>';
         html += '<div style="font-size:0.85rem;color:#bb88ff;margin:4px 0;">Emperor is analyzing and decomposing this request...</div>';
@@ -333,18 +354,14 @@ function renderTask(t, isSubtask) {
         html += '<div class="card-title">'+escapeHtml(t.title)+' '+statusBadge(t.status)+'</div>';
     }
 
-    // Parent task: show subtask progress
-    if (!isSubtask && taskChildren[t.id]) {
-        const children = taskChildren[t.id];
+    if (!isSubtask && children.length) {
         const done = children.filter(c => c.status === 'completed').length;
-        const total = children.length;
-        html += '<div class="subtask-progress">Subtasks: '+done+'/'+total+' completed</div>';
+        html += '<div class="subtask-progress">Subtasks: '+done+'/'+children.length+' completed</div>';
     }
 
     if (t.description) html += '<div style="font-size:0.85rem;color:#aaa;margin-bottom:4px;">'+escapeHtml(t.description).substring(0,120)+'</div>';
     if (agentName) html += '<div style="font-size:0.8rem;color:#668;" title="'+t.assigned_to+'">Agent: '+escapeHtml(agentName)+'</div>';
 
-    // Review status
     if (t.status === 'pending_review') {
         html += '<div style="margin:6px 0;"><span class="review-badge">Awaiting Review</span></div>';
         html += '<div class="card-actions"><button onclick="reviewTask(\''+t.id+'\',true)" style="background:#1a3a1a;border:1px solid #336633;color:#66cc66;">Accept</button>';
@@ -365,7 +382,6 @@ function renderTask(t, isSubtask) {
     }
     if (t.error) html += '<div style="font-size:0.8rem;color:#a66;">Error: '+escapeHtml(t.error).substring(0,100)+'</div>';
 
-    // Work instructions / acceptance criteria detail toggle
     if (t.work_instructions || t.acceptance_criteria) {
         html += '<details style="margin-top:6px;font-size:0.8rem;"><summary style="cursor:pointer;color:#888;">Work Details</summary>';
         if (t.work_instructions) html += '<div style="color:#aaa;margin:4px 0;"><strong>Instructions:</strong> '+escapeHtml(t.work_instructions).substring(0,300)+'</div>';
@@ -383,6 +399,9 @@ function renderTask(t, isSubtask) {
     }
     if (isActive || t.status === 'pending_review') {
         html += '<button onclick="cancelTask(\''+t.id+'\')">Cancel</button>';
+    }
+    if (t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled') {
+        html += '<button class="archive-btn" onclick="archiveTask(\''+t.id+'\')">Archive</button>';
     }
     html += '</div>';
     if (t.status === 'waiting_input') {
@@ -402,15 +421,18 @@ function renderTask(t, isSubtask) {
         html += '</div>';
     }
 
-    // Render subtasks inline
-    if (!isSubtask && taskChildren[t.id]) {
+    if (!isSubtask && children.length) {
         html += '<div style="margin-top:8px;">';
-        taskChildren[t.id].forEach(sub => { html += renderTask(sub, true); });
+        children.forEach(sub => { html += renderTask(sub, true); });
         html += '</div>';
     }
 
     html += '</div>';
     return html;
+}
+
+function getTaskChildren(parentId) {
+    return Object.values(state.tasks).filter(t => t.parent_id === parentId);
 }
 
 function renderAgent(a) {
@@ -437,7 +459,7 @@ function addLog(event, msg) {
     if (panel.children.length > 100) panel.removeChild(panel.lastChild);
 }
 
-// Save focused input state before DOM replacement
+// Save/restore focused input state across DOM replacement
 function saveFocusState() {
     const active = document.activeElement;
     if (active && active.tagName === 'INPUT' && active.id) {
@@ -445,63 +467,124 @@ function saveFocusState() {
     }
     return null;
 }
-
-// Restore focused input after DOM replacement
-function restoreFocusState(state) {
-    if (!state) return;
-    const el = document.getElementById(state.id);
+function restoreFocusState(fs) {
+    if (!fs) return;
+    const el = document.getElementById(fs.id);
     if (el && el.tagName === 'INPUT') {
-        el.value = state.value;
+        el.value = fs.value;
         el.focus();
-        try { el.setSelectionRange(state.selStart, state.selEnd); } catch(e) {}
+        try { el.setSelectionRange(fs.selStart, fs.selEnd); } catch(e) {}
     }
 }
 
-function refresh() {
-    fetch('/api/swarm/status').then(r=>r.json()).then(s => {
-        document.getElementById('task-count').textContent = s.tasks.total;
-        document.getElementById('agent-count').textContent = s.agents.total;
-        document.getElementById('stat-pending').textContent = s.tasks.pending;
-        document.getElementById('stat-planning').textContent = s.tasks.planning||0;
-        document.getElementById('stat-active').textContent = (s.tasks.claimed||0) + (s.tasks.in_progress||0) + (s.tasks.waiting_input||0);
-        document.getElementById('stat-review').textContent = s.tasks.pending_review||0;
-        document.getElementById('stat-completed').textContent = s.tasks.completed;
-        document.getElementById('stat-failed').textContent = s.tasks.failed;
-        document.getElementById('stat-agents').textContent = s.agents.total;
-    }).catch(()=>{});
-
-    // Fetch agents first so task rendering can resolve agent names
-    fetch('/api/swarm/agents').then(r=>r.json()).then(agents => {
-        agentMap = {};
-        agents.forEach(a => { agentMap[a.id] = a; });
-
-        // Only re-render agent list if user isn't focused inside it
-        const agentEl = document.getElementById('agent-list');
-        if (!agentEl.contains(document.activeElement)) {
-            agentEl.innerHTML = agents.length ? agents.map(renderAgent).join('') : '<div class="empty">No agents registered</div>';
+// ---- Render everything from client-side state ----
+function computeStats() {
+    const tasks = Object.values(state.tasks).filter(t => !t.archived);
+    let pending=0, planning=0, claimed=0, in_progress=0, waiting_input=0, pending_review=0, completed=0, failed=0;
+    tasks.forEach(t => {
+        switch(t.status) {
+            case 'pending': pending++; break;
+            case 'planning': planning++; break;
+            case 'claimed': claimed++; break;
+            case 'in_progress': in_progress++; break;
+            case 'waiting_input': waiting_input++; break;
+            case 'pending_review': pending_review++; break;
+            case 'completed': completed++; break;
+            case 'failed': failed++; break;
         }
-
-        // Now render tasks with agent lookup available
-        fetch('/api/swarm/tasks').then(r=>r.json()).then(tasks => {
-            // Build parent-child map
-            taskChildren = {};
-            const topLevel = [];
-            tasks.forEach(t => {
-                if (t.parent_id) {
-                    if (!taskChildren[t.parent_id]) taskChildren[t.parent_id] = [];
-                    taskChildren[t.parent_id].push(t);
-                } else {
-                    topLevel.push(t);
-                }
-            });
-            const taskEl = document.getElementById('task-list');
-            const focusState = saveFocusState();
-            taskEl.innerHTML = topLevel.length ? topLevel.map(t => renderTask(t, false)).join('') : '<div class="empty">No tasks yet</div>';
-            restoreFocusState(focusState);
-        }).catch(()=>{});
-    }).catch(()=>{});
+    });
+    const agentCount = Object.keys(state.agents).length;
+    document.getElementById('task-count').textContent = tasks.length;
+    document.getElementById('agent-count').textContent = agentCount;
+    document.getElementById('stat-pending').textContent = pending;
+    document.getElementById('stat-planning').textContent = planning;
+    document.getElementById('stat-active').textContent = claimed + in_progress + waiting_input;
+    document.getElementById('stat-review').textContent = pending_review;
+    document.getElementById('stat-completed').textContent = completed;
+    document.getElementById('stat-failed').textContent = failed;
+    document.getElementById('stat-agents').textContent = agentCount;
 }
 
+function renderAll() {
+    computeStats();
+
+    // Tasks — top-level only (subtasks rendered inline), exclude archived
+    const tasks = Object.values(state.tasks);
+    const topLevel = tasks.filter(t => !t.parent_id && !t.archived);
+    const taskEl = document.getElementById('task-list');
+    const focusState = saveFocusState();
+    taskEl.innerHTML = topLevel.length ? topLevel.map(t => renderTask(t, false)).join('') : '<div class="empty">No tasks yet</div>';
+    restoreFocusState(focusState);
+
+    // Show/hide Archive All button based on whether terminal tasks exist
+    const hasTerminal = tasks.some(t => !t.archived && (t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled'));
+    document.getElementById('archive-all-btn').style.display = hasTerminal ? '' : 'none';
+
+    // Job Log
+    renderJobLog();
+
+    // Agents
+    const agents = Object.values(state.agents);
+    const agentEl = document.getElementById('agent-list');
+    if (!agentEl.contains(document.activeElement)) {
+        agentEl.innerHTML = agents.length ? agents.map(renderAgent).join('') : '<div class="empty">No agents registered</div>';
+    }
+}
+
+function renderJobLog() {
+    const archived = Object.values(state.tasks).filter(t => t.archived);
+    const section = document.getElementById('job-log-section');
+    const countEl = document.getElementById('job-log-count');
+    const listEl = document.getElementById('job-log-list');
+
+    if (archived.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    section.style.display = '';
+    countEl.textContent = '(' + archived.length + ')';
+
+    if (listEl.style.display === 'none') return; // collapsed, skip rendering
+
+    // Sort by completed_at descending (most recent first)
+    archived.sort((a,b) => (b.completed_at || b.updated_at || '').localeCompare(a.completed_at || a.updated_at || ''));
+
+    let html = '';
+    archived.forEach(t => {
+        html += '<div class="job-log-card">';
+        html += '<div class="card-title">' + escapeHtml(t.title) + ' ' + statusBadge(t.status) + '</div>';
+        if (t.result) {
+            html += '<div style="font-size:0.8rem;color:#6a6;max-height:60px;overflow:hidden;white-space:pre-wrap;">' + escapeHtml(t.result).substring(0, 150) + '</div>';
+        }
+        if (t.error) {
+            html += '<div style="font-size:0.8rem;color:#a66;">' + escapeHtml(t.error).substring(0, 100) + '</div>';
+        }
+        html += '<div class="card-meta">' + (t.completed_at || t.updated_at) + '</div>';
+        html += '<div class="card-actions">';
+        if (t.result || t.error) {
+            html += '<button onclick="viewTaskResult(\'' + t.id + '\',\'' + escapeHtml(t.title).replace(/'/g, "\\'") + '\')">View Result</button>';
+        }
+        html += '</div></div>';
+    });
+    listEl.innerHTML = html;
+}
+
+let jobLogOpen = false;
+function toggleJobLog() {
+    jobLogOpen = !jobLogOpen;
+    document.getElementById('job-log-list').style.display = jobLogOpen ? '' : 'none';
+    document.getElementById('job-log-toggle').textContent = jobLogOpen ? 'hide' : 'show';
+    if (jobLogOpen) renderJobLog();
+}
+
+let _renderTimer = null;
+function scheduleRender() {
+    if (_renderTimer) return;
+    _renderTimer = setTimeout(() => { _renderTimer = null; renderAll(); }, 200);
+}
+
+// ---- User-initiated HTTP actions (no polling) ----
 function createTask(e) {
     e.preventDefault();
     const f = e.target;
@@ -522,7 +605,6 @@ function createTask(e) {
         f.title.value = '';
         f.description.value = '';
         addLog('task_created', 'Created task: '+t.title);
-        refresh();
     });
 }
 
@@ -539,7 +621,6 @@ function toggleModelField(sel) {
                     modelField.placeholder = 'No models found';
                     return;
                 }
-                // Replace input with select
                 const select = document.createElement('select');
                 select.name = 'model';
                 select.id = 'model-field';
@@ -579,7 +660,6 @@ function bulkRegister(e) {
         body: JSON.stringify(body)
     }).then(r=>r.json()).then(agents => {
         addLog('agent_registered', 'Registered '+agents.length+' agent(s)');
-        refresh();
     });
 }
 
@@ -587,7 +667,6 @@ function killPopulation() {
     if (!confirm('Kill all local agent sessions? Their tasks will be requeued.')) return;
     fetch('/api/swarm/agents/kill-all', {method:'POST'}).then(r=>r.json()).then(d => {
         addLog('agent_stopped', 'Killed '+d.killed+' agent(s)');
-        refresh();
     });
 }
 
@@ -595,7 +674,9 @@ function clearTasks() {
     if (!confirm('Clear all tasks? They will be archived to a .txt log file.')) return;
     fetch('/api/swarm/tasks/clear', {method:'POST'}).then(r=>r.json()).then(d => {
         addLog('task_completed', 'Cleared '+d.cleared+' task(s)' + (d.log_file ? ' → '+d.log_file : ''));
-        refresh();
+        // Clear local state since tasks are gone
+        state.tasks = {};
+        renderAll();
     });
 }
 
@@ -609,7 +690,30 @@ function regicide() {
 }
 
 function cancelTask(id) {
-    fetch('/api/swarm/tasks/'+id+'/cancel', {method:'POST'}).then(()=>refresh());
+    fetch('/api/swarm/tasks/'+id+'/cancel', {method:'POST'});
+}
+
+function archiveTask(id) {
+    fetch('/api/swarm/tasks/'+id+'/archive', {method:'POST'}).then(r=>r.json()).then(t => {
+        if (t.archived) {
+            state.tasks[t.id] = t;
+            addLog('task_archived', 'Archived: '+(t.title||t.id.substring(0,8)));
+            renderAll();
+        }
+    });
+}
+
+function archiveAll() {
+    fetch('/api/swarm/tasks/archive-all', {method:'POST'}).then(r=>r.json()).then(d => {
+        if (d.archived > 0) {
+            addLog('task_archived', 'Archived '+d.archived+' task(s)');
+            // Mark them archived locally
+            (d.task_ids || []).forEach(id => {
+                if (state.tasks[id]) state.tasks[id].archived = true;
+            });
+            renderAll();
+        }
+    });
 }
 
 function reviewTask(id, accepted) {
@@ -621,23 +725,21 @@ function reviewTask(id, accepted) {
         body: JSON.stringify({accepted: accepted, feedback: feedback})
     }).then(r=>r.json()).then(d => {
         addLog(accepted ? 'task_completed' : 'task_failed', (accepted ? 'Accepted' : 'Rejected')+': '+id.substring(0,8));
-        refresh();
     });
 }
 
 function deregisterAgent(id) {
-    fetch('/api/swarm/agents/'+id, {method:'DELETE'}).then(()=>refresh());
+    fetch('/api/swarm/agents/'+id, {method:'DELETE'});
 }
 
 function viewTaskOutput(agentId, taskTitle) {
-    const agent = agentMap[agentId];
+    const agent = state.agents[agentId];
     const name = agent ? agent.name : agentId.substring(0,8);
     document.getElementById('modal-title').textContent = 'Output: '+taskTitle+' ('+name+')';
     document.getElementById('modal-body').textContent = 'Loading...';
     document.getElementById('pane-modal').classList.add('active');
     fetch('/api/swarm/agents/'+agentId+'/output?lines=80').then(r=>r.json()).then(d => {
         document.getElementById('modal-body').textContent = d.output || '(empty)';
-        // Auto-scroll to bottom
         const body = document.getElementById('modal-body');
         body.scrollTop = body.scrollHeight;
     });
@@ -665,7 +767,7 @@ function sendRefine(agentId, taskId) {
         body: JSON.stringify({text: text})
     }).then(r=>r.json()).then(d => {
         if (d.sent) {
-            addLog('task_assigned', 'Sent refinement to '+(agentMap[agentId]?.name||agentId.substring(0,8)));
+            addLog('task_assigned', 'Sent refinement to '+(state.agents[agentId]?.name||agentId.substring(0,8)));
             input.value = '';
         } else {
             addLog('task_failed', 'Failed to send refinement');
@@ -701,39 +803,52 @@ function closeModal() {
 
 document.addEventListener('keydown', e => { if (e.key==='Escape') closeModal(); });
 
+// ---- WebSocket: the only data source ----
 let ws;
 function connectWs() {
     ws = new WebSocket('ws://'+location.host+'/ws');
-    ws.onopen = () => { document.getElementById('ws-status').textContent = 'connected'; };
+    ws.onopen = () => {
+        document.getElementById('ws-status').textContent = 'connected';
+    };
     ws.onclose = () => {
         document.getElementById('ws-status').textContent = 'reconnecting';
         setTimeout(connectWs, 2000);
     };
     ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
-        if (msg.type === 'task_event') {
-            addLog(msg.event, msg.event+': '+(msg.data.title || msg.data.task_id || ''));
-            // Debounced refresh — avoid flooding on rapid task events
-            clearTimeout(window._wsRefreshTimer);
-            window._wsRefreshTimer = setTimeout(refresh, 1000);
-        }
-        if (msg.type === 'agent_event') {
-            addLog(msg.event, msg.event+': '+(msg.data.agent_id || '').substring(0,8));
-            clearTimeout(window._wsRefreshTimer);
-            window._wsRefreshTimer = setTimeout(refresh, 1000);
-        }
-        if (msg.type === 'status') {
-            if (msg.status.tasks !== undefined) document.getElementById('task-count').textContent = msg.status.tasks;
-            if (msg.status.agents !== undefined) document.getElementById('agent-count').textContent = msg.status.agents;
-            if (msg.status.emperor !== undefined) updateEmperorBanner(msg.status.emperor);
-            if (msg.status.promoted) addLog('election', 'This node promoted to emperor');
+        switch (msg.type) {
+            case 'full_state':
+                state.tasks = {};
+                state.agents = {};
+                msg.tasks.forEach(t => { state.tasks[t.id] = t; });
+                msg.agents.forEach(a => { state.agents[a.id] = a; });
+                state.status = msg.status || {};
+                renderAll();
+                break;
+            case 'task_update':
+                state.tasks[msg.task.id] = msg.task;
+                addLog(msg.event, msg.event+': '+(msg.task.title||msg.task.id.substring(0,8)));
+                scheduleRender();
+                break;
+            case 'agent_update':
+                state.agents[msg.agent.id] = msg.agent;
+                addLog(msg.event, msg.event+': '+(msg.agent.name||msg.agent.id.substring(0,8)));
+                scheduleRender();
+                break;
+            case 'agent_removed':
+                delete state.agents[msg.agent_id];
+                addLog('agent_deregistered', 'agent_deregistered: '+msg.agent_id.substring(0,8));
+                scheduleRender();
+                break;
+            case 'status':
+                if (msg.status.emperor !== undefined) updateEmperorBanner(msg.status.emperor);
+                if (msg.status.promoted) addLog('election', 'This node promoted to emperor');
+                break;
         }
     };
 }
 
-refresh();
 connectWs();
-setInterval(refresh, 30000);
 JS
         . "\n</script>\n</body>\n</html>";
     }

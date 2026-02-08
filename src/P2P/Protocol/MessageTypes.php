@@ -26,6 +26,7 @@ class MessageTypes
     public const TASK_FAIL     = 0x14;
     public const TASK_CANCEL   = 0x15;
     public const TASK_ASSIGN   = 0x16;
+    public const TASK_ARCHIVE  = 0x17;
 
     // Swarm agent messages
     public const AGENT_REGISTER   = 0x20;
@@ -61,6 +62,7 @@ class MessageTypes
         self::TASK_FAIL       => 'TASK_FAIL',
         self::TASK_CANCEL     => 'TASK_CANCEL',
         self::TASK_ASSIGN     => 'TASK_ASSIGN',
+        self::TASK_ARCHIVE    => 'TASK_ARCHIVE',
         self::AGENT_REGISTER   => 'AGENT_REGISTER',
         self::AGENT_HEARTBEAT  => 'AGENT_HEARTBEAT',
         self::AGENT_DEREGISTER => 'AGENT_DEREGISTER',

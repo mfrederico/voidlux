@@ -103,6 +103,12 @@ class SwarmDatabase
             }
         }
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id)');
+
+        // Add archived column for job log
+        if (!in_array('archived', $existing, true)) {
+            $this->pdo->exec("ALTER TABLE tasks ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
+        }
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived)');
     }
 
     // --- Task operations ---
@@ -114,12 +120,14 @@ class SwarmDatabase
                 (id, title, description, status, priority, required_capabilities, created_by,
                  assigned_to, assigned_node, result, error, progress, project_path, context,
                  lamport_ts, claimed_at, completed_at, created_at, updated_at,
-                 parent_id, work_instructions, acceptance_criteria, review_status, review_feedback)
+                 parent_id, work_instructions, acceptance_criteria, review_status, review_feedback,
+                 archived)
             VALUES
                 (:id, :title, :description, :status, :priority, :required_capabilities, :created_by,
                  :assigned_to, :assigned_node, :result, :error, :progress, :project_path, :context,
                  :lamport_ts, :claimed_at, :completed_at, :created_at, :updated_at,
-                 :parent_id, :work_instructions, :acceptance_criteria, :review_status, :review_feedback)
+                 :parent_id, :work_instructions, :acceptance_criteria, :review_status, :review_feedback,
+                 :archived)
         ');
 
         return $stmt->execute([
@@ -147,6 +155,7 @@ class SwarmDatabase
             ':acceptance_criteria' => $task->acceptanceCriteria,
             ':review_status' => $task->reviewStatus,
             ':review_feedback' => $task->reviewFeedback,
+            ':archived' => $task->archived ? 1 : 0,
         ]);
     }
 
@@ -163,7 +172,7 @@ class SwarmDatabase
                 completed_at = :completed_at, updated_at = :updated_at,
                 parent_id = :parent_id, work_instructions = :work_instructions,
                 acceptance_criteria = :acceptance_criteria, review_status = :review_status,
-                review_feedback = :review_feedback
+                review_feedback = :review_feedback, archived = :archived
             WHERE id = :id
         ');
 
@@ -190,6 +199,7 @@ class SwarmDatabase
             ':acceptance_criteria' => $task->acceptanceCriteria,
             ':review_status' => $task->reviewStatus,
             ':review_feedback' => $task->reviewFeedback,
+            ':archived' => $task->archived ? 1 : 0,
         ]);
     }
 
@@ -371,6 +381,31 @@ class SwarmDatabase
             ':updated_at' => $now,
         ]);
         return $stmt->rowCount() > 0;
+    }
+
+    /**
+     * Archive a task (set archived = 1).
+     */
+    public function archiveTask(string $id): bool
+    {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $stmt = $this->pdo->prepare('UPDATE tasks SET archived = 1, updated_at = :updated_at WHERE id = :id');
+        $stmt->execute([':id' => $id, ':updated_at' => $now]);
+        return $stmt->rowCount() > 0;
+    }
+
+    /**
+     * Archive all terminal tasks (completed, failed, cancelled).
+     * @return int Number of tasks archived
+     */
+    public function archiveAllTerminal(): int
+    {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $stmt = $this->pdo->prepare(
+            "UPDATE tasks SET archived = 1, updated_at = :updated_at WHERE archived = 0 AND status IN ('completed', 'failed', 'cancelled')"
+        );
+        $stmt->execute([':updated_at' => $now]);
+        return $stmt->rowCount();
     }
 
     // --- Agent operations ---

@@ -159,6 +159,7 @@ class TaskGossipEngine
                 acceptanceCriteria: $task->acceptanceCriteria,
                 reviewStatus: $task->reviewStatus,
                 reviewFeedback: $task->reviewFeedback,
+                archived: $task->archived,
             );
             $this->db->updateTask($updated);
         }
@@ -219,6 +220,7 @@ class TaskGossipEngine
                 acceptanceCriteria: $task->acceptanceCriteria,
                 reviewStatus: $task->reviewStatus,
                 reviewFeedback: $task->reviewFeedback,
+                archived: $task->archived,
             );
             $this->db->updateTask($updated);
         }
@@ -278,6 +280,7 @@ class TaskGossipEngine
                 acceptanceCriteria: $task->acceptanceCriteria,
                 reviewStatus: $task->reviewStatus,
                 reviewFeedback: $task->reviewFeedback,
+                archived: $task->archived,
             );
             $this->db->updateTask($updated);
         }
@@ -315,6 +318,34 @@ class TaskGossipEngine
         }
 
         $this->mesh->broadcast($msg + ['type' => MessageTypes::TASK_CANCEL], $senderAddress);
+        $this->pruneSeenMessages();
+        return true;
+    }
+
+    public function gossipTaskArchive(string $taskId, int $lamportTs): void
+    {
+        $key = $taskId . ':archive';
+        $this->seenMessages[$key] = true;
+
+        $this->mesh->broadcast([
+            'type' => MessageTypes::TASK_ARCHIVE,
+            'task_id' => $taskId,
+            'lamport_ts' => $lamportTs,
+        ]);
+    }
+
+    public function receiveTaskArchive(array $msg, ?string $senderAddress = null): bool
+    {
+        $key = ($msg['task_id'] ?? '') . ':archive';
+        if (isset($this->seenMessages[$key])) {
+            return false;
+        }
+        $this->seenMessages[$key] = true;
+        $this->clock->witness($msg['lamport_ts'] ?? 0);
+
+        $this->db->archiveTask($msg['task_id'] ?? '');
+
+        $this->mesh->broadcast($msg + ['type' => MessageTypes::TASK_ARCHIVE], $senderAddress);
         $this->pruneSeenMessages();
         return true;
     }

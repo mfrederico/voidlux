@@ -31,6 +31,7 @@ class TaskModel
         public readonly string $acceptanceCriteria = '',
         public readonly string $reviewStatus = 'none',
         public readonly string $reviewFeedback = '',
+        public readonly bool $archived = false,
     ) {}
 
     public static function create(
@@ -103,6 +104,7 @@ class TaskModel
             acceptanceCriteria: $data['acceptance_criteria'] ?? '',
             reviewStatus: $data['review_status'] ?? 'none',
             reviewFeedback: $data['review_feedback'] ?? '',
+            archived: !empty($data['archived']),
         );
     }
 
@@ -133,6 +135,7 @@ class TaskModel
             'acceptance_criteria' => $this->acceptanceCriteria,
             'review_status' => $this->reviewStatus,
             'review_feedback' => $this->reviewFeedback,
+            'archived' => $this->archived,
         ];
     }
 
@@ -163,6 +166,7 @@ class TaskModel
             acceptanceCriteria: $this->acceptanceCriteria,
             reviewStatus: $this->reviewStatus,
             reviewFeedback: $this->reviewFeedback,
+            archived: $this->archived,
         );
     }
 
