@@ -67,7 +67,7 @@ for i in 0 1 2; do
 
     # Emperor gets LLM config for AI planning/review
     if [ "$ROLE" = "emperor" ]; then
-        LLM_MODEL="${VOIDLUX_LLM_MODEL:-qwen3:32b}"
+        LLM_MODEL="${VOIDLUX_LLM_MODEL:-qwen3-coder:30b}"
         LLM_PROVIDER="${VOIDLUX_LLM_PROVIDER:-ollama}"
         CMD="${CMD} --llm-provider=${LLM_PROVIDER} --llm-model=${LLM_MODEL}"
         [ -n "${VOIDLUX_LLM_HOST:-}" ] && CMD="${CMD} --llm-host=${VOIDLUX_LLM_HOST}"
@@ -89,7 +89,7 @@ echo "  Emperor:   http://localhost:${HTTP_PORTS[1]}  (dashboard, direct)"
 echo "  Worker 1:  http://localhost:${HTTP_PORTS[2]}"
 echo "  Worker 2:  http://localhost:${HTTP_PORTS[3]}"
 echo ""
-echo "LLM: ${VOIDLUX_LLM_PROVIDER:-ollama}/${VOIDLUX_LLM_MODEL:-qwen3:32b}"
+echo "LLM: ${VOIDLUX_LLM_PROVIDER:-ollama}/${VOIDLUX_LLM_MODEL:-qwen3-coder:30b}"
 echo ""
 echo "Quick start:"
 echo "  # Register agents on worker 1:"

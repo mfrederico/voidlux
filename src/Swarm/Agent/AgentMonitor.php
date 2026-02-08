@@ -176,7 +176,7 @@ class AgentMonitor
                 $output = $this->bridge->captureOutput($agent, 200);
                 $this->taskQueue->complete($taskId, $agent->id, $output);
                 $this->db->updateAgentStatus($agent->id, 'idle', null);
-                $this->emit($taskId, $agent->id, 'task_completed', ['result' => $result]);
+                $this->emit($taskId, $agent->id, 'task_completed', ['result' => $output]);
                 break;
 
             case Status::Error:
