@@ -618,6 +618,7 @@ class Server
         $this->controller->setTaskPlanner($planner);
         $this->taskQueue->setReviewer($reviewer);
         $this->agentMonitor->setTaskDispatcher($this->taskDispatcher);
+        $this->taskDispatcher->setAgentBridge($this->agentBridge);
 
         // Start dispatcher coroutine
         Coroutine::create(function () {

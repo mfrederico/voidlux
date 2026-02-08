@@ -9,6 +9,7 @@ use Swoole\Coroutine\Channel;
 use VoidLux\P2P\Protocol\LamportClock;
 use VoidLux\P2P\Protocol\MessageTypes;
 use VoidLux\P2P\Transport\TcpMesh;
+use VoidLux\Swarm\Agent\AgentBridge;
 use VoidLux\Swarm\Model\AgentModel;
 use VoidLux\Swarm\Model\TaskModel;
 use VoidLux\Swarm\Model\TaskStatus;
@@ -29,6 +30,7 @@ class TaskDispatcher
     private bool $running = false;
     private int $roundRobinIndex = 0;
     private ?Channel $signal = null;
+    private ?AgentBridge $agentBridge = null;
 
     public function __construct(
         private readonly SwarmDatabase $db,
@@ -37,6 +39,11 @@ class TaskDispatcher
         private readonly LamportClock $clock,
         private readonly string $nodeId,
     ) {}
+
+    public function setAgentBridge(AgentBridge $bridge): void
+    {
+        $this->agentBridge = $bridge;
+    }
 
     public function start(): void
     {
@@ -148,13 +155,23 @@ class TaskDispatcher
         ]);
 
         if (!$sent) {
-            // If the agent is local, claim directly
+            // If the agent is local, claim and deliver directly
             if ($agent->nodeId === $this->nodeId) {
                 $claimed = $this->taskQueue->claim($task->id, $agent->id);
-                if ($claimed) {
-                    $this->db->updateAgentStatus($agent->id, 'busy', $task->id);
+                if (!$claimed) {
+                    return false;
                 }
-                return $claimed;
+                $this->db->updateAgentStatus($agent->id, 'busy', $task->id);
+                $task = $this->db->getTask($task->id); // Re-read after claim
+                if ($task && $this->agentBridge) {
+                    $delivered = $this->agentBridge->deliverTask($agent, $task);
+                    if (!$delivered) {
+                        $this->taskQueue->requeue($task->id, 'Local delivery failed');
+                        $this->db->updateAgentStatus($agent->id, 'idle', null);
+                        return false;
+                    }
+                }
+                return true;
             }
             return false;
         }
