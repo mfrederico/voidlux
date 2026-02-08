@@ -713,11 +713,14 @@ function connectWs() {
         const msg = JSON.parse(e.data);
         if (msg.type === 'task_event') {
             addLog(msg.event, msg.event+': '+(msg.data.title || msg.data.task_id || ''));
-            refresh();
+            // Debounced refresh — avoid flooding on rapid task events
+            clearTimeout(window._wsRefreshTimer);
+            window._wsRefreshTimer = setTimeout(refresh, 1000);
         }
         if (msg.type === 'agent_event') {
             addLog(msg.event, msg.event+': '+(msg.data.agent_id || '').substring(0,8));
-            refresh();
+            clearTimeout(window._wsRefreshTimer);
+            window._wsRefreshTimer = setTimeout(refresh, 1000);
         }
         if (msg.type === 'status') {
             if (msg.status.tasks !== undefined) document.getElementById('task-count').textContent = msg.status.tasks;
@@ -730,7 +733,7 @@ function connectWs() {
 
 refresh();
 connectWs();
-setInterval(refresh, 5000);
+setInterval(refresh, 30000);
 JS
         . "\n</script>\n</body>\n</html>";
     }
