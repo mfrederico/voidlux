@@ -461,6 +461,7 @@ class EmperorController
         $agent = $this->agentRegistry->register(
             name: $body['name'],
             tool: $body['tool'] ?? 'claude',
+            model: $body['model'] ?? '',
             capabilities: $body['capabilities'] ?? [],
             tmuxSessionId: $tmuxSession,
             projectPath: $projectPath,
@@ -610,6 +611,7 @@ class EmperorController
         $agent = $this->agentRegistry->register(
             name: $agentName,
             tool: $tool,
+            model: $model,
             capabilities: $capabilities,
             tmuxSessionId: $projectPath ? $sessionName : null,
             projectPath: $projectPath,

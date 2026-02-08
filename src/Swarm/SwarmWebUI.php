@@ -439,7 +439,9 @@ function renderAgent(a) {
     const shortPath = a.project_path ? a.project_path.replace(/^\/home\/[^/]+\//, '~/') : '';
     let html = '<div class="card" id="agent-'+a.id+'">';
     html += '<div class="card-title" title="Agent ID: '+a.id+'">'+escapeHtml(a.name)+' '+statusBadge(a.status)+'</div>';
-    html += '<div style="font-size:0.85rem;color:#aaa;">Tool: '+a.tool+' | <span title="Worker node running this agent\'s tmux session (full: '+a.node_id+')">Node: '+a.node_id.substring(0,8)+'</span></div>';
+    html += '<div style="font-size:0.85rem;color:#aaa;">Tool: '+a.tool;
+    if (a.model) html += ' | Model: '+escapeHtml(a.model);
+    html += ' | <span title="Worker node running this agent\'s tmux session (full: '+a.node_id+')">Node: '+a.node_id.substring(0,8)+'</span></div>';
     if (shortPath) html += '<div style="font-size:0.8rem;color:#698;" title="'+escapeHtml(a.project_path)+'">Path: '+escapeHtml(shortPath)+'</div>';
     if (a.capabilities && a.capabilities.length) html += '<div style="font-size:0.8rem;color:#686;">Caps: '+a.capabilities.join(', ')+'</div>';
     if (a.current_task_id) html += '<div style="font-size:0.8rem;color:#668;">Task: '+a.current_task_id.substring(0,8)+'</div>';

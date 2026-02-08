@@ -62,6 +62,7 @@ class SwarmDatabase
                 node_id TEXT NOT NULL,
                 name TEXT NOT NULL,
                 tool TEXT NOT NULL DEFAULT \'claude\',
+                model TEXT NOT NULL DEFAULT \'\',
                 capabilities TEXT NOT NULL DEFAULT \'[]\',
                 tmux_session_id TEXT,
                 project_path TEXT NOT NULL DEFAULT \'\',
@@ -109,6 +110,13 @@ class SwarmDatabase
             $this->pdo->exec("ALTER TABLE tasks ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
         }
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived)');
+
+        // Add model column to agents table
+        $agentColumns = $this->pdo->query("PRAGMA table_info(agents)")->fetchAll();
+        $agentExisting = array_column($agentColumns, 'name');
+        if (!in_array('model', $agentExisting, true)) {
+            $this->pdo->exec("ALTER TABLE agents ADD COLUMN model TEXT NOT NULL DEFAULT ''");
+        }
     }
 
     // --- Task operations ---
@@ -414,10 +422,10 @@ class SwarmDatabase
     {
         $stmt = $this->pdo->prepare('
             INSERT OR REPLACE INTO agents
-                (id, node_id, name, tool, capabilities, tmux_session_id, project_path,
+                (id, node_id, name, tool, model, capabilities, tmux_session_id, project_path,
                  max_concurrent_tasks, status, current_task_id, last_heartbeat, lamport_ts, registered_at)
             VALUES
-                (:id, :node_id, :name, :tool, :capabilities, :tmux_session_id, :project_path,
+                (:id, :node_id, :name, :tool, :model, :capabilities, :tmux_session_id, :project_path,
                  :max_concurrent_tasks, :status, :current_task_id, :last_heartbeat, :lamport_ts, :registered_at)
         ');
 
@@ -426,6 +434,7 @@ class SwarmDatabase
             ':node_id' => $agent->nodeId,
             ':name' => $agent->name,
             ':tool' => $agent->tool,
+            ':model' => $agent->model,
             ':capabilities' => json_encode($agent->capabilities),
             ':tmux_session_id' => $agent->tmuxSessionId,
             ':project_path' => $agent->projectPath,

@@ -45,6 +45,7 @@ class AgentRegistry
     public function register(
         string $name,
         string $tool = 'claude',
+        string $model = '',
         array $capabilities = [],
         ?string $tmuxSessionId = null,
         string $projectPath = '',
@@ -56,6 +57,7 @@ class AgentRegistry
             name: $name,
             lamportTs: $ts,
             tool: $tool,
+            model: $model,
             capabilities: $capabilities,
             tmuxSessionId: $tmuxSessionId,
             projectPath: $projectPath,
