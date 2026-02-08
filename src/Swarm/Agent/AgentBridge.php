@@ -56,8 +56,9 @@ class AgentBridge
         // Build the task prompt
         $prompt = $this->buildTaskPrompt($task);
 
-        // Send to tmux — always follow with Enter to submit the prompt
+        // Send to tmux — wait for paste to render, then Enter to submit
         $sent = $this->tmux->sendTextByName($sessionName, $prompt);
+        usleep(500_000); // Claude Code needs time to process pasted text
         $this->tmux->sendEnterByName($sessionName);
 
         return $sent;
