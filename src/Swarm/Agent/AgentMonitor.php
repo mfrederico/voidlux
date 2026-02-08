@@ -189,10 +189,10 @@ class AgentMonitor
                 break;
 
             case Status::Error:
-                $output = $this->bridge->captureOutput($agent, 30);
-                $this->taskQueue->fail($taskId, $agent->id, $output);
-                $this->db->updateAgentStatus($agent->id, 'idle', null);
-                $this->emit($taskId, $agent->id, 'task_failed', ['error' => $output]);
+                // Do NOT auto-fail — only MCP task_failed should mark tasks as failed.
+                // The agent may recover, or the StatusDetector may be misreading the pane.
+                $this->db->updateAgentStatus($agent->id, 'busy', $taskId);
+                $this->emit($taskId, $agent->id, 'task_progress', ['output' => 'Agent pane shows error state']);
                 break;
 
             case Status::Waiting:
