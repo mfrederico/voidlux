@@ -431,6 +431,14 @@ class SwarmDatabase
         return $row ? AgentModel::fromArray($row) : null;
     }
 
+    public function getAgentByName(string $name): ?AgentModel
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM agents WHERE name = :name LIMIT 1');
+        $stmt->execute([':name' => $name]);
+        $row = $stmt->fetch();
+        return $row ? AgentModel::fromArray($row) : null;
+    }
+
     /**
      * @return AgentModel[]
      */

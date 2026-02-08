@@ -42,7 +42,7 @@ class AgentModel
             tmuxSessionId: $tmuxSessionId,
             projectPath: $projectPath,
             maxConcurrentTasks: $maxConcurrentTasks,
-            status: 'idle',
+            status: 'starting',
             currentTaskId: null,
             lastHeartbeat: $now,
             lamportTs: $lamportTs,

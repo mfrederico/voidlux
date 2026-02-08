@@ -233,6 +233,11 @@ class TaskQueue
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskComplete($taskId, $agentId, $result, $ts);
+
+        // Check if all subtasks are done — complete the parent
+        if ($task->parentId) {
+            $this->tryCompleteParent($task->parentId);
+        }
     }
 
     /**
@@ -280,6 +285,11 @@ class TaskQueue
             );
             $this->db->updateTask($updated);
             $this->gossip->gossipTaskComplete($taskId, $task->assignedTo ?? '', $task->result, $ts);
+
+            // Check if all subtasks are done — complete the parent
+            if ($task->parentId) {
+                $this->tryCompleteParent($task->parentId);
+            }
         } else {
             // Count previous rejections
             $rejectionCount = substr_count($task->reviewFeedback, '[Rejection');
@@ -374,6 +384,72 @@ class TaskQueue
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskFail($taskId, $agentId, $error, $ts);
+    }
+
+    /**
+     * Complete the parent task if all its subtasks are done.
+     */
+    private function tryCompleteParent(string $parentId): void
+    {
+        $subtasks = $this->db->getSubtasks($parentId);
+        if (empty($subtasks)) {
+            return;
+        }
+
+        foreach ($subtasks as $sub) {
+            if (!$sub->status->isTerminal()) {
+                return; // Still has active subtasks
+            }
+        }
+
+        // All subtasks are terminal — complete the parent
+        $parent = $this->db->getTask($parentId);
+        if (!$parent || $parent->status->isTerminal()) {
+            return;
+        }
+
+        $completedCount = 0;
+        $failedCount = 0;
+        foreach ($subtasks as $sub) {
+            if ($sub->status === TaskStatus::Completed) {
+                $completedCount++;
+            } else {
+                $failedCount++;
+            }
+        }
+
+        $ts = $this->clock->tick();
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $result = "All {$completedCount} subtask(s) completed" . ($failedCount ? ", {$failedCount} failed" : '');
+
+        $updated = new TaskModel(
+            id: $parent->id,
+            title: $parent->title,
+            description: $parent->description,
+            status: TaskStatus::Completed,
+            priority: $parent->priority,
+            requiredCapabilities: $parent->requiredCapabilities,
+            createdBy: $parent->createdBy,
+            assignedTo: $parent->assignedTo,
+            assignedNode: $parent->assignedNode,
+            result: $result,
+            error: null,
+            progress: null,
+            projectPath: $parent->projectPath,
+            context: $parent->context,
+            lamportTs: $ts,
+            claimedAt: $parent->claimedAt,
+            completedAt: $now,
+            createdAt: $parent->createdAt,
+            updatedAt: $now,
+            parentId: $parent->parentId,
+            workInstructions: $parent->workInstructions,
+            acceptanceCriteria: $parent->acceptanceCriteria,
+            reviewStatus: $parent->reviewStatus,
+            reviewFeedback: $parent->reviewFeedback,
+        );
+        $this->db->updateTask($updated);
+        $this->gossip->gossipTaskComplete($parentId, '', $result, $ts);
     }
 
     /**

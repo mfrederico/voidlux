@@ -9,6 +9,7 @@ use Swoole\Coroutine;
 use VoidLux\Swarm\Leadership\LeaderElection;
 use VoidLux\Swarm\Model\AgentModel;
 use VoidLux\Swarm\Model\TaskStatus;
+use VoidLux\Swarm\Orchestrator\TaskDispatcher;
 use VoidLux\Swarm\Orchestrator\TaskQueue;
 use VoidLux\Swarm\Storage\SwarmDatabase;
 
@@ -32,6 +33,7 @@ class AgentMonitor
     private const POLL_INTERVAL = 5;
     private bool $running = false;
     private ?LeaderElection $leaderElection = null;
+    private ?TaskDispatcher $taskDispatcher = null;
 
     /** @var callable|null fn(string $taskId, string $agentId, string $event, array $data): void */
     private $onEvent = null;
@@ -47,6 +49,11 @@ class AgentMonitor
     public function setLeaderElection(LeaderElection $election): void
     {
         $this->leaderElection = $election;
+    }
+
+    public function setTaskDispatcher(TaskDispatcher $dispatcher): void
+    {
+        $this->taskDispatcher = $dispatcher;
     }
 
     /**
@@ -92,9 +99,26 @@ class AgentMonitor
         }
 
         foreach ($agents as $agent) {
-            // Startup grace period: don't poll agents registered less than 15s ago
-            $registeredAgo = time() - strtotime($agent->registeredAt);
-            if ($registeredAgo < 15) {
+            // Starting agents: wait for Claude Code to load, then flip to idle
+            if ($agent->status === 'starting') {
+                $registeredAgo = time() - strtotime($agent->registeredAt);
+                if ($registeredAgo < 10) {
+                    continue; // Too early — Claude Code still loading
+                }
+                $bridgeStatus = $this->bridge->detectStatus($agent);
+                if ($bridgeStatus === Status::Idle) {
+                    $this->db->updateAgentStatus($agent->id, 'idle', null);
+                    // Re-read agent with updated status and gossip immediately
+                    $updatedAgent = $this->db->getAgent($agent->id);
+                    if ($updatedAgent) {
+                        $this->registry->gossipAgentNow($updatedAgent);
+                    }
+                    $this->emit('', $agent->id, 'agent_ready', ['name' => $agent->name]);
+                    $this->taskDispatcher?->triggerDispatch();
+                } elseif ($bridgeStatus === Status::Stopped) {
+                    $this->registry->deregister($agent->id);
+                    $this->emit('', $agent->id, 'agent_stopped', ['name' => $agent->name]);
+                }
                 continue;
             }
 
@@ -209,8 +233,10 @@ class AgentMonitor
 
         $delivered = $this->bridge->deliverTask($agent, $task);
         if (!$delivered) {
-            $this->taskQueue->fail($task->id, $agent->id, 'Failed to deliver task to tmux session');
+            // Requeue instead of failing — agent may still be starting up
+            $this->taskQueue->requeue($task->id, 'Agent not ready for delivery');
             $this->db->updateAgentStatus($agent->id, 'idle', null);
+            return;
         }
 
         $this->emit($task->id, $agent->id, 'task_assigned', ['title' => $task->title]);

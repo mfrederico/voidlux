@@ -264,8 +264,8 @@ class EmperorController
                     );
                 }
 
-                // Mark parent as pending (decomposed)
-                $updated = $parentTask->withStatus(TaskStatus::Pending, $parentTask->lamportTs);
+                // Mark parent as in_progress (subtasks being worked on — NOT pending, to avoid dispatch)
+                $updated = $parentTask->withStatus(TaskStatus::InProgress, $parentTask->lamportTs);
                 $db->updateTask($updated);
 
                 $dispatcher?->triggerDispatch();
@@ -660,7 +660,13 @@ class EmperorController
 
     private function getMcpHandler(): McpHandler
     {
-        return $this->mcpHandler ??= new McpHandler($this->taskQueue, $this->db);
+        if ($this->mcpHandler === null) {
+            $this->mcpHandler = new McpHandler($this->taskQueue, $this->db);
+            if ($this->taskDispatcher !== null) {
+                $this->mcpHandler->setTaskDispatcher($this->taskDispatcher);
+            }
+        }
+        return $this->mcpHandler;
     }
 
     private function json(Response $response, array $data): void

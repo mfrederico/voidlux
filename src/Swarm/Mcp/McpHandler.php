@@ -6,6 +6,7 @@ namespace VoidLux\Swarm\Mcp;
 
 use Swoole\Http\Request;
 use Swoole\Http\Response;
+use VoidLux\Swarm\Orchestrator\TaskDispatcher;
 use VoidLux\Swarm\Orchestrator\TaskQueue;
 use VoidLux\Swarm\Storage\SwarmDatabase;
 
@@ -19,10 +20,17 @@ class McpHandler
 {
     private const PROTOCOL_VERSION = '2024-11-05';
 
+    private ?TaskDispatcher $taskDispatcher = null;
+
     public function __construct(
         private readonly TaskQueue $taskQueue,
         private readonly SwarmDatabase $db,
     ) {}
+
+    public function setTaskDispatcher(TaskDispatcher $dispatcher): void
+    {
+        $this->taskDispatcher = $dispatcher;
+    }
 
     public function handle(Request $request, Response $response): void
     {
@@ -130,6 +138,17 @@ class McpHandler
                         'required' => ['task_id', 'question'],
                     ],
                 ],
+                (object) [
+                    'name' => 'agent_ready',
+                    'description' => 'Signal that this agent has started and is ready to receive tasks. Call this when you first start up.',
+                    'inputSchema' => (object) [
+                        'type' => 'object',
+                        'properties' => (object) [
+                            'agent_name' => (object) ['type' => 'string', 'description' => 'Your agent name (e.g. agent-62dec4-1)'],
+                        ],
+                        'required' => ['agent_name'],
+                    ],
+                ],
             ],
         ];
     }
@@ -144,6 +163,7 @@ class McpHandler
             'task_progress' => $this->callTaskProgress($args),
             'task_failed' => $this->callTaskFailed($args),
             'task_needs_input' => $this->callTaskNeedsInput($args),
+            'agent_ready' => $this->callAgentReady($args),
             default => ['content' => [['type' => 'text', 'text' => json_encode([
                 'error' => "Unknown tool: {$toolName}",
             ])]], 'isError' => true],
@@ -252,6 +272,26 @@ class McpHandler
         }
 
         return $this->toolResult(['status' => 'waiting_input', 'task_id' => $taskId]);
+    }
+
+    private function callAgentReady(array $args): array
+    {
+        $agentName = $args['agent_name'] ?? '';
+        if (!$agentName) {
+            return $this->toolError('agent_name is required');
+        }
+
+        $agent = $this->db->getAgentByName($agentName);
+        if (!$agent) {
+            return $this->toolError("Agent not found: {$agentName}");
+        }
+
+        if ($agent->status === 'starting') {
+            $this->db->updateAgentStatus($agent->id, 'idle', null);
+            $this->taskDispatcher?->triggerDispatch();
+        }
+
+        return $this->toolResult(['status' => 'ready', 'agent_name' => $agentName]);
     }
 
     private function toolResult(array $data): array

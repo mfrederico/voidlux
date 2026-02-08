@@ -136,6 +136,15 @@ class AgentRegistry
         });
     }
 
+    /**
+     * Send an immediate heartbeat for a specific agent (e.g. on status change).
+     */
+    public function gossipAgentNow(AgentModel $agent): void
+    {
+        $ts = $this->clock->tick();
+        $this->gossip->gossipAgentHeartbeat($agent, $ts);
+    }
+
     private function broadcastHeartbeats(): void
     {
         $agents = $this->db->getLocalAgents($this->nodeId);

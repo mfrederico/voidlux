@@ -101,10 +101,10 @@ class TaskDispatcher
      */
     private function selectAgent(TaskModel $task, array $agents): ?AgentModel
     {
-        // Filter by capabilities
+        // Filter by capabilities (empty agent capabilities = universal, can handle any task)
         $eligible = [];
         foreach ($agents as $agent) {
-            if (!empty($task->requiredCapabilities)) {
+            if (!empty($task->requiredCapabilities) && !empty($agent->capabilities)) {
                 $missing = array_diff($task->requiredCapabilities, $agent->capabilities);
                 if (!empty($missing)) {
                     continue;

@@ -457,6 +457,10 @@ class Server
 
             case MessageTypes::AGENT_HEARTBEAT:
                 $this->taskGossip->receiveAgentHeartbeat($msg, $conn->address());
+                // Idle agent heartbeat may mean a new agent is ready for work
+                if (($msg['status'] ?? '') === 'idle') {
+                    $this->taskDispatcher?->triggerDispatch();
+                }
                 break;
 
             case MessageTypes::AGENT_DEREGISTER:
@@ -560,10 +564,11 @@ class Server
             $this->nodeId,
         );
 
-        // Wire into controller and task queue
+        // Wire into controller, task queue, and agent monitor
         $this->controller->setTaskDispatcher($this->taskDispatcher);
         $this->controller->setTaskPlanner($planner);
         $this->taskQueue->setReviewer($reviewer);
+        $this->agentMonitor->setTaskDispatcher($this->taskDispatcher);
 
         // Start dispatcher coroutine
         Coroutine::create(function () {
@@ -618,8 +623,11 @@ class Server
         if ($task) {
             $delivered = $this->agentBridge->deliverTask($agent, $task);
             if (!$delivered) {
-                $this->taskQueue->fail($taskId, $agentId, 'Failed to deliver task to tmux session');
+                // Agent not ready (still starting up) — requeue for retry, don't fail
+                $this->log("TASK_ASSIGN: delivery failed for '{$task->title}' to {$agent->name}, requeuing");
+                $this->taskQueue->requeue($taskId, 'Agent not ready for delivery');
                 $this->db->updateAgentStatus($agentId, 'idle', null);
+                $this->taskDispatcher?->triggerDispatch();
                 return;
             }
         }
