@@ -150,13 +150,18 @@ class TaskDispatcher
         if (!$sent) {
             // If the agent is local, claim directly
             if ($agent->nodeId === $this->nodeId) {
-                return $this->taskQueue->claim($task->id, $agent->id);
+                $claimed = $this->taskQueue->claim($task->id, $agent->id);
+                if ($claimed) {
+                    $this->db->updateAgentStatus($agent->id, 'busy', $task->id);
+                }
+                return $claimed;
             }
             return false;
         }
 
-        // Optimistic claim in local DB
+        // Optimistic claim in local DB — mark both task and agent
         $this->db->claimTask($task->id, $agent->id, $agent->nodeId, $ts);
+        $this->db->updateAgentStatus($agent->id, 'busy', $task->id);
         return true;
     }
 
