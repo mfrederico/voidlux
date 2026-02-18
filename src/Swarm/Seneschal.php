@@ -10,6 +10,7 @@ use Swoole\Http\Request;
 use Swoole\Http\Response;
 use Swoole\WebSocket\Frame;
 use Swoole\WebSocket\Server as WsServer;
+use VoidLux\Swarm\Broker\BrokerMesh;
 use VoidLux\P2P\Discovery\PeerExchange;
 use VoidLux\P2P\Discovery\SeedPeers;
 use VoidLux\P2P\Discovery\UdpBroadcast;
@@ -34,6 +35,7 @@ class Seneschal
     private PeerManager $peerManager;
     private PeerExchange $peerExchange;
     private UdpBroadcast $udpBroadcast;
+    private ?BrokerMesh $brokerMesh = null;
     private ?WsServer $server = null;
 
     private ?string $emperorNodeId = null;
@@ -73,6 +75,12 @@ class Seneschal
         });
 
         $server->on('request', function (Request $request, Response $response) {
+            // Broker API endpoints handled locally (not proxied to emperor)
+            $uri = $request->server['request_uri'] ?? '/';
+            if ($this->brokerMesh && str_starts_with($uri, '/api/broker/')) {
+                $this->brokerMesh->handleApi($request, $response);
+                return;
+            }
             $this->proxyHttp($request, $response);
         });
 
@@ -90,6 +98,7 @@ class Seneschal
 
         $server->on('workerStart', function () {
             $this->initP2P();
+            $this->initBroker();
         });
 
         $server->start();
@@ -113,6 +122,8 @@ class Seneschal
 
         $this->mesh->onMessage(function (Connection $conn, array $msg) {
             $this->onPeerMessage($conn, $msg);
+            // Relay marketplace messages to broker network if enabled
+            $this->brokerMesh?->onSwarmMessage($msg['type'] ?? 0, $msg);
         });
 
         $this->mesh->onDisconnect(function (Connection $conn) {
@@ -571,6 +582,49 @@ setInterval(() => {
 </body>
 </html>
 HTML;
+    }
+
+    // ── Broker Mesh (Seneschal-to-Seneschal) ──────────────────────────
+
+    /**
+     * Initialize the cross-swarm broker mesh if configured via env vars.
+     * VOIDLUX_BROKER_PORT  — TCP port for broker connections (0 = disabled)
+     * VOIDLUX_BROKER_SEEDS — Comma-separated host:port list of broker peers
+     * VOIDLUX_SWARM_NAME   — Human-readable name for this swarm
+     */
+    private function initBroker(): void
+    {
+        $brokerPort = (int) (getenv('VOIDLUX_BROKER_PORT') ?: 0);
+        if ($brokerPort <= 0) {
+            return;
+        }
+
+        $brokerSeeds = getenv('VOIDLUX_BROKER_SEEDS') ?: '';
+        $swarmName = getenv('VOIDLUX_SWARM_NAME') ?: ('swarm-' . substr($this->nodeId, 0, 8));
+        $seeds = $brokerSeeds ? explode(',', $brokerSeeds) : [];
+
+        $this->brokerMesh = new BrokerMesh(
+            nodeId: $this->nodeId,
+            brokerPort: $brokerPort,
+            clock: $this->clock,
+            brokerSeeds: $seeds,
+            swarmName: $swarmName,
+            localEmperorNodeId: $this->emperorNodeId ?? '',
+            logger: fn(string $msg) => $this->log("[broker] {$msg}"),
+        );
+
+        $this->brokerMesh->onBountyUpdate(function () {
+            $this->log("[broker] Bounty board updated");
+        });
+
+        Coroutine::create(function () {
+            $this->brokerMesh->start();
+        });
+
+        $this->log("Broker mesh started on port {$brokerPort} (swarm: {$swarmName})");
+        if (!empty($seeds)) {
+            $this->log("Broker seeds: " . implode(', ', $seeds));
+        }
     }
 
     private function log(string $message): void
