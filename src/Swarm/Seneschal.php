@@ -788,8 +788,29 @@ class Seneschal
 
         if ($killed > 0) {
             $this->log("[cycle] Killed {$killed} orphaned process(es) on swarm ports");
+        }
+
+        // Poll until all ports are free (up to 5 seconds)
+        $deadline = microtime(true) + 5.0;
+        while (microtime(true) < $deadline) {
+            $busy = [];
+            foreach ($ports as $port) {
+                $output = trim(shell_exec("ss -tlnp 'sport = :{$port}' 2>/dev/null | grep -oP 'pid=\\K[0-9]+'") ?: '');
+                if ($output !== '') {
+                    $busy[] = $port;
+                }
+            }
+
+            if (empty($busy)) {
+                $this->log("[cycle] All swarm ports are free");
+                return;
+            }
+
+            $this->log("[cycle] Waiting for ports to free: " . implode(', ', $busy));
             usleep(500_000);
         }
+
+        $this->log("[cycle] Warning: timed out waiting for ports to free after 5s");
     }
 
     private function cycleGitPull(string $projectDir, string $branch): void
