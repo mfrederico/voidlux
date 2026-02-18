@@ -29,6 +29,14 @@ for s in $(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^vl-'); d
     tmux kill-session -t "$s" 2>/dev/null || true
 done
 
+# Kill orphaned PHP/Swoole processes still holding swarm ports
+# (tmux kill-session doesn't kill reparented child processes)
+for port in "${HTTP_PORTS[@]}" "${P2P_PORTS[@]}"; do
+    pids=$(ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u || true)
+    [ -n "$pids" ] && kill $pids 2>/dev/null || true
+done
+sleep 0.5
+
 # Create tmux session
 tmux new-session -d -s "$SESSION" -x 200 -y 50
 
