@@ -113,7 +113,7 @@ class TaskQueue
         $ts = $this->clock->tick();
 
         $task = $this->db->getTask($taskId);
-        if (!$task || $task->status->isTerminal()) {
+        if (!$task || $task->status->isTerminal() || !$task->status->isWorkableByAgent()) {
             return;
         }
 
@@ -156,7 +156,7 @@ class TaskQueue
         $ts = $this->clock->tick();
 
         $task = $this->db->getTask($taskId);
-        if (!$task || $task->status->isTerminal()) {
+        if (!$task || $task->status->isTerminal() || !$task->status->isWorkableByAgent()) {
             return;
         }
 
@@ -199,7 +199,7 @@ class TaskQueue
         $ts = $this->clock->tick();
 
         $task = $this->db->getTask($taskId);
-        if (!$task || $task->status->isTerminal()) {
+        if (!$task || $task->status->isTerminal() || !$task->status->isWorkableByAgent()) {
             return;
         }
 
@@ -404,7 +404,7 @@ class TaskQueue
         $ts = $this->clock->tick();
 
         $task = $this->db->getTask($taskId);
-        if (!$task || $task->status->isTerminal()) {
+        if (!$task || $task->status->isTerminal() || !$task->status->isWorkableByAgent()) {
             return;
         }
 
