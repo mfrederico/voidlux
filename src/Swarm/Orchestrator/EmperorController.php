@@ -7,14 +7,17 @@ namespace VoidLux\Swarm\Orchestrator;
 use Swoole\Coroutine;
 use Swoole\Http\Request;
 use Swoole\Http\Response;
+use VoidLux\P2P\Discovery\DiscoveryManager;
 use VoidLux\Swarm\Agent\AgentBridge;
 use VoidLux\Swarm\Agent\AgentMonitor;
 use VoidLux\Swarm\Agent\AgentRegistry;
 use VoidLux\Swarm\Ai\TaskPlanner;
+use VoidLux\Swarm\Galactic\GalacticMarketplace;
 use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Mcp\McpHandler;
 use VoidLux\Swarm\Model\TaskStatus;
 use VoidLux\Swarm\Orchestrator\TaskDispatcher;
+use VoidLux\Swarm\Storage\DhtEngine;
 use VoidLux\Swarm\Storage\SwarmDatabase;
 use VoidLux\Swarm\SwarmWebUI;
 
@@ -27,6 +30,9 @@ class EmperorController
     private ?McpHandler $mcpHandler = null;
     private ?TaskDispatcher $taskDispatcher = null;
     private ?TaskPlanner $taskPlanner = null;
+    private ?DhtEngine $dhtEngine = null;
+    private ?DiscoveryManager $discoveryManager = null;
+    private ?GalacticMarketplace $marketplace = null;
 
     /** @var callable|null fn(): void — triggers server shutdown */
     private $shutdownCallback = null;
@@ -56,6 +62,21 @@ class EmperorController
     public function setTaskPlanner(TaskPlanner $planner): void
     {
         $this->taskPlanner = $planner;
+    }
+
+    public function setDhtEngine(DhtEngine $engine): void
+    {
+        $this->dhtEngine = $engine;
+    }
+
+    public function setDiscoveryManager(DiscoveryManager $dm): void
+    {
+        $this->discoveryManager = $dm;
+    }
+
+    public function setMarketplace(GalacticMarketplace $marketplace): void
+    {
+        $this->marketplace = $marketplace;
     }
 
     public function onShutdown(callable $callback): void
@@ -182,6 +203,61 @@ class EmperorController
                 $this->handleDeregisterAgent($m[1], $response);
                 break;
 
+            // --- DHT (decentralized storage) API ---
+            case $path === '/api/swarm/dht' && $method === 'POST':
+                $this->handleDhtPut($request, $response);
+                break;
+
+            case preg_match('#^/api/swarm/dht/(.+)$#', $path, $m) === 1 && $method === 'GET':
+                $this->handleDhtGet($m[1], $response);
+                break;
+
+            case preg_match('#^/api/swarm/dht/(.+)$#', $path, $m) === 1 && $method === 'DELETE':
+                $this->handleDhtDelete($m[1], $response);
+                break;
+
+            case $path === '/api/swarm/dht-stats' && $method === 'GET':
+                $this->handleDhtStats($response);
+                break;
+
+            case $path === '/api/swarm/discovery' && $method === 'GET':
+                $this->handleDiscoveryStats($response);
+                break;
+
+            // --- Swarm node registry API ---
+            case $path === '/api/swarm/nodes' && $method === 'GET':
+                $this->handleListNodes($response);
+                break;
+
+            case $path === '/api/swarm/nodes/status' && $method === 'GET':
+                $this->handleSwarmNodeStatus($response);
+                break;
+
+            // --- Galactic marketplace API ---
+            case $path === '/api/swarm/offerings' && $method === 'GET':
+                $this->handleListOfferings($response);
+                break;
+
+            case $path === '/api/swarm/offerings' && $method === 'POST':
+                $this->handleCreateOffering($request, $response);
+                break;
+
+            case preg_match('#^/api/swarm/offerings/([^/]+)$#', $path, $m) === 1 && $method === 'DELETE':
+                $this->handleWithdrawOffering($m[1], $response);
+                break;
+
+            case $path === '/api/swarm/tributes' && $method === 'POST':
+                $this->handleRequestTribute($request, $response);
+                break;
+
+            case $path === '/api/swarm/tributes' && $method === 'GET':
+                $this->handleListTributes($response);
+                break;
+
+            case $path === '/api/swarm/wallet' && $method === 'GET':
+                $this->handleWallet($response);
+                break;
+
             default:
                 $response->status(404);
                 $this->json($response, ['error' => 'Not found']);
@@ -209,6 +285,7 @@ class EmperorController
             'agents' => [
                 'total' => $this->db->getAgentCount(),
             ],
+            'discovery' => $this->discoveryManager?->stats() ?? [],
         ]);
     }
 
@@ -734,6 +811,228 @@ class EmperorController
             }
         }
         return $this->mcpHandler;
+    }
+
+    // --- DHT API handlers ---
+
+    private function handleDhtPut(Request $request, Response $response): void
+    {
+        if (!$this->dhtEngine) {
+            $response->status(503);
+            $this->json($response, ['error' => 'DHT not initialized']);
+            return;
+        }
+
+        $body = json_decode($request->rawContent(), true) ?? [];
+        $value = $body['value'] ?? null;
+        $key = $body['key'] ?? null;
+        $ttl = (int) ($body['ttl'] ?? 0);
+
+        if ($value === null) {
+            $response->status(400);
+            $this->json($response, ['error' => 'value is required']);
+            return;
+        }
+
+        if ($key !== null) {
+            $entry = $this->dhtEngine->put($key, $value, 3, $ttl);
+        } else {
+            $entry = $this->dhtEngine->putContent($value, 3, $ttl);
+        }
+
+        $response->status(201);
+        $this->json($response, $entry->toArray());
+    }
+
+    private function handleDhtGet(string $key, Response $response): void
+    {
+        if (!$this->dhtEngine) {
+            $response->status(503);
+            $this->json($response, ['error' => 'DHT not initialized']);
+            return;
+        }
+
+        $entry = $this->dhtEngine->get(urldecode($key));
+        if ($entry === null) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Key not found']);
+            return;
+        }
+
+        $this->json($response, $entry->toArray());
+    }
+
+    private function handleDhtDelete(string $key, Response $response): void
+    {
+        if (!$this->dhtEngine) {
+            $response->status(503);
+            $this->json($response, ['error' => 'DHT not initialized']);
+            return;
+        }
+
+        $deleted = $this->dhtEngine->delete(urldecode($key));
+        if (!$deleted) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Key not found']);
+            return;
+        }
+
+        $this->json($response, ['deleted' => true, 'key' => urldecode($key)]);
+    }
+
+    private function handleDhtStats(Response $response): void
+    {
+        if (!$this->dhtEngine) {
+            $response->status(503);
+            $this->json($response, ['error' => 'DHT not initialized']);
+            return;
+        }
+
+        $this->json($response, $this->dhtEngine->stats());
+    }
+
+    private function handleDiscoveryStats(Response $response): void
+    {
+        if (!$this->discoveryManager) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Discovery manager not initialized']);
+            return;
+        }
+
+        $this->json($response, $this->discoveryManager->stats());
+    }
+
+    // --- Swarm node registry ---
+
+    private ?\VoidLux\Swarm\Registry $swarmRegistry = null;
+    private ?\VoidLux\Swarm\Status $swarmStatus = null;
+
+    public function setSwarmRegistry(\VoidLux\Swarm\Registry $registry): void
+    {
+        $this->swarmRegistry = $registry;
+    }
+
+    public function setSwarmStatus(\VoidLux\Swarm\Status $status): void
+    {
+        $this->swarmStatus = $status;
+    }
+
+    private function handleListNodes(Response $response): void
+    {
+        if (!$this->swarmRegistry) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Swarm registry not initialized']);
+            return;
+        }
+
+        $nodes = $this->swarmRegistry->getAllNodes();
+        $this->json($response, [
+            'nodes' => array_map(fn($n) => $n->toArray(), $nodes),
+            'count' => count($nodes),
+        ]);
+    }
+
+    private function handleSwarmNodeStatus(Response $response): void
+    {
+        if (!$this->swarmStatus) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Swarm status not initialized']);
+            return;
+        }
+
+        $this->json($response, $this->swarmStatus->getSnapshot());
+    }
+
+    // --- Galactic marketplace handlers ---
+
+    private function handleListOfferings(Response $response): void
+    {
+        if (!$this->marketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not initialized']);
+            return;
+        }
+        $this->json($response, array_map(fn($o) => $o->toArray(), $this->marketplace->getOfferings()));
+    }
+
+    private function handleCreateOffering(Request $request, Response $response): void
+    {
+        if (!$this->marketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not initialized']);
+            return;
+        }
+        $body = json_decode($request->getContent(), true) ?? [];
+        $idleAgents = (int) ($body['idle_agents'] ?? 0);
+        $capabilities = $body['capabilities'] ?? [];
+        if ($idleAgents <= 0) {
+            $response->status(400);
+            $this->json($response, ['error' => 'idle_agents must be > 0']);
+            return;
+        }
+        $offering = $this->marketplace->announceOffering($idleAgents, $capabilities);
+        $response->status(201);
+        $this->json($response, $offering->toArray());
+    }
+
+    private function handleWithdrawOffering(string $id, Response $response): void
+    {
+        if (!$this->marketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not initialized']);
+            return;
+        }
+        $withdrawn = $this->marketplace->withdrawOffering($id);
+        if (!$withdrawn) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Offering not found or not owned by this node']);
+            return;
+        }
+        $this->json($response, ['withdrawn' => true, 'offering_id' => $id]);
+    }
+
+    private function handleRequestTribute(Request $request, Response $response): void
+    {
+        if (!$this->marketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not initialized']);
+            return;
+        }
+        $body = json_decode($request->getContent(), true) ?? [];
+        $offeringId = $body['offering_id'] ?? '';
+        $taskCount = (int) ($body['task_count'] ?? 1);
+        if (!$offeringId) {
+            $response->status(400);
+            $this->json($response, ['error' => 'offering_id is required']);
+            return;
+        }
+        $tribute = $this->marketplace->requestTribute($offeringId, $taskCount);
+        if (!$tribute) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Offering not found or expired']);
+            return;
+        }
+        $response->status(201);
+        $this->json($response, $tribute->toArray());
+    }
+
+    private function handleListTributes(Response $response): void
+    {
+        if (!$this->marketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not initialized']);
+            return;
+        }
+        $this->json($response, array_map(fn($t) => $t->toArray(), $this->marketplace->getTributes()));
+    }
+
+    private function handleWallet(Response $response): void
+    {
+        if (!$this->marketplace) {
+            $this->json($response, ['balance' => 0, 'currency' => 'VOID']);
+            return;
+        }
+        $this->json($response, $this->marketplace->getWallet());
     }
 
     private function json(Response $response, array $data): void

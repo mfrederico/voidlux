@@ -47,6 +47,49 @@ class MessageTypes
     public const AGENT_SYNC_REQ  = 0x51;
     public const AGENT_SYNC_RSP  = 0x52;
 
+    // Authentication messages
+    public const AUTH_CHALLENGE = 0x60;
+    public const AUTH_RESPONSE  = 0x61;
+    public const AUTH_REJECT    = 0x62;
+
+    // Identity gossip messages
+    public const IDENTITY_ANNOUNCE  = 0x70;
+    public const CREDENTIAL_ISSUE   = 0x71;
+    public const IDENTITY_SYNC_REQ  = 0x72;
+    public const IDENTITY_SYNC_RSP  = 0x73;
+
+    // Consensus protocol messages
+    public const CONSENSUS_PROPOSE  = 0x80;
+    public const CONSENSUS_VOTE     = 0x81;
+    public const CONSENSUS_COMMIT   = 0x82;
+    public const CONSENSUS_ABORT    = 0x83;
+    public const CONSENSUS_SYNC_REQ = 0x84;
+    public const CONSENSUS_SYNC_RSP = 0x85;
+
+    // DHT (decentralized storage) messages
+    public const DHT_PUT      = 0x90;
+    public const DHT_GET      = 0x91;
+    public const DHT_GET_RSP  = 0x92;
+    public const DHT_DELETE   = 0x93;
+    public const DHT_SYNC_REQ = 0x94;
+    public const DHT_SYNC_RSP = 0x95;
+
+    // Discovery DHT messages (peer discovery, not storage)
+    public const DHT_DISC_LOOKUP     = 0xA0;
+    public const DHT_DISC_LOOKUP_RSP = 0xA1;
+    public const DHT_DISC_ANNOUNCE   = 0xA2;
+
+    // Swarm node registry messages
+    public const SWARM_NODE_REGISTER = 0xB0;
+    public const SWARM_NODE_STATUS   = 0xB1;
+
+    // Galactic marketplace messages
+    public const OFFERING_ANNOUNCE = 0xC0;
+    public const OFFERING_WITHDRAW = 0xC1;
+    public const TRIBUTE_REQUEST   = 0xC2;
+    public const TRIBUTE_ACCEPT    = 0xC3;
+    public const TRIBUTE_REJECT    = 0xC4;
+
     public const NAMES = [
         self::HELLO    => 'HELLO',
         self::POST     => 'POST',
@@ -74,6 +117,35 @@ class MessageTypes
         self::CENSUS_REQUEST    => 'CENSUS_REQUEST',
         self::AGENT_SYNC_REQ    => 'AGENT_SYNC_REQ',
         self::AGENT_SYNC_RSP    => 'AGENT_SYNC_RSP',
+        self::AUTH_CHALLENGE    => 'AUTH_CHALLENGE',
+        self::AUTH_RESPONSE     => 'AUTH_RESPONSE',
+        self::AUTH_REJECT       => 'AUTH_REJECT',
+        self::IDENTITY_ANNOUNCE  => 'IDENTITY_ANNOUNCE',
+        self::CREDENTIAL_ISSUE   => 'CREDENTIAL_ISSUE',
+        self::IDENTITY_SYNC_REQ  => 'IDENTITY_SYNC_REQ',
+        self::IDENTITY_SYNC_RSP  => 'IDENTITY_SYNC_RSP',
+        self::CONSENSUS_PROPOSE  => 'CONSENSUS_PROPOSE',
+        self::CONSENSUS_VOTE     => 'CONSENSUS_VOTE',
+        self::CONSENSUS_COMMIT   => 'CONSENSUS_COMMIT',
+        self::CONSENSUS_ABORT    => 'CONSENSUS_ABORT',
+        self::CONSENSUS_SYNC_REQ => 'CONSENSUS_SYNC_REQ',
+        self::CONSENSUS_SYNC_RSP => 'CONSENSUS_SYNC_RSP',
+        self::DHT_PUT      => 'DHT_PUT',
+        self::DHT_GET      => 'DHT_GET',
+        self::DHT_GET_RSP  => 'DHT_GET_RSP',
+        self::DHT_DELETE   => 'DHT_DELETE',
+        self::DHT_SYNC_REQ => 'DHT_SYNC_REQ',
+        self::DHT_SYNC_RSP => 'DHT_SYNC_RSP',
+        self::DHT_DISC_LOOKUP     => 'DHT_DISC_LOOKUP',
+        self::DHT_DISC_LOOKUP_RSP => 'DHT_DISC_LOOKUP_RSP',
+        self::DHT_DISC_ANNOUNCE   => 'DHT_DISC_ANNOUNCE',
+        self::SWARM_NODE_REGISTER => 'SWARM_NODE_REGISTER',
+        self::SWARM_NODE_STATUS   => 'SWARM_NODE_STATUS',
+        self::OFFERING_ANNOUNCE => 'OFFERING_ANNOUNCE',
+        self::OFFERING_WITHDRAW => 'OFFERING_WITHDRAW',
+        self::TRIBUTE_REQUEST   => 'TRIBUTE_REQUEST',
+        self::TRIBUTE_ACCEPT    => 'TRIBUTE_ACCEPT',
+        self::TRIBUTE_REJECT    => 'TRIBUTE_REJECT',
     ];
 
     public static function name(int $type): string

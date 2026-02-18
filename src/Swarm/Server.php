@@ -9,9 +9,7 @@ use Swoole\Http\Request;
 use Swoole\Http\Response;
 use Swoole\WebSocket\Frame;
 use Swoole\WebSocket\Server as WsServer;
-use VoidLux\P2P\Discovery\PeerExchange;
-use VoidLux\P2P\Discovery\SeedPeers;
-use VoidLux\P2P\Discovery\UdpBroadcast;
+use VoidLux\P2P\Discovery\DiscoveryManager;
 use VoidLux\P2P\PeerManager;
 use VoidLux\P2P\Protocol\LamportClock;
 use VoidLux\P2P\Protocol\MessageTypes;
@@ -20,6 +18,7 @@ use VoidLux\P2P\Transport\TcpMesh;
 use VoidLux\Swarm\Agent\AgentBridge;
 use VoidLux\Swarm\Agent\AgentMonitor;
 use VoidLux\Swarm\Agent\AgentRegistry;
+use VoidLux\Swarm\Auth\EmperorConnectionProtocol;
 use VoidLux\Swarm\Ai\LlmClient;
 use VoidLux\Swarm\Ai\TaskPlanner;
 use VoidLux\Swarm\Ai\TaskReviewer;
@@ -32,6 +31,10 @@ use VoidLux\Swarm\Orchestrator\ClaimResolver;
 use VoidLux\Swarm\Orchestrator\EmperorController;
 use VoidLux\Swarm\Orchestrator\TaskDispatcher;
 use VoidLux\Swarm\Orchestrator\TaskQueue;
+use VoidLux\Swarm\Galactic\GalacticMarketplace;
+use VoidLux\Swarm\Storage\DhtAntiEntropy;
+use VoidLux\Swarm\Storage\DhtEngine;
+use VoidLux\Swarm\Storage\DhtStorage;
 use VoidLux\Swarm\Storage\SwarmDatabase;
 
 /**
@@ -45,8 +48,7 @@ class Server
     private LamportClock $clock;
     private TcpMesh $mesh;
     private PeerManager $peerManager;
-    private PeerExchange $peerExchange;
-    private UdpBroadcast $udpBroadcast;
+    private DiscoveryManager $discoveryManager;
     private TaskGossipEngine $taskGossip;
     private TaskAntiEntropy $taskAntiEntropy;
     private AgentAntiEntropy $agentAntiEntropy;
@@ -58,8 +60,15 @@ class Server
     private EmperorController $controller;
     private LeaderElection $leaderElection;
     private ?TaskDispatcher $taskDispatcher = null;
+    private ?EmperorConnectionProtocol $connectionProtocol = null;
+    private ?DhtStorage $dhtStorage = null;
+    private ?DhtEngine $dhtEngine = null;
+    private ?DhtAntiEntropy $dhtAntiEntropy = null;
+    private ?GalacticMarketplace $marketplace = null;
     private ?SwarmWebSocketHandler $wsHandler = null;
     private ?WsServer $server = null;
+    private Registry $swarmRegistry;
+    private Status $swarmStatus;
     private float $startTime;
     private bool $running = false;
 
@@ -77,6 +86,7 @@ class Server
         private readonly int $llmPort = 11434,
         private readonly string $claudeApiKey = '',
         private readonly string $testCommand = '',
+        private readonly string $authSecret = '',
     ) {
         $this->startTime = microtime(true);
     }
@@ -155,7 +165,21 @@ class Server
         $this->agentRegistry = new AgentRegistry($this->db, $this->taskGossip, $this->clock, $this->nodeId);
         $this->agentRegistry->setTaskQueue($this->taskQueue);
         $this->agentMonitor = new AgentMonitor($this->db, $this->agentBridge, $this->taskQueue, $this->agentRegistry, $this->nodeId);
-        $this->peerExchange = new PeerExchange($this->mesh, $this->peerManager);
+
+        // Unified discovery manager: UDP broadcast + multicast + PEX + DHT
+        $this->discoveryManager = new DiscoveryManager(
+            mesh: $this->mesh,
+            peerManager: $this->peerManager,
+            nodeId: $this->nodeId,
+            p2pPort: $this->p2pPort,
+            httpPort: $this->httpPort,
+            role: $this->role,
+            discoveryPort: $this->discoveryPort,
+            seedPeers: $this->seedPeers,
+        );
+        $this->discoveryManager->onLog(function (string $msg) {
+            $this->log($msg);
+        });
 
         $this->controller = new EmperorController(
             $this->db,
@@ -181,9 +205,11 @@ class Server
             $this->leaderElection->stop();
             $this->taskAntiEntropy->stop();
             $this->agentAntiEntropy->stop();
-            $this->peerExchange->stop();
+            $this->dhtAntiEntropy?->stop();
+            $this->swarmStatus->stop();
+            $this->swarmRegistry->stop();
+            $this->discoveryManager->stop();
             $this->peerManager->stop();
-            $this->udpBroadcast->stop();
             $this->mesh->stop();
             $this->log("Regicide: shutting down server");
             $this->server?->shutdown();
@@ -228,28 +254,88 @@ class Server
                 }
             }
         });
+
+        // Initialize decentralized storage (DHT)
+        $this->dhtStorage = new DhtStorage($this->db->getPdo());
+        $this->dhtEngine = new DhtEngine($this->mesh, $this->dhtStorage, $this->clock, $this->nodeId);
+        $this->dhtAntiEntropy = new DhtAntiEntropy(
+            $this->mesh, $this->dhtStorage, $this->dhtEngine,
+            $this->peerManager, $this->clock, $this->nodeId,
+        );
+        $this->controller->setDhtEngine($this->dhtEngine);
+        $this->controller->setDiscoveryManager($this->discoveryManager);
+
+        // Swarm node registry + status tracking
+        $this->swarmRegistry = new Registry(
+            $this->db, $this->mesh, $this->clock,
+            $this->nodeId, $this->role,
+            $this->httpHost, $this->httpPort, $this->p2pPort,
+        );
+        $this->swarmStatus = new Status(
+            $this->db, $this->mesh, $this->clock,
+            $this->swarmRegistry, $this->nodeId,
+        );
+        $this->swarmStatus->onStatusChange(function (string $nodeId, string $old, string $new, $node) {
+            $this->log("Node " . substr($nodeId, 0, 8) . " status: {$old} -> {$new}");
+            $this->wsHandler?->pushStatus([
+                'node_status_change' => [
+                    'node_id' => $nodeId,
+                    'old_status' => $old,
+                    'new_status' => $new,
+                ],
+            ]);
+        });
+        $this->controller->setSwarmRegistry($this->swarmRegistry);
+        $this->controller->setSwarmStatus($this->swarmStatus);
+
+        // Galactic marketplace (in-memory offering/tribute exchange)
+        $this->marketplace = new GalacticMarketplace($this->nodeId);
+        $this->controller->setMarketplace($this->marketplace);
     }
 
     private function startP2P(): void
     {
-        $this->mesh->onConnection(function (Connection $conn) {
-            $conn->send([
-                'type' => MessageTypes::HELLO,
-                'node_id' => $this->nodeId,
-                'p2p_port' => $this->p2pPort,
-                'http_port' => $this->httpPort,
-                'role' => $this->role,
-            ]);
+        // Install the connection auth protocol (transparent when no secret configured)
+        $this->connectionProtocol = new EmperorConnectionProtocol(
+            $this->mesh,
+            $this->nodeId,
+            $this->role,
+            $this->httpPort,
+            $this->p2pPort,
+            $this->authSecret,
+        );
+
+        $this->connectionProtocol->onAuthenticated(function (Connection $conn, string $peerNodeId, string $peerRole) {
+            $this->log("Peer authenticated: {$peerNodeId} ({$peerRole})");
         });
 
-        $this->mesh->onMessage(function (Connection $conn, array $msg) {
+        $this->connectionProtocol->onMessage(function (Connection $conn, array $msg) {
             $this->onPeerMessage($conn, $msg);
         });
 
-        $this->mesh->onDisconnect(function (Connection $conn) {
+        $this->connectionProtocol->onDisconnect(function (Connection $conn) {
+            $nodeId = $conn->getPeerId();
             $this->peerManager->unregisterPeer($conn);
+            if ($nodeId) {
+                $this->discoveryManager->onPeerDisconnected($nodeId);
+                $this->swarmRegistry->onPeerDisconnect($nodeId);
+            }
             $this->log("Peer disconnected: {$conn->address()}");
         });
+
+        $this->connectionProtocol->onRejected(function (Connection $conn, string $reason) {
+            $this->log("Peer rejected: {$conn->address()} ({$reason})");
+        });
+
+        $this->connectionProtocol->onLog(function (string $msg) {
+            $this->log($msg);
+        });
+
+        $this->connectionProtocol->install();
+
+        if ($this->connectionProtocol->isAuthEnabled()) {
+            $this->log("P2P authentication enabled");
+        }
 
         Coroutine::create(function () {
             $this->mesh->start();
@@ -259,38 +345,10 @@ class Server
             $this->peerManager->start();
         });
 
+        // Start unified discovery: UDP broadcast + multicast + PEX + DHT + seed peers
         Coroutine::create(function () {
-            $this->peerExchange->start();
+            $this->discoveryManager->start();
         });
-
-        // UDP discovery
-        $this->udpBroadcast = new UdpBroadcast($this->discoveryPort, $this->p2pPort, $this->nodeId);
-        $this->udpBroadcast->onPeerDiscovered(function (string $host, int $port, string $nodeId) {
-            if ($nodeId === $this->nodeId) {
-                return; // Don't connect to ourselves
-            }
-            if (!$this->peerManager->isConnected($nodeId)) {
-                $this->log("Discovered peer via UDP: {$host}:{$port}");
-                $this->peerManager->addKnownAddress($host, $port);
-                Coroutine::create(function () use ($host, $port) {
-                    $this->mesh->connectTo($host, $port);
-                });
-            }
-        });
-
-        Coroutine::create(function () {
-            $this->udpBroadcast->start();
-        });
-
-        // Seed peers
-        $seeds = new SeedPeers($this->seedPeers);
-        foreach ($seeds->getSeeds() as $seed) {
-            $this->peerManager->addKnownAddress($seed['host'], $seed['port']);
-            Coroutine::create(function () use ($seed) {
-                $this->log("Connecting to seed peer: {$seed['host']}:{$seed['port']}");
-                $this->mesh->connectTo($seed['host'], $seed['port']);
-            });
-        }
 
         $this->log("P2P started on port {$this->p2pPort}");
     }
@@ -344,6 +402,21 @@ class Server
             $this->leaderElection->start();
         });
 
+        // DHT anti-entropy (sync + purge loops)
+        Coroutine::create(function () {
+            $this->dhtAntiEntropy->start();
+        });
+
+        // Swarm node registry (auto-register + heartbeat + offline detection)
+        Coroutine::create(function () {
+            $this->swarmRegistry->start();
+        });
+
+        // Swarm node health monitoring (ping + status tracking)
+        Coroutine::create(function () {
+            $this->swarmStatus->start();
+        });
+
         // Periodic clock persistence (no WS push — dashboard is fully WS-driven)
         $this->running = true;
         Coroutine::create(function () {
@@ -364,15 +437,17 @@ class Server
             case MessageTypes::HELLO:
                 $nodeId = $msg['node_id'] ?? '';
                 $p2pPort = $msg['p2p_port'] ?? $this->p2pPort;
+                $httpPort = $msg['http_port'] ?? 0;
                 $peerRole = $msg['role'] ?? 'worker';
                 $this->peerManager->registerPeer($conn, $nodeId, $conn->remoteHost, $p2pPort);
+                $this->discoveryManager->onPeerConnected($nodeId, $conn->remoteHost, $p2pPort, $httpPort, $peerRole);
                 $this->log("Peer connected: {$nodeId} at {$conn->address()} (role: {$peerRole})");
 
                 // If the connecting peer is the emperor, update election state
                 if ($peerRole === 'emperor') {
                     $this->leaderElection->handleHeartbeat([
                         'node_id' => $nodeId,
-                        'http_port' => $msg['http_port'] ?? 0,
+                        'http_port' => $httpPort,
                         'p2p_port' => $p2pPort,
                         'lamport_ts' => $this->clock->value(),
                     ]);
@@ -382,10 +457,15 @@ class Server
                 if ($peerRole !== 'seneschal') {
                     $this->agentAntiEntropy->syncFromPeer($conn);
                 }
+
+                // Auto-register peer node in swarm registry
+                $this->swarmRegistry->onPeerHello(
+                    $nodeId, $peerRole, $conn->remoteHost, $httpPort, $p2pPort,
+                );
                 break;
 
             case MessageTypes::PEX:
-                $newPeers = $this->peerExchange->handlePex($msg);
+                $newPeers = $this->discoveryManager->handlePex($msg);
                 foreach ($newPeers as $peer) {
                     $this->peerManager->addKnownAddress($peer['host'], $peer['port']);
                 }
@@ -400,6 +480,15 @@ class Server
                 break;
 
             case MessageTypes::PONG:
+                $sentTs = $msg['timestamp'] ?? 0;
+                if ($sentTs > 0) {
+                    $latencyMs = (microtime(true) - $sentTs) * 1000;
+                    $peerNodeId = $conn->getPeerId();
+                    if ($peerNodeId) {
+                        $this->discoveryManager->recordLatency($peerNodeId, $latencyMs);
+                        $this->swarmStatus->onPong($peerNodeId, $sentTs);
+                    }
+                }
                 break;
 
             // --- Swarm task messages ---
@@ -551,6 +640,73 @@ class Server
                     $this->log("Synced {$count} agent(s) from {$conn->address()}");
                 }
                 break;
+
+            // --- DHT (decentralized storage) messages ---
+            case MessageTypes::DHT_PUT:
+                $this->dhtEngine?->receivePut($msg, $conn->address());
+                break;
+
+            case MessageTypes::DHT_GET:
+                $this->dhtEngine?->receiveGetRequest($msg, $conn);
+                break;
+
+            case MessageTypes::DHT_GET_RSP:
+                // Handled by coroutine awaiting response (see DhtEngine)
+                break;
+
+            case MessageTypes::DHT_DELETE:
+                $this->dhtEngine?->receiveDelete($msg, $conn->address());
+                break;
+
+            case MessageTypes::DHT_SYNC_REQ:
+                $this->dhtEngine?->handleSyncRequest($msg, $conn);
+                break;
+
+            case MessageTypes::DHT_SYNC_RSP:
+                $count = $this->dhtEngine?->handleSyncResponse($msg) ?? 0;
+                if ($count > 0) {
+                    $this->log("DHT synced {$count} entries from {$conn->address()}");
+                }
+                break;
+
+            // --- Discovery DHT messages (peer discovery) ---
+            case MessageTypes::DHT_DISC_LOOKUP:
+            case MessageTypes::DHT_DISC_LOOKUP_RSP:
+            case MessageTypes::DHT_DISC_ANNOUNCE:
+                $this->discoveryManager->handleDhtMessage($conn, $msg);
+                break;
+
+            // --- Swarm node registry messages ---
+            case MessageTypes::SWARM_NODE_REGISTER:
+                $node = $this->swarmRegistry->receiveNodeRegister($msg, $conn->address());
+                if ($node) {
+                    $this->log("Node registered: " . substr($node->nodeId, 0, 8) . " ({$node->role})");
+                    $this->wsHandler?->pushStatus(['node_registered' => $node->toArray()]);
+                }
+                break;
+
+            case MessageTypes::SWARM_NODE_STATUS:
+                $node = $this->swarmRegistry->receiveNodeStatus($msg, $conn->address());
+                if ($node) {
+                    $this->wsHandler?->pushStatus(['node_status' => $node->toArray()]);
+                }
+                break;
+
+            // --- Galactic marketplace messages ---
+            case MessageTypes::OFFERING_ANNOUNCE:
+                $offering = $this->marketplace?->receiveOffering($msg['offering'] ?? $msg);
+                if ($offering) {
+                    $this->log("Offering received from " . substr($offering->nodeId, 0, 8) . ": {$offering->idleAgents} agents");
+                    $this->wsHandler?->pushStatus(['offering' => $offering->toArray()]);
+                }
+                break;
+
+            case MessageTypes::OFFERING_WITHDRAW:
+                $withdrawn = $this->marketplace?->receiveWithdraw($msg);
+                if ($withdrawn) {
+                    $this->wsHandler?->pushStatus(['offering_withdrawn' => $msg['offering_id'] ?? '']);
+                }
+                break;
         }
     }
 
@@ -563,6 +719,10 @@ class Server
             'tasks' => $this->db->getTaskCount(),
             'agents' => $this->db->getAgentCount(),
             'peers' => $this->peerManager->getPeerCount(),
+            'swarm_nodes' => array_map(fn($n) => $n->toArray(), $this->swarmRegistry->getAllNodes()),
+            'swarm_health' => $this->swarmStatus->getSnapshot()['health'] ?? [],
+            'offerings' => array_map(fn($o) => $o->toArray(), $this->marketplace?->getOfferings() ?? []),
+            'wallet' => $this->marketplace?->getWallet() ?? ['balance' => 0, 'currency' => 'VOID'],
         ];
         $this->wsHandler->pushFullState($fd, $tasks, $agents, $status);
     }
@@ -732,6 +892,9 @@ class Server
         }
         if ($this->testCommand !== '') {
             $cmd .= ' --test-command=' . escapeshellarg($this->testCommand);
+        }
+        if ($this->authSecret !== '') {
+            $cmd .= ' --auth-secret=' . escapeshellarg($this->authSecret);
         }
 
         $this->log("Spawning replacement worker: {$cmd}");

@@ -224,6 +224,83 @@ body {
 .review-badge { background: #3a3a1a; border: 1px solid #666600; border-radius: 4px; padding: 4px 8px; font-size: 0.75rem; color: #ddcc44; }
 .subtask-progress { font-size: 0.8rem; color: #888; margin-left: 8px; }
 
+/* Pipeline indicator */
+.pipeline { display: flex; align-items: center; gap: 0; margin: 8px 0 6px 0; }
+.pipeline-phase {
+    display: flex; align-items: center; gap: 4px; font-size: 0.7rem;
+    color: #555; padding: 3px 8px; position: relative;
+}
+.pipeline-phase .phase-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: #333; border: 1px solid #555;
+}
+.pipeline-phase.done .phase-dot { background: #1a5a1a; border-color: #338833; }
+.pipeline-phase.active .phase-dot { background: #cc6600; border-color: #ff8800; box-shadow: 0 0 6px #cc6600; }
+.pipeline-phase.active { color: #ff9900; font-weight: bold; }
+.pipeline-phase.done { color: #448844; }
+.pipeline-phase.failed .phase-dot { background: #aa2222; border-color: #ff4444; box-shadow: 0 0 6px #aa2222; }
+.pipeline-phase.failed { color: #ff4444; font-weight: bold; }
+.pipeline-connector { width: 16px; height: 2px; background: #333; }
+.pipeline-connector.done { background: #338833; }
+.pipeline-connector.active { background: #cc6600; }
+
+/* PR contribution card */
+.pr-card {
+    background: linear-gradient(135deg, #0a1a0a, #0d2a0d);
+    border: 2px solid #338833; border-radius: 8px;
+    padding: 14px; margin-top: 10px;
+}
+.pr-card a.pr-link {
+    display: inline-block; background: linear-gradient(135deg, #228822, #33aa33);
+    color: #fff; padding: 8px 20px; border-radius: 6px; text-decoration: none;
+    font-weight: bold; font-size: 0.9rem; transition: box-shadow 0.2s;
+}
+.pr-card a.pr-link:hover { box-shadow: 0 0 12px rgba(50,170,50,0.5); }
+.pr-card .pr-summary { color: #88cc88; font-size: 0.85rem; margin-top: 8px; }
+.pr-card .pr-subtask { font-size: 0.8rem; color: #668866; padding: 2px 0; }
+
+/* Galactic marketplace */
+.galactic-section h2 { color: #8866cc !important; border-bottom-color: #442266 !important; }
+.galactic-card {
+    background: linear-gradient(135deg, #10102a, #1a1a3a);
+    border: 1px solid #333366; border-radius: 6px; padding: 14px;
+}
+.galactic-card:hover { border-color: #5555aa; }
+.galactic-card .offering-agents {
+    font-size: 1.3rem; font-weight: bold;
+    background: linear-gradient(90deg, #8866cc, #aa88ff);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.galactic-card .offering-price { font-size: 0.85rem; color: #8888cc; }
+.galactic-card .offering-node { font-size: 0.8rem; color: #666699; }
+.wallet-badge {
+    background: linear-gradient(135deg, #1a1a3a, #2a2a4a);
+    border: 1px solid #444488; border-radius: 4px; padding: 4px 10px;
+    font-size: 0.8rem; color: #aa88ff;
+}
+.tribute-row { font-size: 0.8rem; padding: 6px 0; border-bottom: 1px solid #1a1a2a; }
+.tribute-status-pending { color: #cccc66; }
+.tribute-status-accepted { color: #66cc66; }
+.tribute-status-rejected { color: #cc6666; }
+.tribute-status-completed { color: #88ccff; }
+
+/* Contributions (PR list) */
+.contributions-section h2 { color: #33aa66 !important; border-bottom-color: #1a3a2a !important; }
+.contribution-row {
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    background: #0d1a0d; border: 1px solid #1a3a1a; border-radius: 6px; margin-bottom: 6px;
+}
+.contribution-row:hover { border-color: #338833; }
+.contribution-row .pr-icon { font-size: 1.2rem; color: #33aa33; flex-shrink: 0; }
+.contribution-row .pr-info { flex: 1; min-width: 0; }
+.contribution-row .pr-title { font-size: 0.9rem; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.contribution-row .pr-meta { font-size: 0.75rem; color: #668866; margin-top: 2px; }
+.contribution-row a.pr-open {
+    background: linear-gradient(135deg, #228822, #33aa33); color: #fff;
+    padding: 5px 14px; border-radius: 4px; text-decoration: none;
+    font-size: 0.8rem; font-weight: bold; white-space: nowrap; flex-shrink: 0;
+}
+.contribution-row a.pr-open:hover { box-shadow: 0 0 8px rgba(50,170,50,0.4); }
+
 .emperor-banner {
     padding: 8px 24px; font-size: 0.8rem; display: flex; align-items: center; gap: 8px;
 }
@@ -263,6 +340,7 @@ body {
         <span>Tasks: <span id="task-count">0</span></span>
         <span>Agents: <span id="agent-count">0</span></span>
         <span>WS: <span id="ws-status">connecting</span></span>
+        <span class="wallet-badge" id="wallet-badge">-- VOID</span>
     </div>
 </div>
 <div class="emperor-banner self" id="emperor-banner">
@@ -296,6 +374,11 @@ body {
             <div class="stat"><div class="stat-value" id="stat-failed">0</div><div class="stat-label">Failed</div></div>
             <div class="stat"><div class="stat-value" id="stat-agents">0</div><div class="stat-label">Agents</div></div>
         </div>
+    </div>
+
+    <div class="section contributions-section" id="contributions-section" style="display:none;">
+        <h2>Contributions</h2>
+        <div id="contributions-list"></div>
     </div>
 
     <div class="section">
@@ -349,6 +432,19 @@ body {
         </div>
     </div>
 
+    <div class="section galactic-section">
+        <h2>Galactic Marketplace
+            <button class="toggle-btn" onclick="makeOffering()" style="border-color:#444488;color:#8866cc;">Make Offering</button>
+        </h2>
+        <div class="card-grid" id="offerings-list">
+            <div class="empty" style="color:#444466;">No offerings from other nodes</div>
+        </div>
+        <div id="tributes-section" style="margin-top:12px;display:none;">
+            <h3 style="font-size:0.9rem;color:#8866cc;margin-bottom:8px;">Tribute History</h3>
+            <div id="tributes-list"></div>
+        </div>
+    </div>
+
     <div class="section">
         <h2>Event Log</h2>
         <div class="log-panel" id="log-panel"></div>
@@ -374,7 +470,7 @@ document.getElementById('task-project-path').value = WORKBENCH;
 document.getElementById('agent-project-path').value = WORKBENCH;
 
 // ---- Client-side state (populated entirely via WebSocket) ----
-let state = { tasks: {}, agents: {}, status: {} };
+let state = { tasks: {}, agents: {}, status: {}, offerings: [], tributes: [], wallet: {balance:0,currency:'VOID'} };
 
 let emperorNodeId = NODE_ID;
 function updateEmperorBanner(empId) {
@@ -411,12 +507,66 @@ function statusBadge(status) {
     return '<span class="card-status status-'+status+'">'+status+'</span>';
 }
 
+function getPipelinePhase(t, children) {
+    if (t.status === 'failed') return -1;
+    if (t.status === 'completed') return 5;
+    if (t.status === 'merging') return 4;
+    if (children.some(c => c.status === 'pending_review')) return 3;
+    if (children.some(c => ['claimed','in_progress','waiting_input'].includes(c.status))) return 2;
+    if (t.status === 'planning') return 1;
+    if (t.status === 'in_progress' && children.length) return 2;
+    return 0;
+}
+
+function renderPipeline(phase) {
+    const phases = [{n:'Planning',i:1},{n:'Working',i:2},{n:'Reviewing',i:3},{n:'Merging',i:4},{n:'Done',i:5}];
+    let html = '<div class="pipeline">';
+    phases.forEach((p, idx) => {
+        let cls = 'pipeline-phase';
+        if (phase === -1) { cls += ' failed'; }
+        else if (p.i < phase) cls += ' done';
+        else if (p.i === phase) cls += ' active';
+        html += '<div class="'+cls+'"><span class="phase-dot"></span> '+p.n+'</div>';
+        if (idx < phases.length - 1) {
+            let cCls = 'pipeline-connector';
+            if (phase !== -1 && p.i < phase) cCls += ' done';
+            else if (phase !== -1 && p.i === phase) cCls += ' active';
+            html += '<div class="'+cCls+'"></div>';
+        }
+    });
+    if (phase === -1) html += '<div class="pipeline-phase failed"><span class="phase-dot"></span> Failed</div>';
+    html += '</div>';
+    return html;
+}
+
+function renderPrCard(t, children) {
+    const prMatch = t.result?.match(/PR: (https?:\/\/\S+)/);
+    if (!prMatch) return '';
+    const prUrl = prMatch[1];
+    let html = '<div class="pr-card">';
+    html += '<a class="pr-link" href="'+escapeHtml(prUrl)+'" target="_blank">View Pull Request</a>';
+    const summaryMatch = t.result?.match(/^(.+?)(?:\n|$)/);
+    if (summaryMatch) html += '<div class="pr-summary">'+escapeHtml(summaryMatch[1])+'</div>';
+    if (children.length) {
+        html += '<div style="margin-top:6px;">';
+        children.forEach(c => {
+            const icon = c.status === 'completed' ? '&#10003;' : '&#10007;';
+            const color = c.status === 'completed' ? '#66cc66' : '#cc6666';
+            html += '<div class="pr-subtask"><span style="color:'+color+'">'+icon+'</span> '+escapeHtml(c.title)+'</div>';
+        });
+        html += '</div>';
+    }
+    html += '</div>';
+    return html;
+}
+
 function renderTask(t, isSubtask) {
     const agent = state.agents[t.assigned_to];
     const agentName = t.assigned_to ? (agent?.name || t.assigned_to.substring(0,8)) : null;
     const isActive = t.status === 'claimed' || t.status === 'in_progress' || t.status === 'waiting_input' || t.status === 'merging';
     const children = getTaskChildren(t.id);
-    const cardClass = isSubtask ? 'card subtask-card' : (t.parent_id === null && children.length ? 'card parent-card' : 'card');
+    const isParent = t.parent_id === null && children.length;
+    const cardClass = isSubtask ? 'card subtask-card' : (isParent ? 'card parent-card' : 'card');
     let html = '<div class="'+cardClass+'" id="task-'+t.id+'">';
 
     if (t.status === 'planning') {
@@ -430,7 +580,8 @@ function renderTask(t, isSubtask) {
         html += '<div class="card-title">'+escapeHtml(t.title)+' '+statusBadge(t.status)+'</div>';
     }
 
-    if (!isSubtask && children.length) {
+    if (isParent && !isSubtask) {
+        html += renderPipeline(getPipelinePhase(t, children));
         const done = children.filter(c => c.status === 'completed').length;
         html += '<div class="subtask-progress">Subtasks: '+done+'/'+children.length+' completed</div>';
     }
@@ -466,7 +617,9 @@ function renderTask(t, isSubtask) {
     }
 
     if (t.git_branch) html += '<div style="font-size:0.8rem;color:#8888cc;margin-top:4px;">Branch: <code>'+escapeHtml(t.git_branch)+'</code></div>';
-    if (t.result && t.result.match(/PR: (https?:\/\/\S+)/)) {
+    if (isParent && t.status === 'completed' && t.result?.match(/PR: (https?:\/\/\S+)/)) {
+        html += renderPrCard(t, children);
+    } else if (t.result && t.result.match(/PR: (https?:\/\/\S+)/)) {
         const prUrl = t.result.match(/PR: (https?:\/\/\S+)/)[1];
         html += '<div style="font-size:0.8rem;margin-top:4px;"><a href="'+escapeHtml(prUrl)+'" target="_blank" style="color:#66aaff;text-decoration:underline;">View Pull Request</a></div>';
     }
@@ -614,6 +767,12 @@ function renderAll() {
     if (!agentEl.contains(document.activeElement)) {
         agentEl.innerHTML = agents.length ? agents.map(renderAgent).join('') : '<div class="empty">No agents registered</div>';
     }
+
+    // Contributions (PRs)
+    renderContributions();
+
+    // Galactic marketplace
+    renderGalactic();
 }
 
 function renderJobLog() {
@@ -910,12 +1069,139 @@ function closeModal() {
 
 document.addEventListener('keydown', e => { if (e.key==='Escape') closeModal(); });
 
+// ---- Contributions (PR list) ----
+function renderContributions() {
+    const section = document.getElementById('contributions-section');
+    const listEl = document.getElementById('contributions-list');
+    const prRegex = /PR: (https?:\/\/\S+)/;
+
+    // Scan ALL tasks (active + archived) for PR URLs
+    const prs = [];
+    Object.values(state.tasks).forEach(t => {
+        const match = t.result?.match(prRegex);
+        if (match) {
+            const children = getTaskChildren(t.id);
+            const subtaskCount = children.length;
+            const completedCount = children.filter(c => c.status === 'completed').length;
+            prs.push({
+                url: match[1],
+                title: t.title,
+                status: t.status,
+                completedAt: t.completed_at || t.updated_at,
+                subtasks: subtaskCount,
+                completedSubtasks: completedCount,
+                taskId: t.id,
+            });
+        }
+    });
+
+    if (prs.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    section.style.display = '';
+    // Most recent first
+    prs.sort((a,b) => (b.completedAt||'').localeCompare(a.completedAt||''));
+
+    listEl.innerHTML = prs.map(pr => {
+        let meta = pr.completedAt || '';
+        if (pr.subtasks > 0) meta += ' | ' + pr.completedSubtasks + '/' + pr.subtasks + ' subtasks merged';
+        return '<div class="contribution-row">'
+            + '<div class="pr-icon">&#9432;</div>'
+            + '<div class="pr-info">'
+            + '<div class="pr-title" title="'+escapeHtml(pr.title)+'">'+escapeHtml(pr.title)+'</div>'
+            + '<div class="pr-meta">'+escapeHtml(meta)+'</div>'
+            + '</div>'
+            + '<a class="pr-open" href="'+escapeHtml(pr.url)+'" target="_blank">Open PR</a>'
+            + '</div>';
+    }).join('');
+}
+
+// ---- Galactic Marketplace ----
+function renderGalactic() {
+    // Wallet badge
+    document.getElementById('wallet-badge').textContent = state.wallet.balance + ' ' + state.wallet.currency;
+
+    // Offerings from other nodes
+    const offeringsEl = document.getElementById('offerings-list');
+    const peerOfferings = state.offerings.filter(o => o.node_id !== NODE_ID);
+    if (peerOfferings.length === 0) {
+        offeringsEl.innerHTML = '<div class="empty" style="color:#444466;">No offerings from other nodes</div>';
+    } else {
+        offeringsEl.innerHTML = peerOfferings.map(o => {
+            let html = '<div class="galactic-card">';
+            html += '<div class="offering-agents">'+o.idle_agents+' Agent'+(o.idle_agents!==1?'s':'')+'</div>';
+            html += '<div class="offering-price">'+o.price_per_task+' '+o.currency+' / task</div>';
+            html += '<div class="offering-node">Node: '+o.node_id.substring(0,8)+'</div>';
+            if (o.capabilities && o.capabilities.length) html += '<div style="font-size:0.75rem;color:#666699;">Caps: '+o.capabilities.join(', ')+'</div>';
+            html += '<div style="font-size:0.7rem;color:#555577;">Expires: '+o.expires_at+'</div>';
+            html += '<div class="card-actions"><button onclick="requestTribute(\''+o.id+'\')" style="background:#1a1a3a;border:1px solid #444488;color:#aa88ff;">Request Tribute</button></div>';
+            html += '</div>';
+            return html;
+        }).join('');
+    }
+
+    // Tributes
+    const tributesSection = document.getElementById('tributes-section');
+    const tributesList = document.getElementById('tributes-list');
+    if (state.tributes.length === 0) {
+        tributesSection.style.display = 'none';
+    } else {
+        tributesSection.style.display = '';
+        tributesList.innerHTML = state.tributes.map(t => {
+            return '<div class="tribute-row">'
+                + '<span class="tribute-status-'+t.status+'">'+t.status+'</span> '
+                + t.task_count+' task(s) @ '+t.total_cost+' '+t.currency
+                + ' &rarr; '+t.to_node_id.substring(0,8)
+                + ' <span style="color:#555577;font-size:0.7rem;" title="'+t.tx_hash+'">tx:'+t.tx_hash.substring(0,10)+'...</span>'
+                + '</div>';
+        }).join('');
+    }
+}
+
+function makeOffering() {
+    const count = prompt('How many idle agents to offer?', '1');
+    if (!count) return;
+    fetch('/api/swarm/offerings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({idle_agents: parseInt(count)})
+    }).then(r=>r.json()).then(o => {
+        if (o.id) {
+            state.offerings.push(o);
+            addLog('task_assigned', 'Created offering: '+o.idle_agents+' agents');
+            renderGalactic();
+        }
+    });
+}
+
+function requestTribute(offeringId) {
+    const count = prompt('How many tasks to request?', '1');
+    if (!count) return;
+    fetch('/api/swarm/tributes', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({offering_id: offeringId, task_count: parseInt(count)})
+    }).then(r=>r.json()).then(t => {
+        if (t.id) {
+            state.tributes.push(t);
+            addLog('task_assigned', 'Tribute requested: '+t.task_count+' tasks for '+t.total_cost+' '+t.currency);
+            renderGalactic();
+        }
+    });
+}
+
 // ---- WebSocket: the only data source ----
 let ws;
 function connectWs() {
     ws = new WebSocket('ws://'+location.host+'/ws');
     ws.onopen = () => {
         document.getElementById('ws-status').textContent = 'connected';
+        // Fetch tributes (local state not in WS full_state)
+        fetch('/api/swarm/tributes').then(r=>r.json()).then(t => {
+            if (Array.isArray(t)) { state.tributes = t; renderGalactic(); }
+        }).catch(()=>{});
     };
     ws.onclose = () => {
         document.getElementById('ws-status').textContent = 'reconnecting';
@@ -930,6 +1216,8 @@ function connectWs() {
                 msg.tasks.forEach(t => { state.tasks[t.id] = t; });
                 msg.agents.forEach(a => { state.agents[a.id] = a; });
                 state.status = msg.status || {};
+                state.offerings = msg.status?.offerings || [];
+                state.wallet = msg.status?.wallet || {balance:0,currency:'VOID'};
                 renderAll();
                 break;
             case 'task_update':
@@ -950,6 +1238,17 @@ function connectWs() {
             case 'status':
                 if (msg.status.emperor !== undefined) updateEmperorBanner(msg.status.emperor);
                 if (msg.status.promoted) addLog('election', 'This node promoted to emperor');
+                if (msg.status.offering) {
+                    const o = msg.status.offering;
+                    const idx = state.offerings.findIndex(x => x.id === o.id);
+                    if (idx >= 0) state.offerings[idx] = o; else state.offerings.push(o);
+                    addLog('task_assigned', 'Offering from '+o.node_id.substring(0,8)+': '+o.idle_agents+' agents');
+                    renderGalactic();
+                }
+                if (msg.status.offering_withdrawn) {
+                    state.offerings = state.offerings.filter(x => x.id !== msg.status.offering_withdrawn);
+                    renderGalactic();
+                }
                 break;
         }
     };
