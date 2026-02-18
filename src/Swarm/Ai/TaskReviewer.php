@@ -28,7 +28,11 @@ class TaskReviewer
         $systemPrompt = <<<'PROMPT'
 You are a code reviewer. Given a task with acceptance criteria and the agent's reported result, determine if the work meets the criteria.
 
-Be pragmatic: if the agent reports completing the work and the result description is reasonable, accept it. Only reject if there are clear signs the work is incomplete or incorrect.
+Be pragmatic:
+- If the agent reports completing the work and the result description is reasonable, accept it.
+- Only reject if there are clear signs the work is incomplete, incorrect, or the agent gave up.
+- IMPORTANT: The work instructions may reference wrong file paths or the wrong programming language (e.g. Python paths for a PHP project). This happens when the planner couldn't detect the project type. If the agent correctly identified the real language and modified the correct files to achieve the task's INTENT, that is a PASS — do not reject because the file paths or language differ from what the instructions said.
+- Focus on whether the goal was achieved, not whether the exact steps in the instructions were followed verbatim.
 
 Return ONLY valid JSON (no markdown fences, no explanation):
 {"accepted": true|false, "feedback": "Brief explanation of your decision"}

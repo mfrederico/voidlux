@@ -1067,6 +1067,9 @@ class Server
             }
         }
 
+        // Transition claimed → in_progress now that delivery succeeded
+        $this->taskQueue->updateProgress($taskId, $agentId, null);
+
         $this->log("TASK_ASSIGN: delivered task '{$task->title}' to agent {$agent->name}");
         $this->pushTaskToWs('task_assigned', $taskId);
         $agent = $this->db->getAgent($agentId);

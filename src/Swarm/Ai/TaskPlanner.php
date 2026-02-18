@@ -26,8 +26,16 @@ class TaskPlanner
     public function decompose(TaskModel $request): array
     {
         $projectContext = '';
-        if ($request->projectPath && is_dir($request->projectPath)) {
-            $projectContext = $this->getProjectContext($request->projectPath);
+        $projectDir = $request->projectPath;
+        // Git URLs resolve to the shared base clone in workbench/.base/
+        if ($projectDir && !is_dir($projectDir)) {
+            $baseDir = getcwd() . '/workbench/.base';
+            if (is_dir($baseDir)) {
+                $projectDir = $baseDir;
+            }
+        }
+        if ($projectDir && is_dir($projectDir)) {
+            $projectContext = $this->getProjectContext($projectDir);
         }
 
         // Gather available agent capabilities

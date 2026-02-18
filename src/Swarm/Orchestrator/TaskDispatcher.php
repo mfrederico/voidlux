@@ -268,6 +268,8 @@ class TaskDispatcher
                         $this->db->updateAgentStatus($agent->id, 'idle', null);
                         return false;
                     }
+                    // Transition claimed → in_progress after successful delivery
+                    $this->taskQueue->updateProgress($task->id, $agent->id, null);
                 }
                 return true;
             }
