@@ -583,6 +583,11 @@ class SwarmDatabase
         return (int) $this->pdo->query('SELECT COUNT(*) FROM agents')->fetchColumn();
     }
 
+    public function getIdleAgentCount(): int
+    {
+        return (int) $this->pdo->query("SELECT COUNT(*) FROM agents WHERE status = 'idle'")->fetchColumn();
+    }
+
     public function getMaxAgentLamportTs(): int
     {
         return (int) $this->pdo->query('SELECT COALESCE(MAX(lamport_ts), 0) FROM agents')->fetchColumn();

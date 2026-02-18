@@ -18,6 +18,8 @@ use VoidLux\P2P\Protocol\LamportClock;
 use VoidLux\P2P\Protocol\MessageTypes;
 use VoidLux\P2P\Transport\Connection;
 use VoidLux\P2P\Transport\TcpMesh;
+use VoidLux\Swarm\Upgrade\UpgradeCoordinator;
+use VoidLux\Swarm\Upgrade\UpgradeDatabase;
 
 /**
  * Stable reverse proxy that tracks the current emperor via P2P mesh
@@ -43,12 +45,19 @@ class Seneschal
     /** @var array<int, HttpClient> browser fd => upstream WS client */
     private array $wsUpstreams = [];
 
+    private ?UpgradeCoordinator $upgradeCoordinator = null;
+    private ?UpgradeDatabase $upgradeDb = null;
+
+    /** @var array<string, array{node_id: string, host: string, http_port: int, role: string}> */
+    private array $knownPeers = [];
+
     public function __construct(
         private readonly string $httpHost = '0.0.0.0',
         private readonly int $httpPort = 9090,
         private readonly int $p2pPort = 7100,
         private readonly int $discoveryPort = 6101,
         private readonly array $seedPeers = [],
+        private readonly string $dataDir = './data',
     ) {
         $this->nodeId = bin2hex(random_bytes(16));
         $this->clock = new LamportClock();
@@ -120,6 +129,11 @@ class Seneschal
             $this->peerManager->unregisterPeer($conn);
             $this->log("Peer disconnected: {$conn->address()}");
 
+            // Remove from known peers (will be re-added on reconnect)
+            if ($nodeId) {
+                unset($this->knownPeers[$nodeId]);
+            }
+
             // If the emperor's connection dropped, reset so we show the election page
             if ($nodeId && $nodeId === $this->emperorNodeId) {
                 $this->log("Emperor connection lost — awaiting new leader");
@@ -170,6 +184,28 @@ class Seneschal
         }
 
         $this->log("P2P started on port {$this->p2pPort}");
+
+        // Initialize upgrade system
+        $this->initUpgradeSystem();
+    }
+
+    private function initUpgradeSystem(): void
+    {
+        $dbPath = $this->dataDir . '/seneschal-upgrade.db';
+        $this->upgradeDb = new UpgradeDatabase($dbPath);
+
+        $projectDir = getcwd();
+        $this->upgradeCoordinator = new UpgradeCoordinator(
+            $this->mesh,
+            $this->upgradeDb,
+            $this->nodeId,
+            $projectDir,
+        );
+        $this->upgradeCoordinator->onLog(function (string $msg) {
+            $this->log($msg);
+        });
+
+        $this->log("Upgrade system initialized (db: {$dbPath})");
     }
 
     private function onPeerMessage(Connection $conn, array $msg): void
@@ -180,12 +216,23 @@ class Seneschal
             case MessageTypes::HELLO:
                 $nodeId = $msg['node_id'] ?? '';
                 $p2pPort = $msg['p2p_port'] ?? $this->p2pPort;
+                $httpPort = $msg['http_port'] ?? 0;
                 $peerRole = $msg['role'] ?? 'worker';
                 $this->peerManager->registerPeer($conn, $nodeId, $conn->remoteHost, $p2pPort);
                 $this->log("Peer connected: {$nodeId} at {$conn->address()} (role: {$peerRole})");
 
+                // Track all peers for upgrade coordination
+                if ($nodeId && $peerRole !== 'seneschal') {
+                    $this->knownPeers[$nodeId] = [
+                        'node_id' => $nodeId,
+                        'host' => $conn->remoteHost,
+                        'http_port' => $httpPort,
+                        'role' => $peerRole,
+                    ];
+                }
+
                 if ($peerRole === 'emperor') {
-                    $this->updateEmperor($nodeId, $conn->remoteHost, $msg['http_port'] ?? 0);
+                    $this->updateEmperor($nodeId, $conn->remoteHost, $httpPort);
                 }
                 break;
 
@@ -209,11 +256,19 @@ class Seneschal
 
             case MessageTypes::EMPEROR_HEARTBEAT:
                 $this->clock->witness($msg['lamport_ts'] ?? 0);
-                $this->updateEmperor(
-                    $msg['node_id'] ?? '',
-                    $conn->remoteHost,
-                    $msg['http_port'] ?? 0,
-                );
+                $empNodeId = $msg['node_id'] ?? '';
+                $empHttpPort = $msg['http_port'] ?? 0;
+                $this->updateEmperor($empNodeId, $conn->remoteHost, $empHttpPort);
+
+                // Keep emperor in known peers with current info
+                if ($empNodeId) {
+                    $this->knownPeers[$empNodeId] = [
+                        'node_id' => $empNodeId,
+                        'host' => $conn->remoteHost,
+                        'http_port' => $empHttpPort,
+                        'role' => 'emperor',
+                    ];
+                }
                 break;
 
             case MessageTypes::ELECTION_VICTORY:
@@ -222,8 +277,23 @@ class Seneschal
                 $newHttpPort = $msg['http_port'] ?? 0;
                 $this->log("Election victory: new emperor {$newNodeId} (http:{$newHttpPort})");
                 $this->updateEmperor($newNodeId, $conn->remoteHost, $newHttpPort);
+
+                // Update known peers: promoted worker becomes emperor
+                if ($newNodeId) {
+                    $this->knownPeers[$newNodeId] = [
+                        'node_id' => $newNodeId,
+                        'host' => $conn->remoteHost,
+                        'http_port' => $newHttpPort,
+                        'role' => 'emperor',
+                    ];
+                }
+
                 $this->reconnectUpstreamWebSockets();
                 $this->requestCensus();
+                break;
+
+            case MessageTypes::UPGRADE_STATUS:
+                $this->upgradeCoordinator?->handleUpgradeStatus($msg);
                 break;
 
             // All other message types (task/agent gossip) are silently ignored
@@ -251,8 +321,15 @@ class Seneschal
 
     private function proxyHttp(Request $request, Response $response): void
     {
-        $isApi = str_starts_with($request->server['request_uri'] ?? '', '/api/') ||
-                 ($request->server['request_uri'] ?? '') === '/mcp';
+        $path = $request->server['request_uri'] ?? '/';
+        $method = $request->server['request_method'] ?? 'GET';
+
+        // Seneschal-owned endpoints (not proxied to emperor)
+        if ($this->handleLocalEndpoint($path, $method, $request, $response)) {
+            return;
+        }
+
+        $isApi = str_starts_with($path, '/api/') || $path === '/mcp';
 
         if ($this->emperorHttpPort === 0) {
             $response->status(503);
@@ -278,7 +355,6 @@ class Seneschal
         $headers['x-forwarded-host'] = $request->header['host'] ?? '';
         $client->setHeaders($headers);
 
-        $method = strtoupper($request->server['request_method'] ?? 'GET');
         $uri = $request->server['request_uri'] ?? '/';
         if (isset($request->server['query_string']) && $request->server['query_string'] !== '') {
             $uri .= '?' . $request->server['query_string'];
@@ -286,7 +362,7 @@ class Seneschal
 
         $body = $request->getContent();
 
-        $client->setMethod($method);
+        $client->setMethod(strtoupper($method));
         if ($body !== false && $body !== '') {
             $client->setData($body);
         }
@@ -436,6 +512,135 @@ class Seneschal
         }
         $this->wsUpstreams = [];
         $this->log("Closed all upstream WS connections for emperor switchover");
+    }
+
+    // ── Seneschal-Owned API Endpoints ──────────────────────────────────
+
+    /**
+     * Handle endpoints owned by the Seneschal (not proxied to emperor).
+     * Returns true if the request was handled locally.
+     */
+    private function handleLocalEndpoint(string $path, string $method, Request $request, Response $response): bool
+    {
+        $response->header('Access-Control-Allow-Origin', '*');
+        $response->header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        $response->header('Access-Control-Allow-Headers', 'Content-Type');
+
+        if ($method === 'OPTIONS' && str_starts_with($path, '/api/swarm/upgrade')) {
+            $response->status(204);
+            $response->end('');
+            return true;
+        }
+
+        if ($path === '/api/swarm/upgrade' && $method === 'POST') {
+            $this->handleUpgrade($request, $response);
+            return true;
+        }
+
+        if ($path === '/api/swarm/upgrade/history' && $method === 'GET') {
+            $this->handleUpgradeHistory($response);
+            return true;
+        }
+
+        if ($path === '/api/swarm/upgrade/status' && $method === 'GET') {
+            $this->handleUpgradeStatus($response);
+            return true;
+        }
+
+        return false;
+    }
+
+    private function handleUpgrade(Request $request, Response $response): void
+    {
+        if (!$this->upgradeCoordinator || !$this->upgradeDb) {
+            $response->status(503);
+            $this->jsonResponse($response, ['error' => 'Upgrade system not initialized']);
+            return;
+        }
+
+        if ($this->upgradeCoordinator->isUpgradeInProgress()) {
+            $response->status(409);
+            $this->jsonResponse($response, ['error' => 'Upgrade already in progress']);
+            return;
+        }
+
+        $body = json_decode($request->getContent() ?: '{}', true) ?? [];
+        $targetCommit = $body['target_commit'] ?? $body['commit'] ?? $body['ref'] ?? '';
+
+        // Separate workers from emperor
+        $workers = [];
+        foreach ($this->knownPeers as $peer) {
+            if ($peer['role'] === 'worker' && $peer['http_port'] > 0) {
+                $workers[] = $peer;
+            }
+        }
+
+        if (!$this->emperorNodeId || $this->emperorHttpPort === 0) {
+            $response->status(503);
+            $this->jsonResponse($response, ['error' => 'No emperor available — cannot coordinate upgrade']);
+            return;
+        }
+
+        $this->log("Upgrade requested: target={$targetCommit}, workers=" . count($workers));
+
+        // Respond immediately, run upgrade in background coroutine
+        $upgradeId = substr(bin2hex(random_bytes(8)), 0, 16);
+        $response->status(202);
+        $this->jsonResponse($response, [
+            'status' => 'accepted',
+            'upgrade_id' => $upgradeId,
+            'target_commit' => $targetCommit ?: '(latest)',
+            'workers' => count($workers),
+            'message' => 'Rolling upgrade initiated. Check /api/swarm/upgrade/status for progress.',
+        ]);
+
+        // Run the upgrade asynchronously
+        $coordinator = $this->upgradeCoordinator;
+        $empHost = $this->emperorHost;
+        $empPort = $this->emperorHttpPort;
+
+        Coroutine::create(function () use ($coordinator, $targetCommit, $empHost, $empPort, $workers) {
+            $result = $coordinator->startUpgrade($targetCommit, $empHost, $empPort, $workers);
+            $this->log("Upgrade finished: {$result->status} (updated: {$result->nodesUpdated}, rolled back: {$result->nodesRolledBack})");
+        });
+    }
+
+    private function handleUpgradeHistory(Response $response): void
+    {
+        if (!$this->upgradeDb) {
+            $response->status(503);
+            $this->jsonResponse($response, ['error' => 'Upgrade system not initialized']);
+            return;
+        }
+
+        $history = $this->upgradeDb->getAll();
+        $this->jsonResponse($response, [
+            'history' => array_map(fn($h) => $h->toArray(), $history),
+            'count' => count($history),
+        ]);
+    }
+
+    private function handleUpgradeStatus(Response $response): void
+    {
+        if (!$this->upgradeCoordinator || !$this->upgradeDb) {
+            $response->status(503);
+            $this->jsonResponse($response, ['error' => 'Upgrade system not initialized']);
+            return;
+        }
+
+        $latest = $this->upgradeDb->getLatest();
+        $this->jsonResponse($response, [
+            'in_progress' => $this->upgradeCoordinator->isUpgradeInProgress(),
+            'latest' => $latest?->toArray(),
+            'known_peers' => count($this->knownPeers),
+            'workers' => count(array_filter($this->knownPeers, fn($p) => $p['role'] === 'worker')),
+        ]);
+    }
+
+    private function jsonResponse(Response $response, array $data): void
+    {
+        $response->header('Content-Type', 'application/json');
+        $response->end(json_encode($data, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
     }
 
     private static function electionPage(): string

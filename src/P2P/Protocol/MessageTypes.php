@@ -90,6 +90,29 @@ class MessageTypes
     public const TRIBUTE_ACCEPT    = 0xC3;
     public const TRIBUTE_REJECT    = 0xC4;
 
+    // Cross-swarm capability advertisement
+    public const CAPABILITY_ADVERTISE  = 0xC5;
+    public const CAPABILITY_QUERY      = 0xC6;
+    public const CAPABILITY_QUERY_RSP  = 0xC7;
+
+    // Bounty system (cross-swarm task marketplace)
+    public const BOUNTY_POST   = 0xC8;
+    public const BOUNTY_CLAIM  = 0xC9;
+    public const BOUNTY_CANCEL = 0xCA;
+
+    // Marketplace anti-entropy sync
+    public const MARKETPLACE_SYNC_REQ = 0xCB;
+    public const MARKETPLACE_SYNC_RSP = 0xCC;
+
+    // Cross-swarm task delegation
+    public const TASK_DELEGATE        = 0xCD;
+    public const TASK_DELEGATE_RSP    = 0xCE;
+    public const TASK_DELEGATE_RESULT = 0xCF;
+
+    // Upgrade / rolling restart messages
+    public const UPGRADE_REQUEST = 0xD0;
+    public const UPGRADE_STATUS  = 0xD1;
+
     public const NAMES = [
         self::HELLO    => 'HELLO',
         self::POST     => 'POST',
@@ -146,6 +169,19 @@ class MessageTypes
         self::TRIBUTE_REQUEST   => 'TRIBUTE_REQUEST',
         self::TRIBUTE_ACCEPT    => 'TRIBUTE_ACCEPT',
         self::TRIBUTE_REJECT    => 'TRIBUTE_REJECT',
+        self::CAPABILITY_ADVERTISE  => 'CAPABILITY_ADVERTISE',
+        self::CAPABILITY_QUERY      => 'CAPABILITY_QUERY',
+        self::CAPABILITY_QUERY_RSP  => 'CAPABILITY_QUERY_RSP',
+        self::BOUNTY_POST   => 'BOUNTY_POST',
+        self::BOUNTY_CLAIM  => 'BOUNTY_CLAIM',
+        self::BOUNTY_CANCEL => 'BOUNTY_CANCEL',
+        self::MARKETPLACE_SYNC_REQ => 'MARKETPLACE_SYNC_REQ',
+        self::MARKETPLACE_SYNC_RSP => 'MARKETPLACE_SYNC_RSP',
+        self::TASK_DELEGATE        => 'TASK_DELEGATE',
+        self::TASK_DELEGATE_RSP    => 'TASK_DELEGATE_RSP',
+        self::TASK_DELEGATE_RESULT => 'TASK_DELEGATE_RESULT',
+        self::UPGRADE_REQUEST   => 'UPGRADE_REQUEST',
+        self::UPGRADE_STATUS    => 'UPGRADE_STATUS',
     ];
 
     public static function name(int $type): string

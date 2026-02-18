@@ -190,6 +190,7 @@ function runSeneschal(array $options): void
     $p2pPort = (int) ($options['p2p-port'] ?? 7100);
     $discoveryPort = (int) ($options['discovery-port'] ?? 6101);
     $seeds = isset($options['seeds']) ? explode(',', $options['seeds']) : [];
+    $dataDir = $options['data-dir'] ?? './data';
 
     $server = new \VoidLux\Swarm\Seneschal(
         httpHost: '0.0.0.0',
@@ -197,6 +198,7 @@ function runSeneschal(array $options): void
         p2pPort: $p2pPort,
         discoveryPort: $discoveryPort,
         seedPeers: $seeds,
+        dataDir: $dataDir,
     );
     $server->run();
 }
@@ -278,6 +280,7 @@ Seneschal Options:
   --p2p-port=PORT         P2P TCP mesh port (default: 7100)
   --discovery-port=PORT   UDP discovery port (default: 6101)
   --seeds=HOST:PORT,...   Comma-separated seed peers
+  --data-dir=DIR          Data directory for upgrade history (default: ./data)
 
 Compile Options:
   --output=PATH           Output binary path

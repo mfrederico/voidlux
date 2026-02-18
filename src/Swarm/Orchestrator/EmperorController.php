@@ -13,6 +13,7 @@ use VoidLux\Swarm\Agent\AgentMonitor;
 use VoidLux\Swarm\Agent\AgentRegistry;
 use VoidLux\Swarm\Ai\TaskPlanner;
 use VoidLux\Swarm\Galactic\GalacticMarketplace;
+use VoidLux\Swarm\Gossip\MarketplaceGossipEngine;
 use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Mcp\McpHandler;
 use VoidLux\Swarm\Model\TaskStatus;
@@ -33,6 +34,7 @@ class EmperorController
     private ?DhtEngine $dhtEngine = null;
     private ?DiscoveryManager $discoveryManager = null;
     private ?GalacticMarketplace $marketplace = null;
+    private ?MarketplaceGossipEngine $marketplaceGossip = null;
 
     /** @var callable|null fn(): void — triggers server shutdown */
     private $shutdownCallback = null;
@@ -77,6 +79,11 @@ class EmperorController
     public function setMarketplace(GalacticMarketplace $marketplace): void
     {
         $this->marketplace = $marketplace;
+    }
+
+    public function setMarketplaceGossip(MarketplaceGossipEngine $gossip): void
+    {
+        $this->marketplaceGossip = $gossip;
     }
 
     public function onShutdown(callable $callback): void
