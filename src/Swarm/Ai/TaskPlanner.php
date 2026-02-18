@@ -92,7 +92,7 @@ PROMPT;
     }
 
     /**
-     * Get project directory tree + README for LLM context.
+     * Get project directory tree + README + project type for LLM context.
      */
     private function getProjectContext(string $projectPath): string
     {
@@ -100,6 +100,12 @@ PROMPT;
         $this->scanDir($projectPath, '', $lines, 0, 2);
 
         $tree = implode("\n", $lines);
+
+        // Detect project type and include prominently
+        $projectType = self::detectProjectType($projectPath);
+        if ($projectType) {
+            $tree = "## Project Type\n{$projectType}\n\n## File Tree\n" . $tree;
+        }
 
         // Include README if present
         $readmePath = $projectPath . '/README.md';
@@ -117,6 +123,129 @@ PROMPT;
         }
 
         return $tree;
+    }
+
+    /**
+     * Detect the project's primary language/framework from marker files.
+     * Returns a human-readable description or empty string.
+     */
+    public static function detectProjectType(string $projectPath): string
+    {
+        $markers = [
+            'composer.json'      => ['lang' => 'PHP',        'read' => true],
+            'package.json'       => ['lang' => 'JavaScript/TypeScript', 'read' => true],
+            'requirements.txt'   => ['lang' => 'Python',     'read' => false],
+            'pyproject.toml'     => ['lang' => 'Python',     'read' => true],
+            'setup.py'           => ['lang' => 'Python',     'read' => false],
+            'Cargo.toml'         => ['lang' => 'Rust',       'read' => true],
+            'go.mod'             => ['lang' => 'Go',         'read' => true],
+            'Gemfile'            => ['lang' => 'Ruby',       'read' => false],
+            'build.gradle'       => ['lang' => 'Java/Kotlin','read' => false],
+            'pom.xml'            => ['lang' => 'Java',       'read' => false],
+            'mix.exs'            => ['lang' => 'Elixir',     'read' => false],
+            'deno.json'          => ['lang' => 'TypeScript (Deno)', 'read' => true],
+            'tsconfig.json'      => ['lang' => 'TypeScript', 'read' => false],
+            'CMakeLists.txt'     => ['lang' => 'C/C++',      'read' => false],
+            'Makefile'           => ['lang' => 'C/C++',      'read' => false],
+        ];
+
+        $detected = [];
+        $details = [];
+
+        foreach ($markers as $file => $info) {
+            $fullPath = $projectPath . '/' . $file;
+            if (!file_exists($fullPath)) {
+                continue;
+            }
+
+            $lang = $info['lang'];
+            $detected[$lang] = $file;
+
+            // Read key config files for extra context (name, description, deps)
+            if ($info['read']) {
+                $content = @file_get_contents($fullPath);
+                if ($content === false) {
+                    continue;
+                }
+
+                $snippet = self::extractConfigSnippet($file, $content);
+                if ($snippet) {
+                    $details[] = $snippet;
+                }
+            }
+        }
+
+        if (empty($detected)) {
+            return '';
+        }
+
+        // Primary language is the first detected
+        $primary = array_key_first($detected);
+        $markerFile = $detected[$primary];
+        $result = "This is a **{$primary}** project (detected via {$markerFile}).";
+
+        if (count($detected) > 1) {
+            $others = array_diff_key($detected, [$primary => true]);
+            $result .= " Also uses: " . implode(', ', array_keys($others)) . ".";
+        }
+
+        $result .= "\nIMPORTANT: All code must be written in {$primary}. Do NOT use other languages unless the project already uses them.";
+
+        if (!empty($details)) {
+            $result .= "\n" . implode("\n", $details);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Extract a brief, useful snippet from a config file.
+     */
+    private static function extractConfigSnippet(string $filename, string $content): string
+    {
+        switch ($filename) {
+            case 'composer.json':
+                $data = json_decode($content, true);
+                if (!$data) return '';
+                $parts = [];
+                if (!empty($data['name'])) $parts[] = "Package: {$data['name']}";
+                if (!empty($data['description'])) $parts[] = "Description: {$data['description']}";
+                if (!empty($data['require'])) {
+                    $deps = array_keys($data['require']);
+                    $parts[] = "Dependencies: " . implode(', ', array_slice($deps, 0, 15));
+                }
+                if (!empty($data['autoload']['psr-4'])) {
+                    $ns = array_keys($data['autoload']['psr-4']);
+                    $parts[] = "Namespaces: " . implode(', ', $ns);
+                }
+                return $parts ? implode("\n", $parts) : '';
+
+            case 'package.json':
+                $data = json_decode($content, true);
+                if (!$data) return '';
+                $parts = [];
+                if (!empty($data['name'])) $parts[] = "Package: {$data['name']}";
+                if (!empty($data['description'])) $parts[] = "Description: {$data['description']}";
+                $allDeps = array_merge(
+                    array_keys($data['dependencies'] ?? []),
+                    array_keys($data['devDependencies'] ?? []),
+                );
+                if ($allDeps) {
+                    $parts[] = "Dependencies: " . implode(', ', array_slice($allDeps, 0, 15));
+                }
+                return $parts ? implode("\n", $parts) : '';
+
+            case 'Cargo.toml':
+            case 'go.mod':
+            case 'pyproject.toml':
+            case 'deno.json':
+                // Return first few lines as-is (these are concise formats)
+                $lines = explode("\n", $content);
+                return implode("\n", array_slice($lines, 0, 10));
+
+            default:
+                return '';
+        }
     }
 
     private function scanDir(string $basePath, string $prefix, array &$lines, int $depth, int $maxDepth): void

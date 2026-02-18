@@ -7,6 +7,7 @@ namespace VoidLux\Swarm\Agent;
 use Aoe\Session\Status;
 use Aoe\Tmux\StatusDetector;
 use Aoe\Tmux\TmuxService;
+use VoidLux\Swarm\Ai\TaskPlanner;
 use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Model\AgentModel;
 use VoidLux\Swarm\Model\TaskModel;
@@ -248,8 +249,20 @@ class AgentBridge
             $prompt .= "\n\nContext: " . $task->context;
         }
 
-        if ($task->projectPath) {
+        // Show project path only if it's an actual directory (not a git URL).
+        // When project_path is a git URL, the agent's tmux CWD is already set
+        // to the correct worktree — showing the URL would be confusing.
+        if ($task->projectPath && !$this->git->isGitUrl($task->projectPath)) {
             $prompt .= "\n\nWork in this directory: " . $task->projectPath;
+        }
+
+        // Detect and include project type so agents use the correct language
+        $projectDir = $task->projectPath;
+        if ($projectDir && is_dir($projectDir)) {
+            $projectType = TaskPlanner::detectProjectType($projectDir);
+            if ($projectType) {
+                $prompt .= "\n\n## Project Type\n" . $projectType;
+            }
         }
 
         $prompt .= "\n\n---\nTASK ID: " . $task->id;

@@ -344,13 +344,24 @@ class Seneschal
 
             // Upstream reader coroutine: relay emperor → browser
             while (true) {
-                $frame = $upstream->recv(30.0);
+                $frame = $upstream->recv(60.0);
                 if ($frame === false || $frame === '') {
-                    break;
+                    // Timeout (errCode 110) is normal — just keep waiting
+                    if ($upstream->errCode === SWOOLE_ERROR_CO_TIMEDOUT) {
+                        // Send a ping to keep the connection alive
+                        if (!$upstream->push('', WEBSOCKET_OPCODE_PING)) {
+                            break; // Upstream actually dead
+                        }
+                        continue;
+                    }
+                    break; // Real disconnect or error
                 }
                 if ($frame instanceof Frame) {
                     if ($frame->opcode === WEBSOCKET_OPCODE_CLOSE) {
                         break;
+                    }
+                    if ($frame->opcode === WEBSOCKET_OPCODE_PONG) {
+                        continue; // Pong response, ignore
                     }
                     if ($srv->isEstablished($fd)) {
                         $srv->push($fd, $frame->data, $frame->opcode);

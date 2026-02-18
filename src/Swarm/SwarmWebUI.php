@@ -355,7 +355,7 @@ body {
 
 <div class="main">
     <div class="hero-card">
-        <h2>Quick Task</h2>
+        <h2>Quick Task <select id="hero-history" onchange="loadHeroHistory(this)" style="background:#0d0d1a;border:1px solid #0f3460;color:#888;padding:4px 8px;border-radius:4px;font-family:inherit;font-size:0.75rem;margin-left:8px;max-width:300px;"><option value="">-- recent --</option></select></h2>
         <form class="hero-fields" id="hero-form" onsubmit="deploySwarm(event)">
             <input type="text" name="repo_url" placeholder="git@github.com:user/repo.git" required />
             <textarea name="instructions" placeholder="What should the swarm do?" required></textarea>
@@ -855,24 +855,76 @@ function createTask(e) {
 function deploySwarm(e) {
     e.preventDefault();
     const f = e.target;
+    const repoUrl = f.repo_url.value.trim();
     const instructions = f.instructions.value.trim();
     const firstSentence = instructions.match(/^[^.!?\n]+[.!?]?/)?.[0] || instructions;
     const title = firstSentence.substring(0, 80);
     const body = {
         title: title,
         description: instructions,
-        project_path: f.repo_url.value.trim(),
+        project_path: repoUrl,
     };
+
+    // Save to localStorage history
+    saveHeroHistory(repoUrl, instructions);
+
     fetch('/api/swarm/tasks', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(body)
     }).then(r=>r.json()).then(t => {
-        f.repo_url.value = '';
         f.instructions.value = '';
         addLog('task_created', 'Deployed: '+t.title);
     });
 }
+
+function getHeroHistory() {
+    try { return JSON.parse(localStorage.getItem('voidlux_hero_history') || '[]'); }
+    catch { return []; }
+}
+
+function saveHeroHistory(repoUrl, instructions) {
+    const history = getHeroHistory();
+    // Deduplicate by repo+instructions
+    const exists = history.findIndex(h => h.repo === repoUrl && h.instructions === instructions);
+    if (exists >= 0) history.splice(exists, 1);
+    history.unshift({ repo: repoUrl, instructions: instructions, ts: new Date().toISOString() });
+    // Keep last 20
+    if (history.length > 20) history.length = 20;
+    localStorage.setItem('voidlux_hero_history', JSON.stringify(history));
+    renderHeroHistory();
+}
+
+function renderHeroHistory() {
+    const sel = document.getElementById('hero-history');
+    const history = getHeroHistory();
+    sel.innerHTML = '<option value="">-- recent (' + history.length + ') --</option>';
+    history.forEach((h, i) => {
+        const label = (h.repo ? h.repo.replace(/^.*[:/]([^/]+\/[^/]+?)(?:\.git)?$/, '$1') + ': ' : '') + h.instructions.substring(0, 50);
+        sel.innerHTML += '<option value="'+i+'">'+escapeHtml(label)+'</option>';
+    });
+}
+
+function loadHeroHistory(sel) {
+    const idx = parseInt(sel.value);
+    if (isNaN(idx)) return;
+    const history = getHeroHistory();
+    const entry = history[idx];
+    if (!entry) return;
+    const form = document.getElementById('hero-form');
+    form.repo_url.value = entry.repo || '';
+    form.instructions.value = entry.instructions || '';
+    sel.value = '';
+}
+
+// Restore last repo URL on page load and populate history dropdown
+(function() {
+    const history = getHeroHistory();
+    if (history.length > 0) {
+        document.getElementById('hero-form').repo_url.value = history[0].repo || '';
+    }
+    renderHeroHistory();
+})();
 
 let ollamaModels = null;
 function toggleModelField(sel) {
