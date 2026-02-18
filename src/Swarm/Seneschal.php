@@ -665,8 +665,12 @@ class Seneschal
             $this->cycleRelaunch($projectDir);
 
             // Phase 6: Wait for emperor heartbeat
+            // Reset emperor again — stale heartbeats from dying connections
+            // may have set it back during phases 2-5
+            $this->emperorHttpPort = 0;
+            $this->emperorNodeId = null;
             $this->cycleStatus = 'waiting_emperor';
-            $this->log("[cycle] Phase 6: Waiting for emperor...");
+            $this->log("[cycle] Phase 6: Waiting for new emperor P2P connection...");
             $this->cycleWaitForEmperor(60);
 
             $this->cycleStatus = 'completed';

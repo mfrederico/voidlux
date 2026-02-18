@@ -56,11 +56,23 @@ for s in $(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^vl-'); d
 done
 
 # Kill orphaned processes on swarm ports
-for port in "${HTTP_PORTS[@]}" "${P2P_PORTS[@]}"; do
+ALL_PORTS=("${HTTP_PORTS[@]}" "${P2P_PORTS[@]}")
+for port in "${ALL_PORTS[@]}"; do
     pids=$(ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u || true)
     [ -n "$pids" ] && kill $pids 2>/dev/null || true
 done
-sleep 0.5
+# Wait until ports are actually free (up to 5s)
+for attempt in $(seq 1 10); do
+    BUSY=false
+    for port in "${ALL_PORTS[@]}"; do
+        if ss -tlnp "sport = :$port" 2>/dev/null | grep -q pid=; then
+            BUSY=true
+            break
+        fi
+    done
+    $BUSY || break
+    sleep 0.5
+done
 
 # ── Create swarm session ────────────────────────────────────────────
 ROLES=(emperor worker worker)

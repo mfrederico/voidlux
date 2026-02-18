@@ -59,7 +59,18 @@ for port in "${KILL_PORTS[@]}"; do
     pids=$(ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u || true)
     [ -n "$pids" ] && kill $pids 2>/dev/null || true
 done
-sleep 0.5
+# Wait until ports are actually free (up to 5s)
+for attempt in $(seq 1 10); do
+    BUSY=false
+    for port in "${KILL_PORTS[@]}"; do
+        if ss -tlnp "sport = :$port" 2>/dev/null | grep -q pid=; then
+            BUSY=true
+            break
+        fi
+    done
+    $BUSY || break
+    sleep 0.5
+done
 
 # ── Seneschal session (create if not running) ────────────────────────
 if ! tmux has-session -t "$SENESCHAL_SESSION" 2>/dev/null; then
