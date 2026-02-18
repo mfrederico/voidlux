@@ -328,11 +328,16 @@ class McpHandler
 
         $agent = $this->db->getAgentByName($agentName);
         if (!$agent) {
-            return $this->toolError("Agent not found: {$agentName}");
+            // Agent registered on a worker node may not have gossipped to emperor yet.
+            // Return success — AgentMonitor will flip status when it detects idle.
+            return $this->toolResult(['status' => 'ready', 'agent_name' => $agentName, 'note' => 'agent not yet synced']);
         }
 
         if ($agent->status === 'starting') {
             $this->db->updateAgentStatus($agent->id, 'idle', null);
+            if ($this->onAgentStatusChange) {
+                ($this->onAgentStatusChange)($agent->id, 'idle');
+            }
             $this->taskDispatcher?->triggerDispatch();
         }
 
