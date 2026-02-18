@@ -32,6 +32,7 @@ class TaskDispatcher
     private int $roundRobinIndex = 0;
     private ?Channel $signal = null;
     private ?AgentBridge $agentBridge = null;
+    private ?OverflowDelegator $overflowDelegator = null;
 
     public function __construct(
         private readonly SwarmDatabase $db,
@@ -44,6 +45,16 @@ class TaskDispatcher
     public function setAgentBridge(AgentBridge $bridge): void
     {
         $this->agentBridge = $bridge;
+    }
+
+    public function setOverflowDelegator(OverflowDelegator $delegator): void
+    {
+        $this->overflowDelegator = $delegator;
+    }
+
+    public function getOverflowDelegator(): ?OverflowDelegator
+    {
+        return $this->overflowDelegator;
     }
 
     public function start(): void
@@ -86,13 +97,19 @@ class TaskDispatcher
         }
 
         $idleAgents = $this->db->getAllIdleAgents();
+
+        // If no local agents, try marketplace delegation directly
         if (empty($idleAgents)) {
+            $this->delegateOverflow($pendingTasks);
             return;
         }
 
+        $undispatched = [];
+
         foreach ($pendingTasks as $task) {
             if (empty($idleAgents)) {
-                break;
+                $undispatched[] = $task;
+                continue;
             }
 
             // Defensive: skip pending tasks with unmet dependencies
@@ -102,6 +119,7 @@ class TaskDispatcher
 
             $agent = $this->selectAgent($task, $idleAgents);
             if (!$agent) {
+                $undispatched[] = $task;
                 continue;
             }
 
@@ -112,8 +130,27 @@ class TaskDispatcher
                     $idleAgents,
                     fn(AgentModel $a) => $a->id !== $agent->id,
                 ));
+            } else {
+                $undispatched[] = $task;
             }
         }
+
+        // Delegate remaining undispatched tasks to the marketplace
+        if (!empty($undispatched)) {
+            $this->delegateOverflow($undispatched);
+        }
+    }
+
+    /**
+     * Attempt to delegate overflow tasks to remote swarms via the broker.
+     * @param TaskModel[] $tasks
+     */
+    private function delegateOverflow(array $tasks): void
+    {
+        if ($this->overflowDelegator === null) {
+            return;
+        }
+        $this->overflowDelegator->delegateOverflow($tasks);
     }
 
     /**
