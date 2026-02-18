@@ -452,6 +452,7 @@ body {
         <button onclick="clearTasks()" style="background:#1a1a2a;border:1px solid #334466;color:#6688cc;padding:4px 12px;border-radius:3px;cursor:pointer;font-family:inherit;font-size:0.75rem;">Clear Tasks</button>
         <button onclick="killPopulation()" style="background:#3a1a1a;border:1px solid #663333;color:#ff6666;padding:4px 12px;border-radius:3px;cursor:pointer;font-family:inherit;font-size:0.75rem;">Kill Population</button>
         <button onclick="regicide()" style="background:#3a0a0a;border:1px solid #882222;color:#ff3333;padding:4px 12px;border-radius:3px;cursor:pointer;font-family:inherit;font-size:0.75rem;">Regicide</button>
+        <button onclick="cycleSystem()" style="background:#0a1a3a;border:1px solid #224488;color:#4488cc;padding:4px 12px;border-radius:3px;cursor:pointer;font-family:inherit;font-size:0.75rem;">Cycle System</button>
     </span>
 </div>
 
@@ -1208,6 +1209,21 @@ function regicide() {
         addLog('election', 'Regicide: '+d.message);
     }).catch(()=>{
         addLog('election', 'Emperor process killed');
+    });
+}
+
+function cycleSystem() {
+    if (!confirm('Cycle the entire system? This will kill all agents, pull latest code, and restart emperor + workers. The seneschal stays alive.')) return;
+    fetch('/api/system/cycle', {method:'POST'}).then(r => {
+        if (r.status === 409) {
+            r.json().then(d => addLog('system', 'Cycle already in progress: '+d.status));
+            return;
+        }
+        if (r.status === 202) {
+            addLog('system', 'System cycle initiated — page will reload when ready');
+        }
+    }).catch(()=>{
+        addLog('system', 'Cycle request sent');
     });
 }
 

@@ -1,15 +1,28 @@
 #!/usr/bin/env bash
 #
 # Enter the Void — Launch a VoidLux swarm.
-# Seneschal (stable proxy) + Emperor (AI planner) + 2 Workers in tmux.
-# Emperor gets the dashboard; workers auto-discover via UDP.
+# Two tmux sessions:
+#   voidlux-seneschal — Long-lived stable proxy (survives cycles)
+#   voidlux-swarm     — Emperor + 2 Workers (cyclable)
+#
+# Usage:
+#   bash scripts/enter-the-void.sh          # Start both (skip seneschal if running)
+#   bash scripts/enter-the-void.sh --full   # Force-restart everything including seneschal
 #
 
 set -euo pipefail
 
-SESSION="voidlux-swarm"
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DATA_DIR="${PROJECT_DIR}/data"
+
+SENESCHAL_SESSION="voidlux-seneschal"
+SWARM_SESSION="voidlux-swarm"
+
+FULL_RESTART=false
+if [[ "${1:-}" == "--full" ]]; then
+    FULL_RESTART=true
+fi
 
 # Port assignments:            Seneschal  Emperor  Worker1  Worker2
 HTTP_PORTS=(9090 9091 9092 9093)
@@ -23,78 +36,54 @@ mkdir -p "${DATA_DIR}"
 # Emperor's P2P port for seeding
 EMPEROR_P2P="${P2P_PORTS[1]}"
 
-# Kill existing session and orphan agent sessions
-tmux kill-session -t "$SESSION" 2>/dev/null || true
+# ── Kill swarm session + agent sessions ─────────────────────────────
+tmux kill-session -t "$SWARM_SESSION" 2>/dev/null || true
 for s in $(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^vl-'); do
     tmux kill-session -t "$s" 2>/dev/null || true
 done
 
+# Kill seneschal session only if --full
+if $FULL_RESTART; then
+    tmux kill-session -t "$SENESCHAL_SESSION" 2>/dev/null || true
+fi
+
 # Kill orphaned PHP/Swoole processes still holding swarm ports
 # (tmux kill-session doesn't kill reparented child processes)
-for port in "${HTTP_PORTS[@]}" "${P2P_PORTS[@]}"; do
+if $FULL_RESTART; then
+    KILL_PORTS=("${HTTP_PORTS[@]}" "${P2P_PORTS[@]}")
+else
+    # Only kill swarm ports (not seneschal's 9090/7100)
+    KILL_PORTS=(${HTTP_PORTS[@]:1} ${P2P_PORTS[@]:1})
+fi
+for port in "${KILL_PORTS[@]}"; do
     pids=$(ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u || true)
     [ -n "$pids" ] && kill $pids 2>/dev/null || true
 done
 sleep 0.5
 
-# Create tmux session
-tmux new-session -d -s "$SESSION" -x 200 -y 50
+# ── Seneschal session (create if not running) ────────────────────────
+if ! tmux has-session -t "$SENESCHAL_SESSION" 2>/dev/null; then
+    echo "Starting seneschal session..."
+    tmux new-session -d -s "$SENESCHAL_SESSION" -x 200 -y 50
 
-# ── Pane 0: Seneschal (reverse proxy) ──────────────────────────────
-CMD="cd ${PROJECT_DIR} && php bin/voidlux seneschal"
-CMD="${CMD} --http-port=${HTTP_PORTS[0]}"
-CMD="${CMD} --p2p-port=${P2P_PORTS[0]}"
-CMD="${CMD} --discovery-port=${DISC_PORTS[0]}"
-CMD="${CMD} --seeds=127.0.0.1:${EMPEROR_P2P}"
-tmux send-keys -t "$SESSION" "$CMD" C-m
+    CMD="cd ${PROJECT_DIR} && php bin/voidlux seneschal"
+    CMD="${CMD} --http-port=${HTTP_PORTS[0]}"
+    CMD="${CMD} --p2p-port=${P2P_PORTS[0]}"
+    CMD="${CMD} --discovery-port=${DISC_PORTS[0]}"
+    CMD="${CMD} --seeds=127.0.0.1:${EMPEROR_P2P}"
+    tmux send-keys -t "$SENESCHAL_SESSION" "$CMD" C-m
+else
+    echo "Seneschal session already running (use --full to restart)"
+fi
 
-# ── Panes 1-3: Emperor + Workers ───────────────────────────────────
-ROLES=(emperor worker worker)
-
-for i in 0 1 2; do
-    IDX=$((i + 1))
-    HTTP_PORT=${HTTP_PORTS[$IDX]}
-    P2P_PORT=${P2P_PORTS[$IDX]}
-    DISC_PORT=${DISC_PORTS[$IDX]}
-    ROLE=${ROLES[$i]}
-
-    # Workers seed to emperor; emperor has no seeds (discovers via UDP)
-    if [ "$i" -eq 0 ]; then
-        SEEDS=""
-    else
-        SEEDS="--seeds=127.0.0.1:${EMPEROR_P2P}"
-    fi
-
-    CMD="cd ${PROJECT_DIR} && php bin/voidlux swarm"
-    CMD="${CMD} --http-port=${HTTP_PORT}"
-    CMD="${CMD} --p2p-port=${P2P_PORT}"
-    CMD="${CMD} --discovery-port=${DISC_PORT}"
-    CMD="${CMD} --role=${ROLE}"
-    CMD="${CMD} --data-dir=${DATA_DIR}"
-    [ -n "$SEEDS" ] && CMD="${CMD} ${SEEDS}"
-
-    # Emperor gets LLM config for AI planning/review
-    if [ "$ROLE" = "emperor" ]; then
-        LLM_MODEL="${VOIDLUX_LLM_MODEL:-qwen3-coder:30b}"
-        LLM_PROVIDER="${VOIDLUX_LLM_PROVIDER:-ollama}"
-        CMD="${CMD} --llm-provider=${LLM_PROVIDER} --llm-model=${LLM_MODEL}"
-        [ -n "${VOIDLUX_LLM_HOST:-}" ] && CMD="${CMD} --llm-host=${VOIDLUX_LLM_HOST}"
-        [ -n "${VOIDLUX_LLM_PORT:-}" ] && CMD="${CMD} --llm-port=${VOIDLUX_LLM_PORT}"
-        [ -n "${ANTHROPIC_API_KEY:-}" ] && CMD="${CMD} --claude-api-key=${ANTHROPIC_API_KEY}"
-    fi
-
-    # Test command for merge-test-retry loop
-    TEST_CMD="${VOIDLUX_TEST_COMMAND:-}"
-    [ -n "$TEST_CMD" ] && CMD="${CMD} --test-command=${TEST_CMD}"
-
-    tmux split-window -t "$SESSION" -v
-    tmux send-keys -t "$SESSION" "$CMD" C-m
-    tmux select-layout -t "$SESSION" tiled
-done
+# ── Swarm session (emperor + 2 workers) ─────────────────────────────
+bash "$SCRIPT_DIR/launch-swarm-session.sh"
 
 echo ""
 echo "=== Enter the Void ==="
-echo "4 processes launched in tmux session: $SESSION"
+echo "Sessions:"
+echo "  tmux attach -t $SENESCHAL_SESSION   (seneschal — long-lived)"
+echo "  tmux attach -t $SWARM_SESSION       (emperor + workers — cyclable)"
 echo ""
 echo "  Seneschal: http://localhost:${HTTP_PORTS[0]}  (stable proxy — use this)"
 echo "  Emperor:   http://localhost:${HTTP_PORTS[1]}  (dashboard, direct)"
@@ -102,6 +91,7 @@ echo "  Worker 1:  http://localhost:${HTTP_PORTS[2]}"
 echo "  Worker 2:  http://localhost:${HTTP_PORTS[3]}"
 echo ""
 echo "LLM: ${VOIDLUX_LLM_PROVIDER:-ollama}/${VOIDLUX_LLM_MODEL:-qwen3-coder:30b}"
+[ -n "${VOIDLUX_AUTH_SECRET:-}" ] && echo "Auth: HMAC-SHA256 (secret configured)"
 [ -n "${VOIDLUX_TEST_COMMAND:-}" ] && echo "Test: ${VOIDLUX_TEST_COMMAND}"
 echo ""
 echo "Quick start:"
@@ -116,9 +106,6 @@ echo ""
 echo "  # Override LLM model:"
 echo "  VOIDLUX_LLM_MODEL=llama3.1:8b bash scripts/enter-the-void.sh"
 echo ""
-echo "  # With merge-test-retry (runs php lint on merge):"
-echo "  VOIDLUX_TEST_COMMAND='find src -name \"*.php\" -exec php -l {} +' bash scripts/enter-the-void.sh"
-echo ""
-echo "Attach: tmux attach -t $SESSION"
-echo "Kill:   tmux kill-session -t $SESSION"
+echo "  # Full restart (including seneschal):"
+echo "  bash scripts/enter-the-void.sh --full"
 echo ""

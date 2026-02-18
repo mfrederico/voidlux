@@ -53,6 +53,12 @@ class Seneschal
     /** @var array<string, array{node_id: string, host: string, http_port: int, role: string}> */
     private array $knownPeers = [];
 
+    // ── System Cycle State ──────────────────────────────────────────────
+    private bool $cycleInProgress = false;
+    private string $cycleStatus = '';
+    private ?string $cycleError = null;
+    private ?float $cycleStartedAt = null;
+
     public function __construct(
         private readonly string $httpHost = '0.0.0.0',
         private readonly int $httpPort = 9090,
@@ -346,10 +352,14 @@ class Seneschal
             $response->status(503);
             if ($isApi) {
                 $response->header('Content-Type', 'application/json');
-                $response->end(json_encode(['error' => 'No emperor available', 'electing' => true]));
+                $response->end(json_encode([
+                    'error' => 'No emperor available',
+                    'electing' => !$this->cycleInProgress,
+                    'cycling' => $this->cycleInProgress,
+                ]));
             } else {
                 $response->header('Content-Type', 'text/html; charset=utf-8');
-                $response->end(self::electionPage());
+                $response->end($this->cycleInProgress ? self::cyclingPage() : self::electionPage());
             }
             return;
         }
@@ -537,9 +547,20 @@ class Seneschal
         $response->header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         $response->header('Access-Control-Allow-Headers', 'Content-Type');
 
-        if ($method === 'OPTIONS' && str_starts_with($path, '/api/swarm/upgrade')) {
+        if ($method === 'OPTIONS' && (str_starts_with($path, '/api/swarm/upgrade') || str_starts_with($path, '/api/system/cycle'))) {
             $response->status(204);
             $response->end('');
+            return true;
+        }
+
+        // System cycle endpoints
+        if ($path === '/api/system/cycle' && $method === 'POST') {
+            $this->handleCycleRequest($request, $response);
+            return true;
+        }
+
+        if ($path === '/api/system/cycle/status' && $method === 'GET') {
+            $this->handleCycleStatus($response);
             return true;
         }
 
@@ -559,6 +580,451 @@ class Seneschal
         }
 
         return false;
+    }
+
+    // ── System Cycle ──────────────────────────────────────────────────
+
+    private function handleCycleRequest(Request $request, Response $response): void
+    {
+        if ($this->cycleInProgress) {
+            $response->status(409);
+            $this->jsonResponse($response, [
+                'error' => 'Cycle already in progress',
+                'status' => $this->cycleStatus,
+                'started_at' => $this->cycleStartedAt,
+            ]);
+            return;
+        }
+
+        $body = json_decode($request->getContent() ?: '{}', true) ?? [];
+        $branch = $body['branch'] ?? '';
+
+        $this->cycleInProgress = true;
+        $this->cycleStatus = 'starting';
+        $this->cycleError = null;
+        $this->cycleStartedAt = microtime(true);
+
+        // Reset emperor so browsers get the cycling page immediately
+        $this->emperorHttpPort = 0;
+        $this->emperorNodeId = null;
+        $this->reconnectUpstreamWebSockets();
+
+        $response->status(202);
+        $this->jsonResponse($response, [
+            'status' => 'accepted',
+            'message' => 'System cycle initiated. Browsers will see a cycling page.',
+        ]);
+
+        // Run cycle asynchronously
+        $projectDir = getcwd() ?: dirname(__DIR__, 2);
+        Coroutine::create(function () use ($projectDir, $branch) {
+            $this->runCycleCoroutine($projectDir, $branch);
+        });
+    }
+
+    private function handleCycleStatus(Response $response): void
+    {
+        $this->jsonResponse($response, [
+            'in_progress' => $this->cycleInProgress,
+            'status' => $this->cycleStatus,
+            'error' => $this->cycleError,
+            'emperor_available' => $this->emperorHttpPort > 0,
+            'started_at' => $this->cycleStartedAt,
+            'elapsed' => $this->cycleStartedAt ? round(microtime(true) - $this->cycleStartedAt, 1) : null,
+        ]);
+    }
+
+    private function runCycleCoroutine(string $projectDir, string $branch): void
+    {
+        $this->log("=== SYSTEM CYCLE START ===");
+
+        try {
+            // Phase 1: Kill agent sessions
+            $this->cycleStatus = 'killing_agents';
+            $this->log("[cycle] Phase 1: Killing agent sessions...");
+            $this->cycleKillAgents();
+
+            // Phase 2: Kill swarm session
+            $this->cycleStatus = 'killing_swarm';
+            $this->log("[cycle] Phase 2: Killing swarm session...");
+            $this->cycleKillSwarmSession();
+
+            // Phase 3: Kill orphaned processes on swarm ports
+            $this->cycleStatus = 'killing_orphans';
+            $this->log("[cycle] Phase 3: Killing orphaned processes...");
+            $this->cycleKillOrphans();
+
+            // Phase 4: Git pull
+            $this->cycleStatus = 'git_pull';
+            $this->log("[cycle] Phase 4: Git pull...");
+            $this->cycleGitPull($projectDir, $branch);
+
+            // Phase 5: Relaunch swarm session
+            $this->cycleStatus = 'relaunching';
+            $this->log("[cycle] Phase 5: Relaunching swarm...");
+            $this->cycleRelaunch($projectDir);
+
+            // Phase 6: Wait for emperor heartbeat
+            $this->cycleStatus = 'waiting_emperor';
+            $this->log("[cycle] Phase 6: Waiting for emperor...");
+            $this->cycleWaitForEmperor(60);
+
+            $this->cycleStatus = 'completed';
+            $this->cycleInProgress = false;
+            $elapsed = round(microtime(true) - $this->cycleStartedAt, 1);
+            $this->log("=== SYSTEM CYCLE COMPLETE ({$elapsed}s) ===");
+        } catch (\Throwable $e) {
+            $this->cycleStatus = 'failed';
+            $this->cycleError = $e->getMessage();
+            $this->cycleInProgress = false;
+            $this->log("[cycle] FAILED: {$e->getMessage()}");
+        }
+    }
+
+    private function cycleKillAgents(): void
+    {
+        $output = [];
+        exec("tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^vl-'", $output);
+
+        $killed = 0;
+        foreach ($output as $session) {
+            $session = trim($session);
+            if ($session === '') {
+                continue;
+            }
+
+            // Capture child PIDs before killing
+            $panePid = trim(shell_exec("tmux list-panes -t " . escapeshellarg($session) . " -F '#{pane_pid}' 2>/dev/null") ?: '');
+            $childPids = [];
+            if ($panePid) {
+                $pids = trim(shell_exec("pgrep -P {$panePid} 2>/dev/null") ?: '');
+                if ($pids) {
+                    foreach (explode("\n", $pids) as $pid) {
+                        $pid = trim($pid);
+                        if ($pid) {
+                            $childPids[] = $pid;
+                            // Grandchildren
+                            $grandchildren = trim(shell_exec("pgrep -P {$pid} 2>/dev/null") ?: '');
+                            if ($grandchildren) {
+                                foreach (explode("\n", $grandchildren) as $gc) {
+                                    $gc = trim($gc);
+                                    if ($gc) {
+                                        $childPids[] = $gc;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Send C-c then kill session
+            exec("tmux send-keys -t " . escapeshellarg($session) . " C-c 2>/dev/null");
+            usleep(100_000);
+            exec("tmux kill-session -t " . escapeshellarg($session) . " 2>/dev/null");
+
+            // Kill orphaned child processes
+            foreach ($childPids as $pid) {
+                exec("kill {$pid} 2>/dev/null");
+            }
+            $killed++;
+        }
+
+        $this->log("[cycle] Killed {$killed} agent session(s)");
+    }
+
+    private function cycleKillSwarmSession(): void
+    {
+        $session = 'voidlux-swarm';
+
+        // Get PIDs of swarm processes before killing
+        $swarmPids = [];
+        $paneOutput = [];
+        exec("tmux list-panes -t " . escapeshellarg($session) . " -F '#{pane_pid}' 2>/dev/null", $paneOutput);
+        foreach ($paneOutput as $panePid) {
+            $panePid = trim($panePid);
+            if (!$panePid) {
+                continue;
+            }
+            $children = trim(shell_exec("pgrep -P {$panePid} 2>/dev/null") ?: '');
+            if ($children) {
+                foreach (explode("\n", $children) as $pid) {
+                    $pid = trim($pid);
+                    if ($pid) {
+                        $swarmPids[] = $pid;
+                    }
+                }
+            }
+        }
+
+        exec("tmux kill-session -t " . escapeshellarg($session) . " 2>/dev/null");
+        usleep(500_000);
+
+        // Kill orphaned swarm PHP processes
+        foreach ($swarmPids as $pid) {
+            exec("kill {$pid} 2>/dev/null");
+        }
+
+        $this->log("[cycle] Swarm session killed");
+    }
+
+    private function cycleKillOrphans(): void
+    {
+        // Kill anything still holding swarm ports (9091-9093, 7101-7103)
+        $ports = [9091, 9092, 9093, 7101, 7102, 7103];
+        $killed = 0;
+        foreach ($ports as $port) {
+            $output = trim(shell_exec("ss -tlnp 'sport = :{$port}' 2>/dev/null | grep -oP 'pid=\\K[0-9]+' | sort -u") ?: '');
+            if ($output) {
+                foreach (explode("\n", $output) as $pid) {
+                    $pid = trim($pid);
+                    if ($pid) {
+                        exec("kill {$pid} 2>/dev/null");
+                        $killed++;
+                    }
+                }
+            }
+        }
+
+        if ($killed > 0) {
+            $this->log("[cycle] Killed {$killed} orphaned process(es) on swarm ports");
+            usleep(500_000);
+        }
+    }
+
+    private function cycleGitPull(string $projectDir, string $branch): void
+    {
+        if ($branch) {
+            $branchEsc = escapeshellarg($branch);
+            $cmd = "cd " . escapeshellarg($projectDir) . " && git checkout {$branchEsc} 2>&1 && git pull 2>&1";
+        } else {
+            $cmd = "cd " . escapeshellarg($projectDir) . " && git pull 2>&1";
+        }
+
+        $output = shell_exec($cmd) ?: '';
+        $this->log("[cycle] git pull output: " . trim($output));
+
+        // Check for failure
+        if (str_contains($output, 'fatal:') || str_contains($output, 'error:')) {
+            throw new \RuntimeException("git pull failed: " . trim($output));
+        }
+    }
+
+    private function cycleRelaunch(string $projectDir): void
+    {
+        $script = $projectDir . '/scripts/launch-swarm-session.sh';
+        if (!file_exists($script)) {
+            throw new \RuntimeException("Launch script not found: {$script}");
+        }
+
+        $cmd = "cd " . escapeshellarg($projectDir) . " && bash " . escapeshellarg($script) . " 2>&1";
+        $output = shell_exec($cmd) ?: '';
+        $this->log("[cycle] launch output: " . trim($output));
+
+        // Verify session was created
+        usleep(500_000);
+        $check = trim(shell_exec("tmux has-session -t voidlux-swarm 2>&1 && echo OK || echo FAIL") ?: '');
+        if (!str_contains($check, 'OK')) {
+            throw new \RuntimeException("Swarm session failed to start");
+        }
+    }
+
+    private function cycleWaitForEmperor(int $timeoutSeconds): void
+    {
+        $deadline = microtime(true) + $timeoutSeconds;
+        $pollInterval = 2;
+
+        while (microtime(true) < $deadline) {
+            // The emperor will connect via P2P and send EMPEROR_HEARTBEAT,
+            // which updateEmperor() handles — we just wait for it.
+            if ($this->emperorHttpPort > 0) {
+                $this->log("[cycle] Emperor detected at port {$this->emperorHttpPort}");
+                return;
+            }
+
+            Coroutine::sleep($pollInterval);
+        }
+
+        throw new \RuntimeException("Emperor did not come up within {$timeoutSeconds}s");
+    }
+
+    private static function cyclingPage(): string
+    {
+        return <<<'HTML'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoidLux — System Cycling</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background: #0a0a0a;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.smoke {
+    position: fixed; inset: 0; z-index: 0;
+    background:
+        radial-gradient(ellipse at 30% 40%, rgba(0,40,80,0.3) 0%, transparent 60%),
+        radial-gradient(ellipse at 70% 60%, rgba(0,40,80,0.2) 0%, transparent 60%),
+        radial-gradient(ellipse at 50% 100%, rgba(0,30,60,0.15) 0%, transparent 50%);
+    animation: smokeShift 8s ease-in-out infinite alternate;
+}
+@keyframes smokeShift {
+    0% { opacity: 0.6; transform: scale(1); }
+    100% { opacity: 1; transform: scale(1.05); }
+}
+.container {
+    position: relative; z-index: 1;
+    text-align: center; max-width: 600px; padding: 40px;
+}
+.icon {
+    font-size: 4rem;
+    margin-bottom: 24px;
+    animation: spin 3s linear infinite;
+    filter: drop-shadow(0 0 20px rgba(0,102,204,0.4));
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+h1 {
+    font-size: 1.6rem;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    background: linear-gradient(90deg, #0066cc, #00ccff, #0066cc);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 3s linear infinite;
+}
+@keyframes shimmer { to { background-position: 200% center; } }
+.subtitle {
+    color: #446688;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin-bottom: 32px;
+}
+.phase-label {
+    color: #88aacc;
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+    min-height: 1.4em;
+}
+.progress-bar {
+    width: 100%;
+    height: 4px;
+    background: #1a1a2a;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 24px;
+}
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #0066cc, #00ccff);
+    border-radius: 2px;
+    transition: width 0.5s ease;
+    width: 0%;
+}
+.error-box {
+    background: #1a0a0a;
+    border: 1px solid #663333;
+    color: #ff6666;
+    padding: 12px 16px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    margin-top: 16px;
+    display: none;
+    text-align: left;
+    word-break: break-word;
+}
+.elapsed {
+    color: #555;
+    font-size: 0.75rem;
+    margin-top: 8px;
+}
+.bottom-line {
+    position: fixed; bottom: 24px; left: 0; right: 0;
+    text-align: center; color: #444; font-size: 0.7rem; z-index: 1;
+}
+</style>
+</head>
+<body>
+<div class="smoke"></div>
+<div class="container">
+    <div class="icon">&#x267B;</div>
+    <h1>System Cycling</h1>
+    <div class="subtitle">
+        Pulling latest code and restarting the swarm.<br>
+        The seneschal stands guard while the palace is rebuilt.
+    </div>
+    <div class="phase-label" id="phase">Initializing...</div>
+    <div class="progress-bar"><div class="progress-fill" id="progress"></div></div>
+    <div class="elapsed" id="elapsed"></div>
+    <div class="error-box" id="error"></div>
+</div>
+<div class="bottom-line">
+    This page will auto-refresh when the new emperor is crowned.
+</div>
+<script>
+const PHASES = {
+    'starting': { label: 'Starting cycle...', pct: 5 },
+    'killing_agents': { label: 'Killing agent sessions...', pct: 15 },
+    'killing_swarm': { label: 'Stopping emperor and workers...', pct: 30 },
+    'killing_orphans': { label: 'Cleaning up orphaned processes...', pct: 40 },
+    'git_pull': { label: 'Pulling latest code...', pct: 55 },
+    'relaunching': { label: 'Launching new swarm session...', pct: 70 },
+    'waiting_emperor': { label: 'Waiting for emperor to come online...', pct: 85 },
+    'completed': { label: 'Cycle complete!', pct: 100 },
+    'failed': { label: 'Cycle failed', pct: 0 },
+};
+
+function poll() {
+    fetch('/api/system/cycle/status')
+        .then(r => r.json())
+        .then(data => {
+            const phase = PHASES[data.status] || { label: data.status, pct: 50 };
+            document.getElementById('phase').textContent = phase.label;
+            document.getElementById('progress').style.width = phase.pct + '%';
+
+            if (data.elapsed) {
+                document.getElementById('elapsed').textContent = data.elapsed + 's elapsed';
+            }
+
+            if (data.error) {
+                const errEl = document.getElementById('error');
+                errEl.style.display = 'block';
+                errEl.textContent = data.error;
+                document.getElementById('progress').style.background = '#cc3333';
+            }
+
+            if (data.emperor_available) {
+                document.getElementById('phase').textContent = 'Emperor is back! Reloading...';
+                document.getElementById('progress').style.width = '100%';
+                setTimeout(() => location.reload(), 1000);
+                return;
+            }
+
+            setTimeout(poll, 2000);
+        })
+        .catch(() => {
+            setTimeout(poll, 3000);
+        });
+}
+poll();
+</script>
+</body>
+</html>
+HTML;
     }
 
     private function handleUpgrade(Request $request, Response $response): void
