@@ -155,6 +155,67 @@ body {
 }
 .job-log-card .card-title { font-size: 0.85rem; margin-bottom: 4px; }
 .job-log-card .card-meta { font-size: 0.7rem; }
+/* Hero quick-task form */
+.hero-card {
+    background: linear-gradient(135deg, #16213e, #1a1a2e);
+    border: 1px solid #0f3460;
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 24px;
+}
+.hero-card h2 {
+    font-size: 1.2rem;
+    color: #cc6600;
+    margin-bottom: 16px;
+}
+.hero-fields {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 12px;
+    align-items: start;
+}
+.hero-fields input, .hero-fields textarea {
+    background: #0d0d1a;
+    border: 1px solid #0f3460;
+    color: #fff;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.95rem;
+    width: 100%;
+}
+.hero-fields input:focus, .hero-fields textarea:focus {
+    outline: none;
+    border-color: #cc6600;
+    box-shadow: 0 0 8px rgba(204,102,0,0.3);
+}
+.hero-fields textarea {
+    min-height: 80px;
+    resize: vertical;
+}
+.hero-submit {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+}
+.hero-submit button {
+    background: linear-gradient(135deg, #cc6600, #dd7700);
+    color: #fff;
+    border: none;
+    padding: 12px 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    transition: background 0.2s, box-shadow 0.2s;
+}
+.hero-submit button:hover {
+    background: linear-gradient(135deg, #dd7700, #ee8800);
+    box-shadow: 0 0 12px rgba(204,102,0,0.4);
+}
+
 .empty { text-align: center; padding: 30px; color: #444; }
 .subtask-card { border-left: 3px solid #444; margin-left: 16px; }
 .parent-card { border-left: 3px solid #cc6600; }
@@ -215,6 +276,15 @@ body {
 </div>
 
 <div class="main">
+    <div class="hero-card">
+        <h2>Quick Task</h2>
+        <form class="hero-fields" id="hero-form" onsubmit="deploySwarm(event)">
+            <input type="text" name="repo_url" placeholder="git@github.com:user/repo.git" required />
+            <textarea name="instructions" placeholder="What should the swarm do?" required></textarea>
+            <div class="hero-submit"><button type="submit">Deploy Swarm</button></div>
+        </form>
+    </div>
+
     <div class="section">
         <div class="stats" id="stats">
             <div class="stat"><div class="stat-value" id="stat-pending">0</div><div class="stat-label">Pending</div></div>
@@ -620,6 +690,28 @@ function createTask(e) {
         f.title.value = '';
         f.description.value = '';
         addLog('task_created', 'Created task: '+t.title);
+    });
+}
+
+function deploySwarm(e) {
+    e.preventDefault();
+    const f = e.target;
+    const instructions = f.instructions.value.trim();
+    const firstSentence = instructions.match(/^[^.!?\n]+[.!?]?/)?.[0] || instructions;
+    const title = firstSentence.substring(0, 80);
+    const body = {
+        title: title,
+        description: instructions,
+        project_path: f.repo_url.value.trim(),
+    };
+    fetch('/api/swarm/tasks', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    }).then(r=>r.json()).then(t => {
+        f.repo_url.value = '';
+        f.instructions.value = '';
+        addLog('task_created', 'Deployed: '+t.title);
     });
 }
 
