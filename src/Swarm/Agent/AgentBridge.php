@@ -170,14 +170,19 @@ class AgentBridge
             default => '',
         };
 
+        // Unset CLAUDECODE so nested Claude Code sessions don't refuse to start
+        $envPrefix = 'unset CLAUDECODE; ';
+
         // Prefix env vars (e.g. ANTHROPIC_AUTH_TOKEN=ollama ANTHROPIC_BASE_URL=...)
-        if (!empty($env) && $command !== '') {
-            $envPrefix = '';
+        if (!empty($env)) {
             foreach ($env as $key => $value) {
                 // Env var names: alphanumeric + underscore only (sanitize, don't quote)
                 $safeKey = preg_replace('/[^A-Za-z0-9_]/', '', $key);
-                $envPrefix .= $safeKey . '=' . escapeshellarg($value) . ' ';
+                $envPrefix .= 'export ' . $safeKey . '=' . escapeshellarg($value) . '; ';
             }
+        }
+
+        if ($command !== '') {
             $command = $envPrefix . $command;
         }
 
