@@ -37,6 +37,7 @@ use VoidLux\Swarm\Storage\DhtAntiEntropy;
 use VoidLux\Swarm\Storage\DhtEngine;
 use VoidLux\Swarm\Storage\DhtStorage;
 use VoidLux\Swarm\Storage\SwarmDatabase;
+use VoidLux\Swarm\Upgrade\UpgradeHandler;
 
 /**
  * Main swarm server combining HTTP/WebSocket + TCP mesh + UDP discovery.
@@ -67,6 +68,9 @@ class Server
     private ?DhtEngine $dhtEngine = null;
     private ?DhtAntiEntropy $dhtAntiEntropy = null;
     private ?GalacticMarketplace $marketplace = null;
+    private ?Gossip\MarketplaceGossipEngine $marketplaceGossip = null;
+    private ?Gossip\MarketplaceAntiEntropy $marketplaceAntiEntropy = null;
+    private ?UpgradeHandler $upgradeHandler = null;
     private ?SwarmWebSocketHandler $wsHandler = null;
     private ?WsServer $server = null;
     private Registry $swarmRegistry;
@@ -293,7 +297,37 @@ class Server
 
         // Galactic marketplace (in-memory offering/tribute exchange)
         $this->marketplace = new GalacticMarketplace($this->nodeId);
+        $this->marketplaceGossip = new Gossip\MarketplaceGossipEngine($this->mesh, $this->clock, $this->marketplace);
+        $this->marketplaceAntiEntropy = new Gossip\MarketplaceAntiEntropy($this->mesh, $this->marketplaceGossip);
         $this->controller->setMarketplace($this->marketplace);
+        $this->controller->setMarketplaceGossip($this->marketplaceGossip);
+
+        // Upgrade handler (responds to UPGRADE_REQUEST from Seneschal)
+        $this->upgradeHandler = new UpgradeHandler($this->mesh, $this->nodeId, getcwd());
+        $this->upgradeHandler->onLog(function (string $msg) {
+            $this->log($msg);
+        });
+        $this->upgradeHandler->onRestart(function () {
+            $this->log("Upgrade: triggering graceful restart");
+            // Use the same shutdown path as regicide, which will cleanly stop
+            // all coroutines and let the process exit for supervisor restart
+            if ($this->server) {
+                $this->running = false;
+                $this->taskDispatcher?->stop();
+                $this->agentMonitor->stop();
+                $this->agentRegistry->stop();
+                $this->leaderElection->stop();
+                $this->taskAntiEntropy->stop();
+                $this->agentAntiEntropy->stop();
+                $this->dhtAntiEntropy?->stop();
+                $this->swarmStatus->stop();
+                $this->swarmRegistry->stop();
+                $this->discoveryManager->stop();
+                $this->peerManager->stop();
+                $this->mesh->stop();
+                $this->server->shutdown();
+            }
+        });
     }
 
     private function startP2P(): void
@@ -422,6 +456,34 @@ class Server
 
         // Periodic clock persistence (no WS push — dashboard is fully WS-driven)
         $this->running = true;
+
+        // Marketplace anti-entropy (periodic sync of offerings/bounties/capabilities)
+        Coroutine::create(function () {
+            while ($this->running) {
+                Coroutine::sleep($this->marketplaceAntiEntropy?->getIntervalSeconds() ?? 120);
+                $peers = $this->mesh->getConnections();
+                if (!empty($peers)) {
+                    $peer = $peers[array_rand($peers)];
+                    $this->marketplaceAntiEntropy?->syncFromPeer($peer);
+                }
+            }
+        });
+
+        // Periodic capability advertisement (broadcast local profile every 60s)
+        Coroutine::create(function () {
+            while ($this->running) {
+                Coroutine::sleep(60);
+                if ($this->marketplace && $this->marketplaceGossip) {
+                    $profile = $this->marketplace->buildLocalProfile(
+                        $this->db->getIdleAgentCount(),
+                        $this->db->getAgentCount(),
+                        $this->getLocalCapabilities(),
+                        $this->clock->tick(),
+                    );
+                    $this->marketplaceGossip->gossipCapabilityAdvertise($profile);
+                }
+            }
+        });
         Coroutine::create(function () {
             while ($this->running) {
                 Coroutine::sleep(30);
@@ -532,6 +594,8 @@ class Server
                 if ($isNew) {
                     $this->pushTaskToWs('task_completed', $msg['task_id'] ?? '');
                     $this->taskDispatcher?->triggerDispatch();
+                    // Track completion for capability acceptance rate
+                    $this->marketplace?->recordTaskCompletion(0);
                 }
                 break;
 
@@ -540,6 +604,8 @@ class Server
                 if ($isNew) {
                     $this->pushTaskToWs('task_failed', $msg['task_id'] ?? '');
                     $this->taskDispatcher?->triggerDispatch();
+                    // Track failure for capability acceptance rate
+                    $this->marketplace?->recordTaskFailure();
                 }
                 break;
 
@@ -695,9 +761,14 @@ class Server
                 }
                 break;
 
+            // --- Upgrade / rolling restart messages ---
+            case MessageTypes::UPGRADE_REQUEST:
+                $this->upgradeHandler?->handleUpgradeRequest($msg);
+                break;
+
             // --- Galactic marketplace messages ---
             case MessageTypes::OFFERING_ANNOUNCE:
-                $offering = $this->marketplace?->receiveOffering($msg['offering'] ?? $msg);
+                $offering = $this->marketplaceGossip?->receiveOfferingAnnounce($msg, $senderAddress);
                 if ($offering) {
                     $this->log("Offering received from " . substr($offering->nodeId, 0, 8) . ": {$offering->idleAgents} agents");
                     $this->wsHandler?->pushStatus(['offering' => $offering->toArray()]);
@@ -705,9 +776,127 @@ class Server
                 break;
 
             case MessageTypes::OFFERING_WITHDRAW:
-                $withdrawn = $this->marketplace?->receiveWithdraw($msg);
+                $withdrawn = $this->marketplaceGossip?->receiveOfferingWithdraw($msg, $senderAddress);
                 if ($withdrawn) {
                     $this->wsHandler?->pushStatus(['offering_withdrawn' => $msg['offering_id'] ?? '']);
+                }
+                break;
+
+            case MessageTypes::TRIBUTE_REQUEST:
+                $tribute = $this->marketplaceGossip?->receiveTributeRequest($msg, $senderAddress);
+                if ($tribute) {
+                    $this->log("Tribute request from " . substr($tribute->fromNodeId, 0, 8) . " for offering " . substr($tribute->offeringId, 0, 8));
+                    $this->wsHandler?->pushStatus(['tribute' => $tribute->toArray()]);
+                }
+                break;
+
+            case MessageTypes::TRIBUTE_ACCEPT:
+                if ($this->marketplaceGossip?->receiveTributeAccept($msg, $senderAddress)) {
+                    $this->wsHandler?->pushStatus(['tribute_accepted' => $msg['tribute_id'] ?? '']);
+                }
+                break;
+
+            case MessageTypes::TRIBUTE_REJECT:
+                if ($this->marketplaceGossip?->receiveTributeReject($msg, $senderAddress)) {
+                    $this->wsHandler?->pushStatus(['tribute_rejected' => $msg['tribute_id'] ?? '']);
+                }
+                break;
+
+            // --- Cross-swarm capability advertisement ---
+            case MessageTypes::CAPABILITY_ADVERTISE:
+                $profile = $this->marketplaceGossip?->receiveCapabilityAdvertise($msg, $senderAddress);
+                if ($profile) {
+                    $this->log("Capability profile from " . substr($profile->nodeId, 0, 8) . ": rate=" . $profile->acceptanceRate . " idle=" . $profile->idleAgents);
+                    $this->wsHandler?->pushStatus(['capability_profile' => $profile->toArray()]);
+                }
+                break;
+
+            case MessageTypes::CAPABILITY_QUERY:
+                $queryId = $this->marketplaceGossip?->receiveCapabilityQuery($msg, $senderAddress);
+                if ($queryId && $this->marketplace) {
+                    // Check if our capabilities match the query
+                    $required = $msg['required_capabilities'] ?? [];
+                    $localProfile = $this->marketplace->buildLocalProfile(
+                        $this->db->getIdleAgentCount(),
+                        $this->db->getAgentCount(),
+                        $this->getLocalCapabilities(),
+                        $this->clock->tick(),
+                    );
+                    if ($localProfile->matchesCapabilities($required) && $localProfile->hasCapacity()) {
+                        $senderNodeId = $msg['sender_node_id'] ?? '';
+                        if ($senderNodeId) {
+                            $this->marketplaceGossip->gossipCapabilityQueryResponse($queryId, $localProfile, $senderNodeId);
+                        }
+                    }
+                }
+                break;
+
+            case MessageTypes::CAPABILITY_QUERY_RSP:
+                $profile = $this->marketplaceGossip?->receiveCapabilityQueryResponse($msg, $senderAddress);
+                if ($profile) {
+                    $this->log("Capability query response from " . substr($profile->nodeId, 0, 8));
+                    $this->wsHandler?->pushStatus(['capability_profile' => $profile->toArray()]);
+                }
+                break;
+
+            // --- Bounty system ---
+            case MessageTypes::BOUNTY_POST:
+                $bounty = $this->marketplaceGossip?->receiveBountyPost($msg, $senderAddress);
+                if ($bounty) {
+                    $this->log("Bounty posted by " . substr($bounty->postedByNodeId, 0, 8) . ": {$bounty->title} ({$bounty->reward} {$bounty->currency})");
+                    $this->wsHandler?->pushStatus(['bounty' => $bounty->toArray()]);
+                }
+                break;
+
+            case MessageTypes::BOUNTY_CLAIM:
+                if ($this->marketplaceGossip?->receiveBountyClaim($msg, $senderAddress)) {
+                    $this->wsHandler?->pushStatus(['bounty_claimed' => [
+                        'bounty_id' => $msg['bounty_id'] ?? '',
+                        'claimer_node_id' => $msg['claimer_node_id'] ?? '',
+                    ]]);
+                }
+                break;
+
+            case MessageTypes::BOUNTY_CANCEL:
+                if ($this->marketplaceGossip?->receiveBountyCancel($msg, $senderAddress)) {
+                    $this->wsHandler?->pushStatus(['bounty_cancelled' => $msg['bounty_id'] ?? '']);
+                }
+                break;
+
+            // --- Marketplace anti-entropy ---
+            case MessageTypes::MARKETPLACE_SYNC_REQ:
+                if ($this->marketplaceAntiEntropy) {
+                    $this->marketplaceAntiEntropy->handleSyncRequest($conn);
+                }
+                break;
+
+            case MessageTypes::MARKETPLACE_SYNC_RSP:
+                $this->marketplaceAntiEntropy?->handleSyncResponse($msg);
+                break;
+
+            // --- Cross-swarm task delegation ---
+            case MessageTypes::TASK_DELEGATE:
+                $delegation = $this->marketplaceGossip?->receiveTaskDelegate($msg, $senderAddress);
+                if ($delegation) {
+                    $this->log("Task delegation from " . substr($delegation->sourceNodeId, 0, 8) . ": {$delegation->title}");
+                    $this->wsHandler?->pushStatus(['delegation_received' => $delegation->toArray()]);
+                }
+                break;
+
+            case MessageTypes::TASK_DELEGATE_RSP:
+                $result = $this->marketplaceGossip?->receiveTaskDelegateResponse($msg, $senderAddress);
+                if ($result) {
+                    $this->log("Delegation " . substr($result['delegation_id'], 0, 8) . " " . ($result['accepted'] ? 'accepted' : 'rejected'));
+                    $this->wsHandler?->pushStatus(['delegation_response' => $result]);
+                }
+                break;
+
+            case MessageTypes::TASK_DELEGATE_RESULT:
+                $result = $this->marketplaceGossip?->receiveTaskDelegateResult($msg, $senderAddress);
+                if ($result) {
+                    $status = $result['error'] ? 'failed' : 'completed';
+                    $this->log("Delegation " . substr($result['delegation_id'], 0, 8) . " {$status}");
+                    $this->wsHandler?->pushStatus(['delegation_result' => $result]);
                 }
                 break;
         }
@@ -725,6 +914,9 @@ class Server
             'swarm_nodes' => array_map(fn($n) => $n->toArray(), $this->swarmRegistry->getAllNodes()),
             'swarm_health' => $this->swarmStatus->getSnapshot()['health'] ?? [],
             'offerings' => array_map(fn($o) => $o->toArray(), $this->marketplace?->getOfferings() ?? []),
+            'bounties' => array_map(fn($b) => $b->toArray(), $this->marketplace?->getBounties() ?? []),
+            'capability_profiles' => array_map(fn($p) => $p->toArray(), $this->marketplace?->getCapabilityProfiles() ?? []),
+            'delegations' => array_map(fn($d) => $d->toArray(), $this->marketplace?->getDelegations() ?? []),
             'wallet' => $this->marketplace?->getWallet() ?? ['balance' => 0, 'currency' => 'VOID'],
         ];
         $this->wsHandler->pushFullState($fd, $tasks, $agents, $status);
@@ -934,6 +1126,21 @@ class Server
         } else {
             $this->log("Failed to spawn replacement worker");
         }
+    }
+
+    /**
+     * Aggregate capabilities across all local agents.
+     * @return string[]
+     */
+    private function getLocalCapabilities(): array
+    {
+        $caps = [];
+        foreach ($this->db->getLocalAgents($this->nodeId) as $agent) {
+            foreach ($agent->capabilities as $cap) {
+                $caps[$cap] = true;
+            }
+        }
+        return array_keys($caps);
     }
 
     private function log(string $message): void
