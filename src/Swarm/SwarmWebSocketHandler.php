@@ -82,6 +82,29 @@ class SwarmWebSocketHandler
     }
 
     /**
+     * Broadcast a board message event.
+     */
+    public function pushBoardMessage(string $event, array $messageData): void
+    {
+        $this->broadcast([
+            'type' => 'board_message',
+            'event' => $event,
+            'message' => $messageData,
+        ]);
+    }
+
+    /**
+     * Broadcast board message removal.
+     */
+    public function pushBoardMessageRemoved(string $messageId): void
+    {
+        $this->broadcast([
+            'type' => 'board_message_removed',
+            'message_id' => $messageId,
+        ]);
+    }
+
+    /**
      * Broadcast emperor/election status updates.
      */
     public function pushStatus(array $status): void

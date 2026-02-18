@@ -55,6 +55,13 @@ class TaskAntiEntropy
             'type' => MessageTypes::TASK_SYNC_REQ,
             'since_lamport_ts' => $maxTs,
         ]);
+
+        // Also sync board messages
+        $maxBoardTs = $this->db->getMaxMessageLamportTs();
+        $peer->send([
+            'type' => MessageTypes::BOARD_SYNC_REQ,
+            'since_lamport_ts' => $maxBoardTs,
+        ]);
     }
 
     public function handleSyncRequest(Connection $conn, array $message): void
@@ -75,9 +82,36 @@ class TaskAntiEntropy
             $task = $this->gossip->receiveTaskCreate($taskData);
             if ($task !== null) {
                 $count++;
+            } else {
+                // Task already exists — merge in fields that may be missing locally
+                // (e.g. gitBranch set on worker node, not yet propagated)
+                $this->mergeTaskFields($taskData);
             }
         }
         return $count;
+    }
+
+    /**
+     * Merge specific fields from a remote task into the local copy.
+     * Only updates fields that are empty locally but populated remotely.
+     */
+    private function mergeTaskFields(array $remoteData): void
+    {
+        $id = $remoteData['id'] ?? '';
+        if (!$id) {
+            return;
+        }
+
+        $local = $this->db->getTask($id);
+        if (!$local) {
+            return;
+        }
+
+        // Merge gitBranch: worker sets it during delivery, emperor needs it for merge
+        $remoteGitBranch = $remoteData['git_branch'] ?? '';
+        if ($remoteGitBranch !== '' && $local->gitBranch === '') {
+            $this->db->updateGitBranch($id, $remoteGitBranch);
+        }
     }
 
     public function stop(): void

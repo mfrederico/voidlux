@@ -12,7 +12,9 @@ class GitWorkspace
 {
     public function isGitUrl(string $path): bool
     {
-        return (bool) preg_match('#^(https?://|git://|ssh://|git@)#', $path);
+        // Matches: https://, git://, ssh://, git@host:, and SCP-style host:path
+        // The SCP pattern matches hostname.tld:path where path doesn't start with a digit (port)
+        return (bool) preg_match('#^(https?://|git://|ssh://|git@|[\w][\w.-]*\.[a-z]{2,}:(?!\d))#i', $path);
     }
 
     public function isGitRepo(string $path): bool

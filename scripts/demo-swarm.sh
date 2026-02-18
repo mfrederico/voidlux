@@ -75,6 +75,10 @@ for i in 0 1 2; do
         [ -n "${ANTHROPIC_API_KEY:-}" ] && CMD="${CMD} --claude-api-key=${ANTHROPIC_API_KEY}"
     fi
 
+    # Auth secret for P2P connection authentication
+    AUTH_SECRET="${VOIDLUX_AUTH_SECRET:-}"
+    [ -n "$AUTH_SECRET" ] && CMD="${CMD} --auth-secret=${AUTH_SECRET}"
+
     # Test command for merge-test-retry loop
     TEST_CMD="${VOIDLUX_TEST_COMMAND:-}"
     [ -n "$TEST_CMD" ] && CMD="${CMD} --test-command=${TEST_CMD}"
@@ -94,6 +98,7 @@ echo "  Worker 1:  http://localhost:${HTTP_PORTS[2]}"
 echo "  Worker 2:  http://localhost:${HTTP_PORTS[3]}"
 echo ""
 echo "LLM: ${VOIDLUX_LLM_PROVIDER:-ollama}/${VOIDLUX_LLM_MODEL:-qwen3-coder:30b}"
+[ -n "${VOIDLUX_AUTH_SECRET:-}" ] && echo "Auth: HMAC-SHA256 (secret configured)"
 [ -n "${VOIDLUX_TEST_COMMAND:-}" ] && echo "Test: ${VOIDLUX_TEST_COMMAND}"
 echo ""
 echo "Quick start:"
@@ -107,6 +112,9 @@ echo "    -d '{\"title\":\"Add hello world endpoint\",\"project_path\":\"/tmp/te
 echo ""
 echo "  # Override LLM model:"
 echo "  VOIDLUX_LLM_MODEL=llama3.1:8b bash scripts/demo-swarm.sh"
+echo ""
+echo "  # With P2P authentication (all nodes must share the secret):"
+echo "  VOIDLUX_AUTH_SECRET=mysecret bash scripts/demo-swarm.sh"
 echo ""
 echo "  # With merge-test-retry (runs php lint on merge):"
 echo "  VOIDLUX_TEST_COMMAND='find src -name \"*.php\" -exec php -l {} +' bash scripts/demo-swarm.sh"

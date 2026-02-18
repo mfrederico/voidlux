@@ -113,6 +113,27 @@ class MessageTypes
     public const UPGRADE_REQUEST = 0xD0;
     public const UPGRADE_STATUS  = 0xD1;
 
+    // Offer-Pay protocol messages
+    public const OFFER_CREATE     = 0xD2;
+    public const OFFER_ACCEPT     = 0xD3;
+    public const OFFER_REJECT     = 0xD4;
+    public const PAYMENT_INIT     = 0xD5;
+    public const PAYMENT_CONFIRM  = 0xD6;
+
+    // Broker (Seneschal mediation) messages
+    public const BROKER_FORWARD       = 0xE0;
+    public const BROKER_FORWARD_ACK   = 0xE1;
+    public const BROKER_QUEUE_STATUS  = 0xE2;
+    public const BROKER_QUEUE_RSP     = 0xE3;
+    public const BROKER_NODE_ANNOUNCE = 0xE4;
+
+    // Message board messages
+    public const BOARD_POST     = 0xF0;
+    public const BOARD_UPDATE   = 0xF1;
+    public const BOARD_DELETE   = 0xF2;
+    public const BOARD_SYNC_REQ = 0xF3;
+    public const BOARD_SYNC_RSP = 0xF4;
+
     public const NAMES = [
         self::HELLO    => 'HELLO',
         self::POST     => 'POST',
@@ -182,6 +203,21 @@ class MessageTypes
         self::TASK_DELEGATE_RESULT => 'TASK_DELEGATE_RESULT',
         self::UPGRADE_REQUEST   => 'UPGRADE_REQUEST',
         self::UPGRADE_STATUS    => 'UPGRADE_STATUS',
+        self::OFFER_CREATE     => 'OFFER_CREATE',
+        self::OFFER_ACCEPT     => 'OFFER_ACCEPT',
+        self::OFFER_REJECT     => 'OFFER_REJECT',
+        self::PAYMENT_INIT     => 'PAYMENT_INIT',
+        self::PAYMENT_CONFIRM  => 'PAYMENT_CONFIRM',
+        self::BROKER_FORWARD       => 'BROKER_FORWARD',
+        self::BROKER_FORWARD_ACK   => 'BROKER_FORWARD_ACK',
+        self::BROKER_QUEUE_STATUS  => 'BROKER_QUEUE_STATUS',
+        self::BROKER_QUEUE_RSP     => 'BROKER_QUEUE_RSP',
+        self::BROKER_NODE_ANNOUNCE => 'BROKER_NODE_ANNOUNCE',
+        self::BOARD_POST     => 'BOARD_POST',
+        self::BOARD_UPDATE   => 'BOARD_UPDATE',
+        self::BOARD_DELETE   => 'BOARD_DELETE',
+        self::BOARD_SYNC_REQ => 'BOARD_SYNC_REQ',
+        self::BOARD_SYNC_RSP => 'BOARD_SYNC_RSP',
     ];
 
     public static function name(int $type): string

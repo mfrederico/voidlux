@@ -164,6 +164,7 @@ function runSwarm(array $options): void
     $llmPort = (int) ($options['llm-port'] ?? 11434);
     $claudeApiKey = $options['claude-api-key'] ?? '';
     $testCommand = $options['test-command'] ?? '';
+    $authSecret = $options['auth-secret'] ?? getenv('VOIDLUX_AUTH_SECRET') ?: '';
 
     $server = new \VoidLux\Swarm\Server(
         httpHost: '0.0.0.0',
@@ -179,6 +180,7 @@ function runSwarm(array $options): void
         llmPort: $llmPort,
         claudeApiKey: $claudeApiKey,
         testCommand: $testCommand,
+        authSecret: $authSecret,
     );
 
     $server->run();
@@ -274,6 +276,7 @@ Swarm Options:
   --llm-port=PORT         Ollama port (default: 11434)
   --claude-api-key=KEY    Claude API key (for claude provider)
   --test-command=CMD      Test command to run after merging subtask branches
+  --auth-secret=SECRET    Shared secret for P2P auth (or VOIDLUX_AUTH_SECRET env)
 
 Seneschal Options:
   --http-port=PORT        Proxy listen port (default: 9090)
