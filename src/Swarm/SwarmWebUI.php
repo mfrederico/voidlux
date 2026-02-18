@@ -283,6 +283,81 @@ body {
 .tribute-status-rejected { color: #cc6666; }
 .tribute-status-completed { color: #88ccff; }
 
+/* Bounty board */
+.bounty-section h2 { color: #ff8844 !important; border-bottom-color: #442200 !important; }
+.bounty-card {
+    background: linear-gradient(135deg, #1a1008, #2a1a0a);
+    border: 1px solid #443322; border-radius: 6px; padding: 14px;
+}
+.bounty-card:hover { border-color: #886644; }
+.bounty-card .bounty-reward {
+    font-size: 1.2rem; font-weight: bold;
+    background: linear-gradient(90deg, #ff8844, #ffaa66);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.bounty-card .bounty-title { font-size: 0.95rem; color: #ddd; margin: 4px 0; }
+.bounty-card .bounty-desc { font-size: 0.8rem; color: #999; max-height: 40px; overflow: hidden; }
+.bounty-card .bounty-caps { font-size: 0.75rem; color: #886644; margin-top: 4px; }
+.bounty-card .bounty-caps span {
+    background: #1a0d00; border: 1px solid #332211; border-radius: 2px;
+    padding: 1px 6px; margin-right: 4px; display: inline-block;
+}
+.bounty-card .bounty-meta { font-size: 0.7rem; color: #665544; margin-top: 6px; }
+.bounty-status-open { color: #88cc44; }
+.bounty-status-claimed { color: #66aaff; }
+.bounty-status-completed { color: #44cc44; }
+.bounty-status-failed { color: #cc4444; }
+.bounty-status-cancelled { color: #888; }
+.bounty-status-expired { color: #666; }
+
+/* Capability/reputation cards */
+.capability-section h2 { color: #44aacc !important; border-bottom-color: #1a3344 !important; }
+.capability-card {
+    background: linear-gradient(135deg, #081a20, #0d2a30);
+    border: 1px solid #224444; border-radius: 6px; padding: 14px;
+}
+.capability-card:hover { border-color: #448888; }
+.capability-card .cap-node {
+    font-size: 1rem; font-weight: bold; color: #66cccc;
+}
+.capability-card .cap-swarm { font-size: 0.8rem; color: #448888; }
+.capability-card .cap-agents { font-size: 0.85rem; color: #88bbbb; margin-top: 4px; }
+.capability-card .cap-stats { font-size: 0.8rem; color: #668888; margin-top: 4px; }
+.rep-bar {
+    display: inline-block; height: 8px; border-radius: 4px; margin-left: 6px; vertical-align: middle;
+}
+.rep-bar-fill { height: 100%; border-radius: 4px; }
+.cap-tags { font-size: 0.75rem; color: #448888; margin-top: 4px; }
+.cap-tags span {
+    background: #0a1a1a; border: 1px solid #224444; border-radius: 2px;
+    padding: 1px 6px; margin-right: 4px; display: inline-block;
+}
+
+/* Swarm history */
+.history-section h2 { color: #aa88cc !important; border-bottom-color: #332244 !important; }
+.history-row {
+    display: flex; align-items: center; gap: 12px; padding: 8px 12px;
+    background: #0d0d1a; border: 1px solid #1a1a2a; border-radius: 4px; margin-bottom: 4px;
+    font-size: 0.8rem;
+}
+.history-row .history-icon { font-size: 1rem; flex-shrink: 0; }
+.history-row .history-info { flex: 1; color: #aaa; }
+.history-row .history-time { font-size: 0.7rem; color: #555; flex-shrink: 0; }
+
+/* Tab navigation for marketplace */
+.marketplace-tabs {
+    display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid #222;
+}
+.marketplace-tab {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    color: #666; padding: 8px 16px; cursor: pointer; font-family: inherit;
+    font-size: 0.85rem; margin-bottom: -2px; transition: all 0.2s;
+}
+.marketplace-tab:hover { color: #aaa; }
+.marketplace-tab.active { color: #cc6600; border-bottom-color: #cc6600; }
+.marketplace-panel { display: none; }
+.marketplace-panel.active { display: block; }
+
 /* Contributions (PR list) */
 .contributions-section h2 { color: #33aa66 !important; border-bottom-color: #1a3a2a !important; }
 .contribution-row {
@@ -433,15 +508,70 @@ body {
     </div>
 
     <div class="section galactic-section">
-        <h2>Galactic Marketplace
-            <button class="toggle-btn" onclick="makeOffering()" style="border-color:#444488;color:#8866cc;">Make Offering</button>
-        </h2>
-        <div class="card-grid" id="offerings-list">
-            <div class="empty" style="color:#444466;">No offerings from other nodes</div>
+        <h2>Galactic Marketplace</h2>
+        <div class="marketplace-tabs">
+            <button class="marketplace-tab active" onclick="switchMarketTab('bounties')">Bounty Board</button>
+            <button class="marketplace-tab" onclick="switchMarketTab('capabilities')">Capabilities</button>
+            <button class="marketplace-tab" onclick="switchMarketTab('offerings')">Offerings</button>
+            <button class="marketplace-tab" onclick="switchMarketTab('history')">Swarm History</button>
         </div>
-        <div id="tributes-section" style="margin-top:12px;display:none;">
-            <h3 style="font-size:0.9rem;color:#8866cc;margin-bottom:8px;">Tribute History</h3>
-            <div id="tributes-list"></div>
+
+        <div class="marketplace-panel active" id="panel-bounties">
+            <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;">
+                <select id="bounty-filter" onchange="renderBounties()" style="background:#1a1a1a;border:1px solid #333;color:#888;padding:4px 8px;border-radius:3px;font-size:0.75rem;font-family:inherit;">
+                    <option value="">All Bounties</option>
+                    <option value="open">Open</option>
+                    <option value="claimed">Claimed</option>
+                    <option value="completed">Completed</option>
+                </select>
+                <button class="toggle-btn" onclick="refreshBounties()" style="border-color:#443322;color:#ff8844;">Refresh</button>
+                <button class="toggle-btn" onclick="showPostBountyForm()" style="border-color:#443322;color:#ff8844;">Post Bounty</button>
+            </div>
+            <div id="post-bounty-form" style="display:none;margin-bottom:14px;">
+                <form onsubmit="postBounty(event)" class="task-form expanded">
+                    <input name="title" placeholder="Bounty title..." required style="background:#1a0d00;border-color:#332211;">
+                    <textarea name="description" placeholder="Description..." rows="2" style="background:#1a0d00;border-color:#332211;"></textarea>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input name="reward" type="number" min="1" value="10" placeholder="Reward" style="width:80px;background:#1a0d00;border-color:#332211;">
+                        <span style="color:#886644;font-size:0.8rem;">VOID</span>
+                        <input name="capabilities" placeholder="Required capabilities (comma-sep)" style="flex:1;background:#1a0d00;border-color:#332211;">
+                        <input name="ttl" type="number" min="60" value="600" placeholder="TTL (sec)" style="width:100px;background:#1a0d00;border-color:#332211;">
+                        <button type="submit" style="background:#663300;">Post</button>
+                        <button type="button" onclick="document.getElementById('post-bounty-form').style.display='none'" style="background:#333;">Cancel</button>
+                    </div>
+                </form>
+            </div>
+            <div class="card-grid" id="bounty-list">
+                <div class="empty" style="color:#443322;">No bounties available</div>
+            </div>
+        </div>
+
+        <div class="marketplace-panel" id="panel-capabilities">
+            <div style="margin-bottom:12px;">
+                <button class="toggle-btn" onclick="refreshCapabilities()" style="border-color:#224444;color:#44aacc;">Refresh</button>
+            </div>
+            <div class="card-grid" id="capability-list">
+                <div class="empty" style="color:#224444;">No capability profiles advertised</div>
+            </div>
+        </div>
+
+        <div class="marketplace-panel" id="panel-offerings">
+            <div style="margin-bottom:12px;">
+                <button class="toggle-btn" onclick="makeOffering()" style="border-color:#444488;color:#8866cc;">Make Offering</button>
+            </div>
+            <div class="card-grid" id="offerings-list">
+                <div class="empty" style="color:#444466;">No offerings from other nodes</div>
+            </div>
+            <div id="tributes-section" style="margin-top:12px;display:none;">
+                <h3 style="font-size:0.9rem;color:#8866cc;margin-bottom:8px;">Tribute History</h3>
+                <div id="tributes-list"></div>
+            </div>
+        </div>
+
+        <div class="marketplace-panel" id="panel-history">
+            <div id="swarm-history-list">
+                <div class="empty" style="color:#332244;">No completion history yet</div>
+            </div>
         </div>
     </div>
 
@@ -1243,6 +1373,242 @@ function requestTribute(offeringId) {
         }
     });
 }
+
+// ---- Marketplace Tabs ----
+function switchMarketTab(tab) {
+    document.querySelectorAll('.marketplace-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.marketplace-panel').forEach(p => p.classList.remove('active'));
+    document.querySelector('.marketplace-tab[onclick*="'+tab+'"]').classList.add('active');
+    document.getElementById('panel-'+tab).classList.add('active');
+    if (tab === 'bounties') refreshBounties();
+    if (tab === 'capabilities') refreshCapabilities();
+    if (tab === 'history') renderSwarmHistory();
+}
+
+// ---- Bounty Board ----
+let bountyData = { bounties: [], capabilities: [] };
+
+function refreshBounties() {
+    fetch('/api/broker/bounties').then(r => {
+        if (!r.ok) throw new Error('Broker unavailable');
+        return r.json();
+    }).then(d => {
+        bountyData.bounties = d.bounties || [];
+        renderBounties();
+    }).catch(() => {
+        bountyData.bounties = [];
+        renderBounties();
+    });
+}
+
+function renderBounties() {
+    const filter = document.getElementById('bounty-filter').value;
+    let bounties = bountyData.bounties;
+    if (filter) bounties = bounties.filter(b => b.status === filter);
+
+    // Sort: open first, then by reward desc
+    bounties.sort((a,b) => {
+        if (a.status === 'open' && b.status !== 'open') return -1;
+        if (b.status === 'open' && a.status !== 'open') return 1;
+        return (b.reward || 0) - (a.reward || 0);
+    });
+
+    const el = document.getElementById('bounty-list');
+    if (!bounties.length) {
+        el.innerHTML = '<div class="empty" style="color:#443322;">No bounties available</div>';
+        return;
+    }
+
+    el.innerHTML = bounties.map(b => {
+        let html = '<div class="bounty-card">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+        html += '<span class="bounty-reward">' + (b.reward||0) + ' ' + (b.currency||'VOID') + '</span>';
+        html += '<span class="bounty-status-' + b.status + '" style="font-size:0.75rem;font-weight:bold;">' + b.status + '</span>';
+        html += '</div>';
+        html += '<div class="bounty-title">' + escapeHtml(b.title || 'Untitled') + '</div>';
+        if (b.description) html += '<div class="bounty-desc">' + escapeHtml(b.description).substring(0,120) + '</div>';
+        if (b.required_capabilities && b.required_capabilities.length) {
+            html += '<div class="bounty-caps">';
+            b.required_capabilities.forEach(c => { html += '<span>' + escapeHtml(c) + '</span>'; });
+            html += '</div>';
+        }
+        html += '<div class="bounty-meta">';
+        html += 'Posted by: ' + (b.posted_by_node_id||'').substring(0,8);
+        if (b.claimed_by_node_id) html += ' | Claimed by: ' + b.claimed_by_node_id.substring(0,8);
+        html += ' | Expires: ' + (b.expires_at||'');
+        html += '</div>';
+        html += '<div class="card-actions">';
+        if (b.status === 'open') {
+            html += '<button onclick="claimBounty(\'' + b.id + '\')" style="background:#1a0d00;border:1px solid #663300;color:#ff8844;">Claim</button>';
+        }
+        html += '</div>';
+        html += '</div>';
+        return html;
+    }).join('');
+}
+
+function showPostBountyForm() {
+    document.getElementById('post-bounty-form').style.display = '';
+}
+
+function postBounty(e) {
+    e.preventDefault();
+    const f = e.target;
+    const caps = (f.capabilities.value||'').split(',').map(s=>s.trim()).filter(Boolean);
+    fetch('/api/broker/bounties', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            title: f.title.value,
+            description: f.description.value,
+            reward: parseInt(f.reward.value) || 10,
+            required_capabilities: caps,
+            ttl_seconds: parseInt(f.ttl.value) || 600,
+        })
+    }).then(r => r.json()).then(d => {
+        if (d.bounty) {
+            bountyData.bounties.push(d.bounty);
+            f.reset();
+            document.getElementById('post-bounty-form').style.display = 'none';
+            addLog('task_created', 'Posted bounty: ' + d.bounty.title);
+            renderBounties();
+        }
+    }).catch(() => { addLog('task_failed', 'Failed to post bounty (broker unavailable)'); });
+}
+
+function claimBounty(bountyId) {
+    fetch('/api/broker/bounties/' + bountyId + '/claim', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({})
+    }).then(r => r.json()).then(d => {
+        if (d.bounty) {
+            const idx = bountyData.bounties.findIndex(b => b.id === bountyId);
+            if (idx >= 0) bountyData.bounties[idx] = d.bounty;
+            addLog('task_assigned', 'Claimed bounty: ' + bountyId.substring(0,8));
+            renderBounties();
+        } else {
+            addLog('task_failed', 'Failed to claim bounty: ' + (d.error||''));
+        }
+    }).catch(() => { addLog('task_failed', 'Failed to claim bounty (broker unavailable)'); });
+}
+
+// ---- Capabilities ----
+function refreshCapabilities() {
+    fetch('/api/broker/capabilities').then(r => {
+        if (!r.ok) throw new Error('Broker unavailable');
+        return r.json();
+    }).then(d => {
+        bountyData.capabilities = d.capabilities || [];
+        renderCapabilities();
+    }).catch(() => {
+        bountyData.capabilities = [];
+        renderCapabilities();
+    });
+}
+
+function renderCapabilities() {
+    const el = document.getElementById('capability-list');
+    const caps = bountyData.capabilities;
+    if (!caps.length) {
+        el.innerHTML = '<div class="empty" style="color:#224444;">No capability profiles advertised</div>';
+        return;
+    }
+
+    // Sort by acceptance rate desc, then idle agents desc
+    caps.sort((a,b) => {
+        if (b.acceptance_rate !== a.acceptance_rate) return b.acceptance_rate - a.acceptance_rate;
+        return (b.idle_agents||0) - (a.idle_agents||0);
+    });
+
+    el.innerHTML = caps.map(c => {
+        const rate = Math.round((c.acceptance_rate||0) * 100);
+        const barColor = rate >= 80 ? '#44cc44' : rate >= 50 ? '#ccaa44' : '#cc4444';
+        const barWidth = Math.max(4, rate);
+        let html = '<div class="capability-card">';
+        html += '<div class="cap-node">Node: ' + (c.node_id||'').substring(0,12) + '</div>';
+        if (c.swarm_name) html += '<div class="cap-swarm">Swarm: ' + escapeHtml(c.swarm_name) + '</div>';
+        html += '<div class="cap-agents">';
+        html += '<span style="color:#66cccc;">' + (c.idle_agents||0) + '</span> idle / ' + (c.total_agents||0) + ' total agents';
+        html += '</div>';
+        html += '<div class="cap-stats">';
+        html += 'Reputation: ' + rate + '%';
+        html += ' <span class="rep-bar" style="width:60px;background:#222;"><span class="rep-bar-fill" style="width:'+barWidth+'%;background:'+barColor+';"></span></span>';
+        html += ' | Completed: ' + (c.tasks_completed||0) + ' | Failed: ' + (c.tasks_failed||0);
+        html += '</div>';
+        if (c.capabilities && c.capabilities.length) {
+            html += '<div class="cap-tags">';
+            c.capabilities.forEach(cap => { html += '<span>' + escapeHtml(cap) + '</span>'; });
+            html += '</div>';
+        }
+        html += '<div style="font-size:0.7rem;color:#336666;margin-top:4px;">Updated: ' + (c.updated_at||'') + '</div>';
+        html += '</div>';
+        return html;
+    }).join('');
+}
+
+// ---- Swarm History ----
+function renderSwarmHistory() {
+    const el = document.getElementById('swarm-history-list');
+    // Gather completed/failed tasks for history
+    const history = [];
+    Object.values(state.tasks).forEach(t => {
+        if (t.status === 'completed' || t.status === 'failed') {
+            history.push(t);
+        }
+    });
+
+    if (!history.length) {
+        el.innerHTML = '<div class="empty" style="color:#332244;">No completion history yet</div>';
+        return;
+    }
+
+    // Sort most recent first
+    history.sort((a,b) => (b.completed_at||b.updated_at||'').localeCompare(a.completed_at||a.updated_at||''));
+
+    // Stats summary
+    const completed = history.filter(t => t.status === 'completed').length;
+    const failed = history.filter(t => t.status === 'failed').length;
+    const total = completed + failed;
+    const rate = total > 0 ? Math.round(completed / total * 100) : 0;
+    const barColor = rate >= 80 ? '#44cc44' : rate >= 50 ? '#ccaa44' : '#cc4444';
+
+    let html = '<div style="margin-bottom:14px;padding:12px;background:#0d0d1a;border:1px solid #1a1a2a;border-radius:6px;">';
+    html += '<div style="font-size:0.95rem;color:#aa88cc;">This Swarm\'s Performance</div>';
+    html += '<div style="display:flex;gap:24px;margin-top:8px;">';
+    html += '<div><span style="font-size:1.3rem;font-weight:bold;color:#44cc44;">' + completed + '</span><div style="font-size:0.7rem;color:#668866;">Completed</div></div>';
+    html += '<div><span style="font-size:1.3rem;font-weight:bold;color:#cc4444;">' + failed + '</span><div style="font-size:0.7rem;color:#886666;">Failed</div></div>';
+    html += '<div><span style="font-size:1.3rem;font-weight:bold;color:#88aacc;">' + rate + '%</span><div style="font-size:0.7rem;color:#668888;">Success Rate</div></div>';
+    html += '</div>';
+    html += '<div style="margin-top:8px;height:6px;background:#222;border-radius:3px;"><div style="height:100%;width:'+rate+'%;background:'+barColor+';border-radius:3px;"></div></div>';
+    html += '</div>';
+
+    // Recent history entries
+    html += history.slice(0, 30).map(t => {
+        const icon = t.status === 'completed' ? '<span style="color:#44cc44;">&#10003;</span>' : '<span style="color:#cc4444;">&#10007;</span>';
+        const time = t.completed_at || t.updated_at || '';
+        const children = getTaskChildren(t.id);
+        let meta = time;
+        if (children.length) meta += ' | ' + children.filter(c => c.status === 'completed').length + '/' + children.length + ' subtasks';
+        if (t.git_branch) meta += ' | ' + t.git_branch;
+        return '<div class="history-row">'
+            + '<div class="history-icon">' + icon + '</div>'
+            + '<div class="history-info">'
+            + '<div style="color:#ccc;">' + escapeHtml(t.title) + ' ' + statusBadge(t.status) + '</div>'
+            + '<div style="font-size:0.7rem;color:#666;">' + escapeHtml(meta) + '</div>'
+            + '</div>'
+            + '<div class="history-time">' + escapeHtml(time) + '</div>'
+            + '</div>';
+    }).join('');
+
+    el.innerHTML = html;
+}
+
+// Fetch bounty data on page load
+(function() {
+    setTimeout(refreshBounties, 1500);
+    setTimeout(refreshCapabilities, 2000);
+})();
 
 // ---- WebSocket: the only data source ----
 let ws;
