@@ -14,7 +14,11 @@ use VoidLux\Swarm\Agent\AgentRegistry;
 use VoidLux\Swarm\Ai\TaskPlanner;
 use VoidLux\Swarm\Galactic\GalacticMarketplace;
 use VoidLux\Swarm\Git\GitWorkspace;
+use VoidLux\Swarm\Gossip\TaskGossipEngine;
+use VoidLux\Swarm\Offer\OfferPayEngine;
 use VoidLux\Swarm\Mcp\McpHandler;
+use VoidLux\P2P\Protocol\LamportClock;
+use VoidLux\Swarm\Model\MessageModel;
 use VoidLux\Swarm\Model\TaskStatus;
 use VoidLux\Swarm\Orchestrator\TaskDispatcher;
 use VoidLux\Swarm\Storage\DhtEngine;
@@ -33,12 +37,18 @@ class EmperorController
     private ?DhtEngine $dhtEngine = null;
     private ?DiscoveryManager $discoveryManager = null;
     private ?GalacticMarketplace $marketplace = null;
+    private ?OfferPayEngine $offerPayEngine = null;
+    private ?TaskGossipEngine $taskGossip = null;
+    private ?LamportClock $clock = null;
 
     /** @var callable|null fn(): void — triggers server shutdown */
     private $shutdownCallback = null;
 
     /** @var callable|null fn(string $agentId, string $status): void */
     private $onAgentStatusChange = null;
+
+    /** @var callable|null fn(string $event, array $taskData): void — pushes task updates to WS */
+    private $onTaskEvent = null;
 
     public function __construct(
         private readonly SwarmDatabase $db,
@@ -79,6 +89,21 @@ class EmperorController
         $this->marketplace = $marketplace;
     }
 
+    public function setOfferPayEngine(OfferPayEngine $engine): void
+    {
+        $this->offerPayEngine = $engine;
+    }
+
+    public function setTaskGossip(TaskGossipEngine $gossip): void
+    {
+        $this->taskGossip = $gossip;
+    }
+
+    public function setLamportClock(LamportClock $clock): void
+    {
+        $this->clock = $clock;
+    }
+
     public function onShutdown(callable $callback): void
     {
         $this->shutdownCallback = $callback;
@@ -87,6 +112,18 @@ class EmperorController
     public function onAgentStatusChange(callable $callback): void
     {
         $this->onAgentStatusChange = $callback;
+    }
+
+    public function onTaskEvent(callable $callback): void
+    {
+        $this->onTaskEvent = $callback;
+    }
+
+    private function fireTaskEvent(string $event, $task): void
+    {
+        if ($this->onTaskEvent) {
+            ($this->onTaskEvent)($event, is_array($task) ? $task : $task->toArray());
+        }
     }
 
     public function handle(Request $request, Response $response): void
@@ -258,6 +295,68 @@ class EmperorController
                 $this->handleWallet($response);
                 break;
 
+            // --- Offer-Pay protocol API ---
+            case $path === '/api/swarm/offers' && $method === 'GET':
+                $this->handleListOffers($response);
+                break;
+
+            case $path === '/api/swarm/offers' && $method === 'POST':
+                $this->handleCreateOffer($request, $response);
+                break;
+
+            case preg_match('#^/api/swarm/offers/([^/]+)/accept$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleAcceptOffer($m[1], $request, $response);
+                break;
+
+            case preg_match('#^/api/swarm/offers/([^/]+)/reject$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleRejectOffer($m[1], $request, $response);
+                break;
+
+            case preg_match('#^/api/swarm/offers/([^/]+)/pay$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleInitiatePayment($m[1], $response);
+                break;
+
+            case $path === '/api/swarm/payments' && $method === 'GET':
+                $this->handleListPayments($response);
+                break;
+
+            case preg_match('#^/api/swarm/payments/([^/]+)/confirm$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleConfirmPayment($m[1], $response);
+                break;
+
+            case $path === '/api/swarm/transactions' && $method === 'GET':
+                $this->handleTransactionHistory($response);
+                break;
+
+            // --- Message board API ---
+            case $path === '/api/swarm/board' && $method === 'GET':
+                $this->handleListMessages($request, $response);
+                break;
+
+            case $path === '/api/swarm/board' && $method === 'POST':
+                $this->handlePostMessage($request, $response);
+                break;
+
+            case preg_match('#^/api/swarm/board/([^/]+)$#', $path, $m) === 1 && $method === 'GET':
+                $this->handleGetMessage($m[1], $response);
+                break;
+
+            case preg_match('#^/api/swarm/board/([^/]+)/reply$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleReplyToMessage($m[1], $request, $response);
+                break;
+
+            case preg_match('#^/api/swarm/board/([^/]+)/claim$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleClaimMessage($m[1], $request, $response);
+                break;
+
+            case preg_match('#^/api/swarm/board/([^/]+)/resolve$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleResolveMessage($m[1], $response);
+                break;
+
+            case preg_match('#^/api/swarm/board/([^/]+)$#', $path, $m) === 1 && $method === 'DELETE':
+                $this->handleDeleteMessage($m[1], $response);
+                break;
+
             default:
                 $response->status(404);
                 $this->json($response, ['error' => 'Not found']);
@@ -273,6 +372,7 @@ class EmperorController
             'tasks' => [
                 'total' => $this->db->getTaskCount(),
                 'pending' => $this->db->getTaskCount('pending'),
+                'blocked' => $this->db->getTaskCount('blocked'),
                 'planning' => $this->db->getTaskCount('planning'),
                 'claimed' => $this->db->getTaskCount('claimed'),
                 'in_progress' => $this->db->getTaskCount('in_progress'),
@@ -322,14 +422,18 @@ class EmperorController
             $response->status(201);
             $this->json($response, $task->toArray());
 
+            // Push parent task creation to WS immediately
+            $this->fireTaskEvent('task_created', $task);
+
             // Decompose in background coroutine
             $taskId = $task->id;
             $planner = $this->taskPlanner;
             $taskQueue = $this->taskQueue;
             $db = $this->db;
             $dispatcher = $this->taskDispatcher;
+            $wsCallback = $this->onTaskEvent;
 
-            Coroutine::create(function () use ($taskId, $planner, $taskQueue, $db, $dispatcher) {
+            Coroutine::create(function () use ($taskId, $planner, $taskQueue, $db, $dispatcher, $wsCallback) {
                 $parentTask = $db->getTask($taskId);
                 if (!$parentTask) {
                     return;
@@ -341,12 +445,20 @@ class EmperorController
                     // Decomposition failed — convert to regular pending task
                     $updated = $parentTask->withStatus(TaskStatus::Pending, $parentTask->lamportTs);
                     $db->updateTask($updated);
+                    if ($wsCallback) {
+                        ($wsCallback)('task_updated', $updated->toArray());
+                    }
                     $dispatcher?->triggerDispatch();
                     return;
                 }
 
+                // Two-pass creation: first create all subtasks, then resolve dependency IDs
+                $idMap = []; // localId => realUUID
+                $subtasks = [];
+
+                // Pass 1: Create all subtasks without dependencies
                 foreach ($subtaskDefs as $def) {
-                    $taskQueue->createTask(
+                    $subtask = $taskQueue->createTask(
                         title: $def['title'],
                         description: $def['description'],
                         priority: $def['priority'],
@@ -358,11 +470,61 @@ class EmperorController
                         workInstructions: $def['work_instructions'],
                         acceptanceCriteria: $def['acceptance_criteria'],
                     );
+                    $localId = $def['id'] ?? '';
+                    if ($localId !== '') {
+                        $idMap[$localId] = $subtask->id;
+                    }
+                    $subtasks[] = ['task' => $subtask, 'def' => $def];
+                }
+
+                // Pass 2: Resolve local dependency IDs to real UUIDs and update blocked tasks
+                foreach ($subtasks as $item) {
+                    $def = $item['def'];
+                    $subtask = $item['task'];
+                    $localDeps = $def['dependsOn'] ?? [];
+
+                    if (!empty($localDeps)) {
+                        $resolvedDeps = [];
+                        foreach ($localDeps as $localDepId) {
+                            if (isset($idMap[$localDepId])) {
+                                $resolvedDeps[] = $idMap[$localDepId];
+                            }
+                        }
+                        if (!empty($resolvedDeps)) {
+                            // Update task in DB with resolved deps and Blocked status
+                            $ts = $subtask->lamportTs;
+                            $blocked = new \VoidLux\Swarm\Model\TaskModel(
+                                id: $subtask->id, title: $subtask->title, description: $subtask->description,
+                                status: \VoidLux\Swarm\Model\TaskStatus::Blocked, priority: $subtask->priority,
+                                requiredCapabilities: $subtask->requiredCapabilities, createdBy: $subtask->createdBy,
+                                assignedTo: $subtask->assignedTo, assignedNode: $subtask->assignedNode,
+                                result: $subtask->result, error: $subtask->error, progress: $subtask->progress,
+                                projectPath: $subtask->projectPath, context: $subtask->context,
+                                lamportTs: $ts, claimedAt: $subtask->claimedAt, completedAt: $subtask->completedAt,
+                                createdAt: $subtask->createdAt, updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+                                parentId: $subtask->parentId, workInstructions: $subtask->workInstructions,
+                                acceptanceCriteria: $subtask->acceptanceCriteria, reviewStatus: $subtask->reviewStatus,
+                                reviewFeedback: $subtask->reviewFeedback, archived: $subtask->archived,
+                                gitBranch: $subtask->gitBranch, mergeAttempts: $subtask->mergeAttempts,
+                                testCommand: $subtask->testCommand, dependsOn: $resolvedDeps,
+                            );
+                            $db->updateTask($blocked);
+                            $subtask = $blocked;
+                        }
+                    }
+
+                    // Push each subtask to WS
+                    if ($wsCallback) {
+                        ($wsCallback)('task_created', $subtask->toArray());
+                    }
                 }
 
                 // Mark parent as in_progress (subtasks being worked on — NOT pending, to avoid dispatch)
                 $updated = $parentTask->withStatus(TaskStatus::InProgress, $parentTask->lamportTs);
                 $db->updateTask($updated);
+                if ($wsCallback) {
+                    ($wsCallback)('task_updated', $updated->toArray());
+                }
 
                 $dispatcher?->triggerDispatch();
             });
@@ -382,6 +544,7 @@ class EmperorController
             testCommand: $body['test_command'] ?? '',
         );
 
+        $this->fireTaskEvent('task_created', $task);
         $this->taskDispatcher?->triggerDispatch();
 
         $response->status(201);
@@ -809,6 +972,15 @@ class EmperorController
             if ($this->onAgentStatusChange !== null) {
                 $this->mcpHandler->onAgentStatusChange($this->onAgentStatusChange);
             }
+            if ($this->offerPayEngine !== null) {
+                $this->mcpHandler->setOfferPayEngine($this->offerPayEngine);
+            }
+            if ($this->taskGossip !== null) {
+                $this->mcpHandler->setTaskGossip($this->taskGossip);
+            }
+            if ($this->clock !== null) {
+                $this->mcpHandler->setLamportClock($this->clock);
+            }
         }
         return $this->mcpHandler;
     }
@@ -1033,6 +1205,302 @@ class EmperorController
             return;
         }
         $this->json($response, $this->marketplace->getWallet());
+    }
+
+    // --- Offer-Pay protocol handlers ---
+
+    private function handleListOffers(Response $response): void
+    {
+        if (!$this->offerPayEngine) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Offer-Pay engine not initialized']);
+            return;
+        }
+        $this->json($response, array_map(fn($o) => $o->toArray(), $this->offerPayEngine->getAllOffers()));
+    }
+
+    private function handleCreateOffer(Request $request, Response $response): void
+    {
+        if (!$this->offerPayEngine) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Offer-Pay engine not initialized']);
+            return;
+        }
+        $body = json_decode($request->getContent(), true) ?? [];
+        $toNodeId = $body['to_node_id'] ?? '';
+        $amount = (int) ($body['amount'] ?? 0);
+        if (!$toNodeId || $amount <= 0) {
+            $response->status(400);
+            $this->json($response, ['error' => 'to_node_id and positive amount are required']);
+            return;
+        }
+        $result = $this->offerPayEngine->createOffer(
+            toNodeId: $toNodeId,
+            amount: $amount,
+            conditions: $body['conditions'] ?? '',
+            currency: $body['currency'] ?? 'VOID',
+            validitySeconds: (int) ($body['validity_seconds'] ?? 300),
+            taskId: $body['task_id'] ?? null,
+        );
+        if (is_string($result)) {
+            $response->status(400);
+            $this->json($response, ['error' => $result]);
+            return;
+        }
+        $response->status(201);
+        $this->json($response, $result->toArray());
+    }
+
+    private function handleAcceptOffer(string $offerId, Request $request, Response $response): void
+    {
+        if (!$this->offerPayEngine) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Offer-Pay engine not initialized']);
+            return;
+        }
+        $body = json_decode($request->getContent(), true) ?? [];
+        $result = $this->offerPayEngine->acceptOffer($offerId, $body['reason'] ?? null);
+        if (is_string($result)) {
+            $response->status(400);
+            $this->json($response, ['error' => $result]);
+            return;
+        }
+        $this->json($response, $result->toArray());
+    }
+
+    private function handleRejectOffer(string $offerId, Request $request, Response $response): void
+    {
+        if (!$this->offerPayEngine) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Offer-Pay engine not initialized']);
+            return;
+        }
+        $body = json_decode($request->getContent(), true) ?? [];
+        $result = $this->offerPayEngine->rejectOffer($offerId, $body['reason'] ?? null);
+        if (is_string($result)) {
+            $response->status(400);
+            $this->json($response, ['error' => $result]);
+            return;
+        }
+        $this->json($response, $result->toArray());
+    }
+
+    private function handleInitiatePayment(string $offerId, Response $response): void
+    {
+        if (!$this->offerPayEngine) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Offer-Pay engine not initialized']);
+            return;
+        }
+        $result = $this->offerPayEngine->initiatePayment($offerId);
+        if (is_string($result)) {
+            $response->status(400);
+            $this->json($response, ['error' => $result]);
+            return;
+        }
+        $response->status(201);
+        $this->json($response, $result->toArray());
+    }
+
+    private function handleListPayments(Response $response): void
+    {
+        if (!$this->offerPayEngine) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Offer-Pay engine not initialized']);
+            return;
+        }
+        $this->json($response, array_map(fn($p) => $p->toArray(), $this->offerPayEngine->getAllPayments()));
+    }
+
+    private function handleConfirmPayment(string $paymentId, Response $response): void
+    {
+        if (!$this->offerPayEngine) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Offer-Pay engine not initialized']);
+            return;
+        }
+        $result = $this->offerPayEngine->confirmPayment($paymentId);
+        if (is_string($result)) {
+            $response->status(400);
+            $this->json($response, ['error' => $result]);
+            return;
+        }
+        $this->json($response, $result->toArray());
+    }
+
+    private function handleTransactionHistory(Response $response): void
+    {
+        if (!$this->offerPayEngine) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Offer-Pay engine not initialized']);
+            return;
+        }
+        $this->json($response, $this->offerPayEngine->getTransactionHistory());
+    }
+
+    // --- Message board handlers ---
+
+    private function handleListMessages(Request $request, Response $response): void
+    {
+        $category = $request->get['category'] ?? null;
+        $status = $request->get['status'] ?? null;
+        $messages = $this->db->getMessages($category, $status);
+        $this->json($response, array_map(fn($m) => $m->toArray(), $messages));
+    }
+
+    private function handlePostMessage(Request $request, Response $response): void
+    {
+        $body = json_decode($request->getContent(), true);
+        if (!$body || empty($body['title'])) {
+            $response->status(400);
+            $this->json($response, ['error' => 'title is required']);
+            return;
+        }
+
+        if (!$this->taskGossip || !$this->clock) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Message board not initialized']);
+            return;
+        }
+
+        $msg = MessageModel::create(
+            authorId: $body['author_id'] ?? $this->nodeId,
+            authorName: $body['author_name'] ?? ('Node-' . substr($this->nodeId, 0, 8)),
+            category: $body['category'] ?? 'discussion',
+            title: $body['title'],
+            content: $body['content'] ?? '',
+            lamportTs: $this->clock->tick(),
+            priority: (int) ($body['priority'] ?? 0),
+            tags: $body['tags'] ?? [],
+            taskId: $body['task_id'] ?? null,
+        );
+
+        $this->taskGossip->createBoardMessage($msg);
+
+        $response->status(201);
+        $this->json($response, $msg->toArray());
+    }
+
+    private function handleGetMessage(string $messageId, Response $response): void
+    {
+        $msg = $this->db->getMessage($messageId);
+        if (!$msg) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Message not found']);
+            return;
+        }
+
+        $replies = $this->db->getMessageReplies($messageId);
+        $data = $msg->toArray();
+        $data['replies'] = array_map(fn($r) => $r->toArray(), $replies);
+        $this->json($response, $data);
+    }
+
+    private function handleReplyToMessage(string $parentId, Request $request, Response $response): void
+    {
+        $parent = $this->db->getMessage($parentId);
+        if (!$parent) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Parent message not found']);
+            return;
+        }
+
+        $body = json_decode($request->getContent(), true);
+        if (!$body || empty($body['content'])) {
+            $response->status(400);
+            $this->json($response, ['error' => 'content is required']);
+            return;
+        }
+
+        if (!$this->taskGossip || !$this->clock) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Message board not initialized']);
+            return;
+        }
+
+        $reply = MessageModel::create(
+            authorId: $body['author_id'] ?? $this->nodeId,
+            authorName: $body['author_name'] ?? ('Node-' . substr($this->nodeId, 0, 8)),
+            category: $parent->category,
+            title: 'Re: ' . $parent->title,
+            content: $body['content'],
+            lamportTs: $this->clock->tick(),
+            parentId: $parentId,
+        );
+
+        $this->taskGossip->createBoardMessage($reply);
+
+        $response->status(201);
+        $this->json($response, $reply->toArray());
+    }
+
+    private function handleClaimMessage(string $messageId, Request $request, Response $response): void
+    {
+        $msg = $this->db->getMessage($messageId);
+        if (!$msg) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Message not found']);
+            return;
+        }
+        if ($msg->status !== 'active') {
+            $response->status(409);
+            $this->json($response, ['error' => "Cannot claim message in status: {$msg->status}"]);
+            return;
+        }
+
+        if (!$this->taskGossip || !$this->clock) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Message board not initialized']);
+            return;
+        }
+
+        $body = json_decode($request->getContent(), true) ?? [];
+        $claimerId = $body['agent_id'] ?? $this->nodeId;
+
+        $updated = $msg->withClaimedBy($claimerId, $this->clock->tick());
+        $this->taskGossip->gossipBoardUpdate($updated);
+
+        $this->json($response, $updated->toArray());
+    }
+
+    private function handleResolveMessage(string $messageId, Response $response): void
+    {
+        $msg = $this->db->getMessage($messageId);
+        if (!$msg) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Message not found']);
+            return;
+        }
+
+        if (!$this->taskGossip || !$this->clock) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Message board not initialized']);
+            return;
+        }
+
+        $updated = $msg->withStatus('resolved', $this->clock->tick());
+        $this->taskGossip->gossipBoardUpdate($updated);
+
+        $this->json($response, $updated->toArray());
+    }
+
+    private function handleDeleteMessage(string $messageId, Response $response): void
+    {
+        $msg = $this->db->getMessage($messageId);
+        if (!$msg) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Message not found']);
+            return;
+        }
+
+        if (!$this->taskGossip || !$this->clock) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Message board not initialized']);
+            return;
+        }
+
+        $this->taskGossip->gossipBoardDelete($messageId, $this->clock->tick());
+        $this->json($response, ['deleted' => true, 'message_id' => $messageId]);
     }
 
     private function json(Response $response, array $data): void

@@ -23,6 +23,7 @@ class TaskQueue
     private ?GitWorkspace $git = null;
     private string $globalTestCommand = '';
     private string $mergeWorkDir = '';
+    private string $baseRepoDir = '';
     private ?TaskDispatcher $dispatcher = null;
     private const MAX_REJECTIONS = 3;
 
@@ -53,6 +54,11 @@ class TaskQueue
         $this->mergeWorkDir = $dir;
     }
 
+    public function setBaseRepoDir(string $dir): void
+    {
+        $this->baseRepoDir = $dir;
+    }
+
     public function setTaskDispatcher(TaskDispatcher $dispatcher): void
     {
         $this->dispatcher = $dispatcher;
@@ -71,8 +77,15 @@ class TaskQueue
         string $acceptanceCriteria = '',
         ?TaskStatus $status = null,
         string $testCommand = '',
+        array $dependsOn = [],
     ): TaskModel {
         $ts = $this->clock->tick();
+
+        // If dependencies are specified and no explicit status, start as Blocked
+        if (!empty($dependsOn) && $status === null) {
+            $status = TaskStatus::Blocked;
+        }
+
         $task = TaskModel::create(
             title: $title,
             description: $description,
@@ -87,9 +100,41 @@ class TaskQueue
             acceptanceCriteria: $acceptanceCriteria,
             status: $status,
             testCommand: $testCommand,
+            dependsOn: $dependsOn,
         );
 
         return $this->gossip->createTask($task);
+    }
+
+    /**
+     * Transition a blocked task to pending when its dependencies are met.
+     */
+    public function unblockTask(string $taskId): bool
+    {
+        $task = $this->db->getTask($taskId);
+        if (!$task || $task->status !== TaskStatus::Blocked) {
+            return false;
+        }
+
+        $ts = $this->clock->tick();
+        $updated = new TaskModel(
+            id: $task->id, title: $task->title, description: $task->description,
+            status: TaskStatus::Pending, priority: $task->priority,
+            requiredCapabilities: $task->requiredCapabilities, createdBy: $task->createdBy,
+            assignedTo: $task->assignedTo, assignedNode: $task->assignedNode,
+            result: $task->result, error: $task->error, progress: $task->progress,
+            projectPath: $task->projectPath, context: $task->context,
+            lamportTs: $ts, claimedAt: $task->claimedAt, completedAt: $task->completedAt,
+            createdAt: $task->createdAt, updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            parentId: $task->parentId, workInstructions: $task->workInstructions,
+            acceptanceCriteria: $task->acceptanceCriteria, reviewStatus: $task->reviewStatus,
+            reviewFeedback: $task->reviewFeedback, archived: $task->archived,
+            gitBranch: $task->gitBranch, mergeAttempts: $task->mergeAttempts,
+            testCommand: $task->testCommand, dependsOn: $task->dependsOn,
+        );
+        $this->db->updateTask($updated);
+        $this->gossip->gossipTaskUpdate($taskId, '', TaskStatus::Pending->value, null, $ts);
+        return true;
     }
 
     /**
@@ -146,6 +191,7 @@ class TaskQueue
             gitBranch: $task->gitBranch,
             mergeAttempts: $task->mergeAttempts,
             testCommand: $task->testCommand,
+            dependsOn: $task->dependsOn,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::InProgress->value, $progress, $ts);
@@ -189,6 +235,7 @@ class TaskQueue
             gitBranch: $task->gitBranch,
             mergeAttempts: $task->mergeAttempts,
             testCommand: $task->testCommand,
+            dependsOn: $task->dependsOn,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::WaitingInput->value, $question, $ts);
@@ -234,6 +281,7 @@ class TaskQueue
                 gitBranch: $task->gitBranch,
                 mergeAttempts: $task->mergeAttempts,
                 testCommand: $task->testCommand,
+                dependsOn: $task->dependsOn,
             );
             $this->db->updateTask($updated);
             $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::PendingReview->value, null, $ts);
@@ -274,9 +322,13 @@ class TaskQueue
             gitBranch: $task->gitBranch,
             mergeAttempts: $task->mergeAttempts,
             testCommand: $task->testCommand,
+            dependsOn: $task->dependsOn,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskComplete($taskId, $agentId, $result, $ts);
+
+        // Trigger dispatch to unblock dependent tasks
+        $this->dispatcher?->triggerDispatch();
 
         // Check if all subtasks are done — complete the parent
         if ($task->parentId) {
@@ -330,9 +382,13 @@ class TaskQueue
                 gitBranch: $task->gitBranch,
                 mergeAttempts: $task->mergeAttempts,
                 testCommand: $task->testCommand,
+                dependsOn: $task->dependsOn,
             );
             $this->db->updateTask($updated);
             $this->gossip->gossipTaskComplete($taskId, $task->assignedTo ?? '', $task->result, $ts);
+
+            // Trigger dispatch to unblock dependent tasks
+            $this->dispatcher?->triggerDispatch();
 
             // Check if all subtasks are done — complete the parent
             if ($task->parentId) {
@@ -393,6 +449,7 @@ class TaskQueue
                 gitBranch: $task->gitBranch,
                 mergeAttempts: $task->mergeAttempts,
                 testCommand: $task->testCommand,
+                dependsOn: $task->dependsOn,
             );
             $this->db->updateTask($updated);
             $this->gossip->gossipTaskUpdate($taskId, '', TaskStatus::Pending->value, null, $ts);
@@ -437,16 +494,21 @@ class TaskQueue
             gitBranch: $task->gitBranch,
             mergeAttempts: $task->mergeAttempts,
             testCommand: $task->testCommand,
+            dependsOn: $task->dependsOn,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskFail($taskId, $agentId, $error, $ts);
+
+        // Trigger dispatch to cascade-fail blocked dependents
+        $this->dispatcher?->triggerDispatch();
     }
 
     /**
      * Complete the parent task if all its subtasks are done.
      * If git branches exist, runs merge-test-retry loop first.
+     * Public so Server can call it as a safety net on gossip-received completions.
      */
-    private function tryCompleteParent(string $parentId): void
+    public function tryCompleteParent(string $parentId): void
     {
         $subtasks = $this->db->getSubtasks($parentId);
         if (empty($subtasks)) {
@@ -494,6 +556,7 @@ class TaskQueue
                 reviewFeedback: $updated->reviewFeedback, archived: $updated->archived,
                 gitBranch: $updated->gitBranch, mergeAttempts: $updated->mergeAttempts,
                 testCommand: $updated->testCommand,
+                dependsOn: $updated->dependsOn,
             );
             $this->db->updateTask($failedParent);
             $this->gossip->gossipTaskFail($parentId, '', "All {$failedCount} subtask(s) failed", $failedParent->lamportTs);
@@ -508,7 +571,7 @@ class TaskQueue
             }
         }
 
-        $baseDir = getcwd() . '/workbench/.base';
+        $baseDir = $this->baseRepoDir ?: (getcwd() . '/workbench/.base');
 
         // If no git branches or no git workspace configured, complete immediately (backward compatible)
         if (empty($branches) || $this->git === null || !is_dir($baseDir . '/.git')) {
@@ -618,7 +681,7 @@ class TaskQueue
             acceptanceCriteria: $parent->acceptanceCriteria, reviewStatus: $parent->reviewStatus,
             reviewFeedback: $parent->reviewFeedback, archived: $parent->archived,
             gitBranch: $integrationBranch, mergeAttempts: $parent->mergeAttempts,
-            testCommand: $parent->testCommand,
+            testCommand: $parent->testCommand, dependsOn: $parent->dependsOn,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskComplete($parentId, '', $result, $ts);
@@ -707,7 +770,7 @@ class TaskQueue
             acceptanceCriteria: $sub->acceptanceCriteria, reviewStatus: $sub->reviewStatus,
             reviewFeedback: $sub->reviewFeedback, archived: $sub->archived,
             gitBranch: $sub->gitBranch, mergeAttempts: $sub->mergeAttempts,
-            testCommand: $sub->testCommand,
+            testCommand: $sub->testCommand, dependsOn: $sub->dependsOn,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskUpdate($sub->id, '', TaskStatus::Pending->value, null, $ts);
@@ -738,7 +801,7 @@ class TaskQueue
             acceptanceCriteria: $parent->acceptanceCriteria, reviewStatus: $parent->reviewStatus,
             reviewFeedback: $parent->reviewFeedback, archived: $parent->archived,
             gitBranch: $parent->gitBranch, mergeAttempts: $parent->mergeAttempts,
-            testCommand: $parent->testCommand,
+            testCommand: $parent->testCommand, dependsOn: $parent->dependsOn,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskFail($parentId, '', $error, $ts);
@@ -766,7 +829,7 @@ class TaskQueue
             acceptanceCriteria: $parent->acceptanceCriteria, reviewStatus: $parent->reviewStatus,
             reviewFeedback: $parent->reviewFeedback, archived: $parent->archived,
             gitBranch: $parent->gitBranch, mergeAttempts: $parent->mergeAttempts,
-            testCommand: $parent->testCommand,
+            testCommand: $parent->testCommand, dependsOn: $parent->dependsOn,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskComplete($parent->id, '', $result, $ts);

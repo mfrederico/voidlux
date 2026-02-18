@@ -105,6 +105,7 @@ body {
 .status-failed { background: #3a1a1a; color: #ff6666; }
 .status-cancelled { background: #333; color: #888; }
 .status-waiting_input { background: #3a2a1a; color: #ffaa33; }
+.status-blocked { background: #2a2a00; color: #ffcc00; }
 .status-merging { background: #2a2a3a; color: #aa88ff; }
 
 .status-idle { background: #1a2a1a; color: #88cc88; }
@@ -258,6 +259,32 @@ body {
 .pr-card .pr-summary { color: #88cc88; font-size: 0.85rem; margin-top: 8px; }
 .pr-card .pr-subtask { font-size: 0.8rem; color: #668866; padding: 2px 0; }
 
+/* Message board */
+.board-section h2 { color: #66aa66 !important; border-bottom-color: #224422 !important; }
+.board-card {
+    background: linear-gradient(135deg, #0d1a0d, #101a10);
+    border: 1px solid #1a3a1a; border-radius: 6px; padding: 14px;
+}
+.board-card:hover { border-color: #338833; }
+.board-card .board-category {
+    display: inline-block; padding: 2px 8px; border-radius: 3px;
+    font-size: 0.7rem; font-weight: bold; text-transform: uppercase;
+}
+.cat-task { background: #1a2a3a; color: #66aaff; }
+.cat-idea { background: #2a2a1a; color: #ccaa44; }
+.cat-bounty { background: #2a1a1a; color: #ff8866; }
+.cat-announcement { background: #2a1a3a; color: #aa88ff; }
+.cat-discussion { background: #1a2a1a; color: #88cc88; }
+.board-card .board-tags { font-size: 0.7rem; color: #556655; margin-top: 4px; }
+.board-card .board-tags span {
+    background: #0a150a; border: 1px solid #223322; border-radius: 2px;
+    padding: 1px 6px; margin-right: 4px; display: inline-block;
+}
+.board-status-active { color: #88cc88; }
+.board-status-claimed { color: #66aaff; }
+.board-status-resolved { color: #888; }
+.board-reply-count { font-size: 0.7rem; color: #557755; margin-left: 8px; }
+
 /* Galactic marketplace */
 .galactic-section h2 { color: #8866cc !important; border-bottom-color: #442266 !important; }
 .galactic-card {
@@ -366,6 +393,7 @@ body {
     <div class="section">
         <div class="stats" id="stats">
             <div class="stat"><div class="stat-value" id="stat-pending">0</div><div class="stat-label">Pending</div></div>
+            <div class="stat"><div class="stat-value" id="stat-blocked">0</div><div class="stat-label">Blocked</div></div>
             <div class="stat"><div class="stat-value" id="stat-planning">0</div><div class="stat-label">Planning</div></div>
             <div class="stat"><div class="stat-value" id="stat-active">0</div><div class="stat-label">Active</div></div>
             <div class="stat"><div class="stat-value" id="stat-review">0</div><div class="stat-label">Review</div></div>
@@ -445,6 +473,42 @@ body {
         </div>
     </div>
 
+    <div class="section board-section">
+        <h2>Message Board
+            <button class="toggle-btn" onclick="showPostForm()" style="border-color:#446644;color:#66aa66;">Post Message</button>
+            <select id="board-filter" onchange="renderBoard()" style="background:#1a1a1a;border:1px solid #333;color:#888;padding:2px 8px;border-radius:3px;font-size:0.75rem;font-family:inherit;margin-left:4px;">
+                <option value="">All</option>
+                <option value="task">Tasks</option>
+                <option value="idea">Ideas</option>
+                <option value="bounty">Bounties</option>
+                <option value="announcement">Announcements</option>
+                <option value="discussion">Discussion</option>
+            </select>
+        </h2>
+        <div id="board-post-form" style="display:none;margin-bottom:14px;">
+            <form onsubmit="postBoardMessage(event)" class="task-form expanded">
+                <input name="title" placeholder="Message title..." required style="background:#0d1a0d;border-color:#1a3a1a;">
+                <textarea name="content" placeholder="Content..." rows="3" style="background:#0d1a0d;border-color:#1a3a1a;"></textarea>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select name="category" style="background:#0d1a0d;border:1px solid #1a3a1a;color:#fff;padding:8px;border-radius:4px;font-family:inherit;">
+                        <option value="discussion">Discussion</option>
+                        <option value="task">Task</option>
+                        <option value="idea">Idea</option>
+                        <option value="bounty">Bounty</option>
+                        <option value="announcement">Announcement</option>
+                    </select>
+                    <input name="tags" placeholder="Tags (comma-separated)" style="flex:1;background:#0d1a0d;border-color:#1a3a1a;">
+                    <input name="priority" type="number" min="0" max="10" value="0" placeholder="Priority" style="width:60px;background:#0d1a0d;border-color:#1a3a1a;">
+                    <button type="submit" style="background:#336633;">Post</button>
+                    <button type="button" onclick="document.getElementById('board-post-form').style.display='none'" style="background:#333;">Cancel</button>
+                </div>
+            </form>
+        </div>
+        <div class="card-grid" id="board-list">
+            <div class="empty" style="color:#446644;">No messages posted yet</div>
+        </div>
+    </div>
+
     <div class="section">
         <h2>Event Log</h2>
         <div class="log-panel" id="log-panel"></div>
@@ -470,7 +534,7 @@ document.getElementById('task-project-path').value = WORKBENCH;
 document.getElementById('agent-project-path').value = WORKBENCH;
 
 // ---- Client-side state (populated entirely via WebSocket) ----
-let state = { tasks: {}, agents: {}, status: {}, offerings: [], tributes: [], wallet: {balance:0,currency:'VOID'} };
+let state = { tasks: {}, agents: {}, status: {}, offerings: [], tributes: [], wallet: {balance:0,currency:'VOID'}, boardMessages: {} };
 
 let emperorNodeId = NODE_ID;
 function updateEmperorBanner(empId) {
@@ -509,17 +573,18 @@ function statusBadge(status) {
 
 function getPipelinePhase(t, children) {
     if (t.status === 'failed') return -1;
-    if (t.status === 'completed') return 5;
-    if (t.status === 'merging') return 4;
-    if (children.some(c => c.status === 'pending_review')) return 3;
-    if (children.some(c => ['claimed','in_progress','waiting_input'].includes(c.status))) return 2;
+    if (t.status === 'completed') return 6;
+    if (t.status === 'merging') return 5;
+    if (children.some(c => c.status === 'pending_review')) return 4;
+    if (children.some(c => ['claimed','in_progress','waiting_input'].includes(c.status))) return 3;
+    if (children.some(c => c.status === 'blocked')) return 2;
     if (t.status === 'planning') return 1;
-    if (t.status === 'in_progress' && children.length) return 2;
+    if (t.status === 'in_progress' && children.length) return 3;
     return 0;
 }
 
 function renderPipeline(phase) {
-    const phases = [{n:'Planning',i:1},{n:'Working',i:2},{n:'Reviewing',i:3},{n:'Merging',i:4},{n:'Done',i:5}];
+    const phases = [{n:'Planning',i:1},{n:'Waiting',i:2},{n:'Working',i:3},{n:'Reviewing',i:4},{n:'Merging',i:5},{n:'Done',i:6}];
     let html = '<div class="pipeline">';
     phases.forEach((p, idx) => {
         let cls = 'pipeline-phase';
@@ -563,7 +628,7 @@ function renderPrCard(t, children) {
 function renderTask(t, isSubtask) {
     const agent = state.agents[t.assigned_to];
     const agentName = t.assigned_to ? (agent?.name || t.assigned_to.substring(0,8)) : null;
-    const isActive = t.status === 'claimed' || t.status === 'in_progress' || t.status === 'waiting_input' || t.status === 'merging';
+    const isActive = t.status === 'claimed' || t.status === 'in_progress' || t.status === 'waiting_input' || t.status === 'merging' || t.status === 'blocked';
     const children = getTaskChildren(t.id);
     const isParent = t.parent_id === null && children.length;
     const cardClass = isSubtask ? 'card subtask-card' : (isParent ? 'card parent-card' : 'card');
@@ -578,6 +643,10 @@ function renderTask(t, isSubtask) {
         html += '<div style="font-size:0.85rem;color:#aa88ff;margin:4px 0;">Merging subtask branches and running tests...' + (attempt > 0 ? ' (attempt '+attempt+'/3)' : '') + '</div>';
     } else {
         html += '<div class="card-title">'+escapeHtml(t.title)+' '+statusBadge(t.status)+'</div>';
+    }
+
+    if (t.status === 'blocked' && t.depends_on && t.depends_on.length) {
+        html += '<div style="font-size:0.8rem;color:#ffcc00;margin:4px 0;">Waiting on '+t.depends_on.length+' task'+(t.depends_on.length>1?'s':'')+'</div>';
     }
 
     if (isParent && !isSubtask) {
@@ -716,10 +785,11 @@ function restoreFocusState(fs) {
 // ---- Render everything from client-side state ----
 function computeStats() {
     const tasks = Object.values(state.tasks).filter(t => !t.archived);
-    let pending=0, planning=0, claimed=0, in_progress=0, waiting_input=0, pending_review=0, merging=0, completed=0, failed=0;
+    let pending=0, blocked=0, planning=0, claimed=0, in_progress=0, waiting_input=0, pending_review=0, merging=0, completed=0, failed=0;
     tasks.forEach(t => {
         switch(t.status) {
             case 'pending': pending++; break;
+            case 'blocked': blocked++; break;
             case 'planning': planning++; break;
             case 'claimed': claimed++; break;
             case 'in_progress': in_progress++; break;
@@ -734,6 +804,7 @@ function computeStats() {
     document.getElementById('task-count').textContent = tasks.length;
     document.getElementById('agent-count').textContent = agentCount;
     document.getElementById('stat-pending').textContent = pending;
+    document.getElementById('stat-blocked').textContent = blocked;
     document.getElementById('stat-planning').textContent = planning;
     document.getElementById('stat-active').textContent = claimed + in_progress + waiting_input;
     document.getElementById('stat-review').textContent = pending_review;
@@ -773,6 +844,9 @@ function renderAll() {
 
     // Galactic marketplace
     renderGalactic();
+
+    // Message board
+    renderBoard();
 }
 
 function renderJobLog() {
@@ -1246,6 +1320,119 @@ function requestTribute(offeringId) {
 
 // ---- WebSocket: the only data source ----
 let ws;
+// ---- Message Board ----
+function showPostForm() {
+    document.getElementById('board-post-form').style.display = '';
+}
+
+function postBoardMessage(e) {
+    e.preventDefault();
+    const f = e.target;
+    const tags = (f.tags.value||'').split(',').map(s=>s.trim()).filter(Boolean);
+    fetch('/api/swarm/board', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            title: f.title.value,
+            content: f.content.value,
+            category: f.category.value,
+            priority: parseInt(f.priority.value) || 0,
+            tags: tags,
+        })
+    }).then(r => r.json()).then(msg => {
+        state.boardMessages[msg.id] = msg;
+        f.reset();
+        document.getElementById('board-post-form').style.display = 'none';
+        renderBoard();
+    });
+}
+
+function claimBoardMessage(id) {
+    fetch('/api/swarm/board/' + id + '/claim', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({})
+    }).then(r => r.json()).then(msg => {
+        if (!msg.error) {
+            state.boardMessages[msg.id] = msg;
+            renderBoard();
+        }
+    });
+}
+
+function resolveBoardMessage(id) {
+    fetch('/api/swarm/board/' + id + '/resolve', {method:'POST'}).then(r=>r.json()).then(msg => {
+        if (!msg.error) {
+            state.boardMessages[msg.id] = msg;
+            renderBoard();
+        }
+    });
+}
+
+function deleteBoardMessage(id) {
+    fetch('/api/swarm/board/' + id, {method:'DELETE'}).then(r=>r.json()).then(data => {
+        if (data.deleted) {
+            delete state.boardMessages[id];
+            renderBoard();
+        }
+    });
+}
+
+function renderBoard() {
+    const filter = document.getElementById('board-filter').value;
+    let messages = Object.values(state.boardMessages);
+    if (filter) messages = messages.filter(m => m.category === filter);
+
+    // Sort: active first, then by priority desc, then by date desc
+    messages.sort((a,b) => {
+        if (a.status === 'active' && b.status !== 'active') return -1;
+        if (b.status === 'active' && a.status !== 'active') return 1;
+        if (b.priority !== a.priority) return b.priority - a.priority;
+        return (b.created_at||'').localeCompare(a.created_at||'');
+    });
+
+    // Only show top-level (no parent_id)
+    const topLevel = messages.filter(m => !m.parent_id);
+    const el = document.getElementById('board-list');
+
+    if (!topLevel.length) {
+        el.innerHTML = '<div class="empty" style="color:#446644;">No messages posted yet</div>';
+        return;
+    }
+
+    el.innerHTML = topLevel.map(m => {
+        const catClass = 'cat-' + m.category;
+        const replies = messages.filter(r => r.parent_id === m.id);
+        let html = '<div class="board-card">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+        html += '<span class="board-category ' + catClass + '">' + escapeHtml(m.category) + '</span>';
+        html += '<span class="board-status-' + m.status + '" style="font-size:0.75rem;">' + m.status + '</span>';
+        html += '</div>';
+        html += '<div class="card-title" style="margin-top:6px;">' + escapeHtml(m.title) + '</div>';
+        if (m.content) html += '<div style="font-size:0.85rem;color:#999;margin-top:4px;max-height:60px;overflow:hidden;white-space:pre-wrap;">' + escapeHtml(m.content).substring(0,200) + '</div>';
+        if (m.tags && m.tags.length) {
+            html += '<div class="board-tags">';
+            m.tags.forEach(t => { html += '<span>' + escapeHtml(t) + '</span>'; });
+            html += '</div>';
+        }
+        html += '<div class="card-meta">' + escapeHtml(m.author_name) + ' &middot; ' + (m.created_at||'');
+        if (m.priority > 0) html += ' &middot; P' + m.priority;
+        if (m.claimed_by) html += ' &middot; Claimed: ' + m.claimed_by.substring(0,8);
+        if (replies.length) html += '<span class="board-reply-count">' + replies.length + ' repl' + (replies.length===1?'y':'ies') + '</span>';
+        html += '</div>';
+        html += '<div class="card-actions">';
+        if (m.status === 'active' && (m.category === 'bounty' || m.category === 'task')) {
+            html += '<button onclick="claimBoardMessage(\'' + m.id + '\')">Claim</button>';
+        }
+        if (m.status === 'active' || m.status === 'claimed') {
+            html += '<button onclick="resolveBoardMessage(\'' + m.id + '\')">Resolve</button>';
+        }
+        html += '<button onclick="deleteBoardMessage(\'' + m.id + '\')" style="color:#884444;">Delete</button>';
+        html += '</div></div>';
+        return html;
+    }).join('');
+}
+
 function connectWs() {
     ws = new WebSocket('ws://'+location.host+'/ws');
     ws.onopen = () => {
@@ -1270,6 +1457,8 @@ function connectWs() {
                 state.status = msg.status || {};
                 state.offerings = msg.status?.offerings || [];
                 state.wallet = msg.status?.wallet || {balance:0,currency:'VOID'};
+                state.boardMessages = {};
+                (msg.status?.board_messages || []).forEach(m => { state.boardMessages[m.id] = m; });
                 renderAll();
                 break;
             case 'task_update':
@@ -1301,6 +1490,15 @@ function connectWs() {
                     state.offerings = state.offerings.filter(x => x.id !== msg.status.offering_withdrawn);
                     renderGalactic();
                 }
+                break;
+            case 'board_message':
+                state.boardMessages[msg.message.id] = msg.message;
+                addLog('board_post', 'Board: ' + (msg.message.title || '').substring(0,40));
+                renderBoard();
+                break;
+            case 'board_message_removed':
+                delete state.boardMessages[msg.message_id];
+                renderBoard();
                 break;
         }
     };

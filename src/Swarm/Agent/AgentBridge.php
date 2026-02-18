@@ -36,7 +36,8 @@ class AgentBridge
 
     /**
      * Deliver a task to an agent's tmux session.
-     * If the agent's project path is a git repo, prepares a per-task branch first.
+     * Resolves git URLs to the agent's worktree directory, prepares a per-task branch,
+     * and pastes the task prompt into the agent's tmux pane.
      * Returns true if the task was sent successfully.
      */
     public function deliverTask(AgentModel $agent, TaskModel $task): bool
@@ -52,10 +53,14 @@ class AgentBridge
             return false;
         }
 
-        // Prepare git branch if agent workspace is a git repo
-        if ($agent->projectPath && $this->git->isGitRepo($agent->projectPath)) {
+        // Resolve the effective working directory.
+        // When the task has a git URL, use the agent's worktree instead.
+        $workDir = $this->resolveWorkDir($agent, $task);
+
+        // Prepare git branch if the resolved work directory is a git repo
+        if ($workDir && $this->git->isGitRepo($workDir)) {
             $branchName = 'task/' . substr($task->id, 0, 8);
-            $prepared = $this->git->prepareBranch($agent->projectPath, $branchName);
+            $prepared = $this->git->prepareBranch($workDir, $branchName);
             if ($prepared) {
                 $this->db->updateGitBranch($task->id, $branchName);
             }
@@ -68,8 +73,8 @@ class AgentBridge
         $this->tmux->sendEnterByName($sessionName);
         usleep(1_500_000);
 
-        // Build the task prompt
-        $prompt = $this->buildTaskPrompt($task);
+        // Build the task prompt with the resolved working directory
+        $prompt = $this->buildTaskPrompt($task, $workDir);
 
         // Paste into tmux using load-buffer + paste-buffer (bracketed paste mode).
         // Unlike send-keys -l, this handles newlines, emojis, and special characters
@@ -232,7 +237,48 @@ class AgentBridge
         );
     }
 
-    private function buildTaskPrompt(TaskModel $task): string
+    /**
+     * Resolve the effective working directory for a task+agent pair.
+     * When the task's projectPath is a git URL, uses the agent's worktree
+     * (creating one on-the-fly if needed) instead of the raw URL.
+     */
+    private function resolveWorkDir(AgentModel $agent, TaskModel $task): string
+    {
+        $taskPath = $task->projectPath;
+
+        // If task path is not a git URL, use it as-is (or fall back to agent's path)
+        if (!$taskPath || !$this->git->isGitUrl($taskPath)) {
+            return $taskPath ?: $agent->projectPath;
+        }
+
+        // Task path is a git URL — prefer the agent's actual directory (worktree)
+        if ($agent->projectPath && is_dir($agent->projectPath)) {
+            return $agent->projectPath;
+        }
+
+        // Agent doesn't have a valid directory — create worktree on the fly
+        $cwd = getcwd();
+        $baseDir = $cwd . '/workbench/.base';
+        $worktreePath = $cwd . '/workbench/' . $agent->name;
+
+        $ensured = $this->git->ensureBaseRepo($taskPath, $baseDir);
+        if ($ensured) {
+            $added = $this->git->addWorktree($baseDir, $worktreePath, 'worktree/' . $agent->name);
+            if ($added) {
+                return $worktreePath;
+            }
+        }
+
+        // Fallback: agent's path or workbench
+        return $agent->projectPath ?: $cwd . '/workbench';
+    }
+
+    /**
+     * Build the task prompt. Uses $workDir (the resolved directory) for
+     * "Work in this directory" and project type detection, instead of
+     * the raw task projectPath which may be a git URL.
+     */
+    private function buildTaskPrompt(TaskModel $task, string $workDir = ''): string
     {
         $prompt = "## Task: " . $task->title . "\n\n";
         $prompt .= $task->description ?: $task->title;
@@ -245,19 +291,34 @@ class AgentBridge
             $prompt .= "\n\n## Acceptance Criteria\n" . $task->acceptanceCriteria;
         }
 
+        // Inject prerequisite results from completed dependencies
+        if (!empty($task->dependsOn)) {
+            $depResults = $this->db->getDependencyResults($task->dependsOn);
+            if (!empty($depResults)) {
+                $prompt .= "\n\n## Prerequisite Results\nThe following tasks completed before yours. Use their results as context:\n";
+                foreach ($depResults as $depId => $dep) {
+                    $shortId = substr($depId, 0, 8);
+                    $resultText = $dep['result'];
+                    if (strlen($resultText) > 3000) {
+                        $resultText = substr($resultText, 0, 3000) . "\n... (truncated)";
+                    }
+                    $prompt .= "\n### [{$shortId}] {$dep['title']}\n{$resultText}\n";
+                }
+            }
+        }
+
         if ($task->context) {
             $prompt .= "\n\nContext: " . $task->context;
         }
 
-        // Show project path only if it's an actual directory (not a git URL).
-        // When project_path is a git URL, the agent's tmux CWD is already set
-        // to the correct worktree — showing the URL would be confusing.
-        if ($task->projectPath && !$this->git->isGitUrl($task->projectPath)) {
-            $prompt .= "\n\nWork in this directory: " . $task->projectPath;
+        // Show the resolved working directory (not the raw git URL)
+        $effectiveDir = $workDir ?: $task->projectPath;
+        if ($effectiveDir && is_dir($effectiveDir)) {
+            $prompt .= "\n\nWork in this directory: " . $effectiveDir;
         }
 
         // Detect and include project type so agents use the correct language
-        $projectDir = $task->projectPath;
+        $projectDir = $workDir ?: $task->projectPath;
         if ($projectDir && is_dir($projectDir)) {
             $projectType = TaskPlanner::detectProjectType($projectDir);
             if ($projectType) {

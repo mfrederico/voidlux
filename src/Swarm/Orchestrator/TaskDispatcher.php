@@ -10,6 +10,7 @@ use VoidLux\P2P\Protocol\LamportClock;
 use VoidLux\P2P\Protocol\MessageTypes;
 use VoidLux\P2P\Transport\TcpMesh;
 use VoidLux\Swarm\Agent\AgentBridge;
+use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Model\AgentModel;
 use VoidLux\Swarm\Model\TaskModel;
 use VoidLux\Swarm\Model\TaskStatus;
@@ -72,6 +73,13 @@ class TaskDispatcher
 
     private function dispatchAll(): void
     {
+        // Phase 1: Cascade-fail blocked tasks whose dependencies failed
+        $this->failBlockedWithFailedDeps();
+
+        // Phase 2: Unblock tasks whose dependencies are now satisfied
+        $this->unblockReadyTasks();
+
+        // Phase 3: Dispatch pending tasks to idle agents
         $pendingTasks = $this->db->getTasksByStatus('pending');
         if (empty($pendingTasks)) {
             return;
@@ -85,6 +93,11 @@ class TaskDispatcher
         foreach ($pendingTasks as $task) {
             if (empty($idleAgents)) {
                 break;
+            }
+
+            // Defensive: skip pending tasks with unmet dependencies
+            if (!empty($task->dependsOn) && !$this->areDependenciesSatisfied($task)) {
+                continue;
             }
 
             $agent = $this->selectAgent($task, $idleAgents);
@@ -101,6 +114,45 @@ class TaskDispatcher
                 ));
             }
         }
+    }
+
+    /**
+     * Promote Blocked → Pending for tasks whose dependencies all completed.
+     */
+    private function unblockReadyTasks(): void
+    {
+        $ready = $this->db->getUnblockedTasks();
+        foreach ($ready as $task) {
+            $this->taskQueue->unblockTask($task->id);
+        }
+    }
+
+    /**
+     * Fail blocked tasks whose dependencies have failed or been cancelled.
+     */
+    private function failBlockedWithFailedDeps(): void
+    {
+        $doomed = $this->db->getBlockedTasksWithFailedDeps();
+        foreach ($doomed as $task) {
+            $this->taskQueue->fail($task->id, '', 'Dependency failed or cancelled');
+            if ($task->parentId) {
+                $this->taskQueue->tryCompleteParent($task->parentId);
+            }
+        }
+    }
+
+    /**
+     * Check if all dependencies for a pending task are completed.
+     */
+    private function areDependenciesSatisfied(TaskModel $task): bool
+    {
+        foreach ($task->dependsOn as $depId) {
+            $dep = $this->db->getTask($depId);
+            if (!$dep || $dep->status !== TaskStatus::Completed) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -126,10 +178,19 @@ class TaskDispatcher
 
         // Prefer agents with matching project path (affinity)
         if ($task->projectPath) {
-            $affinityAgents = array_filter(
-                $eligible,
-                fn(AgentModel $a) => $a->projectPath === $task->projectPath,
-            );
+            $git = new GitWorkspace();
+            if ($git->isGitUrl($task->projectPath)) {
+                // Task is a git URL — prefer agents that have a local worktree directory
+                $affinityAgents = array_filter(
+                    $eligible,
+                    fn(AgentModel $a) => $a->projectPath && is_dir($a->projectPath),
+                );
+            } else {
+                $affinityAgents = array_filter(
+                    $eligible,
+                    fn(AgentModel $a) => $a->projectPath === $task->projectPath,
+                );
+            }
             if (!empty($affinityAgents)) {
                 $eligible = array_values($affinityAgents);
             }

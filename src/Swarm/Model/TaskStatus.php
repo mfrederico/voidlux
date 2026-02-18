@@ -7,6 +7,7 @@ namespace VoidLux\Swarm\Model;
 enum TaskStatus: string
 {
     case Pending = 'pending';
+    case Blocked = 'blocked';
     case Planning = 'planning';
     case Claimed = 'claimed';
     case InProgress = 'in_progress';
@@ -28,7 +29,7 @@ enum TaskStatus: string
     public function isActive(): bool
     {
         return match ($this) {
-            self::Planning, self::Claimed, self::InProgress, self::PendingReview, self::WaitingInput, self::Merging => true,
+            self::Blocked, self::Planning, self::Claimed, self::InProgress, self::PendingReview, self::WaitingInput, self::Merging => true,
             default => false,
         };
     }

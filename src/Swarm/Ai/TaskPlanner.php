@@ -40,28 +40,34 @@ class TaskPlanner
         $capsList = !empty($capabilities) ? implode(', ', $capabilities) : 'general-purpose';
 
         $systemPrompt = <<<'PROMPT'
-You are a senior software architect. Given a high-level request and project structure, decompose it into specific, independent subtasks that can be assigned to individual AI coding agents.
+You are a senior software architect. Given a high-level request and project structure, decompose it into specific subtasks that can be assigned to individual AI coding agents.
 
 Each subtask must be:
-- Self-contained: an agent can complete it without depending on another subtask's output
 - Specific: reference exact files to create or modify, and describe the approach
 - Verifiable: include clear acceptance criteria
 
+Subtasks CAN depend on each other. If subtask B needs the output of subtask A (e.g., B needs A's analysis, schema, or code changes), declare the dependency. Subtasks without dependencies will run in parallel.
+
 Return ONLY a valid JSON array (no markdown fences, no explanation). Each element:
 {
+    "id": "subtask-1",
     "title": "Short imperative title",
     "description": "What this subtask accomplishes",
     "work_instructions": "Specific files to modify/create, approach to take, code patterns to follow",
     "acceptance_criteria": "How to verify this subtask is done correctly",
     "requiredCapabilities": [],
-    "priority": 0
+    "priority": 0,
+    "dependsOn": []
 }
 
 Rules:
 - Return between 1 and 8 subtasks
+- Each subtask must have a unique "id" (e.g., "subtask-1", "subtask-2")
+- "dependsOn" is an array of other subtask IDs that must complete first (e.g., ["subtask-1"])
 - Higher priority number = more important (do first)
 - If the request is simple enough for one agent, return a single subtask
 - Do NOT include testing/documentation subtasks unless explicitly requested
+- Only declare dependencies when truly needed (e.g., implementation needs analysis output)
 PROMPT;
 
         $userPrompt = "## Request\n";
@@ -299,12 +305,14 @@ PROMPT;
                 continue;
             }
             $subtasks[] = [
+                'id' => (string) ($item['id'] ?? ''),
                 'title' => (string) $item['title'],
                 'description' => (string) ($item['description'] ?? ''),
                 'work_instructions' => (string) ($item['work_instructions'] ?? ''),
                 'acceptance_criteria' => (string) ($item['acceptance_criteria'] ?? ''),
                 'requiredCapabilities' => (array) ($item['requiredCapabilities'] ?? []),
                 'priority' => (int) ($item['priority'] ?? 0),
+                'dependsOn' => (array) ($item['dependsOn'] ?? []),
             ];
         }
 

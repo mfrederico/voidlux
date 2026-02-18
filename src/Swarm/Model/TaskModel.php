@@ -35,6 +35,7 @@ class TaskModel
         public readonly string $gitBranch = '',
         public readonly int $mergeAttempts = 0,
         public readonly string $testCommand = '',
+        public readonly array $dependsOn = [],
     ) {}
 
     public static function create(
@@ -51,6 +52,7 @@ class TaskModel
         string $acceptanceCriteria = '',
         ?TaskStatus $status = null,
         string $testCommand = '',
+        array $dependsOn = [],
     ): self {
         $now = gmdate('Y-m-d\TH:i:s\Z');
         return new self(
@@ -77,6 +79,7 @@ class TaskModel
             workInstructions: $workInstructions,
             acceptanceCriteria: $acceptanceCriteria,
             testCommand: $testCommand,
+            dependsOn: $dependsOn,
         );
     }
 
@@ -113,6 +116,9 @@ class TaskModel
             gitBranch: $data['git_branch'] ?? '',
             mergeAttempts: (int) ($data['merge_attempts'] ?? 0),
             testCommand: $data['test_command'] ?? '',
+            dependsOn: is_string($data['depends_on'] ?? '[]')
+                ? json_decode($data['depends_on'], true) ?? []
+                : ($data['depends_on'] ?? []),
         );
     }
 
@@ -147,6 +153,7 @@ class TaskModel
             'git_branch' => $this->gitBranch,
             'merge_attempts' => $this->mergeAttempts,
             'test_command' => $this->testCommand,
+            'depends_on' => $this->dependsOn,
         ];
     }
 
@@ -181,6 +188,7 @@ class TaskModel
             gitBranch: $this->gitBranch,
             mergeAttempts: $this->mergeAttempts,
             testCommand: $this->testCommand,
+            dependsOn: $this->dependsOn,
         );
     }
 

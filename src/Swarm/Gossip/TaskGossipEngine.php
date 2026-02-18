@@ -8,6 +8,7 @@ use VoidLux\P2P\Protocol\LamportClock;
 use VoidLux\P2P\Protocol\MessageTypes;
 use VoidLux\P2P\Transport\TcpMesh;
 use VoidLux\Swarm\Model\AgentModel;
+use VoidLux\Swarm\Model\MessageModel;
 use VoidLux\Swarm\Model\TaskModel;
 use VoidLux\Swarm\Model\TaskStatus;
 use VoidLux\Swarm\Storage\SwarmDatabase;
@@ -111,6 +112,10 @@ class TaskGossipEngine
         $key = $taskId . ':update:' . $lamportTs;
         $this->seenMessages[$key] = true;
 
+        // Include gitBranch so remote nodes (especially emperor) get the branch name
+        $task = $this->db->getTask($taskId);
+        $gitBranch = $task?->gitBranch ?? '';
+
         $this->mesh->broadcast([
             'type' => MessageTypes::TASK_UPDATE,
             'task_id' => $taskId,
@@ -118,6 +123,7 @@ class TaskGossipEngine
             'status' => $status,
             'progress' => $progress,
             'lamport_ts' => $lamportTs,
+            'git_branch' => $gitBranch,
         ]);
     }
 
@@ -160,9 +166,10 @@ class TaskGossipEngine
                 reviewStatus: $task->reviewStatus,
                 reviewFeedback: $task->reviewFeedback,
                 archived: $task->archived,
-                gitBranch: $task->gitBranch,
+                gitBranch: ($msg['git_branch'] ?? '') !== '' ? $msg['git_branch'] : $task->gitBranch,
                 mergeAttempts: $task->mergeAttempts,
                 testCommand: $task->testCommand,
+                dependsOn: $task->dependsOn,
             );
             $this->db->updateTask($updated);
         }
@@ -177,12 +184,17 @@ class TaskGossipEngine
         $key = $taskId . ':complete';
         $this->seenMessages[$key] = true;
 
+        // Include gitBranch so emperor can merge subtask branches
+        $task = $this->db->getTask($taskId);
+        $gitBranch = $task?->gitBranch ?? '';
+
         $this->mesh->broadcast([
             'type' => MessageTypes::TASK_COMPLETE,
             'task_id' => $taskId,
             'agent_id' => $agentId,
             'result' => $result,
             'lamport_ts' => $lamportTs,
+            'git_branch' => $gitBranch,
         ]);
     }
 
@@ -198,6 +210,10 @@ class TaskGossipEngine
         // Update local DB
         $task = $this->db->getTask($msg['task_id'] ?? '');
         if ($task && !$task->status->isTerminal()) {
+            // Use gitBranch from gossip if present (worker set it during delivery),
+            // fall back to local DB value
+            $gitBranch = ($msg['git_branch'] ?? '') !== '' ? $msg['git_branch'] : $task->gitBranch;
+
             $updated = new TaskModel(
                 id: $task->id,
                 title: $task->title,
@@ -224,9 +240,10 @@ class TaskGossipEngine
                 reviewStatus: $task->reviewStatus,
                 reviewFeedback: $task->reviewFeedback,
                 archived: $task->archived,
-                gitBranch: $task->gitBranch,
+                gitBranch: $gitBranch,
                 mergeAttempts: $task->mergeAttempts,
                 testCommand: $task->testCommand,
+                dependsOn: $task->dependsOn,
             );
             $this->db->updateTask($updated);
         }
@@ -290,6 +307,7 @@ class TaskGossipEngine
                 gitBranch: $task->gitBranch,
                 mergeAttempts: $task->mergeAttempts,
                 testCommand: $task->testCommand,
+                dependsOn: $task->dependsOn,
             );
             $this->db->updateTask($updated);
         }
@@ -493,6 +511,117 @@ class TaskGossipEngine
 
         $this->mesh->broadcast($msg + ['type' => MessageTypes::AGENT_HEARTBEAT], $senderAddress);
         $this->pruneSeenMessages();
+    }
+
+    // --- Message board gossip ---
+
+    public function createBoardMessage(MessageModel $msg): MessageModel
+    {
+        $this->db->insertMessage($msg);
+        $this->seenMessages['board:' . $msg->id . ':create'] = true;
+        $this->mesh->broadcast([
+            'type' => MessageTypes::BOARD_POST,
+            'message' => $msg->toArray(),
+        ]);
+        return $msg;
+    }
+
+    public function receiveBoardPost(array $msgData, ?string $senderAddress = null): ?MessageModel
+    {
+        $data = $msgData['message'] ?? $msgData;
+        $id = $data['id'] ?? '';
+        $key = 'board:' . $id . ':create';
+
+        if (!$id || isset($this->seenMessages[$key])) {
+            return null;
+        }
+        if ($this->db->hasMessage($id)) {
+            $this->seenMessages[$key] = true;
+            return null;
+        }
+
+        $this->clock->witness($data['lamport_ts'] ?? 0);
+        $msg = MessageModel::fromArray($data);
+        $this->db->insertMessage($msg);
+        $this->seenMessages[$key] = true;
+
+        $this->mesh->broadcast([
+            'type' => MessageTypes::BOARD_POST,
+            'message' => $msg->toArray(),
+        ], $senderAddress);
+        $this->pruneSeenMessages();
+
+        return $msg;
+    }
+
+    public function gossipBoardUpdate(MessageModel $msg): void
+    {
+        $key = 'board:' . $msg->id . ':update:' . $msg->lamportTs;
+        $this->seenMessages[$key] = true;
+        $this->db->updateMessage($msg);
+
+        $this->mesh->broadcast([
+            'type' => MessageTypes::BOARD_UPDATE,
+            'message' => $msg->toArray(),
+        ]);
+    }
+
+    public function receiveBoardUpdate(array $msgData, ?string $senderAddress = null): bool
+    {
+        $data = $msgData['message'] ?? $msgData;
+        $id = $data['id'] ?? '';
+        $ts = $data['lamport_ts'] ?? 0;
+        $key = 'board:' . $id . ':update:' . $ts;
+
+        if (!$id || isset($this->seenMessages[$key])) {
+            return false;
+        }
+        $this->seenMessages[$key] = true;
+        $this->clock->witness($ts);
+
+        $existing = $this->db->getMessage($id);
+        if ($existing && $ts > $existing->lamportTs) {
+            $updated = MessageModel::fromArray($data);
+            $this->db->updateMessage($updated);
+        }
+
+        $this->mesh->broadcast([
+            'type' => MessageTypes::BOARD_UPDATE,
+            'message' => $data,
+        ], $senderAddress);
+        $this->pruneSeenMessages();
+        return true;
+    }
+
+    public function gossipBoardDelete(string $messageId, int $lamportTs): void
+    {
+        $key = 'board:' . $messageId . ':delete';
+        $this->seenMessages[$key] = true;
+        $this->db->deleteMessage($messageId);
+
+        $this->mesh->broadcast([
+            'type' => MessageTypes::BOARD_DELETE,
+            'message_id' => $messageId,
+            'lamport_ts' => $lamportTs,
+        ]);
+    }
+
+    public function receiveBoardDelete(array $msg, ?string $senderAddress = null): bool
+    {
+        $id = $msg['message_id'] ?? '';
+        $key = 'board:' . $id . ':delete';
+
+        if (!$id || isset($this->seenMessages[$key])) {
+            return false;
+        }
+        $this->seenMessages[$key] = true;
+        $this->clock->witness($msg['lamport_ts'] ?? 0);
+
+        $this->db->deleteMessage($id);
+
+        $this->mesh->broadcast($msg + ['type' => MessageTypes::BOARD_DELETE], $senderAddress);
+        $this->pruneSeenMessages();
+        return true;
     }
 
     // --- Helpers ---

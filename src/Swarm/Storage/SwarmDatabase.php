@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace VoidLux\Swarm\Storage;
 
 use VoidLux\Swarm\Model\AgentModel;
+use VoidLux\Swarm\Model\MessageModel;
+use VoidLux\Swarm\Model\SwarmNodeModel;
 use VoidLux\Swarm\Model\TaskModel;
 use VoidLux\Swarm\Model\TaskStatus;
+use VoidLux\Swarm\Offer\OfferModel;
+use VoidLux\Swarm\Offer\PaymentModel;
 
 class SwarmDatabase
 {
@@ -123,6 +127,9 @@ class SwarmDatabase
         if (!in_array('test_command', $existing, true)) {
             $this->pdo->exec("ALTER TABLE tasks ADD COLUMN test_command TEXT NOT NULL DEFAULT ''");
         }
+        if (!in_array('depends_on', $existing, true)) {
+            $this->pdo->exec("ALTER TABLE tasks ADD COLUMN depends_on TEXT NOT NULL DEFAULT '[]'");
+        }
 
         // Add model column to agents table
         $agentColumns = $this->pdo->query("PRAGMA table_info(agents)")->fetchAll();
@@ -130,6 +137,98 @@ class SwarmDatabase
         if (!in_array('model', $agentExisting, true)) {
             $this->pdo->exec("ALTER TABLE agents ADD COLUMN model TEXT NOT NULL DEFAULT ''");
         }
+
+        // Swarm node registry table
+        $this->pdo->exec('
+            CREATE TABLE IF NOT EXISTS swarm_nodes (
+                node_id TEXT PRIMARY KEY,
+                role TEXT NOT NULL DEFAULT \'worker\',
+                http_host TEXT NOT NULL DEFAULT \'0.0.0.0\',
+                http_port INTEGER NOT NULL DEFAULT 0,
+                p2p_port INTEGER NOT NULL DEFAULT 0,
+                capabilities TEXT NOT NULL DEFAULT \'[]\',
+                agent_count INTEGER NOT NULL DEFAULT 0,
+                active_task_count INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT \'offline\',
+                last_heartbeat TEXT,
+                lamport_ts INTEGER NOT NULL DEFAULT 0,
+                registered_at TEXT NOT NULL,
+                uptime_seconds REAL NOT NULL DEFAULT 0.0,
+                memory_usage_bytes INTEGER NOT NULL DEFAULT 0
+            )
+        ');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_swarm_nodes_status ON swarm_nodes(status)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_swarm_nodes_role ON swarm_nodes(role)');
+
+        // Offer-Pay protocol tables
+        $this->pdo->exec('
+            CREATE TABLE IF NOT EXISTS offers (
+                id TEXT PRIMARY KEY,
+                from_node_id TEXT NOT NULL,
+                to_node_id TEXT NOT NULL,
+                amount INTEGER NOT NULL,
+                currency TEXT NOT NULL DEFAULT \'VOID\',
+                conditions TEXT NOT NULL DEFAULT \'\',
+                status TEXT NOT NULL DEFAULT \'pending\',
+                lamport_ts INTEGER NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                task_id TEXT,
+                response_reason TEXT
+            )
+        ');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_offers_status ON offers(status)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_offers_lamport ON offers(lamport_ts)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_offers_from ON offers(from_node_id)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_offers_to ON offers(to_node_id)');
+
+        $this->pdo->exec('
+            CREATE TABLE IF NOT EXISTS payments (
+                id TEXT PRIMARY KEY,
+                offer_id TEXT NOT NULL,
+                from_node_id TEXT NOT NULL,
+                to_node_id TEXT NOT NULL,
+                amount INTEGER NOT NULL,
+                currency TEXT NOT NULL DEFAULT \'VOID\',
+                status TEXT NOT NULL DEFAULT \'initiated\',
+                tx_hash TEXT NOT NULL DEFAULT \'\',
+                lamport_ts INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                failure_reason TEXT,
+                FOREIGN KEY (offer_id) REFERENCES offers(id)
+            )
+        ');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_payments_offer ON payments(offer_id)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_payments_lamport ON payments(lamport_ts)');
+
+        // Message board table
+        $this->pdo->exec('
+            CREATE TABLE IF NOT EXISTS board_messages (
+                id TEXT PRIMARY KEY,
+                author_id TEXT NOT NULL,
+                author_name TEXT NOT NULL DEFAULT \'\',
+                category TEXT NOT NULL DEFAULT \'discussion\',
+                title TEXT NOT NULL,
+                content TEXT NOT NULL DEFAULT \'\',
+                priority INTEGER NOT NULL DEFAULT 0,
+                tags TEXT NOT NULL DEFAULT \'[]\',
+                status TEXT NOT NULL DEFAULT \'active\',
+                claimed_by TEXT,
+                parent_id TEXT,
+                task_id TEXT,
+                lamport_ts INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        ');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_board_category ON board_messages(category)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_board_status ON board_messages(status)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_board_lamport ON board_messages(lamport_ts)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_board_parent ON board_messages(parent_id)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_board_author ON board_messages(author_id)');
     }
 
     // --- Task operations ---
@@ -142,13 +241,13 @@ class SwarmDatabase
                  assigned_to, assigned_node, result, error, progress, project_path, context,
                  lamport_ts, claimed_at, completed_at, created_at, updated_at,
                  parent_id, work_instructions, acceptance_criteria, review_status, review_feedback,
-                 archived, git_branch, merge_attempts, test_command)
+                 archived, git_branch, merge_attempts, test_command, depends_on)
             VALUES
                 (:id, :title, :description, :status, :priority, :required_capabilities, :created_by,
                  :assigned_to, :assigned_node, :result, :error, :progress, :project_path, :context,
                  :lamport_ts, :claimed_at, :completed_at, :created_at, :updated_at,
                  :parent_id, :work_instructions, :acceptance_criteria, :review_status, :review_feedback,
-                 :archived, :git_branch, :merge_attempts, :test_command)
+                 :archived, :git_branch, :merge_attempts, :test_command, :depends_on)
         ');
 
         return $stmt->execute([
@@ -180,6 +279,7 @@ class SwarmDatabase
             ':git_branch' => $task->gitBranch,
             ':merge_attempts' => $task->mergeAttempts,
             ':test_command' => $task->testCommand,
+            ':depends_on' => json_encode($task->dependsOn),
         ]);
     }
 
@@ -198,7 +298,7 @@ class SwarmDatabase
                 acceptance_criteria = :acceptance_criteria, review_status = :review_status,
                 review_feedback = :review_feedback, archived = :archived,
                 git_branch = :git_branch, merge_attempts = :merge_attempts,
-                test_command = :test_command
+                test_command = :test_command, depends_on = :depends_on
             WHERE id = :id
         ');
 
@@ -229,6 +329,7 @@ class SwarmDatabase
             ':git_branch' => $task->gitBranch,
             ':merge_attempts' => $task->mergeAttempts,
             ':test_command' => $task->testCommand,
+            ':depends_on' => json_encode($task->dependsOn),
         ]);
     }
 
@@ -314,11 +415,16 @@ class SwarmDatabase
 
     /**
      * Get the next pending task that matches agent capabilities.
+     * Skips pending tasks with unsatisfied dependencies (worker pull-fallback safety).
      */
     public function getNextPendingTask(array $agentCapabilities): ?TaskModel
     {
         $tasks = $this->getTasksByStatus('pending');
         foreach ($tasks as $task) {
+            // Skip tasks with unmet dependencies
+            if (!empty($task->dependsOn) && !$this->areDependenciesMet($task->dependsOn)) {
+                continue;
+            }
             if (empty($task->requiredCapabilities)) {
                 return $task;
             }
@@ -328,6 +434,85 @@ class SwarmDatabase
             }
         }
         return null;
+    }
+
+    /**
+     * Get blocked tasks where ALL dependencies are completed.
+     * @return TaskModel[]
+     */
+    public function getUnblockedTasks(): array
+    {
+        $blocked = $this->getTasksByStatus('blocked');
+        $unblocked = [];
+        foreach ($blocked as $task) {
+            if (empty($task->dependsOn)) {
+                $unblocked[] = $task;
+                continue;
+            }
+            if ($this->areDependenciesMet($task->dependsOn)) {
+                $unblocked[] = $task;
+            }
+        }
+        return $unblocked;
+    }
+
+    /**
+     * Get blocked tasks where ANY dependency is failed or cancelled.
+     * @return TaskModel[]
+     */
+    public function getBlockedTasksWithFailedDeps(): array
+    {
+        $blocked = $this->getTasksByStatus('blocked');
+        $failed = [];
+        foreach ($blocked as $task) {
+            if (empty($task->dependsOn)) {
+                continue;
+            }
+            foreach ($task->dependsOn as $depId) {
+                $dep = $this->getTask($depId);
+                if ($dep && ($dep->status === TaskStatus::Failed || $dep->status === TaskStatus::Cancelled)) {
+                    $failed[] = $task;
+                    break;
+                }
+            }
+        }
+        return $failed;
+    }
+
+    /**
+     * Get results of completed dependency tasks for prompt injection.
+     * @return array<string, array{title: string, result: string}>
+     */
+    public function getDependencyResults(array $dependsOn): array
+    {
+        if (empty($dependsOn)) {
+            return [];
+        }
+        $results = [];
+        foreach ($dependsOn as $depId) {
+            $dep = $this->getTask($depId);
+            if ($dep && $dep->status === TaskStatus::Completed) {
+                $results[$depId] = [
+                    'title' => $dep->title,
+                    'result' => $dep->result ?? '',
+                ];
+            }
+        }
+        return $results;
+    }
+
+    /**
+     * Check if all dependency task IDs are completed.
+     */
+    private function areDependenciesMet(array $dependsOn): bool
+    {
+        foreach ($dependsOn as $depId) {
+            $dep = $this->getTask($depId);
+            if (!$dep || $dep->status !== TaskStatus::Completed) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -621,5 +806,379 @@ class SwarmDatabase
     {
         $stmt = $this->pdo->prepare('INSERT OR REPLACE INTO swarm_state (key, value) VALUES (:key, :value)');
         $stmt->execute([':key' => $key, ':value' => $value]);
+    }
+
+    /**
+     * Get the underlying PDO instance (for shared table access, e.g. DHT storage).
+     */
+    public function getPdo(): \PDO
+    {
+        return $this->pdo;
+    }
+
+    // --- Swarm node operations ---
+
+    public function upsertSwarmNode(SwarmNodeModel $node): bool
+    {
+        $stmt = $this->pdo->prepare('
+            INSERT OR REPLACE INTO swarm_nodes
+                (node_id, role, http_host, http_port, p2p_port, capabilities,
+                 agent_count, active_task_count, status, last_heartbeat,
+                 lamport_ts, registered_at, uptime_seconds, memory_usage_bytes)
+            VALUES
+                (:node_id, :role, :http_host, :http_port, :p2p_port, :capabilities,
+                 :agent_count, :active_task_count, :status, :last_heartbeat,
+                 :lamport_ts, :registered_at, :uptime_seconds, :memory_usage_bytes)
+        ');
+
+        return $stmt->execute([
+            ':node_id' => $node->nodeId,
+            ':role' => $node->role,
+            ':http_host' => $node->httpHost,
+            ':http_port' => $node->httpPort,
+            ':p2p_port' => $node->p2pPort,
+            ':capabilities' => json_encode($node->capabilities),
+            ':agent_count' => $node->agentCount,
+            ':active_task_count' => $node->activeTaskCount,
+            ':status' => $node->status,
+            ':last_heartbeat' => $node->lastHeartbeat,
+            ':lamport_ts' => $node->lamportTs,
+            ':registered_at' => $node->registeredAt,
+            ':uptime_seconds' => $node->uptimeSeconds,
+            ':memory_usage_bytes' => $node->memoryUsageBytes,
+        ]);
+    }
+
+    public function getSwarmNode(string $nodeId): ?SwarmNodeModel
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM swarm_nodes WHERE node_id = :node_id');
+        $stmt->execute([':node_id' => $nodeId]);
+        $row = $stmt->fetch();
+        return $row ? SwarmNodeModel::fromArray($row) : null;
+    }
+
+    /** @return SwarmNodeModel[] */
+    public function getAllSwarmNodes(): array
+    {
+        $rows = $this->pdo->query('SELECT * FROM swarm_nodes ORDER BY registered_at ASC')->fetchAll();
+        return array_map(fn(array $row) => SwarmNodeModel::fromArray($row), $rows);
+    }
+
+    /** @return SwarmNodeModel[] */
+    public function getSwarmNodesByStatus(string $status): array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM swarm_nodes WHERE status = :status ORDER BY registered_at ASC');
+        $stmt->execute([':status' => $status]);
+        return array_map(fn(array $row) => SwarmNodeModel::fromArray($row), $stmt->fetchAll());
+    }
+
+    /** @return SwarmNodeModel[] */
+    public function getSwarmNodesByRole(string $role): array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM swarm_nodes WHERE role = :role ORDER BY registered_at ASC');
+        $stmt->execute([':role' => $role]);
+        return array_map(fn(array $row) => SwarmNodeModel::fromArray($row), $stmt->fetchAll());
+    }
+
+    public function deleteSwarmNode(string $nodeId): bool
+    {
+        $stmt = $this->pdo->prepare('DELETE FROM swarm_nodes WHERE node_id = :node_id');
+        $stmt->execute([':node_id' => $nodeId]);
+        return $stmt->rowCount() > 0;
+    }
+
+    public function getSwarmNodeCount(?string $status = null): int
+    {
+        if ($status) {
+            $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM swarm_nodes WHERE status = :status');
+            $stmt->execute([':status' => $status]);
+            return (int) $stmt->fetchColumn();
+        }
+        return (int) $this->pdo->query('SELECT COUNT(*) FROM swarm_nodes')->fetchColumn();
+    }
+
+    // --- Offer operations ---
+
+    public function insertOffer(OfferModel $offer): bool
+    {
+        $stmt = $this->pdo->prepare('
+            INSERT OR IGNORE INTO offers
+                (id, from_node_id, to_node_id, amount, currency, conditions, status,
+                 lamport_ts, expires_at, created_at, updated_at, task_id, response_reason)
+            VALUES
+                (:id, :from_node_id, :to_node_id, :amount, :currency, :conditions, :status,
+                 :lamport_ts, :expires_at, :created_at, :updated_at, :task_id, :response_reason)
+        ');
+
+        return $stmt->execute([
+            ':id' => $offer->id,
+            ':from_node_id' => $offer->fromNodeId,
+            ':to_node_id' => $offer->toNodeId,
+            ':amount' => $offer->amount,
+            ':currency' => $offer->currency,
+            ':conditions' => $offer->conditions,
+            ':status' => $offer->status->value,
+            ':lamport_ts' => $offer->lamportTs,
+            ':expires_at' => $offer->expiresAt,
+            ':created_at' => $offer->createdAt,
+            ':updated_at' => $offer->updatedAt,
+            ':task_id' => $offer->taskId,
+            ':response_reason' => $offer->responseReason,
+        ]);
+    }
+
+    public function updateOffer(OfferModel $offer): bool
+    {
+        $stmt = $this->pdo->prepare('
+            UPDATE offers SET
+                status = :status, lamport_ts = :lamport_ts, updated_at = :updated_at,
+                response_reason = :response_reason
+            WHERE id = :id
+        ');
+
+        return $stmt->execute([
+            ':id' => $offer->id,
+            ':status' => $offer->status->value,
+            ':lamport_ts' => $offer->lamportTs,
+            ':updated_at' => $offer->updatedAt,
+            ':response_reason' => $offer->responseReason,
+        ]);
+    }
+
+    public function getOffer(string $id): ?OfferModel
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM offers WHERE id = :id');
+        $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch();
+        return $row ? OfferModel::fromArray($row) : null;
+    }
+
+    /** @return OfferModel[] */
+    public function getOffersSince(int $lamportTs): array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM offers WHERE lamport_ts > :ts ORDER BY lamport_ts ASC');
+        $stmt->execute([':ts' => $lamportTs]);
+        return array_map(fn(array $row) => OfferModel::fromArray($row), $stmt->fetchAll());
+    }
+
+    /** @return OfferModel[] */
+    public function getOffersByNode(string $nodeId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM offers WHERE from_node_id = :node_id OR to_node_id = :node_id2 ORDER BY created_at DESC'
+        );
+        $stmt->execute([':node_id' => $nodeId, ':node_id2' => $nodeId]);
+        return array_map(fn(array $row) => OfferModel::fromArray($row), $stmt->fetchAll());
+    }
+
+    // --- Payment operations ---
+
+    public function insertPayment(PaymentModel $payment): bool
+    {
+        $stmt = $this->pdo->prepare('
+            INSERT OR IGNORE INTO payments
+                (id, offer_id, from_node_id, to_node_id, amount, currency, status,
+                 tx_hash, lamport_ts, created_at, updated_at, failure_reason)
+            VALUES
+                (:id, :offer_id, :from_node_id, :to_node_id, :amount, :currency, :status,
+                 :tx_hash, :lamport_ts, :created_at, :updated_at, :failure_reason)
+        ');
+
+        return $stmt->execute([
+            ':id' => $payment->id,
+            ':offer_id' => $payment->offerId,
+            ':from_node_id' => $payment->fromNodeId,
+            ':to_node_id' => $payment->toNodeId,
+            ':amount' => $payment->amount,
+            ':currency' => $payment->currency,
+            ':status' => $payment->status->value,
+            ':tx_hash' => $payment->txHash,
+            ':lamport_ts' => $payment->lamportTs,
+            ':created_at' => $payment->createdAt,
+            ':updated_at' => $payment->updatedAt,
+            ':failure_reason' => $payment->failureReason,
+        ]);
+    }
+
+    public function updatePayment(PaymentModel $payment): bool
+    {
+        $stmt = $this->pdo->prepare('
+            UPDATE payments SET
+                status = :status, lamport_ts = :lamport_ts, updated_at = :updated_at,
+                failure_reason = :failure_reason
+            WHERE id = :id
+        ');
+
+        return $stmt->execute([
+            ':id' => $payment->id,
+            ':status' => $payment->status->value,
+            ':lamport_ts' => $payment->lamportTs,
+            ':updated_at' => $payment->updatedAt,
+            ':failure_reason' => $payment->failureReason,
+        ]);
+    }
+
+    public function getPayment(string $id): ?PaymentModel
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM payments WHERE id = :id');
+        $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch();
+        return $row ? PaymentModel::fromArray($row) : null;
+    }
+
+    public function getPaymentByOffer(string $offerId): ?PaymentModel
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM payments WHERE offer_id = :offer_id ORDER BY created_at DESC LIMIT 1');
+        $stmt->execute([':offer_id' => $offerId]);
+        $row = $stmt->fetch();
+        return $row ? PaymentModel::fromArray($row) : null;
+    }
+
+    /** @return PaymentModel[] */
+    public function getPaymentsSince(int $lamportTs): array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM payments WHERE lamport_ts > :ts ORDER BY lamport_ts ASC');
+        $stmt->execute([':ts' => $lamportTs]);
+        return array_map(fn(array $row) => PaymentModel::fromArray($row), $stmt->fetchAll());
+    }
+
+    // --- Message board operations ---
+
+    public function insertMessage(MessageModel $msg): bool
+    {
+        $stmt = $this->pdo->prepare('
+            INSERT OR IGNORE INTO board_messages
+                (id, author_id, author_name, category, title, content, priority,
+                 tags, status, claimed_by, parent_id, task_id, lamport_ts, created_at, updated_at)
+            VALUES
+                (:id, :author_id, :author_name, :category, :title, :content, :priority,
+                 :tags, :status, :claimed_by, :parent_id, :task_id, :lamport_ts, :created_at, :updated_at)
+        ');
+
+        return $stmt->execute([
+            ':id' => $msg->id,
+            ':author_id' => $msg->authorId,
+            ':author_name' => $msg->authorName,
+            ':category' => $msg->category,
+            ':title' => $msg->title,
+            ':content' => $msg->content,
+            ':priority' => $msg->priority,
+            ':tags' => json_encode($msg->tags),
+            ':status' => $msg->status,
+            ':claimed_by' => $msg->claimedBy,
+            ':parent_id' => $msg->parentId,
+            ':task_id' => $msg->taskId,
+            ':lamport_ts' => $msg->lamportTs,
+            ':created_at' => $msg->createdAt,
+            ':updated_at' => $msg->updatedAt,
+        ]);
+    }
+
+    public function updateMessage(MessageModel $msg): bool
+    {
+        $stmt = $this->pdo->prepare('
+            UPDATE board_messages SET
+                status = :status, claimed_by = :claimed_by, task_id = :task_id,
+                lamport_ts = :lamport_ts, updated_at = :updated_at
+            WHERE id = :id
+        ');
+
+        return $stmt->execute([
+            ':id' => $msg->id,
+            ':status' => $msg->status,
+            ':claimed_by' => $msg->claimedBy,
+            ':task_id' => $msg->taskId,
+            ':lamport_ts' => $msg->lamportTs,
+            ':updated_at' => $msg->updatedAt,
+        ]);
+    }
+
+    public function getMessage(string $id): ?MessageModel
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM board_messages WHERE id = :id');
+        $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch();
+        return $row ? MessageModel::fromArray($row) : null;
+    }
+
+    public function hasMessage(string $id): bool
+    {
+        $stmt = $this->pdo->prepare('SELECT 1 FROM board_messages WHERE id = :id');
+        $stmt->execute([':id' => $id]);
+        return $stmt->fetchColumn() !== false;
+    }
+
+    /**
+     * @return MessageModel[]
+     */
+    public function getMessages(?string $category = null, ?string $status = null): array
+    {
+        $where = [];
+        $params = [];
+        if ($category !== null) {
+            $where[] = 'category = :category';
+            $params[':category'] = $category;
+        }
+        if ($status !== null) {
+            $where[] = 'status = :status';
+            $params[':status'] = $status;
+        }
+
+        $sql = 'SELECT * FROM board_messages';
+        if (!empty($where)) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+        $sql .= ' ORDER BY priority DESC, created_at DESC';
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return array_map(fn(array $row) => MessageModel::fromArray($row), $stmt->fetchAll());
+    }
+
+    /**
+     * Get replies to a message.
+     * @return MessageModel[]
+     */
+    public function getMessageReplies(string $parentId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM board_messages WHERE parent_id = :parent_id ORDER BY created_at ASC'
+        );
+        $stmt->execute([':parent_id' => $parentId]);
+        return array_map(fn(array $row) => MessageModel::fromArray($row), $stmt->fetchAll());
+    }
+
+    /** @return MessageModel[] */
+    public function getMessagesSince(int $lamportTs): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM board_messages WHERE lamport_ts > :ts ORDER BY lamport_ts ASC'
+        );
+        $stmt->execute([':ts' => $lamportTs]);
+        return array_map(fn(array $row) => MessageModel::fromArray($row), $stmt->fetchAll());
+    }
+
+    public function getMaxMessageLamportTs(): int
+    {
+        return (int) $this->pdo->query(
+            'SELECT COALESCE(MAX(lamport_ts), 0) FROM board_messages'
+        )->fetchColumn();
+    }
+
+    public function deleteMessage(string $id): bool
+    {
+        $stmt = $this->pdo->prepare('DELETE FROM board_messages WHERE id = :id');
+        $stmt->execute([':id' => $id]);
+        return $stmt->rowCount() > 0;
+    }
+
+    public function getMessageCount(?string $category = null): int
+    {
+        if ($category) {
+            $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM board_messages WHERE category = :category');
+            $stmt->execute([':category' => $category]);
+            return (int) $stmt->fetchColumn();
+        }
+        return (int) $this->pdo->query('SELECT COUNT(*) FROM board_messages')->fetchColumn();
     }
 }
