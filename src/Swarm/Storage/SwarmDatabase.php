@@ -455,6 +455,88 @@ class SwarmDatabase
         return (int) $stmt->fetchColumn();
     }
 
+    /**
+     * Atomically transition a task's state using compare-and-swap.
+     * Only updates if the task's current status matches one of the expected statuses.
+     * Prevents TOCTOU race conditions in coroutine-based concurrent access.
+     *
+     * @param TaskStatus[] $expectedStatuses Allowed current statuses for the transition
+     */
+    public function transitionTask(TaskModel $task, array $expectedStatuses): bool
+    {
+        $placeholders = [];
+        $params = [
+            ':id' => $task->id,
+            ':title' => $task->title,
+            ':description' => $task->description,
+            ':status' => $task->status->value,
+            ':priority' => $task->priority,
+            ':required_capabilities' => json_encode($task->requiredCapabilities),
+            ':assigned_to' => $task->assignedTo,
+            ':assigned_node' => $task->assignedNode,
+            ':result' => $task->result,
+            ':error' => $task->error,
+            ':progress' => $task->progress,
+            ':project_path' => $task->projectPath,
+            ':context' => $task->context,
+            ':lamport_ts' => $task->lamportTs,
+            ':claimed_at' => $task->claimedAt,
+            ':completed_at' => $task->completedAt,
+            ':updated_at' => $task->updatedAt,
+            ':parent_id' => $task->parentId,
+            ':work_instructions' => $task->workInstructions,
+            ':acceptance_criteria' => $task->acceptanceCriteria,
+            ':review_status' => $task->reviewStatus,
+            ':review_feedback' => $task->reviewFeedback,
+            ':archived' => $task->archived ? 1 : 0,
+            ':git_branch' => $task->gitBranch,
+            ':merge_attempts' => $task->mergeAttempts,
+            ':test_command' => $task->testCommand,
+        ];
+
+        foreach ($expectedStatuses as $i => $s) {
+            $key = ":expected_status_{$i}";
+            $placeholders[] = $key;
+            $params[$key] = $s->value;
+        }
+
+        $inClause = implode(', ', $placeholders);
+        $stmt = $this->pdo->prepare("
+            UPDATE tasks SET
+                title = :title, description = :description, status = :status,
+                priority = :priority, required_capabilities = :required_capabilities,
+                assigned_to = :assigned_to, assigned_node = :assigned_node,
+                result = :result, error = :error, progress = :progress,
+                project_path = :project_path, context = :context,
+                lamport_ts = :lamport_ts, claimed_at = :claimed_at,
+                completed_at = :completed_at, updated_at = :updated_at,
+                parent_id = :parent_id, work_instructions = :work_instructions,
+                acceptance_criteria = :acceptance_criteria, review_status = :review_status,
+                review_feedback = :review_feedback, archived = :archived,
+                git_branch = :git_branch, merge_attempts = :merge_attempts,
+                test_command = :test_command
+            WHERE id = :id AND status IN ({$inClause})
+        ");
+
+        $stmt->execute($params);
+        return $stmt->rowCount() > 0;
+    }
+
+    public function beginTransaction(): bool
+    {
+        return $this->pdo->beginTransaction();
+    }
+
+    public function commit(): bool
+    {
+        return $this->pdo->commit();
+    }
+
+    public function rollback(): bool
+    {
+        return $this->pdo->rollBack();
+    }
+
     // --- Agent operations ---
 
     public function insertAgent(AgentModel $agent): bool
