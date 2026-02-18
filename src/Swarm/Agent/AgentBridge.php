@@ -80,7 +80,9 @@ class AgentBridge
         // Unlike send-keys -l, this handles newlines, emojis, and special characters
         // correctly — the entire text is treated as a single paste operation.
         $sent = $this->tmux->pasteTextByName($sessionName, $prompt);
-        usleep(500_000); // Claude Code needs time to process pasted text
+        // Claude Code needs time to render pasted text — scale by line count
+        $lineCount = substr_count($prompt, "\n") + 1;
+        usleep(max(500_000, $lineCount * 250_000));
         $this->tmux->sendEnterByName($sessionName);
 
         return $sent;
@@ -128,7 +130,8 @@ class AgentBridge
         }
 
         $sent = $this->tmux->pasteTextByName($sessionName, $text);
-        usleep(500_000); // Claude Code needs time to render pasted text
+        $lineCount = substr_count($text, "\n") + 1;
+        usleep(max(500_000, $lineCount * 250_000));
         $this->tmux->sendEnterByName($sessionName);
         return $sent;
     }

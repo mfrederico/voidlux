@@ -646,10 +646,9 @@ class EmperorController
 
         if ($accepted) {
             $this->db->updateReviewStatus($taskId, 'accepted', $feedback);
-            // Complete the task
-            $ts = $task->lamportTs;
-            $updated = $task->withStatus(TaskStatus::Completed, $ts);
-            $this->db->updateTask($updated);
+            // Use taskQueue->complete() flow: DB update + gossip + tryCompleteParent + dispatch
+            $this->taskQueue->completeAccepted($taskId, $task->assignedTo ?? '', $task->result);
+            $this->fireTaskEvent('task_updated', $this->db->getTask($taskId)?->toArray() ?? $task->toArray());
             $this->json($response, ['status' => 'accepted', 'task_id' => $taskId]);
         } else {
             $this->db->updateReviewStatus($taskId, 'rejected', $feedback);

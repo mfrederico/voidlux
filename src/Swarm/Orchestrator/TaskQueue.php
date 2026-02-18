@@ -337,6 +337,46 @@ class TaskQueue
     }
 
     /**
+     * Complete a task that has already been reviewed and accepted (manual review path).
+     * Skips the review check — goes straight to Completed + gossip + tryCompleteParent.
+     */
+    public function completeAccepted(string $taskId, string $agentId, ?string $result = null): void
+    {
+        $ts = $this->clock->tick();
+
+        $task = $this->db->getTask($taskId);
+        if (!$task || $task->status->isTerminal()) {
+            return;
+        }
+
+        $updated = new TaskModel(
+            id: $task->id, title: $task->title, description: $task->description,
+            status: TaskStatus::Completed, priority: $task->priority,
+            requiredCapabilities: $task->requiredCapabilities, createdBy: $task->createdBy,
+            assignedTo: $agentId, assignedNode: $task->assignedNode,
+            result: $result ?? $task->result, error: null, progress: null,
+            projectPath: $task->projectPath, context: $task->context,
+            lamportTs: $ts, claimedAt: $task->claimedAt,
+            completedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            createdAt: $task->createdAt, updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            parentId: $task->parentId, workInstructions: $task->workInstructions,
+            acceptanceCriteria: $task->acceptanceCriteria,
+            reviewStatus: 'accepted', reviewFeedback: $task->reviewFeedback,
+            archived: $task->archived, gitBranch: $task->gitBranch,
+            mergeAttempts: $task->mergeAttempts, testCommand: $task->testCommand,
+            dependsOn: $task->dependsOn,
+        );
+        $this->db->updateTask($updated);
+        $this->gossip->gossipTaskComplete($taskId, $agentId, $result ?? $task->result, $ts);
+
+        $this->dispatcher?->triggerDispatch();
+
+        if ($task->parentId) {
+            $this->tryCompleteParent($task->parentId);
+        }
+    }
+
+    /**
      * Review a task using the AI reviewer.
      * Accepts or rejects with feedback. Rejected tasks get requeued (up to MAX_REJECTIONS).
      */
