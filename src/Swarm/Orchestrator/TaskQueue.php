@@ -147,7 +147,15 @@ class TaskQueue
             mergeAttempts: $task->mergeAttempts,
             testCommand: $task->testCommand,
         );
-        $this->db->updateTask($updated);
+        // Atomic CAS: only transition if still in expected agent-workable state
+        $transitioned = $this->db->transitionTask($updated, [
+            TaskStatus::Claimed,
+            TaskStatus::InProgress,
+            TaskStatus::WaitingInput,
+        ]);
+        if (!$transitioned) {
+            return;
+        }
         $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::InProgress->value, $progress, $ts);
     }
 
@@ -190,7 +198,15 @@ class TaskQueue
             mergeAttempts: $task->mergeAttempts,
             testCommand: $task->testCommand,
         );
-        $this->db->updateTask($updated);
+        // Atomic CAS: only transition if still in expected agent-workable state
+        $transitioned = $this->db->transitionTask($updated, [
+            TaskStatus::Claimed,
+            TaskStatus::InProgress,
+            TaskStatus::WaitingInput,
+        ]);
+        if (!$transitioned) {
+            return;
+        }
         $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::WaitingInput->value, $question, $ts);
     }
 
@@ -202,6 +218,8 @@ class TaskQueue
         if (!$task || $task->status->isTerminal() || !$task->status->isWorkableByAgent()) {
             return;
         }
+
+        $allowedFromStatuses = [TaskStatus::Claimed, TaskStatus::InProgress, TaskStatus::WaitingInput];
 
         // If reviewer is configured and task has acceptance criteria, route to review
         if ($this->reviewer !== null && trim($task->acceptanceCriteria) !== '') {
@@ -235,7 +253,11 @@ class TaskQueue
                 mergeAttempts: $task->mergeAttempts,
                 testCommand: $task->testCommand,
             );
-            $this->db->updateTask($updated);
+            // Atomic CAS: only transition if still in agent-workable state
+            $transitioned = $this->db->transitionTask($updated, $allowedFromStatuses);
+            if (!$transitioned) {
+                return;
+            }
             $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::PendingReview->value, null, $ts);
 
             // Spawn review coroutine
@@ -245,6 +267,7 @@ class TaskQueue
             return;
         }
 
+        $now = gmdate('Y-m-d\TH:i:s\Z');
         $updated = new TaskModel(
             id: $task->id,
             title: $task->title,
@@ -262,9 +285,9 @@ class TaskQueue
             context: $task->context,
             lamportTs: $ts,
             claimedAt: $task->claimedAt,
-            completedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            completedAt: $now,
             createdAt: $task->createdAt,
-            updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            updatedAt: $now,
             parentId: $task->parentId,
             workInstructions: $task->workInstructions,
             acceptanceCriteria: $task->acceptanceCriteria,
@@ -275,7 +298,11 @@ class TaskQueue
             mergeAttempts: $task->mergeAttempts,
             testCommand: $task->testCommand,
         );
-        $this->db->updateTask($updated);
+        // Atomic CAS: only transition if still in agent-workable state
+        $transitioned = $this->db->transitionTask($updated, $allowedFromStatuses);
+        if (!$transitioned) {
+            return;
+        }
         $this->gossip->gossipTaskComplete($taskId, $agentId, $result, $ts);
 
         // Check if all subtasks are done — complete the parent
@@ -291,7 +318,7 @@ class TaskQueue
     public function reviewTask(string $taskId): void
     {
         $task = $this->db->getTask($taskId);
-        if (!$task || !$this->reviewer) {
+        if (!$task || !$this->reviewer || $task->status !== TaskStatus::PendingReview) {
             return;
         }
 
@@ -299,8 +326,7 @@ class TaskQueue
         $ts = $this->clock->tick();
 
         if ($reviewResult->accepted) {
-            $this->db->updateReviewStatus($taskId, 'accepted', $reviewResult->feedback);
-
+            $now = gmdate('Y-m-d\TH:i:s\Z');
             $updated = new TaskModel(
                 id: $task->id,
                 title: $task->title,
@@ -318,9 +344,9 @@ class TaskQueue
                 context: $task->context,
                 lamportTs: $ts,
                 claimedAt: $task->claimedAt,
-                completedAt: gmdate('Y-m-d\TH:i:s\Z'),
+                completedAt: $now,
                 createdAt: $task->createdAt,
-                updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+                updatedAt: $now,
                 parentId: $task->parentId,
                 workInstructions: $task->workInstructions,
                 acceptanceCriteria: $task->acceptanceCriteria,
@@ -331,7 +357,11 @@ class TaskQueue
                 mergeAttempts: $task->mergeAttempts,
                 testCommand: $task->testCommand,
             );
-            $this->db->updateTask($updated);
+            // Atomic CAS: only complete if still in PendingReview
+            $transitioned = $this->db->transitionTask($updated, [TaskStatus::PendingReview]);
+            if (!$transitioned) {
+                return;
+            }
             $this->gossip->gossipTaskComplete($taskId, $task->assignedTo ?? '', $task->result, $ts);
 
             // Check if all subtasks are done — complete the parent
@@ -342,9 +372,9 @@ class TaskQueue
             // Count previous rejections
             $rejectionCount = substr_count($task->reviewFeedback, '[Rejection');
             if ($rejectionCount >= self::MAX_REJECTIONS) {
-                // Too many rejections — mark as failed
+                // Too many rejections — mark as failed via atomic fail path
                 $this->db->updateReviewStatus($taskId, 'rejected', $reviewResult->feedback);
-                $this->fail($taskId, $task->assignedTo ?? '', "Max rejections reached: {$reviewResult->feedback}");
+                $this->failFromStatus($taskId, $task->assignedTo ?? '', "Max rejections reached: {$reviewResult->feedback}", TaskStatus::PendingReview);
                 return;
             }
 
@@ -394,7 +424,11 @@ class TaskQueue
                 mergeAttempts: $task->mergeAttempts,
                 testCommand: $task->testCommand,
             );
-            $this->db->updateTask($updated);
+            // Atomic CAS: only requeue if still in PendingReview
+            $transitioned = $this->db->transitionTask($updated, [TaskStatus::PendingReview]);
+            if (!$transitioned) {
+                return;
+            }
             $this->gossip->gossipTaskUpdate($taskId, '', TaskStatus::Pending->value, null, $ts);
         }
     }
@@ -408,6 +442,7 @@ class TaskQueue
             return;
         }
 
+        $now = gmdate('Y-m-d\TH:i:s\Z');
         $updated = new TaskModel(
             id: $task->id,
             title: $task->title,
@@ -425,9 +460,9 @@ class TaskQueue
             context: $task->context,
             lamportTs: $ts,
             claimedAt: $task->claimedAt,
-            completedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            completedAt: $now,
             createdAt: $task->createdAt,
-            updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            updatedAt: $now,
             parentId: $task->parentId,
             workInstructions: $task->workInstructions,
             acceptanceCriteria: $task->acceptanceCriteria,
@@ -438,7 +473,65 @@ class TaskQueue
             mergeAttempts: $task->mergeAttempts,
             testCommand: $task->testCommand,
         );
-        $this->db->updateTask($updated);
+        // Atomic CAS: only fail if still in agent-workable state
+        $transitioned = $this->db->transitionTask($updated, [
+            TaskStatus::Claimed,
+            TaskStatus::InProgress,
+            TaskStatus::WaitingInput,
+        ]);
+        if (!$transitioned) {
+            return;
+        }
+        $this->gossip->gossipTaskFail($taskId, $agentId, $error, $ts);
+    }
+
+    /**
+     * Fail a task from a specific known status (e.g., PendingReview after max rejections).
+     */
+    private function failFromStatus(string $taskId, string $agentId, string $error, TaskStatus $fromStatus): void
+    {
+        $ts = $this->clock->tick();
+
+        $task = $this->db->getTask($taskId);
+        if (!$task) {
+            return;
+        }
+
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $updated = new TaskModel(
+            id: $task->id,
+            title: $task->title,
+            description: $task->description,
+            status: TaskStatus::Failed,
+            priority: $task->priority,
+            requiredCapabilities: $task->requiredCapabilities,
+            createdBy: $task->createdBy,
+            assignedTo: $agentId,
+            assignedNode: $task->assignedNode,
+            result: null,
+            error: $error,
+            progress: null,
+            projectPath: $task->projectPath,
+            context: $task->context,
+            lamportTs: $ts,
+            claimedAt: $task->claimedAt,
+            completedAt: $now,
+            createdAt: $task->createdAt,
+            updatedAt: $now,
+            parentId: $task->parentId,
+            workInstructions: $task->workInstructions,
+            acceptanceCriteria: $task->acceptanceCriteria,
+            reviewStatus: $task->reviewStatus,
+            reviewFeedback: $task->reviewFeedback,
+            archived: $task->archived,
+            gitBranch: $task->gitBranch,
+            mergeAttempts: $task->mergeAttempts,
+            testCommand: $task->testCommand,
+        );
+        $transitioned = $this->db->transitionTask($updated, [$fromStatus]);
+        if (!$transitioned) {
+            return;
+        }
         $this->gossip->gossipTaskFail($taskId, $agentId, $error, $ts);
     }
 
@@ -448,84 +541,113 @@ class TaskQueue
      */
     private function tryCompleteParent(string $parentId): void
     {
-        $subtasks = $this->db->getSubtasks($parentId);
-        if (empty($subtasks)) {
-            return;
-        }
-
-        foreach ($subtasks as $sub) {
-            if (!$sub->status->isTerminal()) {
-                return; // Still has active subtasks
+        // Use a transaction to atomically check subtasks and transition the parent.
+        // This prevents races where multiple subtask completions trigger concurrent
+        // parent transitions.
+        $this->db->beginTransaction();
+        try {
+            $subtasks = $this->db->getSubtasks($parentId);
+            if (empty($subtasks)) {
+                $this->db->commit();
+                return;
             }
-        }
 
-        // All subtasks are terminal
-        $parent = $this->db->getTask($parentId);
-        if (!$parent || $parent->status->isTerminal()) {
-            return;
-        }
-
-        $completedSubs = [];
-        $failedCount = 0;
-        foreach ($subtasks as $sub) {
-            if ($sub->status === TaskStatus::Completed) {
-                $completedSubs[] = $sub;
-            } else {
-                $failedCount++;
+            foreach ($subtasks as $sub) {
+                if (!$sub->status->isTerminal()) {
+                    $this->db->commit();
+                    return; // Still has active subtasks
+                }
             }
-        }
 
-        // If ALL subtasks failed, fail the parent immediately
-        if (empty($completedSubs)) {
+            // All subtasks are terminal
+            $parent = $this->db->getTask($parentId);
+            if (!$parent || $parent->status->isTerminal()) {
+                $this->db->commit();
+                return;
+            }
+
+            $completedSubs = [];
+            $failedCount = 0;
+            foreach ($subtasks as $sub) {
+                if ($sub->status === TaskStatus::Completed) {
+                    $completedSubs[] = $sub;
+                } else {
+                    $failedCount++;
+                }
+            }
+
+            // If ALL subtasks failed, fail the parent immediately
+            if (empty($completedSubs)) {
+                $ts = $this->clock->tick();
+                $now = gmdate('Y-m-d\TH:i:s\Z');
+                $updated = $parent->withStatus(TaskStatus::Failed, $ts);
+                $failedParent = new TaskModel(
+                    id: $updated->id, title: $updated->title, description: $updated->description,
+                    status: $updated->status, priority: $updated->priority,
+                    requiredCapabilities: $updated->requiredCapabilities, createdBy: $updated->createdBy,
+                    assignedTo: $updated->assignedTo, assignedNode: $updated->assignedNode,
+                    result: null, error: "All {$failedCount} subtask(s) failed", progress: null,
+                    projectPath: $updated->projectPath, context: $updated->context,
+                    lamportTs: $updated->lamportTs, claimedAt: $updated->claimedAt,
+                    completedAt: $now, createdAt: $updated->createdAt, updatedAt: $now,
+                    parentId: $updated->parentId, workInstructions: $updated->workInstructions,
+                    acceptanceCriteria: $updated->acceptanceCriteria, reviewStatus: $updated->reviewStatus,
+                    reviewFeedback: $updated->reviewFeedback, archived: $updated->archived,
+                    gitBranch: $updated->gitBranch, mergeAttempts: $updated->mergeAttempts,
+                    testCommand: $updated->testCommand,
+                );
+                // Atomic CAS within transaction: only fail if parent is in expected non-terminal state
+                $transitioned = $this->db->transitionTask($failedParent, [
+                    TaskStatus::Pending, TaskStatus::Planning, TaskStatus::Claimed,
+                    TaskStatus::InProgress, TaskStatus::PendingReview, TaskStatus::WaitingInput,
+                    TaskStatus::Merging,
+                ]);
+                $this->db->commit();
+                if ($transitioned) {
+                    $this->gossip->gossipTaskFail($parentId, '', "All {$failedCount} subtask(s) failed", $failedParent->lamportTs);
+                }
+                return;
+            }
+
+            // Collect git branches from completed subtasks
+            $branches = [];
+            foreach ($completedSubs as $sub) {
+                if ($sub->gitBranch !== '') {
+                    $branches[] = $sub->gitBranch;
+                }
+            }
+
+            $baseDir = getcwd() . '/workbench/.base';
+
+            // If no git branches or no git workspace configured, complete immediately (backward compatible)
+            if (empty($branches) || $this->git === null || !is_dir($baseDir . '/.git')) {
+                $this->db->commit();
+                $this->completeParentDirectly($parent, count($completedSubs), $failedCount);
+                return;
+            }
+
+            // Atomically set parent status to Merging
             $ts = $this->clock->tick();
-            $now = gmdate('Y-m-d\TH:i:s\Z');
-            $updated = $parent->withStatus(TaskStatus::Failed, $ts);
-            $failedParent = new TaskModel(
-                id: $updated->id, title: $updated->title, description: $updated->description,
-                status: $updated->status, priority: $updated->priority,
-                requiredCapabilities: $updated->requiredCapabilities, createdBy: $updated->createdBy,
-                assignedTo: $updated->assignedTo, assignedNode: $updated->assignedNode,
-                result: null, error: "All {$failedCount} subtask(s) failed", progress: null,
-                projectPath: $updated->projectPath, context: $updated->context,
-                lamportTs: $updated->lamportTs, claimedAt: $updated->claimedAt,
-                completedAt: $now, createdAt: $updated->createdAt, updatedAt: $now,
-                parentId: $updated->parentId, workInstructions: $updated->workInstructions,
-                acceptanceCriteria: $updated->acceptanceCriteria, reviewStatus: $updated->reviewStatus,
-                reviewFeedback: $updated->reviewFeedback, archived: $updated->archived,
-                gitBranch: $updated->gitBranch, mergeAttempts: $updated->mergeAttempts,
-                testCommand: $updated->testCommand,
-            );
-            $this->db->updateTask($failedParent);
-            $this->gossip->gossipTaskFail($parentId, '', "All {$failedCount} subtask(s) failed", $failedParent->lamportTs);
-            return;
-        }
+            $mergingParent = $parent->withStatus(TaskStatus::Merging, $ts);
+            $transitioned = $this->db->transitionTask($mergingParent, [
+                TaskStatus::Pending, TaskStatus::Planning, TaskStatus::Claimed,
+                TaskStatus::InProgress, TaskStatus::PendingReview, TaskStatus::WaitingInput,
+            ]);
+            $this->db->commit();
 
-        // Collect git branches from completed subtasks
-        $branches = [];
-        foreach ($completedSubs as $sub) {
-            if ($sub->gitBranch !== '') {
-                $branches[] = $sub->gitBranch;
+            if (!$transitioned) {
+                return; // Parent state changed underneath us
             }
+            $this->gossip->gossipTaskUpdate($parentId, '', TaskStatus::Merging->value, 'Merging subtask branches...', $ts);
+
+            // Spawn merge-test coroutine
+            Coroutine::create(function () use ($parentId, $branches, $completedSubs, $baseDir) {
+                $this->mergeAndTest($parentId, $branches, $completedSubs, $baseDir);
+            });
+        } catch (\Throwable $e) {
+            $this->db->rollback();
+            throw $e;
         }
-
-        $baseDir = getcwd() . '/workbench/.base';
-
-        // If no git branches or no git workspace configured, complete immediately (backward compatible)
-        if (empty($branches) || $this->git === null || !is_dir($baseDir . '/.git')) {
-            $this->completeParentDirectly($parent, count($completedSubs), $failedCount);
-            return;
-        }
-
-        // Set parent status to Merging
-        $ts = $this->clock->tick();
-        $mergingParent = $parent->withStatus(TaskStatus::Merging, $ts);
-        $this->db->updateTask($mergingParent);
-        $this->gossip->gossipTaskUpdate($parentId, '', TaskStatus::Merging->value, 'Merging subtask branches...', $ts);
-
-        // Spawn merge-test coroutine
-        Coroutine::create(function () use ($parentId, $branches, $completedSubs, $baseDir) {
-            $this->mergeAndTest($parentId, $branches, $completedSubs, $baseDir);
-        });
     }
 
     /**
@@ -602,7 +724,7 @@ class TaskQueue
             $result .= "\n\nPR: {$prUrl}";
         }
 
-        // Complete parent
+        // Complete parent atomically — only if still in Merging state
         $ts = $this->clock->tick();
         $now = gmdate('Y-m-d\TH:i:s\Z');
         $updated = new TaskModel(
@@ -620,7 +742,10 @@ class TaskQueue
             gitBranch: $integrationBranch, mergeAttempts: $parent->mergeAttempts,
             testCommand: $parent->testCommand,
         );
-        $this->db->updateTask($updated);
+        $transitioned = $this->db->transitionTask($updated, [TaskStatus::Merging]);
+        if (!$transitioned) {
+            return;
+        }
         $this->gossip->gossipTaskComplete($parentId, '', $result, $ts);
     }
 
@@ -650,11 +775,13 @@ class TaskQueue
             }
         }
 
-        // Reset parent to InProgress
+        // Atomically reset parent from Merging to InProgress
         $updated = $parent->withStatus(TaskStatus::InProgress, $ts);
-        $this->db->updateTask($updated);
-        $this->gossip->gossipTaskUpdate($parent->id, '', TaskStatus::InProgress->value, 'Merge conflict — requeued conflicting subtasks', $ts);
-        $this->dispatcher?->triggerDispatch();
+        $transitioned = $this->db->transitionTask($updated, [TaskStatus::Merging]);
+        if ($transitioned) {
+            $this->gossip->gossipTaskUpdate($parent->id, '', TaskStatus::InProgress->value, 'Merge conflict — requeued conflicting subtasks', $ts);
+            $this->dispatcher?->triggerDispatch();
+        }
     }
 
     /**
@@ -681,11 +808,13 @@ class TaskQueue
             $this->requeueCompletedSubtask($sub, $newInstructions, $ts);
         }
 
-        // Reset parent to InProgress
+        // Atomically reset parent from Merging to InProgress
         $updated = $parent->withStatus(TaskStatus::InProgress, $ts);
-        $this->db->updateTask($updated);
-        $this->gossip->gossipTaskUpdate($parent->id, '', TaskStatus::InProgress->value, 'Tests failed — requeued all subtasks', $ts);
-        $this->dispatcher?->triggerDispatch();
+        $transitioned = $this->db->transitionTask($updated, [TaskStatus::Merging]);
+        if ($transitioned) {
+            $this->gossip->gossipTaskUpdate($parent->id, '', TaskStatus::InProgress->value, 'Tests failed — requeued all subtasks', $ts);
+            $this->dispatcher?->triggerDispatch();
+        }
     }
 
     /**
@@ -709,7 +838,12 @@ class TaskQueue
             gitBranch: $sub->gitBranch, mergeAttempts: $sub->mergeAttempts,
             testCommand: $sub->testCommand,
         );
-        $this->db->updateTask($updated);
+        // Atomic CAS: only requeue if subtask is still in Completed state.
+        // Prevents races where a subtask is being re-claimed while we try to requeue it.
+        $transitioned = $this->db->transitionTask($updated, [TaskStatus::Completed]);
+        if (!$transitioned) {
+            return;
+        }
         $this->gossip->gossipTaskUpdate($sub->id, '', TaskStatus::Pending->value, null, $ts);
     }
 
@@ -740,7 +874,15 @@ class TaskQueue
             gitBranch: $parent->gitBranch, mergeAttempts: $parent->mergeAttempts,
             testCommand: $parent->testCommand,
         );
-        $this->db->updateTask($updated);
+        // Atomic CAS: only fail if parent hasn't already transitioned to terminal
+        $transitioned = $this->db->transitionTask($updated, [
+            TaskStatus::Pending, TaskStatus::Planning, TaskStatus::Claimed,
+            TaskStatus::InProgress, TaskStatus::PendingReview, TaskStatus::WaitingInput,
+            TaskStatus::Merging,
+        ]);
+        if (!$transitioned) {
+            return;
+        }
         $this->gossip->gossipTaskFail($parentId, '', $error, $ts);
     }
 
@@ -768,7 +910,15 @@ class TaskQueue
             gitBranch: $parent->gitBranch, mergeAttempts: $parent->mergeAttempts,
             testCommand: $parent->testCommand,
         );
-        $this->db->updateTask($updated);
+        // Atomic CAS: only complete parent if not already transitioned
+        $transitioned = $this->db->transitionTask($updated, [
+            TaskStatus::Pending, TaskStatus::Planning, TaskStatus::Claimed,
+            TaskStatus::InProgress, TaskStatus::PendingReview, TaskStatus::WaitingInput,
+            TaskStatus::Merging,
+        ]);
+        if (!$transitioned) {
+            return;
+        }
         $this->gossip->gossipTaskComplete($parent->id, '', $result, $ts);
     }
 
