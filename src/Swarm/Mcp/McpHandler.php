@@ -199,6 +199,9 @@ class McpHandler
         if ($task->status->isTerminal()) {
             return $this->toolError("Task already in terminal state: {$task->status->value}");
         }
+        if (!$task->status->isWorkableByAgent()) {
+            return $this->toolError("Task cannot be completed from state: {$task->status->value}. Task must be claimed or in_progress.");
+        }
 
         $agentId = $task->assignedTo ?? '';
 
@@ -243,6 +246,9 @@ class McpHandler
         if ($task->status->isTerminal()) {
             return $this->toolError("Task already in terminal state: {$task->status->value}");
         }
+        if (!$task->status->isWorkableByAgent()) {
+            return $this->toolError("Cannot report progress for task in state: {$task->status->value}. Task must be claimed or in_progress.");
+        }
 
         $agentId = $task->assignedTo ?? '';
         $this->taskQueue->updateProgress($taskId, $agentId, $message);
@@ -265,6 +271,9 @@ class McpHandler
         }
         if ($task->status->isTerminal()) {
             return $this->toolError("Task already in terminal state: {$task->status->value}");
+        }
+        if (!$task->status->isWorkableByAgent()) {
+            return $this->toolError("Cannot fail task in state: {$task->status->value}. Task must be claimed or in_progress.");
         }
 
         $agentId = $task->assignedTo ?? '';
@@ -307,6 +316,9 @@ class McpHandler
         }
         if ($task->status->isTerminal()) {
             return $this->toolError("Task already in terminal state: {$task->status->value}");
+        }
+        if (!$task->status->isWorkableByAgent()) {
+            return $this->toolError("Cannot request input for task in state: {$task->status->value}. Task must be claimed or in_progress.");
         }
 
         $agentId = $task->assignedTo ?? '';
