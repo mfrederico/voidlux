@@ -265,6 +265,37 @@ class EmperorController
                 $this->handleWallet($response);
                 break;
 
+            // --- Bounty API ---
+            case $path === '/api/swarm/bounties' && $method === 'GET':
+                $this->handleListBounties($response);
+                break;
+
+            case $path === '/api/swarm/bounties' && $method === 'POST':
+                $this->handlePostBounty($request, $response);
+                break;
+
+            case preg_match('#^/api/swarm/bounties/([^/]+)/claim$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleClaimBounty($m[1], $response);
+                break;
+
+            case preg_match('#^/api/swarm/bounties/([^/]+)$#', $path, $m) === 1 && $method === 'DELETE':
+                $this->handleCancelBounty($m[1], $response);
+                break;
+
+            // --- Capability API ---
+            case $path === '/api/swarm/capabilities' && $method === 'GET':
+                $this->handleListCapabilities($response);
+                break;
+
+            // --- Delegation API ---
+            case $path === '/api/swarm/delegations' && $method === 'GET':
+                $this->handleListDelegations($response);
+                break;
+
+            case $path === '/api/swarm/delegations' && $method === 'POST':
+                $this->handleCreateDelegation($request, $response);
+                break;
+
             default:
                 $response->status(404);
                 $this->json($response, ['error' => 'Not found']);
@@ -978,6 +1009,8 @@ class EmperorController
             return;
         }
         $offering = $this->marketplace->announceOffering($idleAgents, $capabilities);
+        // Gossip to P2P mesh
+        $this->marketplaceGossip?->gossipOfferingAnnounce($offering);
         $response->status(201);
         $this->json($response, $offering->toArray());
     }
@@ -995,6 +1028,8 @@ class EmperorController
             $this->json($response, ['error' => 'Offering not found or not owned by this node']);
             return;
         }
+        // Gossip withdrawal to P2P mesh
+        $this->marketplaceGossip?->gossipOfferingWithdraw($id);
         $this->json($response, ['withdrawn' => true, 'offering_id' => $id]);
     }
 
@@ -1019,6 +1054,8 @@ class EmperorController
             $this->json($response, ['error' => 'Offering not found or expired']);
             return;
         }
+        // Gossip tribute request to P2P mesh
+        $this->marketplaceGossip?->gossipTributeRequest($tribute);
         $response->status(201);
         $this->json($response, $tribute->toArray());
     }
@@ -1040,6 +1077,134 @@ class EmperorController
             return;
         }
         $this->json($response, $this->marketplace->getWallet());
+    }
+
+    // --- Bounty handlers ---
+
+    private function handleListBounties(Response $response): void
+    {
+        if (!$this->marketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not initialized']);
+            return;
+        }
+        $this->json($response, array_map(fn($b) => $b->toArray(), $this->marketplace->getBounties()));
+    }
+
+    private function handlePostBounty(Request $request, Response $response): void
+    {
+        if (!$this->marketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not initialized']);
+            return;
+        }
+        $body = json_decode($request->getContent(), true) ?? [];
+        $title = $body['title'] ?? '';
+        if (!$title) {
+            $response->status(400);
+            $this->json($response, ['error' => 'title is required']);
+            return;
+        }
+        $bounty = $this->marketplace->postBounty(
+            title: $title,
+            description: $body['description'] ?? '',
+            requiredCapabilities: $body['required_capabilities'] ?? [],
+            reward: (int) ($body['reward'] ?? 10),
+            currency: $body['currency'] ?? 'VOID',
+            ttlSeconds: (int) ($body['ttl_seconds'] ?? 3600),
+        );
+        $this->marketplaceGossip?->gossipBountyPost($bounty);
+        $response->status(201);
+        $this->json($response, $bounty->toArray());
+    }
+
+    private function handleClaimBounty(string $bountyId, Response $response): void
+    {
+        if (!$this->marketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not initialized']);
+            return;
+        }
+        $claimed = $this->marketplace->claimBounty($bountyId, $this->marketplace->getNodeId());
+        if (!$claimed) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Bounty not found or not open']);
+            return;
+        }
+        $this->marketplaceGossip?->gossipBountyClaim($bountyId, $this->marketplace->getNodeId());
+        $this->json($response, ['claimed' => true, 'bounty_id' => $bountyId]);
+    }
+
+    private function handleCancelBounty(string $bountyId, Response $response): void
+    {
+        if (!$this->marketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not initialized']);
+            return;
+        }
+        $cancelled = $this->marketplace->cancelBounty($bountyId);
+        if (!$cancelled) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Bounty not found']);
+            return;
+        }
+        $this->marketplaceGossip?->gossipBountyCancel($bountyId);
+        $this->json($response, ['cancelled' => true, 'bounty_id' => $bountyId]);
+    }
+
+    // --- Capability handlers ---
+
+    private function handleListCapabilities(Response $response): void
+    {
+        if (!$this->marketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not initialized']);
+            return;
+        }
+        $this->json($response, array_map(fn($p) => $p->toArray(), $this->marketplace->getCapabilityProfiles()));
+    }
+
+    // --- Delegation handlers ---
+
+    private function handleListDelegations(Response $response): void
+    {
+        if (!$this->marketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not initialized']);
+            return;
+        }
+        $this->json($response, array_map(fn($d) => $d->toArray(), $this->marketplace->getDelegations()));
+    }
+
+    private function handleCreateDelegation(Request $request, Response $response): void
+    {
+        if (!$this->marketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not initialized']);
+            return;
+        }
+        $body = json_decode($request->getContent(), true) ?? [];
+        $targetNodeId = $body['target_node_id'] ?? '';
+        $title = $body['title'] ?? '';
+        if (!$targetNodeId || !$title) {
+            $response->status(400);
+            $this->json($response, ['error' => 'target_node_id and title are required']);
+            return;
+        }
+        $delegation = $this->marketplace->createDelegation(
+            targetNodeId: $targetNodeId,
+            title: $title,
+            description: $body['description'] ?? '',
+            workInstructions: $body['work_instructions'] ?? null,
+            acceptanceCriteria: $body['acceptance_criteria'] ?? null,
+            requiredCapabilities: $body['required_capabilities'] ?? [],
+            projectPath: $body['project_path'] ?? null,
+            bountyId: $body['bounty_id'] ?? null,
+            tributeId: $body['tribute_id'] ?? null,
+        );
+        $this->marketplaceGossip?->gossipTaskDelegate($delegation);
+        $response->status(201);
+        $this->json($response, $delegation->toArray());
     }
 
     private function json(Response $response, array $data): void

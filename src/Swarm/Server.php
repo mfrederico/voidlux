@@ -453,6 +453,34 @@ class Server
 
         // Periodic clock persistence (no WS push — dashboard is fully WS-driven)
         $this->running = true;
+
+        // Marketplace anti-entropy (periodic sync of offerings/bounties/capabilities)
+        Coroutine::create(function () {
+            while ($this->running) {
+                Coroutine::sleep($this->marketplaceAntiEntropy?->getIntervalSeconds() ?? 120);
+                $peers = $this->mesh->getConnections();
+                if (!empty($peers)) {
+                    $peer = $peers[array_rand($peers)];
+                    $this->marketplaceAntiEntropy?->syncFromPeer($peer);
+                }
+            }
+        });
+
+        // Periodic capability advertisement (broadcast local profile every 60s)
+        Coroutine::create(function () {
+            while ($this->running) {
+                Coroutine::sleep(60);
+                if ($this->marketplace && $this->marketplaceGossip) {
+                    $profile = $this->marketplace->buildLocalProfile(
+                        $this->db->getIdleAgentCount(),
+                        $this->db->getAgentCount(),
+                        $this->getLocalCapabilities(),
+                        $this->clock->tick(),
+                    );
+                    $this->marketplaceGossip->gossipCapabilityAdvertise($profile);
+                }
+            }
+        });
         Coroutine::create(function () {
             while ($this->running) {
                 Coroutine::sleep(30);
@@ -563,6 +591,8 @@ class Server
                 if ($isNew) {
                     $this->pushTaskToWs('task_completed', $msg['task_id'] ?? '');
                     $this->taskDispatcher?->triggerDispatch();
+                    // Track completion for capability acceptance rate
+                    $this->marketplace?->recordTaskCompletion(0);
                 }
                 break;
 
@@ -571,6 +601,8 @@ class Server
                 if ($isNew) {
                     $this->pushTaskToWs('task_failed', $msg['task_id'] ?? '');
                     $this->taskDispatcher?->triggerDispatch();
+                    // Track failure for capability acceptance rate
+                    $this->marketplace?->recordTaskFailure();
                 }
                 break;
 
@@ -879,6 +911,9 @@ class Server
             'swarm_nodes' => array_map(fn($n) => $n->toArray(), $this->swarmRegistry->getAllNodes()),
             'swarm_health' => $this->swarmStatus->getSnapshot()['health'] ?? [],
             'offerings' => array_map(fn($o) => $o->toArray(), $this->marketplace?->getOfferings() ?? []),
+            'bounties' => array_map(fn($b) => $b->toArray(), $this->marketplace?->getBounties() ?? []),
+            'capability_profiles' => array_map(fn($p) => $p->toArray(), $this->marketplace?->getCapabilityProfiles() ?? []),
+            'delegations' => array_map(fn($d) => $d->toArray(), $this->marketplace?->getDelegations() ?? []),
             'wallet' => $this->marketplace?->getWallet() ?? ['balance' => 0, 'currency' => 'VOID'],
         ];
         $this->wsHandler->pushFullState($fd, $tasks, $agents, $status);
