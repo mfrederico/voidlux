@@ -33,4 +33,17 @@ enum TaskStatus: string
             default => false,
         };
     }
+
+    /**
+     * Whether an agent can report completion/failure/progress for a task in this state.
+     * Only tasks that have been claimed by an agent (Claimed, InProgress, WaitingInput)
+     * should accept agent-reported state transitions.
+     */
+    public function isWorkableByAgent(): bool
+    {
+        return match ($this) {
+            self::Claimed, self::InProgress, self::WaitingInput => true,
+            default => false,
+        };
+    }
 }
