@@ -7,6 +7,7 @@ namespace VoidLux\Swarm\Orchestrator;
 use Swoole\Coroutine;
 use VoidLux\P2P\Protocol\LamportClock;
 use VoidLux\Swarm\Ai\TaskReviewer;
+use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Gossip\TaskGossipEngine;
 use VoidLux\Swarm\Model\TaskModel;
 use VoidLux\Swarm\Model\TaskStatus;
@@ -14,10 +15,15 @@ use VoidLux\Swarm\Storage\SwarmDatabase;
 
 /**
  * Task lifecycle management: create, claim, update, complete, fail, cancel.
+ * Includes merge-test-retry loop for parent tasks with git branches.
  */
 class TaskQueue
 {
     private ?TaskReviewer $reviewer = null;
+    private ?GitWorkspace $git = null;
+    private string $globalTestCommand = '';
+    private string $mergeWorkDir = '';
+    private ?TaskDispatcher $dispatcher = null;
     private const MAX_REJECTIONS = 3;
 
     public function __construct(
@@ -32,6 +38,26 @@ class TaskQueue
         $this->reviewer = $reviewer;
     }
 
+    public function setGitWorkspace(GitWorkspace $git): void
+    {
+        $this->git = $git;
+    }
+
+    public function setGlobalTestCommand(string $cmd): void
+    {
+        $this->globalTestCommand = $cmd;
+    }
+
+    public function setMergeWorkDir(string $dir): void
+    {
+        $this->mergeWorkDir = $dir;
+    }
+
+    public function setTaskDispatcher(TaskDispatcher $dispatcher): void
+    {
+        $this->dispatcher = $dispatcher;
+    }
+
     public function createTask(
         string $title,
         string $description = '',
@@ -44,6 +70,7 @@ class TaskQueue
         string $workInstructions = '',
         string $acceptanceCriteria = '',
         ?TaskStatus $status = null,
+        string $testCommand = '',
     ): TaskModel {
         $ts = $this->clock->tick();
         $task = TaskModel::create(
@@ -59,6 +86,7 @@ class TaskQueue
             workInstructions: $workInstructions,
             acceptanceCriteria: $acceptanceCriteria,
             status: $status,
+            testCommand: $testCommand,
         );
 
         return $this->gossip->createTask($task);
@@ -116,6 +144,8 @@ class TaskQueue
             reviewFeedback: $task->reviewFeedback,
             archived: $task->archived,
             gitBranch: $task->gitBranch,
+            mergeAttempts: $task->mergeAttempts,
+            testCommand: $task->testCommand,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::InProgress->value, $progress, $ts);
@@ -157,6 +187,8 @@ class TaskQueue
             reviewFeedback: $task->reviewFeedback,
             archived: $task->archived,
             gitBranch: $task->gitBranch,
+            mergeAttempts: $task->mergeAttempts,
+            testCommand: $task->testCommand,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::WaitingInput->value, $question, $ts);
@@ -200,6 +232,8 @@ class TaskQueue
                 reviewFeedback: $task->reviewFeedback,
                 archived: $task->archived,
                 gitBranch: $task->gitBranch,
+                mergeAttempts: $task->mergeAttempts,
+                testCommand: $task->testCommand,
             );
             $this->db->updateTask($updated);
             $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::PendingReview->value, null, $ts);
@@ -238,6 +272,8 @@ class TaskQueue
             reviewFeedback: $task->reviewFeedback,
             archived: $task->archived,
             gitBranch: $task->gitBranch,
+            mergeAttempts: $task->mergeAttempts,
+            testCommand: $task->testCommand,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskComplete($taskId, $agentId, $result, $ts);
@@ -292,6 +328,8 @@ class TaskQueue
                 reviewFeedback: $reviewResult->feedback,
                 archived: $task->archived,
                 gitBranch: $task->gitBranch,
+                mergeAttempts: $task->mergeAttempts,
+                testCommand: $task->testCommand,
             );
             $this->db->updateTask($updated);
             $this->gossip->gossipTaskComplete($taskId, $task->assignedTo ?? '', $task->result, $ts);
@@ -353,6 +391,8 @@ class TaskQueue
                 reviewFeedback: $feedbackHistory,
                 archived: $task->archived,
                 gitBranch: $task->gitBranch,
+                mergeAttempts: $task->mergeAttempts,
+                testCommand: $task->testCommand,
             );
             $this->db->updateTask($updated);
             $this->gossip->gossipTaskUpdate($taskId, '', TaskStatus::Pending->value, null, $ts);
@@ -395,6 +435,8 @@ class TaskQueue
             reviewFeedback: $task->reviewFeedback,
             archived: $task->archived,
             gitBranch: $task->gitBranch,
+            mergeAttempts: $task->mergeAttempts,
+            testCommand: $task->testCommand,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskFail($taskId, $agentId, $error, $ts);
@@ -402,6 +444,7 @@ class TaskQueue
 
     /**
      * Complete the parent task if all its subtasks are done.
+     * If git branches exist, runs merge-test-retry loop first.
      */
     private function tryCompleteParent(string $parentId): void
     {
@@ -416,56 +459,317 @@ class TaskQueue
             }
         }
 
-        // All subtasks are terminal — complete the parent
+        // All subtasks are terminal
         $parent = $this->db->getTask($parentId);
         if (!$parent || $parent->status->isTerminal()) {
             return;
         }
 
-        $completedCount = 0;
+        $completedSubs = [];
         $failedCount = 0;
         foreach ($subtasks as $sub) {
             if ($sub->status === TaskStatus::Completed) {
-                $completedCount++;
+                $completedSubs[] = $sub;
             } else {
                 $failedCount++;
             }
         }
 
+        // If ALL subtasks failed, fail the parent immediately
+        if (empty($completedSubs)) {
+            $ts = $this->clock->tick();
+            $now = gmdate('Y-m-d\TH:i:s\Z');
+            $updated = $parent->withStatus(TaskStatus::Failed, $ts);
+            $failedParent = new TaskModel(
+                id: $updated->id, title: $updated->title, description: $updated->description,
+                status: $updated->status, priority: $updated->priority,
+                requiredCapabilities: $updated->requiredCapabilities, createdBy: $updated->createdBy,
+                assignedTo: $updated->assignedTo, assignedNode: $updated->assignedNode,
+                result: null, error: "All {$failedCount} subtask(s) failed", progress: null,
+                projectPath: $updated->projectPath, context: $updated->context,
+                lamportTs: $updated->lamportTs, claimedAt: $updated->claimedAt,
+                completedAt: $now, createdAt: $updated->createdAt, updatedAt: $now,
+                parentId: $updated->parentId, workInstructions: $updated->workInstructions,
+                acceptanceCriteria: $updated->acceptanceCriteria, reviewStatus: $updated->reviewStatus,
+                reviewFeedback: $updated->reviewFeedback, archived: $updated->archived,
+                gitBranch: $updated->gitBranch, mergeAttempts: $updated->mergeAttempts,
+                testCommand: $updated->testCommand,
+            );
+            $this->db->updateTask($failedParent);
+            $this->gossip->gossipTaskFail($parentId, '', "All {$failedCount} subtask(s) failed", $failedParent->lamportTs);
+            return;
+        }
+
+        // Collect git branches from completed subtasks
+        $branches = [];
+        foreach ($completedSubs as $sub) {
+            if ($sub->gitBranch !== '') {
+                $branches[] = $sub->gitBranch;
+            }
+        }
+
+        $baseDir = getcwd() . '/workbench/.base';
+
+        // If no git branches or no git workspace configured, complete immediately (backward compatible)
+        if (empty($branches) || $this->git === null || !is_dir($baseDir . '/.git')) {
+            $this->completeParentDirectly($parent, count($completedSubs), $failedCount);
+            return;
+        }
+
+        // Set parent status to Merging
+        $ts = $this->clock->tick();
+        $mergingParent = $parent->withStatus(TaskStatus::Merging, $ts);
+        $this->db->updateTask($mergingParent);
+        $this->gossip->gossipTaskUpdate($parentId, '', TaskStatus::Merging->value, 'Merging subtask branches...', $ts);
+
+        // Spawn merge-test coroutine
+        Coroutine::create(function () use ($parentId, $branches, $completedSubs, $baseDir) {
+            $this->mergeAndTest($parentId, $branches, $completedSubs, $baseDir);
+        });
+    }
+
+    /**
+     * Merge-test-retry loop: merge subtask branches, run tests, retry on failure.
+     */
+    private function mergeAndTest(string $parentId, array $branches, array $completedSubs, string $baseDir): void
+    {
+        $parent = $this->db->getTask($parentId);
+        if (!$parent || !$this->git) {
+            return;
+        }
+
+        // Increment merge attempts
+        $attempts = $this->db->incrementMergeAttempts($parentId);
+
+        if ($attempts > self::MAX_REJECTIONS) {
+            $this->failParent($parentId, "Max merge attempts ({$attempts}) exceeded");
+            return;
+        }
+
+        $mergeWorkDir = $this->mergeWorkDir ?: (getcwd() . '/workbench/.merge');
+        $integrationBranch = 'integrate/' . substr($parentId, 0, 8);
+
+        $this->log("Merge attempt {$attempts}/{self::MAX_REJECTIONS} for parent {$parentId}");
+
+        // 1. Create/reset merge worktree
+        $created = $this->git->createMergeWorktree($baseDir, $mergeWorkDir, $integrationBranch);
+        if (!$created) {
+            $this->failParent($parentId, 'Failed to create merge worktree');
+            return;
+        }
+
+        // 2. Merge all subtask branches
+        $mergeResult = $this->git->mergeSubtaskBranches($mergeWorkDir, $branches, $baseDir);
+
+        if (!$mergeResult->success) {
+            $this->handleMergeFailure($parent, $completedSubs, $mergeResult);
+            return;
+        }
+
+        // 3. Run tests
+        $testCommand = $parent->testCommand ?: $this->globalTestCommand;
+        $testResult = $this->git->runTests($mergeWorkDir, $testCommand);
+
+        if (!$testResult->success) {
+            $this->handleTestFailure($parent, $completedSubs, $testResult);
+            return;
+        }
+
+        // 4. All passed — push integration branch and create PR
+        $this->log("Merge+test passed for parent {$parentId}");
+
+        $pushed = $this->git->commitAndPush($mergeWorkDir, "Integration: {$parent->title}", $integrationBranch);
+        // Even if push only has existing commits, try creating PR
+        if (!$pushed) {
+            // Push the branch even if no new commits (merge commits already exist)
+            $output = [];
+            exec(sprintf(
+                'cd %s && git push -u origin %s 2>&1',
+                escapeshellarg($mergeWorkDir),
+                escapeshellarg($integrationBranch),
+            ), $output, $code);
+        }
+
+        $prUrl = $this->git->createPullRequest(
+            $mergeWorkDir,
+            $parent->title,
+            "## Integration PR\n\n{$parent->description}\n\n### Merged branches\n" .
+            implode("\n", array_map(fn($b) => "- `{$b}`", $branches)),
+        );
+
+        $result = "All " . count($completedSubs) . " subtask(s) merged and tests passed";
+        if ($prUrl) {
+            $result .= "\n\nPR: {$prUrl}";
+        }
+
+        // Complete parent
+        $ts = $this->clock->tick();
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $updated = new TaskModel(
+            id: $parent->id, title: $parent->title, description: $parent->description,
+            status: TaskStatus::Completed, priority: $parent->priority,
+            requiredCapabilities: $parent->requiredCapabilities, createdBy: $parent->createdBy,
+            assignedTo: $parent->assignedTo, assignedNode: $parent->assignedNode,
+            result: $result, error: null, progress: null,
+            projectPath: $parent->projectPath, context: $parent->context,
+            lamportTs: $ts, claimedAt: $parent->claimedAt, completedAt: $now,
+            createdAt: $parent->createdAt, updatedAt: $now,
+            parentId: $parent->parentId, workInstructions: $parent->workInstructions,
+            acceptanceCriteria: $parent->acceptanceCriteria, reviewStatus: $parent->reviewStatus,
+            reviewFeedback: $parent->reviewFeedback, archived: $parent->archived,
+            gitBranch: $integrationBranch, mergeAttempts: $parent->mergeAttempts,
+            testCommand: $parent->testCommand,
+        );
+        $this->db->updateTask($updated);
+        $this->gossip->gossipTaskComplete($parentId, '', $result, $ts);
+    }
+
+    /**
+     * Handle merge failure: requeue only the conflicting subtasks.
+     */
+    private function handleMergeFailure(TaskModel $parent, array $completedSubs, \VoidLux\Swarm\Git\MergeResult $mergeResult): void
+    {
+        $this->log("Merge conflict for parent {$parent->id}: " . implode(', ', $mergeResult->conflictingBranches));
+
+        $conflictOutput = substr($mergeResult->conflictOutput, 0, 2000);
+        $ts = $this->clock->tick();
+
+        // Requeue only subtasks whose branches conflicted
+        foreach ($completedSubs as $sub) {
+            if ($sub->gitBranch !== '' && in_array($sub->gitBranch, $mergeResult->conflictingBranches, true)) {
+                $newInstructions = $sub->workInstructions;
+                if ($newInstructions) {
+                    $newInstructions .= "\n\n";
+                }
+                $newInstructions .= "## Merge Conflict (attempt {$parent->mergeAttempts})\n"
+                    . "Your branch `{$sub->gitBranch}` conflicted during integration merge.\n"
+                    . "Please resolve conflicts with other subtask branches and retry.\n\n"
+                    . "Conflict output:\n```\n{$conflictOutput}\n```";
+
+                $this->requeueCompletedSubtask($sub, $newInstructions, $ts);
+            }
+        }
+
+        // Reset parent to InProgress
+        $updated = $parent->withStatus(TaskStatus::InProgress, $ts);
+        $this->db->updateTask($updated);
+        $this->gossip->gossipTaskUpdate($parent->id, '', TaskStatus::InProgress->value, 'Merge conflict — requeued conflicting subtasks', $ts);
+        $this->dispatcher?->triggerDispatch();
+    }
+
+    /**
+     * Handle test failure: requeue ALL completed subtasks with test output.
+     */
+    private function handleTestFailure(TaskModel $parent, array $completedSubs, \VoidLux\Swarm\Git\TestResult $testResult): void
+    {
+        $this->log("Tests failed for parent {$parent->id} (exit code {$testResult->exitCode})");
+
+        $testOutput = substr($testResult->output, 0, 2000);
+        $ts = $this->clock->tick();
+
+        // Requeue ALL completed subtasks with test failure context
+        foreach ($completedSubs as $sub) {
+            $newInstructions = $sub->workInstructions;
+            if ($newInstructions) {
+                $newInstructions .= "\n\n";
+            }
+            $newInstructions .= "## Test Failure (attempt {$parent->mergeAttempts})\n"
+                . "Integration tests failed after merging all subtask branches.\n"
+                . "Please review and fix your changes to ensure tests pass.\n\n"
+                . "Test output:\n```\n{$testOutput}\n```";
+
+            $this->requeueCompletedSubtask($sub, $newInstructions, $ts);
+        }
+
+        // Reset parent to InProgress
+        $updated = $parent->withStatus(TaskStatus::InProgress, $ts);
+        $this->db->updateTask($updated);
+        $this->gossip->gossipTaskUpdate($parent->id, '', TaskStatus::InProgress->value, 'Tests failed — requeued all subtasks', $ts);
+        $this->dispatcher?->triggerDispatch();
+    }
+
+    /**
+     * Requeue a completed subtask back to pending with updated instructions.
+     */
+    private function requeueCompletedSubtask(TaskModel $sub, string $newInstructions, int $ts): void
+    {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $updated = new TaskModel(
+            id: $sub->id, title: $sub->title, description: $sub->description,
+            status: TaskStatus::Pending, priority: $sub->priority,
+            requiredCapabilities: $sub->requiredCapabilities, createdBy: $sub->createdBy,
+            assignedTo: null, assignedNode: null,
+            result: null, error: null, progress: null,
+            projectPath: $sub->projectPath, context: $sub->context,
+            lamportTs: $ts, claimedAt: null, completedAt: null,
+            createdAt: $sub->createdAt, updatedAt: $now,
+            parentId: $sub->parentId, workInstructions: $newInstructions,
+            acceptanceCriteria: $sub->acceptanceCriteria, reviewStatus: $sub->reviewStatus,
+            reviewFeedback: $sub->reviewFeedback, archived: $sub->archived,
+            gitBranch: $sub->gitBranch, mergeAttempts: $sub->mergeAttempts,
+            testCommand: $sub->testCommand,
+        );
+        $this->db->updateTask($updated);
+        $this->gossip->gossipTaskUpdate($sub->id, '', TaskStatus::Pending->value, null, $ts);
+    }
+
+    /**
+     * Fail a parent task.
+     */
+    private function failParent(string $parentId, string $error): void
+    {
+        $ts = $this->clock->tick();
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $parent = $this->db->getTask($parentId);
+        if (!$parent || $parent->status->isTerminal()) {
+            return;
+        }
+
+        $updated = new TaskModel(
+            id: $parent->id, title: $parent->title, description: $parent->description,
+            status: TaskStatus::Failed, priority: $parent->priority,
+            requiredCapabilities: $parent->requiredCapabilities, createdBy: $parent->createdBy,
+            assignedTo: $parent->assignedTo, assignedNode: $parent->assignedNode,
+            result: null, error: $error, progress: null,
+            projectPath: $parent->projectPath, context: $parent->context,
+            lamportTs: $ts, claimedAt: $parent->claimedAt, completedAt: $now,
+            createdAt: $parent->createdAt, updatedAt: $now,
+            parentId: $parent->parentId, workInstructions: $parent->workInstructions,
+            acceptanceCriteria: $parent->acceptanceCriteria, reviewStatus: $parent->reviewStatus,
+            reviewFeedback: $parent->reviewFeedback, archived: $parent->archived,
+            gitBranch: $parent->gitBranch, mergeAttempts: $parent->mergeAttempts,
+            testCommand: $parent->testCommand,
+        );
+        $this->db->updateTask($updated);
+        $this->gossip->gossipTaskFail($parentId, '', $error, $ts);
+    }
+
+    /**
+     * Complete parent directly without merge (backward compatible for non-git projects).
+     */
+    private function completeParentDirectly(TaskModel $parent, int $completedCount, int $failedCount): void
+    {
         $ts = $this->clock->tick();
         $now = gmdate('Y-m-d\TH:i:s\Z');
         $result = "All {$completedCount} subtask(s) completed" . ($failedCount ? ", {$failedCount} failed" : '');
 
         $updated = new TaskModel(
-            id: $parent->id,
-            title: $parent->title,
-            description: $parent->description,
-            status: TaskStatus::Completed,
-            priority: $parent->priority,
-            requiredCapabilities: $parent->requiredCapabilities,
-            createdBy: $parent->createdBy,
-            assignedTo: $parent->assignedTo,
-            assignedNode: $parent->assignedNode,
-            result: $result,
-            error: null,
-            progress: null,
-            projectPath: $parent->projectPath,
-            context: $parent->context,
-            lamportTs: $ts,
-            claimedAt: $parent->claimedAt,
-            completedAt: $now,
-            createdAt: $parent->createdAt,
-            updatedAt: $now,
-            parentId: $parent->parentId,
-            workInstructions: $parent->workInstructions,
-            acceptanceCriteria: $parent->acceptanceCriteria,
-            reviewStatus: $parent->reviewStatus,
-            reviewFeedback: $parent->reviewFeedback,
-            archived: $parent->archived,
-            gitBranch: $parent->gitBranch,
+            id: $parent->id, title: $parent->title, description: $parent->description,
+            status: TaskStatus::Completed, priority: $parent->priority,
+            requiredCapabilities: $parent->requiredCapabilities, createdBy: $parent->createdBy,
+            assignedTo: $parent->assignedTo, assignedNode: $parent->assignedNode,
+            result: $result, error: null, progress: null,
+            projectPath: $parent->projectPath, context: $parent->context,
+            lamportTs: $ts, claimedAt: $parent->claimedAt, completedAt: $now,
+            createdAt: $parent->createdAt, updatedAt: $now,
+            parentId: $parent->parentId, workInstructions: $parent->workInstructions,
+            acceptanceCriteria: $parent->acceptanceCriteria, reviewStatus: $parent->reviewStatus,
+            reviewFeedback: $parent->reviewFeedback, archived: $parent->archived,
+            gitBranch: $parent->gitBranch, mergeAttempts: $parent->mergeAttempts,
+            testCommand: $parent->testCommand,
         );
         $this->db->updateTask($updated);
-        $this->gossip->gossipTaskComplete($parentId, '', $result, $ts);
+        $this->gossip->gossipTaskComplete($parent->id, '', $result, $ts);
     }
 
     /**
@@ -558,5 +862,11 @@ class TaskQueue
         }
 
         return $terminalIds;
+    }
+
+    private function log(string $message): void
+    {
+        $time = date('H:i:s');
+        echo "[{$time}][merge] {$message}\n";
     }
 }

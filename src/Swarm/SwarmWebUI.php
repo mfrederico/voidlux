@@ -105,6 +105,7 @@ body {
 .status-failed { background: #3a1a1a; color: #ff6666; }
 .status-cancelled { background: #333; color: #888; }
 .status-waiting_input { background: #3a2a1a; color: #ffaa33; }
+.status-merging { background: #2a2a3a; color: #aa88ff; }
 
 .status-idle { background: #1a2a1a; color: #88cc88; }
 .status-busy { background: #1a2a3a; color: #66aaff; }
@@ -220,6 +221,7 @@ body {
             <div class="stat"><div class="stat-value" id="stat-planning">0</div><div class="stat-label">Planning</div></div>
             <div class="stat"><div class="stat-value" id="stat-active">0</div><div class="stat-label">Active</div></div>
             <div class="stat"><div class="stat-value" id="stat-review">0</div><div class="stat-label">Review</div></div>
+            <div class="stat"><div class="stat-value" id="stat-merging">0</div><div class="stat-label">Merging</div></div>
             <div class="stat"><div class="stat-value" id="stat-completed">0</div><div class="stat-label">Completed</div></div>
             <div class="stat"><div class="stat-value" id="stat-failed">0</div><div class="stat-label">Failed</div></div>
             <div class="stat"><div class="stat-value" id="stat-agents">0</div><div class="stat-label">Agents</div></div>
@@ -342,7 +344,7 @@ function statusBadge(status) {
 function renderTask(t, isSubtask) {
     const agent = state.agents[t.assigned_to];
     const agentName = t.assigned_to ? (agent?.name || t.assigned_to.substring(0,8)) : null;
-    const isActive = t.status === 'claimed' || t.status === 'in_progress' || t.status === 'waiting_input';
+    const isActive = t.status === 'claimed' || t.status === 'in_progress' || t.status === 'waiting_input' || t.status === 'merging';
     const children = getTaskChildren(t.id);
     const cardClass = isSubtask ? 'card subtask-card' : (t.parent_id === null && children.length ? 'card parent-card' : 'card');
     let html = '<div class="'+cardClass+'" id="task-'+t.id+'">';
@@ -350,6 +352,10 @@ function renderTask(t, isSubtask) {
     if (t.status === 'planning') {
         html += '<div class="card-title">'+escapeHtml(t.title)+' '+statusBadge(t.status)+' <span class="planning-spinner" style="font-size:0.8rem;">&#9881;</span></div>';
         html += '<div style="font-size:0.85rem;color:#bb88ff;margin:4px 0;">Emperor is analyzing and decomposing this request...</div>';
+    } else if (t.status === 'merging') {
+        html += '<div class="card-title">'+escapeHtml(t.title)+' '+statusBadge(t.status)+' <span class="planning-spinner" style="font-size:0.8rem;">&#9881;</span></div>';
+        const attempt = t.merge_attempts || 0;
+        html += '<div style="font-size:0.85rem;color:#aa88ff;margin:4px 0;">Merging subtask branches and running tests...' + (attempt > 0 ? ' (attempt '+attempt+'/3)' : '') + '</div>';
     } else {
         html += '<div class="card-title">'+escapeHtml(t.title)+' '+statusBadge(t.status)+'</div>';
     }
@@ -487,7 +493,7 @@ function restoreFocusState(fs) {
 // ---- Render everything from client-side state ----
 function computeStats() {
     const tasks = Object.values(state.tasks).filter(t => !t.archived);
-    let pending=0, planning=0, claimed=0, in_progress=0, waiting_input=0, pending_review=0, completed=0, failed=0;
+    let pending=0, planning=0, claimed=0, in_progress=0, waiting_input=0, pending_review=0, merging=0, completed=0, failed=0;
     tasks.forEach(t => {
         switch(t.status) {
             case 'pending': pending++; break;
@@ -496,6 +502,7 @@ function computeStats() {
             case 'in_progress': in_progress++; break;
             case 'waiting_input': waiting_input++; break;
             case 'pending_review': pending_review++; break;
+            case 'merging': merging++; break;
             case 'completed': completed++; break;
             case 'failed': failed++; break;
         }
@@ -507,6 +514,7 @@ function computeStats() {
     document.getElementById('stat-planning').textContent = planning;
     document.getElementById('stat-active').textContent = claimed + in_progress + waiting_input;
     document.getElementById('stat-review').textContent = pending_review;
+    document.getElementById('stat-merging').textContent = merging;
     document.getElementById('stat-completed').textContent = completed;
     document.getElementById('stat-failed').textContent = failed;
     document.getElementById('stat-agents').textContent = agentCount;

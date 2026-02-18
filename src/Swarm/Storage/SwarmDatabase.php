@@ -116,6 +116,14 @@ class SwarmDatabase
             $this->pdo->exec("ALTER TABLE tasks ADD COLUMN git_branch TEXT NOT NULL DEFAULT ''");
         }
 
+        // Add merge-test-retry columns
+        if (!in_array('merge_attempts', $existing, true)) {
+            $this->pdo->exec("ALTER TABLE tasks ADD COLUMN merge_attempts INTEGER NOT NULL DEFAULT 0");
+        }
+        if (!in_array('test_command', $existing, true)) {
+            $this->pdo->exec("ALTER TABLE tasks ADD COLUMN test_command TEXT NOT NULL DEFAULT ''");
+        }
+
         // Add model column to agents table
         $agentColumns = $this->pdo->query("PRAGMA table_info(agents)")->fetchAll();
         $agentExisting = array_column($agentColumns, 'name');
@@ -134,13 +142,13 @@ class SwarmDatabase
                  assigned_to, assigned_node, result, error, progress, project_path, context,
                  lamport_ts, claimed_at, completed_at, created_at, updated_at,
                  parent_id, work_instructions, acceptance_criteria, review_status, review_feedback,
-                 archived, git_branch)
+                 archived, git_branch, merge_attempts, test_command)
             VALUES
                 (:id, :title, :description, :status, :priority, :required_capabilities, :created_by,
                  :assigned_to, :assigned_node, :result, :error, :progress, :project_path, :context,
                  :lamport_ts, :claimed_at, :completed_at, :created_at, :updated_at,
                  :parent_id, :work_instructions, :acceptance_criteria, :review_status, :review_feedback,
-                 :archived, :git_branch)
+                 :archived, :git_branch, :merge_attempts, :test_command)
         ');
 
         return $stmt->execute([
@@ -170,6 +178,8 @@ class SwarmDatabase
             ':review_feedback' => $task->reviewFeedback,
             ':archived' => $task->archived ? 1 : 0,
             ':git_branch' => $task->gitBranch,
+            ':merge_attempts' => $task->mergeAttempts,
+            ':test_command' => $task->testCommand,
         ]);
     }
 
@@ -187,7 +197,8 @@ class SwarmDatabase
                 parent_id = :parent_id, work_instructions = :work_instructions,
                 acceptance_criteria = :acceptance_criteria, review_status = :review_status,
                 review_feedback = :review_feedback, archived = :archived,
-                git_branch = :git_branch
+                git_branch = :git_branch, merge_attempts = :merge_attempts,
+                test_command = :test_command
             WHERE id = :id
         ');
 
@@ -216,6 +227,8 @@ class SwarmDatabase
             ':review_feedback' => $task->reviewFeedback,
             ':archived' => $task->archived ? 1 : 0,
             ':git_branch' => $task->gitBranch,
+            ':merge_attempts' => $task->mergeAttempts,
+            ':test_command' => $task->testCommand,
         ]);
     }
 
@@ -430,6 +443,16 @@ class SwarmDatabase
         $stmt = $this->pdo->prepare('UPDATE tasks SET git_branch = :branch, updated_at = :updated_at WHERE id = :id');
         $stmt->execute([':id' => $taskId, ':branch' => $branch, ':updated_at' => $now]);
         return $stmt->rowCount() > 0;
+    }
+
+    public function incrementMergeAttempts(string $taskId): int
+    {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $this->pdo->prepare('UPDATE tasks SET merge_attempts = merge_attempts + 1, updated_at = :updated_at WHERE id = :id')
+            ->execute([':id' => $taskId, ':updated_at' => $now]);
+        $stmt = $this->pdo->prepare('SELECT merge_attempts FROM tasks WHERE id = :id');
+        $stmt->execute([':id' => $taskId]);
+        return (int) $stmt->fetchColumn();
     }
 
     // --- Agent operations ---

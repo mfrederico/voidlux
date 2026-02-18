@@ -33,6 +33,8 @@ class TaskModel
         public readonly string $reviewFeedback = '',
         public readonly bool $archived = false,
         public readonly string $gitBranch = '',
+        public readonly int $mergeAttempts = 0,
+        public readonly string $testCommand = '',
     ) {}
 
     public static function create(
@@ -48,6 +50,7 @@ class TaskModel
         string $workInstructions = '',
         string $acceptanceCriteria = '',
         ?TaskStatus $status = null,
+        string $testCommand = '',
     ): self {
         $now = gmdate('Y-m-d\TH:i:s\Z');
         return new self(
@@ -73,6 +76,7 @@ class TaskModel
             parentId: $parentId,
             workInstructions: $workInstructions,
             acceptanceCriteria: $acceptanceCriteria,
+            testCommand: $testCommand,
         );
     }
 
@@ -107,6 +111,8 @@ class TaskModel
             reviewFeedback: $data['review_feedback'] ?? '',
             archived: !empty($data['archived']),
             gitBranch: $data['git_branch'] ?? '',
+            mergeAttempts: (int) ($data['merge_attempts'] ?? 0),
+            testCommand: $data['test_command'] ?? '',
         );
     }
 
@@ -139,6 +145,8 @@ class TaskModel
             'review_feedback' => $this->reviewFeedback,
             'archived' => $this->archived,
             'git_branch' => $this->gitBranch,
+            'merge_attempts' => $this->mergeAttempts,
+            'test_command' => $this->testCommand,
         ];
     }
 
@@ -171,6 +179,8 @@ class TaskModel
             reviewFeedback: $this->reviewFeedback,
             archived: $this->archived,
             gitBranch: $this->gitBranch,
+            mergeAttempts: $this->mergeAttempts,
+            testCommand: $this->testCommand,
         );
     }
 

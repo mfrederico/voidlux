@@ -202,24 +202,13 @@ class McpHandler
 
         $agentId = $task->assignedTo ?? '';
 
-        // Git: commit, push, and create PR if workspace is a git repo
-        $prUrl = null;
+        // Git: commit and push branch (no PR — integration PR created by merge loop)
         if ($agentId) {
             $agent = $this->db->getAgent($agentId);
             if ($agent && $agent->projectPath && $this->git->isGitRepo($agent->projectPath)) {
                 $branchName = $task->gitBranch ?: ('task/' . substr($task->id, 0, 8));
                 $commitMsg = "Task: {$task->title}\n\n{$summary}";
-                $pushed = $this->git->commitAndPush($agent->projectPath, $commitMsg, $branchName);
-                if ($pushed) {
-                    $prUrl = $this->git->createPullRequest(
-                        $agent->projectPath,
-                        $task->title,
-                        "## Task\n{$task->description}\n\n## Summary\n{$summary}",
-                    );
-                    if ($prUrl) {
-                        $summary .= "\n\nPR: {$prUrl}";
-                    }
-                }
+                $this->git->commitAndPush($agent->projectPath, $commitMsg, $branchName);
             }
         }
 
@@ -235,12 +224,7 @@ class McpHandler
         // Trigger dispatch so idle agent gets next pending task immediately
         $this->taskDispatcher?->triggerDispatch();
 
-        $result = ['status' => 'completed', 'task_id' => $taskId];
-        if ($prUrl) {
-            $result['pr_url'] = $prUrl;
-        }
-
-        return $this->toolResult($result);
+        return $this->toolResult(['status' => 'completed', 'task_id' => $taskId]);
     }
 
     private function callTaskProgress(array $args): array

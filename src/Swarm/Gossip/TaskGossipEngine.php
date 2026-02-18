@@ -161,6 +161,8 @@ class TaskGossipEngine
                 reviewFeedback: $task->reviewFeedback,
                 archived: $task->archived,
                 gitBranch: $task->gitBranch,
+                mergeAttempts: $task->mergeAttempts,
+                testCommand: $task->testCommand,
             );
             $this->db->updateTask($updated);
         }
@@ -223,6 +225,8 @@ class TaskGossipEngine
                 reviewFeedback: $task->reviewFeedback,
                 archived: $task->archived,
                 gitBranch: $task->gitBranch,
+                mergeAttempts: $task->mergeAttempts,
+                testCommand: $task->testCommand,
             );
             $this->db->updateTask($updated);
         }
@@ -284,6 +288,8 @@ class TaskGossipEngine
                 reviewFeedback: $task->reviewFeedback,
                 archived: $task->archived,
                 gitBranch: $task->gitBranch,
+                mergeAttempts: $task->mergeAttempts,
+                testCommand: $task->testCommand,
             );
             $this->db->updateTask($updated);
         }

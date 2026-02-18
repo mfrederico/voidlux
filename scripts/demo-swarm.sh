@@ -75,6 +75,10 @@ for i in 0 1 2; do
         [ -n "${ANTHROPIC_API_KEY:-}" ] && CMD="${CMD} --claude-api-key=${ANTHROPIC_API_KEY}"
     fi
 
+    # Test command for merge-test-retry loop
+    TEST_CMD="${VOIDLUX_TEST_COMMAND:-}"
+    [ -n "$TEST_CMD" ] && CMD="${CMD} --test-command=${TEST_CMD}"
+
     tmux split-window -t "$SESSION" -v
     tmux send-keys -t "$SESSION" "$CMD" C-m
     tmux select-layout -t "$SESSION" tiled
@@ -90,6 +94,7 @@ echo "  Worker 1:  http://localhost:${HTTP_PORTS[2]}"
 echo "  Worker 2:  http://localhost:${HTTP_PORTS[3]}"
 echo ""
 echo "LLM: ${VOIDLUX_LLM_PROVIDER:-ollama}/${VOIDLUX_LLM_MODEL:-qwen3-coder:30b}"
+[ -n "${VOIDLUX_TEST_COMMAND:-}" ] && echo "Test: ${VOIDLUX_TEST_COMMAND}"
 echo ""
 echo "Quick start:"
 echo "  # Register agents on worker 1:"
@@ -102,6 +107,9 @@ echo "    -d '{\"title\":\"Add hello world endpoint\",\"project_path\":\"/tmp/te
 echo ""
 echo "  # Override LLM model:"
 echo "  VOIDLUX_LLM_MODEL=llama3.1:8b bash scripts/demo-swarm.sh"
+echo ""
+echo "  # With merge-test-retry (runs php lint on merge):"
+echo "  VOIDLUX_TEST_COMMAND='find src -name \"*.php\" -exec php -l {} +' bash scripts/demo-swarm.sh"
 echo ""
 echo "Attach: tmux attach -t $SESSION"
 echo "Kill:   tmux kill-session -t $SESSION"

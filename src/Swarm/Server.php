@@ -23,6 +23,7 @@ use VoidLux\Swarm\Agent\AgentRegistry;
 use VoidLux\Swarm\Ai\LlmClient;
 use VoidLux\Swarm\Ai\TaskPlanner;
 use VoidLux\Swarm\Ai\TaskReviewer;
+use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Gossip\AgentAntiEntropy;
 use VoidLux\Swarm\Gossip\TaskAntiEntropy;
 use VoidLux\Swarm\Gossip\TaskGossipEngine;
@@ -75,6 +76,7 @@ class Server
         private readonly string $llmHost = '127.0.0.1',
         private readonly int $llmPort = 11434,
         private readonly string $claudeApiKey = '',
+        private readonly string $testCommand = '',
     ) {
         $this->startTime = microtime(true);
     }
@@ -145,6 +147,9 @@ class Server
         $this->taskAntiEntropy = new TaskAntiEntropy($this->mesh, $this->db, $this->taskGossip);
         $this->agentAntiEntropy = new AgentAntiEntropy($this->mesh, $this->db, $this->nodeId);
         $this->taskQueue = new TaskQueue($this->db, $this->taskGossip, $this->clock, $this->nodeId);
+        $this->taskQueue->setGitWorkspace(new GitWorkspace());
+        $this->taskQueue->setGlobalTestCommand($this->testCommand);
+        $this->taskQueue->setMergeWorkDir(getcwd() . '/workbench/.merge');
         $this->claimResolver = new ClaimResolver($this->db, $this->nodeId);
         $this->agentBridge = new AgentBridge($this->db);
         $this->agentRegistry = new AgentRegistry($this->db, $this->taskGossip, $this->clock, $this->nodeId);
@@ -623,6 +628,7 @@ class Server
         $this->controller->setTaskDispatcher($this->taskDispatcher);
         $this->controller->setTaskPlanner($planner);
         $this->taskQueue->setReviewer($reviewer);
+        $this->taskQueue->setTaskDispatcher($this->taskDispatcher);
         $this->agentMonitor->setTaskDispatcher($this->taskDispatcher);
         $this->taskDispatcher->setAgentBridge($this->agentBridge);
 
@@ -723,6 +729,9 @@ class Server
 
         if ($this->claudeApiKey !== '') {
             $cmd .= ' --claude-api-key=' . escapeshellarg($this->claudeApiKey);
+        }
+        if ($this->testCommand !== '') {
+            $cmd .= ' --test-command=' . escapeshellarg($this->testCommand);
         }
 
         $this->log("Spawning replacement worker: {$cmd}");

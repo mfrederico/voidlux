@@ -201,6 +201,7 @@ class EmperorController
                 'claimed' => $this->db->getTaskCount('claimed'),
                 'in_progress' => $this->db->getTaskCount('in_progress'),
                 'pending_review' => $this->db->getTaskCount('pending_review'),
+                'merging' => $this->db->getTaskCount('merging'),
                 'waiting_input' => $this->db->getTaskCount('waiting_input'),
                 'completed' => $this->db->getTaskCount('completed'),
                 'failed' => $this->db->getTaskCount('failed'),
@@ -238,6 +239,7 @@ class EmperorController
                 context: $body['context'] ?? '',
                 createdBy: $body['created_by'] ?? $this->nodeId,
                 status: TaskStatus::Planning,
+                testCommand: $body['test_command'] ?? '',
             );
 
             $response->status(201);
@@ -300,6 +302,7 @@ class EmperorController
             projectPath: $body['project_path'] ?? '',
             context: $body['context'] ?? '',
             createdBy: $body['created_by'] ?? $this->nodeId,
+            testCommand: $body['test_command'] ?? '',
         );
 
         $this->taskDispatcher?->triggerDispatch();
@@ -497,9 +500,17 @@ class EmperorController
         $agents = $this->agentRegistry->getLocalAgents();
         $killed = [];
         $deregisteredIds = [];
+        $git = new GitWorkspace();
+        $baseDir = getcwd() . '/workbench/.base';
 
         foreach ($agents as $agent) {
             $sessionKilled = $this->bridge->killSession($agent);
+
+            // Clean up worktree if it exists
+            if ($agent->projectPath && $git->isWorktree($agent->projectPath) && is_dir($baseDir . '/.git')) {
+                $git->removeWorktree($baseDir, $agent->projectPath);
+            }
+
             $this->agentRegistry->deregister($agent->id);
             $deregisteredIds[] = $agent->id;
             $killed[] = [
@@ -602,13 +613,17 @@ class EmperorController
         $suffix = substr(bin2hex(random_bytes(4)), 0, 8);
         $sessionName = 'vl-' . $namePrefix . '-' . $suffix;
 
-        // If project_path is a git URL, clone into per-agent directory
+        // If project_path is a git URL, use shared base repo + worktrees
         $git = new GitWorkspace();
         if ($git->isGitUrl($projectPath)) {
-            $cloneDir = getcwd() . '/workbench/' . $agentName;
-            $cloned = $git->cloneRepo($projectPath, $cloneDir);
-            if ($cloned) {
-                $projectPath = $cloneDir;
+            $baseDir = getcwd() . '/workbench/.base';
+            $worktreePath = getcwd() . '/workbench/' . $agentName;
+            $ensured = $git->ensureBaseRepo($projectPath, $baseDir);
+            if ($ensured) {
+                $added = $git->addWorktree($baseDir, $worktreePath, 'worktree/' . $agentName);
+                if ($added) {
+                    $projectPath = $worktreePath;
+                }
             }
         }
 

@@ -14,6 +14,7 @@ enum TaskStatus: string
     case Completed = 'completed';
     case Failed = 'failed';
     case WaitingInput = 'waiting_input';
+    case Merging = 'merging';
     case Cancelled = 'cancelled';
 
     public function isTerminal(): bool
@@ -27,7 +28,7 @@ enum TaskStatus: string
     public function isActive(): bool
     {
         return match ($this) {
-            self::Planning, self::Claimed, self::InProgress, self::PendingReview, self::WaitingInput => true,
+            self::Planning, self::Claimed, self::InProgress, self::PendingReview, self::WaitingInput, self::Merging => true,
             default => false,
         };
     }

@@ -163,6 +163,7 @@ function runSwarm(array $options): void
     $llmHost = $options['llm-host'] ?? '127.0.0.1';
     $llmPort = (int) ($options['llm-port'] ?? 11434);
     $claudeApiKey = $options['claude-api-key'] ?? '';
+    $testCommand = $options['test-command'] ?? '';
 
     $server = new \VoidLux\Swarm\Server(
         httpHost: '0.0.0.0',
@@ -177,6 +178,7 @@ function runSwarm(array $options): void
         llmHost: $llmHost,
         llmPort: $llmPort,
         claudeApiKey: $claudeApiKey,
+        testCommand: $testCommand,
     );
 
     $server->run();
@@ -269,6 +271,7 @@ Swarm Options:
   --llm-host=HOST         Ollama host (default: 127.0.0.1)
   --llm-port=PORT         Ollama port (default: 11434)
   --claude-api-key=KEY    Claude API key (for claude provider)
+  --test-command=CMD      Test command to run after merging subtask branches
 
 Seneschal Options:
   --http-port=PORT        Proxy listen port (default: 9090)
