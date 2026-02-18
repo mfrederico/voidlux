@@ -29,6 +29,7 @@ use VoidLux\Swarm\Gossip\TaskGossipEngine;
 use VoidLux\Swarm\Leadership\LeaderElection;
 use VoidLux\Swarm\Orchestrator\ClaimResolver;
 use VoidLux\Swarm\Orchestrator\EmperorController;
+use VoidLux\Swarm\Orchestrator\OverflowDelegator;
 use VoidLux\Swarm\Orchestrator\TaskDispatcher;
 use VoidLux\Swarm\Orchestrator\TaskQueue;
 use VoidLux\Swarm\Galactic\GalacticMarketplace;
@@ -60,6 +61,7 @@ class Server
     private EmperorController $controller;
     private LeaderElection $leaderElection;
     private ?TaskDispatcher $taskDispatcher = null;
+    private ?OverflowDelegator $overflowDelegator = null;
     private ?EmperorConnectionProtocol $connectionProtocol = null;
     private ?DhtStorage $dhtStorage = null;
     private ?DhtEngine $dhtEngine = null;
@@ -199,6 +201,7 @@ class Server
         $this->controller->onShutdown(function () {
             $this->log("Regicide: stopping all coroutine loops...");
             $this->running = false;
+            $this->overflowDelegator?->stop();
             $this->taskDispatcher?->stop();
             $this->agentMonitor->stop();
             $this->agentRegistry->stop();
@@ -792,9 +795,27 @@ class Server
         $this->agentMonitor->setTaskDispatcher($this->taskDispatcher);
         $this->taskDispatcher->setAgentBridge($this->agentBridge);
 
+        // Wire overflow delegation to the marketplace broker (Seneschal)
+        $brokerHost = '127.0.0.1';
+        $brokerPort = (int) (getenv('VOIDLUX_BROKER_PORT') ?: 9090);
+        $overflowDelegator = new OverflowDelegator(
+            $this->db,
+            $this->taskQueue,
+            $this->nodeId,
+            $brokerHost,
+            $brokerPort,
+        );
+        $this->overflowDelegator = $overflowDelegator;
+        $this->taskDispatcher->setOverflowDelegator($overflowDelegator);
+
         // Start dispatcher coroutine
         Coroutine::create(function () {
             $this->taskDispatcher->start();
+        });
+
+        // Start overflow delegator polling coroutine
+        Coroutine::create(function () use ($overflowDelegator) {
+            $overflowDelegator->start();
         });
 
         $this->log("Emperor AI initialized (LLM: {$this->llmProvider}/{$this->llmModel})");
