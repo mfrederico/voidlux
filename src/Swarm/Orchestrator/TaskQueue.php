@@ -257,13 +257,25 @@ class TaskQueue
         $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::WaitingInput->value, $question, $ts);
     }
 
-    public function complete(string $taskId, string $agentId, ?string $result = null): void
+    /**
+     * @return bool True if the completion was processed, false if rejected (terminal/not found).
+     */
+    public function complete(string $taskId, string $agentId, ?string $result = null): bool
     {
         $ts = $this->clock->tick();
 
         $task = $this->db->getTask($taskId);
-        if (!$task || $task->status->isTerminal() || !$task->status->isWorkableByAgent()) {
-            return;
+        if (!$task) {
+            $this->log("complete() rejected: task {$taskId} not found");
+            return false;
+        }
+        if ($task->status->isTerminal()) {
+            $this->log("complete() rejected: task {$taskId} already in terminal state '{$task->status->value}'");
+            return false;
+        }
+        if (!$task->status->isWorkableByAgent()) {
+            $this->log("complete() rejected: task {$taskId} not workable from state '{$task->status->value}'");
+            return false;
         }
 
         $allowedFromStatuses = [TaskStatus::Claimed, TaskStatus::InProgress, TaskStatus::WaitingInput];
@@ -304,7 +316,7 @@ class TaskQueue
             // Atomic CAS: only transition if still in agent-workable state
             $transitioned = $this->db->transitionTask($updated, $allowedFromStatuses);
             if (!$transitioned) {
-                return;
+                return false;
             }
             $this->gossip->gossipTaskUpdate($taskId, $agentId, TaskStatus::PendingReview->value, null, $ts);
 
@@ -312,7 +324,7 @@ class TaskQueue
             Coroutine::create(function () use ($taskId) {
                 $this->reviewTask($taskId);
             });
-            return;
+            return true;
         }
 
         $now = gmdate('Y-m-d\TH:i:s\Z');
@@ -350,7 +362,7 @@ class TaskQueue
         // Atomic CAS: only transition if still in agent-workable state
         $transitioned = $this->db->transitionTask($updated, $allowedFromStatuses);
         if (!$transitioned) {
-            return;
+            return false;
         }
         $this->gossip->gossipTaskComplete($taskId, $agentId, $result, $ts);
 
@@ -361,6 +373,8 @@ class TaskQueue
         if ($task->parentId) {
             $this->tryCompleteParent($task->parentId);
         }
+
+        return true;
     }
 
     /**
@@ -530,13 +544,25 @@ class TaskQueue
         }
     }
 
-    public function fail(string $taskId, string $agentId, ?string $error = null): void
+    /**
+     * @return bool True if the failure was processed, false if rejected (terminal/not found).
+     */
+    public function fail(string $taskId, string $agentId, ?string $error = null): bool
     {
         $ts = $this->clock->tick();
 
         $task = $this->db->getTask($taskId);
-        if (!$task || $task->status->isTerminal() || !$task->status->isWorkableByAgent()) {
-            return;
+        if (!$task) {
+            $this->log("fail() rejected: task {$taskId} not found");
+            return false;
+        }
+        if ($task->status->isTerminal()) {
+            $this->log("fail() rejected: task {$taskId} already in terminal state '{$task->status->value}'");
+            return false;
+        }
+        if (!$task->status->isWorkableByAgent()) {
+            $this->log("fail() rejected: task {$taskId} not workable from state '{$task->status->value}'");
+            return false;
         }
 
         $now = gmdate('Y-m-d\TH:i:s\Z');
@@ -578,9 +604,19 @@ class TaskQueue
             TaskStatus::WaitingInput,
         ]);
         if (!$transitioned) {
-            return;
+            return false;
         }
         $this->gossip->gossipTaskFail($taskId, $agentId, $error, $ts);
+
+        // Trigger dispatch to cascade-fail blocked dependents
+        $this->dispatcher?->triggerDispatch();
+
+        // Check if all subtasks are done — complete the parent
+        if ($task->parentId) {
+            $this->tryCompleteParent($task->parentId);
+        }
+
+        return true;
     }
 
     /**

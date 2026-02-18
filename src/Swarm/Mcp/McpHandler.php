@@ -10,6 +10,8 @@ use VoidLux\P2P\Protocol\LamportClock;
 use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Gossip\TaskGossipEngine;
 use VoidLux\Swarm\Model\MessageModel;
+use VoidLux\Swarm\Model\TaskModel;
+use VoidLux\Swarm\Model\TaskStatus;
 use VoidLux\Swarm\Offer\OfferPayEngine;
 use VoidLux\Swarm\Orchestrator\TaskDispatcher;
 use VoidLux\Swarm\Orchestrator\TaskQueue;
@@ -335,6 +337,9 @@ class McpHandler
             return $this->toolError("Task cannot be completed from state: {$task->status->value}. Task must be claimed or in_progress.");
         }
 
+        // Enhanced state validation: expected working states vs stale/unexpected
+        $stateWarning = $this->validateCompletionState($task);
+
         $agentId = $task->assignedTo ?? '';
 
         // Git: commit and push branch (no PR — integration PR created by merge loop)
@@ -347,7 +352,7 @@ class McpHandler
             }
         }
 
-        $this->taskQueue->complete($taskId, $agentId, $summary);
+        $completed = $this->taskQueue->complete($taskId, $agentId, $summary);
 
         if ($agentId) {
             $this->db->updateAgentStatus($agentId, 'idle', null);
@@ -359,7 +364,51 @@ class McpHandler
         // Trigger dispatch so idle agent gets next pending task immediately
         $this->taskDispatcher?->triggerDispatch();
 
-        return $this->toolResult(['status' => 'completed', 'task_id' => $taskId]);
+        $result = ['status' => 'completed', 'task_id' => $taskId];
+
+        if (!$completed) {
+            $result['warning'] = 'Task completion was not processed — task may have reached terminal state concurrently';
+            $this->log("task_complete for {$taskId}: TaskQueue rejected completion (concurrent terminal transition)");
+        } elseif ($stateWarning) {
+            $result['warning'] = $stateWarning;
+        }
+
+        return $this->toolResult($result);
+    }
+
+    /**
+     * Validate task state for completion. Returns a warning string if the state
+     * was unexpected, or null if the state is normal.
+     * Accepts completions for ANY non-terminal state to prevent data loss from
+     * stale emperor state, but logs warnings for states where no agent should
+     * have been working.
+     */
+    private function validateCompletionState(TaskModel $task): ?string
+    {
+        $expectedWorkingStates = [
+            TaskStatus::Claimed,
+            TaskStatus::InProgress,
+            TaskStatus::WaitingInput,
+            TaskStatus::PendingReview,
+        ];
+
+        if (in_array($task->status, $expectedWorkingStates, true)) {
+            return null; // Normal path
+        }
+
+        // Task is in a non-working, non-terminal state (pending, blocked, planning, merging)
+        $warning = "Task was in state '{$task->status->value}'";
+        if ($task->assignedTo) {
+            $warning .= " with agent {$task->assignedTo} — accepted (possible stale state)";
+            $this->log("WARN: task_complete for {$task->id} in unexpected state '{$task->status->value}'"
+                . " with agent {$task->assignedTo} — accepting (stale state recovery)");
+        } else {
+            $warning .= " with no agent assigned — accepted to prevent data loss";
+            $this->log("WARN: task_complete for {$task->id} in state '{$task->status->value}'"
+                . " with NO agent assigned — accepting to prevent data loss");
+        }
+
+        return $warning;
     }
 
     private function callTaskProgress(array $args): array
@@ -408,6 +457,9 @@ class McpHandler
             return $this->toolError("Cannot fail task in state: {$task->status->value}. Task must be claimed or in_progress.");
         }
 
+        // Enhanced state validation (same pattern as task_complete)
+        $stateWarning = $this->validateCompletionState($task);
+
         $agentId = $task->assignedTo ?? '';
 
         // Git: reset workspace to default branch (don't push failed work)
@@ -418,7 +470,7 @@ class McpHandler
             }
         }
 
-        $this->taskQueue->fail($taskId, $agentId, $error);
+        $failed = $this->taskQueue->fail($taskId, $agentId, $error);
 
         if ($agentId) {
             $this->db->updateAgentStatus($agentId, 'idle', null);
@@ -430,7 +482,16 @@ class McpHandler
         // Trigger dispatch so idle agent gets next pending task immediately
         $this->taskDispatcher?->triggerDispatch();
 
-        return $this->toolResult(['status' => 'failed', 'task_id' => $taskId]);
+        $result = ['status' => 'failed', 'task_id' => $taskId];
+
+        if (!$failed) {
+            $result['warning'] = 'Task failure was not processed — task may have reached terminal state concurrently';
+            $this->log("task_failed for {$taskId}: TaskQueue rejected failure (concurrent terminal transition)");
+        } elseif ($stateWarning) {
+            $result['warning'] = $stateWarning;
+        }
+
+        return $this->toolResult($result);
     }
 
     private function callTaskNeedsInput(array $args): array
@@ -667,6 +728,12 @@ class McpHandler
     private function toolError(string $message): array
     {
         return ['content' => [(object) ['type' => 'text', 'text' => json_encode(['error' => $message])]], 'isError' => true];
+    }
+
+    private function log(string $message): void
+    {
+        $time = date('H:i:s');
+        echo "[{$time}][mcp] {$message}\n";
     }
 
     private function sendResult(Response $response, mixed $id, array $result): void
