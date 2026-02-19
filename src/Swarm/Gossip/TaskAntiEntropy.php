@@ -8,12 +8,15 @@ use Swoole\Coroutine;
 use VoidLux\P2P\Protocol\MessageTypes;
 use VoidLux\P2P\Transport\Connection;
 use VoidLux\P2P\Transport\TcpMesh;
-use VoidLux\Swarm\Model\TaskStatus;
 use VoidLux\Swarm\Storage\SwarmDatabase;
 
 /**
  * Pull-based task consistency repair.
- * Periodically picks a random peer and syncs tasks since local max lamport_ts.
+ *
+ * Emperor-authoritative model:
+ *   - Workers pull from emperor (authoritative task state)
+ *   - Emperor never imports tasks from workers (only merges worker-side fields like gitBranch)
+ *   - This prevents zombie resurrection: workers can't push stale tasks back to emperor
  */
 class TaskAntiEntropy
 {
@@ -23,8 +26,14 @@ class TaskAntiEntropy
         private readonly TcpMesh $mesh,
         private readonly SwarmDatabase $db,
         private readonly TaskGossipEngine $gossip,
+        private bool $authoritative = false,
         private readonly int $interval = 60,
     ) {}
+
+    public function setAuthoritative(bool $authoritative): void
+    {
+        $this->authoritative = $authoritative;
+    }
 
     public function start(): void
     {
@@ -33,7 +42,10 @@ class TaskAntiEntropy
         Coroutine::create(function () {
             while ($this->running) {
                 Coroutine::sleep($this->interval);
-                $this->syncWithRandomPeer();
+                if (!$this->authoritative) {
+                    // Only workers initiate sync — they pull from emperor
+                    $this->syncWithRandomPeer();
+                }
             }
         });
     }
@@ -68,7 +80,7 @@ class TaskAntiEntropy
     public function handleSyncRequest(Connection $conn, array $message): void
     {
         $sinceLamportTs = $message['since_lamport_ts'] ?? 0;
-        $tasks = $this->db->getTasksSince($sinceLamportTs); // already excludes archived
+        $tasks = $this->db->getTasksSince($sinceLamportTs); // excludes archived
 
         $conn->send([
             'type' => MessageTypes::TASK_SYNC_RSP,
@@ -76,25 +88,29 @@ class TaskAntiEntropy
         ]);
     }
 
+    /**
+     * Handle sync response from a peer.
+     *
+     * If authoritative (emperor): only merge worker-side fields (gitBranch),
+     * never import tasks. Emperor is the source of truth.
+     *
+     * If non-authoritative (worker): import tasks from emperor as authoritative state.
+     */
     public function handleSyncResponse(array $message): int
     {
         $count = 0;
         foreach ($message['tasks'] ?? [] as $taskData) {
-            $id = $taskData['id'] ?? '';
-            if ($id !== '') {
-                // Skip tasks that are already terminal or archived locally
-                $local = $this->db->getTask($id);
-                if ($local && ($local->status->isTerminal() || $local->archived)) {
-                    continue;
-                }
+            if ($this->authoritative) {
+                // Emperor: never import tasks from workers, only merge fields
+                $this->mergeTaskFields($taskData);
+                continue;
             }
 
+            // Worker: import from emperor (authoritative)
             $task = $this->gossip->receiveTaskCreate($taskData);
             if ($task !== null) {
                 $count++;
             } else {
-                // Task already exists — merge in fields that may be missing locally
-                // (e.g. gitBranch set on worker node, not yet propagated)
                 $this->mergeTaskFields($taskData);
             }
         }
@@ -113,12 +129,7 @@ class TaskAntiEntropy
         }
 
         $local = $this->db->getTask($id);
-        if (!$local) {
-            return;
-        }
-
-        // Don't merge into terminal or archived tasks
-        if ($local->status->isTerminal() || $local->archived) {
+        if (!$local || $local->archived) {
             return;
         }
 

@@ -160,7 +160,10 @@ class Server
         $this->mesh = new TcpMesh('0.0.0.0', $this->p2pPort, $this->nodeId);
         $this->peerManager = new PeerManager($this->mesh, $this->nodeId);
         $this->taskGossip = new TaskGossipEngine($this->mesh, $this->db, $this->clock);
-        $this->taskAntiEntropy = new TaskAntiEntropy($this->mesh, $this->db, $this->taskGossip);
+        $this->taskAntiEntropy = new TaskAntiEntropy(
+            $this->mesh, $this->db, $this->taskGossip,
+            authoritative: $this->role === 'emperor',
+        );
         $this->agentAntiEntropy = new AgentAntiEntropy($this->mesh, $this->db, $this->nodeId);
         $this->taskQueue = new TaskQueue($this->db, $this->taskGossip, $this->clock, $this->nodeId);
         $this->taskQueue->setGitWorkspace(new GitWorkspace());
@@ -943,6 +946,7 @@ class Server
     {
         $this->role = 'emperor';
         $this->leaderElection->setRole('emperor');
+        $this->taskAntiEntropy->setAuthoritative(true);
         $this->log("Promoted to emperor role");
 
         // Initialize emperor AI + dispatcher on promotion
