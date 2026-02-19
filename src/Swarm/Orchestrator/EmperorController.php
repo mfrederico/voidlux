@@ -608,6 +608,10 @@ class EmperorController
             $this->json($response, ['error' => 'Cannot cancel task (not found or already terminal)']);
             return;
         }
+        $task = $this->db->getTask($taskId);
+        if ($task) {
+            $this->fireTaskEvent('task_cancelled', $task);
+        }
         $this->json($response, ['status' => 'cancelled', 'task_id' => $taskId]);
     }
 
@@ -619,12 +623,19 @@ class EmperorController
             $this->json($response, ['error' => 'Cannot archive task (not found or not terminal)']);
             return;
         }
+        $this->fireTaskEvent('task_archived', $task);
         $this->json($response, $task->toArray());
     }
 
     private function handleArchiveAll(Response $response): void
     {
         $archivedIds = $this->taskQueue->archiveAllTerminal();
+        foreach ($archivedIds as $id) {
+            $task = $this->db->getTask($id);
+            if ($task) {
+                $this->fireTaskEvent('task_archived', $task);
+            }
+        }
         $this->json($response, [
             'archived' => count($archivedIds),
             'task_ids' => $archivedIds,
@@ -654,6 +665,7 @@ class EmperorController
             $this->db->updateReviewStatus($taskId, 'rejected', $feedback);
             // Requeue with feedback
             $this->taskQueue->requeue($taskId, "Review rejected: {$feedback}");
+            $this->fireTaskEvent('task_updated', $this->db->getTask($taskId)?->toArray() ?? $task->toArray());
             $this->taskDispatcher?->triggerDispatch();
             $this->json($response, ['status' => 'rejected', 'task_id' => $taskId, 'feedback' => $feedback]);
         }

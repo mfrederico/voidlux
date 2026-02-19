@@ -202,6 +202,9 @@ class Server
                 $this->wsHandler?->pushAgentUpdate('agent_' . $status, $agent->toArray());
             }
         });
+        $this->controller->onTaskEvent(function (string $event, array $taskData) {
+            $this->wsHandler?->pushTaskUpdate($event, $taskData);
+        });
         $this->controller->onShutdown(function () {
             $this->log("Regicide: stopping all coroutine loops...");
             $this->running = false;
