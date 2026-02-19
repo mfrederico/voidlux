@@ -1461,12 +1461,12 @@ document.addEventListener('keydown', e => { if (e.key==='Escape') closeModal(); 
 
 function mergePr(taskId, prUrl) {
     if (!confirm('Merge this PR?\n\n'+prUrl+'\n\nThis will merge and delete the branch.')) return;
-    fetch('/api/swarm/tasks/'+taskId+'/merge', {
+    fetch('/api/swarm/tasks/'+taskId+'/merge-pr', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({pr_url: prUrl})
     }).then(r=>r.json()).then(d => {
-        if (d.merged) {
+        if (d.status === 'merged') {
             addLog('task_completed', 'Merged PR for task '+taskId.substring(0,8));
         } else {
             addLog('task_failed', 'Merge failed: '+(d.error||'unknown error'));
