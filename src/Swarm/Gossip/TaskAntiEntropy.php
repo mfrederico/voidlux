@@ -8,6 +8,7 @@ use Swoole\Coroutine;
 use VoidLux\P2P\Protocol\MessageTypes;
 use VoidLux\P2P\Transport\Connection;
 use VoidLux\P2P\Transport\TcpMesh;
+use VoidLux\Swarm\Model\TaskStatus;
 use VoidLux\Swarm\Storage\SwarmDatabase;
 
 /**
@@ -69,9 +70,12 @@ class TaskAntiEntropy
         $sinceLamportTs = $message['since_lamport_ts'] ?? 0;
         $tasks = $this->db->getTasksSince($sinceLamportTs);
 
+        // Exclude archived tasks from sync responses — peers don't need them
+        $filtered = array_filter($tasks, fn($t) => !$t->archived);
+
         $conn->send([
             'type' => MessageTypes::TASK_SYNC_RSP,
-            'tasks' => array_map(fn($t) => $t->toArray(), $tasks),
+            'tasks' => array_map(fn($t) => $t->toArray(), $filtered),
         ]);
     }
 
@@ -79,6 +83,15 @@ class TaskAntiEntropy
     {
         $count = 0;
         foreach ($message['tasks'] ?? [] as $taskData) {
+            $id = $taskData['id'] ?? '';
+            if ($id !== '') {
+                // Skip tasks that are already terminal or archived locally
+                $local = $this->db->getTask($id);
+                if ($local && ($local->status->isTerminal() || $local->archived)) {
+                    continue;
+                }
+            }
+
             $task = $this->gossip->receiveTaskCreate($taskData);
             if ($task !== null) {
                 $count++;
@@ -104,6 +117,11 @@ class TaskAntiEntropy
 
         $local = $this->db->getTask($id);
         if (!$local) {
+            return;
+        }
+
+        // Don't merge into terminal or archived tasks
+        if ($local->status->isTerminal() || $local->archived) {
             return;
         }
 
