@@ -92,6 +92,11 @@ body {
     padding: 14px; transition: border-color 0.2s;
 }
 .card:hover { border-color: #444; }
+@keyframes cardFlash {
+    0% { box-shadow: 0 0 12px rgba(204,102,0,0.4); border-color: #cc6600; }
+    100% { box-shadow: none; }
+}
+.card-updated { animation: cardFlash 0.6s ease-out; }
 .card-title { font-weight: bold; margin-bottom: 6px; font-size: 0.95rem; }
 .card-meta { font-size: 0.75rem; color: #666; margin-top: 6px; }
 .card-status { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.75rem; font-weight: bold; }
@@ -913,6 +918,94 @@ function restoreFocusState(fs) {
     }
 }
 
+// ---- DOM Diffing for efficient updates ----
+const _renderedTaskHash = {};
+const _renderedAgentHash = {};
+
+function djb2Hash(str) {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) + hash) + str.charCodeAt(i);
+        hash |= 0;
+    }
+    return hash;
+}
+
+function taskDataKey(t) {
+    const children = getTaskChildren(t.id);
+    const ck = children.map(c => c.id+c.status+c.lamport_ts+c.assigned_to+(c.progress||'').substring(0,40)+(c.result||'').substring(0,40)+(c.review_status||'')).join('|');
+    return JSON.stringify([t.status,t.lamport_ts,t.assigned_to,t.progress,(t.result||'').substring(0,200),(t.error||'').substring(0,100),t.review_status,t.review_feedback,t.git_branch,t.merge_attempts,!!t.work_instructions,!!t.acceptance_criteria,ck]);
+}
+
+function agentDataKey(a) {
+    return JSON.stringify([a.status,a.current_task_id,a.name,a.project_path,a.tmux_session_id,a.capabilities?.join(','),a.model,a.node_id]);
+}
+
+function diffCardGrid(container, items, renderFn, dataKeyFn, hashCache, emptyMsg) {
+    const desiredSet = new Set(items.map(item => item.id));
+
+    // Remove stale cards and empty placeholder
+    Array.from(container.children).forEach(child => {
+        const cid = child.getAttribute('data-cid');
+        if (cid && !desiredSet.has(cid)) {
+            child.remove();
+            delete hashCache[cid];
+        }
+        if (child.classList.contains('empty') && items.length > 0) {
+            child.remove();
+        }
+    });
+
+    // Show empty state
+    if (items.length === 0) {
+        if (!container.querySelector('.empty')) {
+            container.innerHTML = emptyMsg;
+        }
+        Object.keys(hashCache).forEach(k => delete hashCache[k]);
+        return;
+    }
+
+    // Update or insert each item, maintaining order
+    items.forEach((item, idx) => {
+        const key = dataKeyFn(item);
+        const hash = djb2Hash(key);
+        let card = container.querySelector('[data-cid="'+item.id+'"]');
+
+        if (card) {
+            if (hashCache[item.id] !== hash) {
+                const hasFocus = card.contains(document.activeElement);
+                const fs = hasFocus ? saveFocusState() : null;
+                const tmp = document.createElement('div');
+                tmp.innerHTML = renderFn(item);
+                const newCard = tmp.firstElementChild;
+                newCard.setAttribute('data-cid', item.id);
+                newCard.classList.add('card-updated');
+                card.replaceWith(newCard);
+                card = newCard;
+                if (fs) restoreFocusState(fs);
+                hashCache[item.id] = hash;
+            }
+        } else {
+            const tmp = document.createElement('div');
+            tmp.innerHTML = renderFn(item);
+            card = tmp.firstElementChild;
+            card.setAttribute('data-cid', item.id);
+            card.classList.add('card-updated');
+            hashCache[item.id] = hash;
+            container.appendChild(card);
+        }
+
+        // Ensure correct position
+        if (container.children[idx] !== card) {
+            if (idx < container.children.length) {
+                container.children[idx].before(card);
+            } else {
+                container.appendChild(card);
+            }
+        }
+    });
+}
+
 // ---- Render everything from client-side state ----
 function computeStats() {
     const tasks = Object.values(state.tasks).filter(t => !t.archived);
@@ -952,9 +1045,7 @@ function renderAll() {
     const tasks = Object.values(state.tasks);
     const topLevel = tasks.filter(t => !t.parent_id && !t.archived);
     const taskEl = document.getElementById('task-list');
-    const focusState = saveFocusState();
-    taskEl.innerHTML = topLevel.length ? topLevel.map(t => renderTask(t, false)).join('') : '<div class="empty">No tasks yet</div>';
-    restoreFocusState(focusState);
+    diffCardGrid(taskEl, topLevel, t => renderTask(t, false), taskDataKey, _renderedTaskHash, '<div class="empty">No tasks yet</div>');
 
     // Show/hide Archive All button based on whether terminal tasks exist
     const hasTerminal = tasks.some(t => !t.archived && (t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled'));
@@ -966,9 +1057,7 @@ function renderAll() {
     // Agents
     const agents = Object.values(state.agents);
     const agentEl = document.getElementById('agent-list');
-    if (!agentEl.contains(document.activeElement)) {
-        agentEl.innerHTML = agents.length ? agents.map(renderAgent).join('') : '<div class="empty">No agents registered</div>';
-    }
+    diffCardGrid(agentEl, agents, renderAgent, agentDataKey, _renderedAgentHash, '<div class="empty">No agents registered</div>');
 
     // Contributions (PRs)
     renderContributions();
