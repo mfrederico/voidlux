@@ -635,6 +635,14 @@ class SwarmDatabase
         return $stmt->rowCount();
     }
 
+    public function setAutoMerge(string $taskId, bool $autoMerge): bool
+    {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $stmt = $this->pdo->prepare('UPDATE tasks SET auto_merge = :auto_merge, updated_at = :updated_at WHERE id = :id');
+        $stmt->execute([':id' => $taskId, ':auto_merge' => $autoMerge ? 1 : 0, ':updated_at' => $now]);
+        return $stmt->rowCount() > 0;
+    }
+
     public function updateGitBranch(string $taskId, string $branch): bool
     {
         $now = gmdate('Y-m-d\TH:i:s\Z');

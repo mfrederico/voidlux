@@ -199,6 +199,10 @@ class EmperorController
                 $this->handleReviewTask($m[1], $request, $response);
                 break;
 
+            case preg_match('#^/api/swarm/tasks/([^/]+)/merge-pr$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleMergePr($m[1], $response);
+                break;
+
             case preg_match('#^/api/swarm/tasks/([^/]+)/subtasks$#', $path, $m) === 1 && $method === 'GET':
                 $this->handleGetSubtasks($m[1], $response);
                 break;
@@ -457,6 +461,12 @@ class EmperorController
                 testCommand: $body['test_command'] ?? '',
             );
 
+            // Set auto_merge flag if requested
+            if (!empty($body['auto_merge'])) {
+                $this->db->setAutoMerge($task->id, true);
+                $task = $this->db->getTask($task->id) ?? $task;
+            }
+
             $response->status(201);
             $this->json($response, $task->toArray());
 
@@ -583,6 +593,12 @@ class EmperorController
             testCommand: $body['test_command'] ?? '',
         );
 
+        // Set auto_merge flag if requested
+        if (!empty($body['auto_merge'])) {
+            $this->db->setAutoMerge($task->id, true);
+            $task = $this->db->getTask($task->id) ?? $task;
+        }
+
         $this->fireTaskEvent('task_created', $task);
         $this->taskDispatcher?->triggerDispatch();
 
@@ -670,6 +686,56 @@ class EmperorController
             $this->taskDispatcher?->triggerDispatch();
             $this->json($response, ['status' => 'rejected', 'task_id' => $taskId, 'feedback' => $feedback]);
         }
+    }
+
+    private function handleMergePr(string $taskId, Response $response): void
+    {
+        $task = $this->taskQueue->getTask($taskId);
+        if (!$task) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Task not found']);
+            return;
+        }
+
+        // Resolve PR URL: check dedicated prUrl field first, then parse from result text
+        $prUrl = property_exists($task, 'prUrl') ? $task->prUrl : '';
+        if ($prUrl === '' && $task->result) {
+            if (preg_match('/PR: (https?:\/\/\S+)/', $task->result, $m)) {
+                $prUrl = $m[1];
+            }
+        }
+
+        if ($prUrl === '') {
+            $response->status(422);
+            $this->json($response, ['error' => 'Task has no PR URL']);
+            return;
+        }
+
+        $git = new GitWorkspace();
+        $workDir = getcwd() . '/workbench/.merge';
+        if (!is_dir($workDir)) {
+            $workDir = getcwd();
+        }
+
+        [$success, $output] = $git->mergePullRequest($workDir, $prUrl);
+
+        if (!$success) {
+            $response->status(502);
+            $this->json($response, [
+                'error' => 'gh pr merge failed',
+                'output' => $output,
+                'task_id' => $taskId,
+                'pr_url' => $prUrl,
+            ]);
+            return;
+        }
+
+        $this->json($response, [
+            'status' => 'merged',
+            'task_id' => $taskId,
+            'pr_url' => $prUrl,
+            'output' => $output,
+        ]);
     }
 
     private function handleGetSubtasks(string $parentId, Response $response): void

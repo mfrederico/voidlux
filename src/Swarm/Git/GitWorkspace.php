@@ -320,6 +320,58 @@ class GitWorkspace
         return $url ?: null;
     }
 
+    /**
+     * Auto-merge an open pull request using the gh CLI.
+     */
+    public function autoMergePullRequest(string $workDir, string $prUrl): bool
+    {
+        $code = $this->exec($workDir, 'which gh 2>/dev/null');
+        if ($code !== 0) {
+            $this->log("Auto-merge skipped: gh CLI not available");
+            return false;
+        }
+        if (!filter_var($prUrl, FILTER_VALIDATE_URL)) {
+            $this->log("Auto-merge skipped: invalid PR URL");
+            return false;
+        }
+        $output = [];
+        $cmd = sprintf(
+            'cd %s && gh pr merge %s --merge --delete-branch 2>&1',
+            escapeshellarg($workDir),
+            escapeshellarg($prUrl),
+        );
+        exec($cmd, $output, $code);
+        if ($code !== 0) {
+            $this->log("Auto-merge failed: " . implode("\n", $output));
+            return false;
+        }
+        $this->log("Auto-merged PR: {$prUrl}");
+        return true;
+    }
+
+    /**
+     * Merge a PR by URL — for the manual dashboard merge button.
+     * @return array{bool, string}
+     */
+    public function mergePullRequest(string $workDir, string $prUrl): array
+    {
+        $code = $this->exec($workDir, 'which gh 2>/dev/null');
+        if ($code !== 0) {
+            return [false, 'gh CLI not available'];
+        }
+        if (!filter_var($prUrl, FILTER_VALIDATE_URL)) {
+            return [false, 'Invalid PR URL'];
+        }
+        $output = [];
+        $cmd = sprintf(
+            'cd %s && gh pr merge %s --merge --delete-branch 2>&1',
+            escapeshellarg($workDir),
+            escapeshellarg($prUrl),
+        );
+        exec($cmd, $output, $code);
+        return [$code === 0, implode("\n", $output)];
+    }
+
     public function getDefaultBranch(string $workDir): string
     {
         $output = [];
