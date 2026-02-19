@@ -170,6 +170,8 @@ class TaskGossipEngine
                 mergeAttempts: $task->mergeAttempts,
                 testCommand: $task->testCommand,
                 dependsOn: $task->dependsOn,
+                autoMerge: $task->autoMerge,
+                prUrl: $task->prUrl,
             );
             $this->db->updateTask($updated);
         }
@@ -244,6 +246,8 @@ class TaskGossipEngine
                 mergeAttempts: $task->mergeAttempts,
                 testCommand: $task->testCommand,
                 dependsOn: $task->dependsOn,
+                autoMerge: $task->autoMerge,
+                prUrl: $task->prUrl,
             );
             $this->db->updateTask($updated);
         }
@@ -308,6 +312,8 @@ class TaskGossipEngine
                 mergeAttempts: $task->mergeAttempts,
                 testCommand: $task->testCommand,
                 dependsOn: $task->dependsOn,
+                autoMerge: $task->autoMerge,
+                prUrl: $task->prUrl,
             );
             $this->db->updateTask($updated);
         }

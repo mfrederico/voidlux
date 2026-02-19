@@ -545,6 +545,7 @@ class EmperorController
                                 reviewFeedback: $subtask->reviewFeedback, archived: $subtask->archived,
                                 gitBranch: $subtask->gitBranch, mergeAttempts: $subtask->mergeAttempts,
                                 testCommand: $subtask->testCommand, dependsOn: $resolvedDeps,
+                                autoMerge: $subtask->autoMerge, prUrl: $subtask->prUrl,
                             );
                             $db->updateTask($blocked);
                             $subtask = $blocked;
