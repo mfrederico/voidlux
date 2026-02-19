@@ -37,6 +37,7 @@ use VoidLux\Swarm\Storage\DhtAntiEntropy;
 use VoidLux\Swarm\Storage\DhtEngine;
 use VoidLux\Swarm\Storage\DhtStorage;
 use VoidLux\Swarm\Storage\SwarmDatabase;
+use VoidLux\Swarm\Config\SwarmConfig;
 use VoidLux\Swarm\Upgrade\UpgradeHandler;
 
 /**
@@ -75,6 +76,7 @@ class Server
     private ?WsServer $server = null;
     private Registry $swarmRegistry;
     private Status $swarmStatus;
+    private SwarmConfig $config;
     private float $startTime;
     private bool $running = false;
 
@@ -93,12 +95,15 @@ class Server
         private readonly string $claudeApiKey = '',
         private readonly string $testCommand = '',
         private readonly string $authSecret = '',
+        private readonly ?SwarmConfig $swarmConfig = null,
     ) {
         $this->startTime = microtime(true);
     }
 
     public function run(): void
     {
+        $this->config = $this->swarmConfig ?? SwarmConfig::fromEnvironment();
+
         $dbPath = $this->dataDir . "/swarm-{$this->p2pPort}.db";
         $this->db = new SwarmDatabase($dbPath);
 
@@ -475,10 +480,10 @@ class Server
             }
         });
 
-        // Periodic capability advertisement (broadcast local profile every 60s)
+        // Periodic capability advertisement
         Coroutine::create(function () {
             while ($this->running) {
-                Coroutine::sleep(60);
+                Coroutine::sleep($this->config->capabilityAdvertiseInterval);
                 if ($this->marketplace && $this->marketplaceGossip) {
                     $profile = $this->marketplace->buildLocalProfile(
                         $this->db->getIdleAgentCount(),
@@ -492,7 +497,7 @@ class Server
         });
         Coroutine::create(function () {
             while ($this->running) {
-                Coroutine::sleep(30);
+                Coroutine::sleep($this->config->clockPersistInterval);
                 $this->db->setState('lamport_clock', (string) $this->clock->value());
             }
         });
