@@ -78,6 +78,7 @@ class TaskQueue
         ?TaskStatus $status = null,
         string $testCommand = '',
         array $dependsOn = [],
+        bool $autoMerge = false,
     ): TaskModel {
         $ts = $this->clock->tick();
 
@@ -101,6 +102,7 @@ class TaskQueue
             status: $status,
             testCommand: $testCommand,
             dependsOn: $dependsOn,
+            autoMerge: $autoMerge,
         );
 
         return $this->gossip->createTask($task);
@@ -131,6 +133,7 @@ class TaskQueue
             reviewFeedback: $task->reviewFeedback, archived: $task->archived,
             gitBranch: $task->gitBranch, mergeAttempts: $task->mergeAttempts,
             testCommand: $task->testCommand, dependsOn: $task->dependsOn,
+            autoMerge: $task->autoMerge, prUrl: $task->prUrl,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskUpdate($taskId, '', TaskStatus::Pending->value, null, $ts);
@@ -192,6 +195,8 @@ class TaskQueue
             mergeAttempts: $task->mergeAttempts,
             testCommand: $task->testCommand,
             dependsOn: $task->dependsOn,
+            autoMerge: $task->autoMerge,
+            prUrl: $task->prUrl,
         );
         // Atomic CAS: only transition if still in expected agent-workable state
         $transitioned = $this->db->transitionTask($updated, [
@@ -244,6 +249,8 @@ class TaskQueue
             mergeAttempts: $task->mergeAttempts,
             testCommand: $task->testCommand,
             dependsOn: $task->dependsOn,
+            autoMerge: $task->autoMerge,
+            prUrl: $task->prUrl,
         );
         // Atomic CAS: only transition if still in expected agent-workable state
         $transitioned = $this->db->transitionTask($updated, [
@@ -312,6 +319,8 @@ class TaskQueue
                 mergeAttempts: $task->mergeAttempts,
                 testCommand: $task->testCommand,
                 dependsOn: $task->dependsOn,
+                autoMerge: $task->autoMerge,
+                prUrl: $task->prUrl,
             );
             // Atomic CAS: only transition if still in agent-workable state
             $transitioned = $this->db->transitionTask($updated, $allowedFromStatuses);
@@ -358,6 +367,8 @@ class TaskQueue
             mergeAttempts: $task->mergeAttempts,
             testCommand: $task->testCommand,
             dependsOn: $task->dependsOn,
+            autoMerge: $task->autoMerge,
+            prUrl: $task->prUrl,
         );
         // Atomic CAS: only transition if still in agent-workable state
         $transitioned = $this->db->transitionTask($updated, $allowedFromStatuses);
@@ -406,6 +417,7 @@ class TaskQueue
             archived: $task->archived, gitBranch: $task->gitBranch,
             mergeAttempts: $task->mergeAttempts, testCommand: $task->testCommand,
             dependsOn: $task->dependsOn,
+            autoMerge: $task->autoMerge, prUrl: $task->prUrl,
         );
         $this->db->updateTask($updated);
         $this->gossip->gossipTaskComplete($taskId, $agentId, $result ?? $task->result, $ts);
@@ -463,6 +475,8 @@ class TaskQueue
                 mergeAttempts: $task->mergeAttempts,
                 testCommand: $task->testCommand,
                 dependsOn: $task->dependsOn,
+                autoMerge: $task->autoMerge,
+                prUrl: $task->prUrl,
             );
             // Atomic CAS: only complete if still in PendingReview
             $transitioned = $this->db->transitionTask($updated, [TaskStatus::PendingReview]);
@@ -534,6 +548,8 @@ class TaskQueue
                 mergeAttempts: $task->mergeAttempts,
                 testCommand: $task->testCommand,
                 dependsOn: $task->dependsOn,
+                autoMerge: $task->autoMerge,
+                prUrl: $task->prUrl,
             );
             // Atomic CAS: only requeue if still in PendingReview
             $transitioned = $this->db->transitionTask($updated, [TaskStatus::PendingReview]);
@@ -596,6 +612,8 @@ class TaskQueue
             mergeAttempts: $task->mergeAttempts,
             testCommand: $task->testCommand,
             dependsOn: $task->dependsOn,
+            autoMerge: $task->autoMerge,
+            prUrl: $task->prUrl,
         );
         // Atomic CAS: only fail if still in agent-workable state
         $transitioned = $this->db->transitionTask($updated, [
@@ -662,6 +680,8 @@ class TaskQueue
             mergeAttempts: $task->mergeAttempts,
             testCommand: $task->testCommand,
             dependsOn: $task->dependsOn,
+            autoMerge: $task->autoMerge,
+            prUrl: $task->prUrl,
         );
         $transitioned = $this->db->transitionTask($updated, [$fromStatus]);
         if (!$transitioned) {
@@ -733,7 +753,8 @@ class TaskQueue
                     acceptanceCriteria: $updated->acceptanceCriteria, reviewStatus: $updated->reviewStatus,
                     reviewFeedback: $updated->reviewFeedback, archived: $updated->archived,
                     gitBranch: $updated->gitBranch, mergeAttempts: $updated->mergeAttempts,
-                    testCommand: $updated->testCommand,
+                    testCommand: $updated->testCommand, dependsOn: $updated->dependsOn,
+                    autoMerge: $updated->autoMerge, prUrl: $updated->prUrl,
                 );
                 // Atomic CAS within transaction: only fail if parent is in expected non-terminal state
                 $transitioned = $this->db->transitionTask($failedParent, [
@@ -880,6 +901,7 @@ class TaskQueue
             reviewFeedback: $parent->reviewFeedback, archived: $parent->archived,
             gitBranch: $integrationBranch, mergeAttempts: $parent->mergeAttempts,
             testCommand: $parent->testCommand, dependsOn: $parent->dependsOn,
+            autoMerge: $parent->autoMerge, prUrl: $prUrl ?: $parent->prUrl,
         );
         $transitioned = $this->db->transitionTask($updated, [TaskStatus::Merging]);
         if (!$transitioned) {
@@ -976,6 +998,7 @@ class TaskQueue
             reviewFeedback: $sub->reviewFeedback, archived: $sub->archived,
             gitBranch: $sub->gitBranch, mergeAttempts: $sub->mergeAttempts,
             testCommand: $sub->testCommand, dependsOn: $sub->dependsOn,
+            autoMerge: $sub->autoMerge, prUrl: $sub->prUrl,
         );
         // Atomic CAS: only requeue if subtask is still in Completed state.
         // Prevents races where a subtask is being re-claimed while we try to requeue it.
@@ -1012,6 +1035,7 @@ class TaskQueue
             reviewFeedback: $parent->reviewFeedback, archived: $parent->archived,
             gitBranch: $parent->gitBranch, mergeAttempts: $parent->mergeAttempts,
             testCommand: $parent->testCommand, dependsOn: $parent->dependsOn,
+            autoMerge: $parent->autoMerge, prUrl: $parent->prUrl,
         );
         // Atomic CAS: only fail if parent hasn't already transitioned to terminal
         $transitioned = $this->db->transitionTask($updated, [
@@ -1048,6 +1072,7 @@ class TaskQueue
             reviewFeedback: $parent->reviewFeedback, archived: $parent->archived,
             gitBranch: $parent->gitBranch, mergeAttempts: $parent->mergeAttempts,
             testCommand: $parent->testCommand, dependsOn: $parent->dependsOn,
+            autoMerge: $parent->autoMerge, prUrl: $parent->prUrl,
         );
         // Atomic CAS: only complete parent if not already transitioned
         $transitioned = $this->db->transitionTask($updated, [

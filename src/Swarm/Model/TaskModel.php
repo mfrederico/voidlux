@@ -36,6 +36,8 @@ class TaskModel
         public readonly int $mergeAttempts = 0,
         public readonly string $testCommand = '',
         public readonly array $dependsOn = [],
+        public readonly bool $autoMerge = false,
+        public readonly string $prUrl = '',
     ) {}
 
     public static function create(
@@ -53,6 +55,7 @@ class TaskModel
         ?TaskStatus $status = null,
         string $testCommand = '',
         array $dependsOn = [],
+        bool $autoMerge = false,
     ): self {
         $now = gmdate('Y-m-d\TH:i:s\Z');
         return new self(
@@ -80,6 +83,7 @@ class TaskModel
             acceptanceCriteria: $acceptanceCriteria,
             testCommand: $testCommand,
             dependsOn: $dependsOn,
+            autoMerge: $autoMerge,
         );
     }
 
@@ -119,6 +123,8 @@ class TaskModel
             dependsOn: is_string($data['depends_on'] ?? '[]')
                 ? json_decode($data['depends_on'], true) ?? []
                 : ($data['depends_on'] ?? []),
+            autoMerge: !empty($data['auto_merge']),
+            prUrl: $data['pr_url'] ?? '',
         );
     }
 
@@ -154,6 +160,8 @@ class TaskModel
             'merge_attempts' => $this->mergeAttempts,
             'test_command' => $this->testCommand,
             'depends_on' => $this->dependsOn,
+            'auto_merge' => $this->autoMerge,
+            'pr_url' => $this->prUrl,
         ];
     }
 
@@ -189,6 +197,8 @@ class TaskModel
             mergeAttempts: $this->mergeAttempts,
             testCommand: $this->testCommand,
             dependsOn: $this->dependsOn,
+            autoMerge: $this->autoMerge,
+            prUrl: $this->prUrl,
         );
     }
 
