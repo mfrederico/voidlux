@@ -461,6 +461,12 @@ class EmperorController
                 testCommand: $body['test_command'] ?? '',
             );
 
+            // Set auto_merge flag if requested
+            if (!empty($body['auto_merge'])) {
+                $this->db->setAutoMerge($task->id, true);
+                $task = $this->db->getTask($task->id) ?? $task;
+            }
+
             $response->status(201);
             $this->json($response, $task->toArray());
 
@@ -585,6 +591,12 @@ class EmperorController
             createdBy: $body['created_by'] ?? $this->nodeId,
             testCommand: $body['test_command'] ?? '',
         );
+
+        // Set auto_merge flag if requested
+        if (!empty($body['auto_merge'])) {
+            $this->db->setAutoMerge($task->id, true);
+            $task = $this->db->getTask($task->id) ?? $task;
+        }
 
         $this->fireTaskEvent('task_created', $task);
         $this->taskDispatcher?->triggerDispatch();

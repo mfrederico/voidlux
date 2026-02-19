@@ -130,6 +130,12 @@ class SwarmDatabase
         if (!in_array('depends_on', $existing, true)) {
             $this->pdo->exec("ALTER TABLE tasks ADD COLUMN depends_on TEXT NOT NULL DEFAULT '[]'");
         }
+        if (!in_array('auto_merge', $existing, true)) {
+            $this->pdo->exec("ALTER TABLE tasks ADD COLUMN auto_merge INTEGER NOT NULL DEFAULT 0");
+        }
+        if (!in_array('pr_url', $existing, true)) {
+            $this->pdo->exec("ALTER TABLE tasks ADD COLUMN pr_url TEXT NOT NULL DEFAULT ''");
+        }
 
         // Add model column to agents table
         $agentColumns = $this->pdo->query("PRAGMA table_info(agents)")->fetchAll();
@@ -241,13 +247,15 @@ class SwarmDatabase
                  assigned_to, assigned_node, result, error, progress, project_path, context,
                  lamport_ts, claimed_at, completed_at, created_at, updated_at,
                  parent_id, work_instructions, acceptance_criteria, review_status, review_feedback,
-                 archived, git_branch, merge_attempts, test_command, depends_on)
+                 archived, git_branch, merge_attempts, test_command, depends_on,
+                 auto_merge, pr_url)
             VALUES
                 (:id, :title, :description, :status, :priority, :required_capabilities, :created_by,
                  :assigned_to, :assigned_node, :result, :error, :progress, :project_path, :context,
                  :lamport_ts, :claimed_at, :completed_at, :created_at, :updated_at,
                  :parent_id, :work_instructions, :acceptance_criteria, :review_status, :review_feedback,
-                 :archived, :git_branch, :merge_attempts, :test_command, :depends_on)
+                 :archived, :git_branch, :merge_attempts, :test_command, :depends_on,
+                 :auto_merge, :pr_url)
         ');
 
         return $stmt->execute([
@@ -280,6 +288,8 @@ class SwarmDatabase
             ':merge_attempts' => $task->mergeAttempts,
             ':test_command' => $task->testCommand,
             ':depends_on' => json_encode($task->dependsOn),
+            ':auto_merge' => $task->autoMerge ? 1 : 0,
+            ':pr_url' => $task->prUrl,
         ]);
     }
 
@@ -298,7 +308,8 @@ class SwarmDatabase
                 acceptance_criteria = :acceptance_criteria, review_status = :review_status,
                 review_feedback = :review_feedback, archived = :archived,
                 git_branch = :git_branch, merge_attempts = :merge_attempts,
-                test_command = :test_command, depends_on = :depends_on
+                test_command = :test_command, depends_on = :depends_on,
+                auto_merge = :auto_merge, pr_url = :pr_url
             WHERE id = :id
         ');
 
@@ -330,6 +341,8 @@ class SwarmDatabase
             ':merge_attempts' => $task->mergeAttempts,
             ':test_command' => $task->testCommand,
             ':depends_on' => json_encode($task->dependsOn),
+            ':auto_merge' => $task->autoMerge ? 1 : 0,
+            ':pr_url' => $task->prUrl,
         ]);
     }
 
@@ -622,6 +635,14 @@ class SwarmDatabase
         return $stmt->rowCount();
     }
 
+    public function setAutoMerge(string $taskId, bool $autoMerge): bool
+    {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $stmt = $this->pdo->prepare('UPDATE tasks SET auto_merge = :auto_merge, updated_at = :updated_at WHERE id = :id');
+        $stmt->execute([':id' => $taskId, ':auto_merge' => $autoMerge ? 1 : 0, ':updated_at' => $now]);
+        return $stmt->rowCount() > 0;
+    }
+
     public function updateGitBranch(string $taskId, string $branch): bool
     {
         $now = gmdate('Y-m-d\TH:i:s\Z');
@@ -678,6 +699,8 @@ class SwarmDatabase
             ':merge_attempts' => $task->mergeAttempts,
             ':test_command' => $task->testCommand,
             ':depends_on' => json_encode($task->dependsOn),
+            ':auto_merge' => $task->autoMerge ? 1 : 0,
+            ':pr_url' => $task->prUrl,
         ];
 
         foreach ($expectedStatuses as $i => $s) {
@@ -700,7 +723,8 @@ class SwarmDatabase
                 acceptance_criteria = :acceptance_criteria, review_status = :review_status,
                 review_feedback = :review_feedback, archived = :archived,
                 git_branch = :git_branch, merge_attempts = :merge_attempts,
-                test_command = :test_command, depends_on = :depends_on
+                test_command = :test_command, depends_on = :depends_on,
+                auto_merge = :auto_merge, pr_url = :pr_url
             WHERE id = :id AND status IN ({$inClause})
         ");
 
