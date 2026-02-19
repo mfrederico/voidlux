@@ -1,129 +1,208 @@
 # VoidLux
 
-P2P swarm orchestration for AI agents over OpenSwoole gossip mesh.
+**A self-organizing AI agent swarm that decomposes, delegates, builds, reviews, and merges code — autonomously.**
 
-VoidLux coordinates AI agents (Claude Code, OpenCode, etc.) running in tmux sessions across a decentralized P2P network. An "emperor" node drives the swarm through a web dashboard, while worker nodes register agents that auto-claim and execute tasks. All coordination flows through a gossip-based TCP mesh with Lamport-ordered conflict resolution.
+VoidLux orchestrates AI coding agents (Claude Code, OpenCode, etc.) across a decentralized P2P mesh. Give it a task in plain English and a git repo. It plans subtasks with dependency ordering, dispatches them to agents running in isolated git worktrees, reviews results against acceptance criteria, resolves merge conflicts, runs tests, and opens a pull request — all without human intervention.
 
-## Requirements
+It built its own Dockerfile. It added its own PR merge button. It fixes its own bugs. The swarm improves itself.
 
-- PHP 8.1+
-- OpenSwoole extension (`pecl install openswoole`)
-- SQLite3 PDO extension
-- tmux
-- [aoe-php](https://github.com/mfrederico/aoe-php) as a sibling directory (`../aoe-php`)
+---
+
+## How It Works
+
+```
+  You: "Add user authentication with JWT tokens"
+   |
+   v
+ Emperor (LLM planner)
+   |-- Subtask 1: Create JWT middleware         --> Agent A (worktree branch)
+   |-- Subtask 2: Add login/register endpoints  --> Agent B (worktree branch)  [depends on 1]
+   |-- Subtask 3: Update user model             --> Agent C (worktree branch)
+   |-- Subtask 4: Add auth tests                --> Agent D (worktree branch)  [depends on 1,2,3]
+   |
+   v
+ LLM Review (acceptance criteria check per subtask)
+   |-- Pass --> merge branches --> run tests --> open PR
+   |-- Fail --> requeue with feedback (up to 3 attempts)
+```
+
+Each agent works in its own **git worktree** on an isolated branch. When all subtasks complete, VoidLux merges them into an integration branch, runs your test suite, and creates a single PR. Merge conflicts? It requeues the conflicting subtasks. Test failures? It requeues everything. Up to 3 attempts before giving up.
 
 ## Quick Start
 
+### Bare Metal
+
 ```bash
-# Install dependencies
+# Requirements: PHP 8.1+, OpenSwoole extension, tmux, git, gh CLI
 composer install
 
-# Launch the swarm: 1 emperor + 2 workers
-bash scripts/demo-swarm.sh
+# Launch seneschal (stable proxy) + emperor
+bash scripts/enter-the-void.sh
+
+# Register 3 agents with Claude Code
+bash scripts/register-agents.sh 3 claude https://github.com/you/your-repo.git
+
+# Open the dashboard
+open http://localhost:9090
 ```
 
-Open the emperor dashboard at http://localhost:9090, then:
+### Docker
 
 ```bash
-# Register an agent on worker 1
-curl -X POST http://localhost:9091/api/swarm/agents \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"claude-1","tool":"claude","capabilities":["php"],"project_path":"/home/you/project"}'
+docker compose up -d
 
-# Create a task from emperor
-curl -X POST http://localhost:9090/api/swarm/tasks \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"Optimize queries","description":"Review and optimize all SQL queries for performance"}'
+# Register agents (Claude Code binary mounted from host)
+bash scripts/register-agents.sh 3 claude https://github.com/you/your-repo.git 9091
 ```
 
-The task gossips to all nodes, gets auto-claimed by an idle agent with matching capabilities, and is delivered to the agent's tmux session. The monitor polls every 5 seconds, detecting completion and propagating results back through the mesh.
+```yaml
+# docker-compose.yml
+services:
+  voidlux:
+    build: .
+    ports:
+      - "9090:9090"   # Dashboard (Seneschal proxy)
+      - "9091:9091"   # Emperor API
+    volumes:
+      - ./data:/app/data
+      - ./workbench:/app/workbench
+      - ${CLAUDE_PATH:-/usr/local/bin/claude}:/usr/local/bin/claude:ro
+    environment:
+      - ANTHROPIC_API_KEY
+      - VOIDLUX_LLM_PROVIDER=claude
+      - VOIDLUX_LLM_MODEL=claude-sonnet-4-5-20250929
+```
 
-## Swarm Architecture
+## Dashboard
+
+The emperor serves a real-time web dashboard at the seneschal port (default `:9090`):
+
+- **Deploy Swarm** — paste a git URL and describe what you want built
+- **Task cards** — live status, progress, agent assignment, subtask tree
+- **Agent cards** — status (starting/idle/busy), live tmux output, node info
+- **PR management** — view pull requests, merge with one click, or enable auto-merge
+- **Contributions** — history of all PRs created by the swarm
+- Real-time updates via WebSocket
+
+## Architecture
 
 ```
-                    +-----------------+
-                    |    Emperor      |
-                    |  Dashboard UI   |
-                    |  HTTP API       |
-                    |  Task Creation  |
-                    +--------+--------+
-                             |
-                    P2P Gossip Mesh (TCP)
-                    /                  \
-          +--------+--------+  +--------+--------+
-          |    Worker 1     |  |    Worker 2     |
-          |  AgentRegistry  |  |  AgentRegistry  |
-          |  AgentMonitor   |  |  AgentMonitor   |
-          +---+----+----+---+  +---+----+----+---+
-              |    |    |          |    |    |
-           [tmux] [tmux] [tmux] [tmux] [tmux] [tmux]
-           claude  claude opencode ...
+                 Browser
+                    |
+              +-----+-----+
+              | Seneschal  |  Stable reverse proxy — survives emperor failover
+              |  :9090     |  HTTP + WebSocket relay
+              +-----+------+
+                    |
+              +-----+------+
+              |  Emperor   |  Dashboard, AI planner, task dispatch, code review
+              |  :9091     |  P2P gossip mesh, leader election, merge-test-retry
+              +--+----+--+-+
+                 |    |  |
+              [tmux] [tmux] [tmux]
+              Agent1 Agent2 Agent3
+              (Claude Code sessions in isolated git worktrees)
 ```
+
+### Key Components
+
+| Component | What it does |
+|---|---|
+| **Seneschal** | Reverse proxy that tracks the emperor via P2P gossip. Browser never changes ports, even during failover. |
+| **Emperor** | Hosts the dashboard, AI planner, task dispatcher, code reviewer, and agent tmux sessions. |
+| **TaskPlanner** | LLM decomposes high-level tasks into subtasks with dependency ordering, work instructions, and acceptance criteria. |
+| **TaskDispatcher** | Push-based dispatch via Swoole channels. Event-driven, not polling. |
+| **TaskReviewer** | LLM evaluates completed work against acceptance criteria. Reject = requeue with feedback. |
+| **AgentBridge** | Delivers task prompts to Claude Code via tmux `load-buffer` + bracketed paste. |
+| **AgentMonitor** | Polls tmux panes every 5s. Detects idle/busy/error states. Requeues orphaned tasks. |
+| **GitWorkspace** | Manages worktrees, branches, commits, PR creation, and auto-merge via `gh` CLI. |
+| **MergeTestRetry** | Merges all subtask branches, runs test command, requeues on conflict/failure. Max 3 attempts. |
+| **P2P Mesh** | TCP gossip with Lamport clocks, UDP LAN discovery, peer exchange, anti-entropy sync. |
+| **Leader Election** | Bully algorithm. Emperor heartbeats every 10s, workers detect stale >30s, lowest node ID wins. |
 
 ### Task Lifecycle
 
-1. **Emperor creates task** -- stored in SQLite, gossiped as `TASK_CREATE` to all peers
-2. **Worker claims task** -- atomic SQLite update, gossiped as `TASK_CLAIM`
-3. **ClaimResolver handles conflicts** -- lowest Lamport timestamp wins, ties broken by node_id
-4. **AgentBridge delivers to tmux** -- checks agent is idle via StatusDetector, sends task prompt via `sendText()`
-5. **AgentMonitor polls every 5s** -- `capturePane()` + StatusDetector:
-   - **Running** -- extract progress, broadcast `TASK_UPDATE`
-   - **Idle** -- task finished, extract result, broadcast `TASK_COMPLETE`
-   - **Error** -- broadcast `TASK_FAIL`
-   - **Waiting** -- flag for emperor attention (agent needs permission)
-6. **All nodes converge** via gossip + periodic anti-entropy sync
-
-### Conflict Resolution
-
-When multiple workers claim the same task simultaneously:
-- Each claim carries a Lamport timestamp
-- Lower timestamp wins
-- Equal timestamps are broken by lexicographic node_id comparison
-- Losing nodes revert to pending, allowing re-claim
-
-This ensures exactly one agent works each task with no central coordinator.
-
-## CLI Commands
-
-```bash
-# Run the swarm server
-php bin/voidlux swarm [options]
-
-# Run the graffiti wall demo
-php bin/voidlux demo [options]
-
-# Detect extensions in a PHP project
-php bin/voidlux detect <app-dir>
-
-# Compile to static binary
-php bin/voidlux compile <app-dir> --output=./build/myapp
+```
+create --> planning --> [LLM decomposes into subtasks with deps]
+              |
+              v
+         in_progress
+              |
+   +----------+----------+
+   |          |          |
+subtask1   subtask2   subtask3   (dispatched to idle agents)
+   |          |          |
+ claimed    blocked    claimed    (deps resolved in order)
+   |          |          |
+complete  unblocked  complete
+   |       claimed      |
+   |          |          |
+   |       complete      |
+   +----------+----------+
+              |
+         pending_review --> [LLM checks acceptance criteria]
+              |
+        pass / fail
+         |       |
+      merging   requeue (with feedback, max 3x)
+         |
+   [merge branches + run tests]
+         |
+    pass / fail
+      |       |
+  completed  requeue subtasks
+      |
+   [push + create PR]
 ```
 
-### Swarm Options
+### MCP Integration
 
-| Option | Default | Description |
-|---|---|---|
-| `--http-port` | 9090 | HTTP/WebSocket server port |
-| `--p2p-port` | 7101 | P2P TCP mesh port |
-| `--discovery-port` | 6101 | UDP LAN discovery port |
-| `--seeds` | (none) | Comma-separated seed peers (`host:port,...`) |
-| `--data-dir` | ./data | SQLite database directory |
-| `--role` | emperor | Role: `emperor` or `worker` |
+Agents communicate completion/failure/progress back to the emperor via [Model Context Protocol](https://modelcontextprotocol.io/) tools:
 
-### Example: 3-Node Swarm
+| Tool | Purpose |
+|---|---|
+| `task_complete` | Agent signals task done with summary |
+| `task_failed` | Agent signals failure with error |
+| `task_progress` | Agent reports incremental progress |
+| `task_needs_input` | Agent requests human clarification |
+| `agent_ready` | Agent signals it has loaded and is ready |
+
+## CLI Reference
 
 ```bash
-# Emperor node
-php bin/voidlux swarm --role=emperor --http-port=9090 --p2p-port=7101
+# Emperor (single-machine, recommended)
+php bin/voidlux swarm --role=emperor \
+  --http-port=9091 --p2p-port=7101 \
+  --llm-provider=claude --llm-model=claude-sonnet-4-5-20250929 \
+  --claude-api-key=$ANTHROPIC_API_KEY
 
-# Worker 1 (seeds to emperor)
-php bin/voidlux swarm --role=worker --http-port=9091 --p2p-port=7102 --seeds=127.0.0.1:7101
+# Seneschal (stable proxy)
+php bin/voidlux seneschal \
+  --http-port=9090 --p2p-port=7100 \
+  --seeds=127.0.0.1:7101
 
-# Worker 2
-php bin/voidlux swarm --role=worker --http-port=9092 --p2p-port=7103 --seeds=127.0.0.1:7101
+# Multi-machine: additional emperor on another host
+php bin/voidlux swarm --role=worker \
+  --http-port=9091 --p2p-port=7101 \
+  --seeds=emperor-host:7101
+
+# Register agents
+bash scripts/register-agents.sh [count] [tool] [project_path] [port]
+# Example: 3 Claude Code agents working on a GitHub repo
+bash scripts/register-agents.sh 3 claude https://github.com/you/repo.git 9091
 ```
 
-Or just run `bash scripts/demo-swarm.sh` to launch all three in tmux.
+### Environment Variables
+
+| Variable | Description |
+|---|---|
+| `ANTHROPIC_API_KEY` | Claude API key for task planning and review |
+| `VOIDLUX_LLM_PROVIDER` | `claude` or `ollama` |
+| `VOIDLUX_LLM_MODEL` | Model name (e.g. `claude-sonnet-4-5-20250929`, `qwen3:32b`) |
+| `VOIDLUX_LLM_HOST` | Ollama host (default: `127.0.0.1`) |
+| `VOIDLUX_LLM_PORT` | Ollama port (default: `11434`) |
+| `VOIDLUX_TEST_COMMAND` | Test command for merge-test-retry (e.g. `composer test`) |
+| `VOIDLUX_AUTH_SECRET` | Shared secret for P2P authentication |
 
 ## HTTP API
 
@@ -131,173 +210,48 @@ Or just run `bash scripts/demo-swarm.sh` to launch all three in tmux.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/swarm/tasks` | List tasks (filter with `?status=pending`) |
-| `POST` | `/api/swarm/tasks` | Create task |
+| `POST` | `/api/swarm/tasks` | Create task (triggers LLM planning) |
+| `GET` | `/api/swarm/tasks` | List tasks (`?status=pending`) |
 | `GET` | `/api/swarm/tasks/{id}` | Get task detail |
+| `GET` | `/api/swarm/tasks/{id}/subtasks` | Get subtasks |
 | `POST` | `/api/swarm/tasks/{id}/cancel` | Cancel task |
-
-#### Create Task
-
-```bash
-curl -X POST http://localhost:9090/api/swarm/tasks \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "title": "Add unit tests",
-    "description": "Write PHPUnit tests for the auth service",
-    "priority": 5,
-    "required_capabilities": ["php", "testing"],
-    "project_path": "/home/you/project",
-    "context": "Focus on edge cases"
-  }'
-```
-
-Fields:
-- **title** (required) -- short task name
-- **description** -- detailed instructions sent to the agent
-- **priority** -- higher numbers are claimed first (default: 0)
-- **required_capabilities** -- only agents with all listed capabilities can claim
-- **project_path** -- working directory for the agent
-- **context** -- additional context appended to the prompt
+| `POST` | `/api/swarm/tasks/{id}/review` | Accept/reject completed task |
+| `POST` | `/api/swarm/tasks/{id}/merge-pr` | Merge the task's pull request |
+| `POST` | `/api/swarm/tasks/clear` | Archive all tasks |
 
 ### Agents
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/swarm/agents` | List all agents across the swarm |
+| `GET` | `/api/swarm/agents` | List all agents |
 | `POST` | `/api/swarm/agents` | Register agent (creates tmux session) |
 | `DELETE` | `/api/swarm/agents/{id}` | Deregister agent |
-| `POST` | `/api/swarm/agents/{id}/send` | Send text to agent's tmux |
-| `GET` | `/api/swarm/agents/{id}/output` | Capture agent's pane output |
+| `POST` | `/api/swarm/agents/{id}/send` | Send text to agent tmux |
+| `GET` | `/api/swarm/agents/{id}/output` | Capture pane output |
+| `POST` | `/api/swarm/agents/wellness` | Health check all agents |
 
-#### Register Agent
-
-```bash
-curl -X POST http://localhost:9091/api/swarm/agents \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "claude-worker-1",
-    "tool": "claude",
-    "capabilities": ["php", "testing", "refactoring"],
-    "project_path": "/home/you/project"
-  }'
-```
-
-If `project_path` is provided without `tmux_session_id`, a tmux session is automatically created with the specified tool (claude/opencode) running inside.
-
-### Status
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/` | Emperor dashboard (WebUI) |
-| `GET` | `/health` | Health check |
-| `GET` | `/api/swarm/status` | Swarm overview with task/agent counts |
-
-## Wire Protocol
+## P2P Wire Protocol
 
 Messages use JSON with a 4-byte uint32 big-endian length prefix.
 
-### Core Messages
-
-| Type | Code | Description |
+| Code | Message | Description |
 |---|---|---|
-| HELLO | 0x01 | Handshake with node ID |
-| POST | 0x02 | Graffiti wall post |
-| SYNC_REQ | 0x03 | Request posts since lamport_ts |
-| SYNC_RSP | 0x04 | Response with missed posts |
-| PEX | 0x05 | Peer exchange |
-| PING | 0x06 | Keepalive |
-| PONG | 0x07 | Keepalive response |
+| `0x01` | HELLO | Handshake with node ID |
+| `0x05` | PEX | Peer exchange |
+| `0x06`/`0x07` | PING/PONG | Keepalive |
+| `0x10`-`0x16` | TASK_* | Create, claim, update, complete, fail, cancel, assign |
+| `0x20`-`0x22` | AGENT_* | Register, heartbeat, deregister |
+| `0x30`-`0x31` | TASK_SYNC_* | Anti-entropy pull sync |
+| `0x40`-`0x42` | ELECTION_* | Emperor heartbeat, election start, victory |
 
-### Swarm Messages
+## Requirements
 
-| Type | Code | Description |
-|---|---|---|
-| TASK_CREATE | 0x10 | New task announcement |
-| TASK_CLAIM | 0x11 | Agent claims a task |
-| TASK_UPDATE | 0x12 | Progress update |
-| TASK_COMPLETE | 0x13 | Task completed with result |
-| TASK_FAIL | 0x14 | Task failed with error |
-| TASK_CANCEL | 0x15 | Task cancelled |
-| AGENT_REGISTER | 0x20 | New agent announcement |
-| AGENT_HEARTBEAT | 0x21 | Agent status heartbeat |
-| TASK_SYNC_REQ | 0x30 | Pull-based task sync request |
-| TASK_SYNC_RSP | 0x31 | Task sync response |
-
-## P2P Networking
-
-- **TCP Mesh** -- Swoole coroutine TCP server + client connections
-- **UDP Broadcast** -- LAN peer discovery on `255.255.255.255`
-- **Seed Peers** -- Static peer list for WAN bootstrap
-- **Peer Exchange (PEX)** -- Gossip-based peer list sharing every 30s
-- **Gossip Engine** -- Push-based dissemination with UUID dedup
-- **Anti-Entropy** -- Pull-based consistency repair every 60s
-- **Lamport Clock** -- Logical timestamps for causal ordering
-
-## Project Structure
-
-```
-voidlux/
-├── bin/voidlux                           CLI entry point
-├── src/
-│   ├── Compat/OpenSwooleShim.php         OpenSwoole ↔ Swoole aliases
-│   ├── Compiler/                         Static binary compiler
-│   ├── Template/                         {{VAR}} template engine
-│   ├── P2P/
-│   │   ├── PeerManager.php               Peer lifecycle management
-│   │   ├── Discovery/                    UDP broadcast, seeds, PEX
-│   │   ├── Protocol/                     Message types, codec, Lamport clock
-│   │   ├── Gossip/                       Push gossip + pull anti-entropy
-│   │   └── Transport/                    TCP mesh + connection wrapper
-│   ├── App/GraffitiWall/                 Graffiti wall demo
-│   └── Swarm/
-│       ├── Server.php                    Main swarm server (HTTP+WS+TCP+UDP)
-│       ├── SwarmWebUI.php                Emperor dashboard HTML
-│       ├── SwarmWebSocketHandler.php     Real-time WS push
-│       ├── Model/
-│       │   ├── TaskModel.php             Task value object
-│       │   ├── AgentModel.php            Agent value object
-│       │   └── TaskStatus.php            Status enum
-│       ├── Storage/
-│       │   └── SwarmDatabase.php         SQLite persistence
-│       ├── Gossip/
-│       │   ├── TaskGossipEngine.php      Push-based task dissemination
-│       │   └── TaskAntiEntropy.php       Pull-based task sync
-│       ├── Orchestrator/
-│       │   ├── TaskQueue.php             Task lifecycle management
-│       │   ├── ClaimResolver.php         Lamport-ordered conflict resolution
-│       │   └── EmperorController.php     HTTP API controller
-│       └── Agent/
-│           ├── AgentRegistry.php         Registration + heartbeats
-│           ├── AgentBridge.php           aoe-php TmuxService wrapper
-│           └── AgentMonitor.php          Coroutine polling loop
-├── scripts/
-│   ├── demo-swarm.sh                     1 emperor + 2 workers
-│   ├── demo-5-nodes.sh                   5-node graffiti wall
-│   ├── build-graffiti.sh                 Compile graffiti wall binary
-│   └── install-spc.sh                    Install static-php-cli
-├── templates/                            Compiler templates
-└── composer.json
-```
-
-## Graffiti Wall Demo
-
-The original demo application -- a P2P chat wall where posts propagate via gossip:
-
-```bash
-php bin/voidlux demo --http-port=8080
-# Or launch 5 nodes:
-bash scripts/demo-5-nodes.sh
-```
-
-## Static Binary Compiler
-
-VoidLux can compile PHP/OpenSwoole applications into standalone static binaries using [static-php-cli](https://github.com/crazywhalecc/static-php-cli):
-
-```bash
-bash scripts/install-spc.sh
-bash scripts/build-graffiti.sh
-./build/graffiti-wall demo --http-port=8080
-```
+- **PHP 8.1+** with OpenSwoole extension
+- **tmux** (agent sessions)
+- **git** (worktrees, branches, PRs)
+- **gh** CLI (pull request creation and merging)
+- **SQLite3** PDO extension
+- An LLM provider: **Claude API** (recommended) or **Ollama** (local)
 
 ## License
 
