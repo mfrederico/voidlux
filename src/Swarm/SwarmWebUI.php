@@ -467,7 +467,12 @@ body {
         <form class="hero-fields" id="hero-form" onsubmit="deploySwarm(event)">
             <input type="text" name="repo_url" placeholder="git@github.com:user/repo.git" required />
             <textarea name="instructions" placeholder="What should the swarm do?" required></textarea>
-            <div class="hero-submit"><button type="submit">Deploy Swarm</button></div>
+            <div class="hero-submit" style="display:flex;justify-content:space-between;align-items:center;grid-column:1/-1;">
+                <label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;color:#888;">
+                    <input type="checkbox" name="auto_merge" style="accent-color:#cc6600;" /> Auto-merge PR
+                </label>
+                <button type="submit">Deploy Swarm</button>
+            </div>
         </form>
     </div>
 
@@ -503,6 +508,9 @@ body {
                 <input type="text" form="task-form" name="capabilities" placeholder="Capabilities (comma-sep)" style="background:#1a1a1a;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:4px;font-family:inherit;" />
                 <input type="number" form="task-form" name="priority" placeholder="Priority (0)" value="0" style="background:#1a1a1a;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:4px;font-family:inherit;" />
                 <textarea form="task-form" name="context" placeholder="Additional context" style="background:#1a1a1a;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:4px;font-family:inherit;min-height:60px;"></textarea>
+                <label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;color:#888;grid-column:1/-1;">
+                    <input type="checkbox" form="task-form" name="auto_merge" style="accent-color:#cc6600;" /> Auto-merge PR on completion
+                </label>
             </div>
         </div>
     </div>
@@ -746,6 +754,12 @@ function renderPrCard(t, children) {
     const prUrl = prMatch[1];
     let html = '<div class="pr-card">';
     html += '<a class="pr-link" href="'+escapeHtml(prUrl)+'" target="_blank">View Pull Request</a>';
+    const autoMerged = t.result?.includes('Auto-merged: yes');
+    if (autoMerged) {
+        html += ' <span style="font-size:0.8rem;color:#66cc66;margin-left:8px;">Auto-merged</span>';
+    } else {
+        html += ' <button onclick="mergePr(\''+t.id+'\',\''+escapeHtml(prUrl).replace(/'/g,"\\'")+'\')" style="background:linear-gradient(135deg,#228822,#33aa33);color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:0.8rem;font-weight:bold;margin-left:8px;">Merge PR</button>';
+    }
     const summaryMatch = t.result?.match(/^(.+?)(?:\n|$)/);
     if (summaryMatch) html += '<div class="pr-summary">'+escapeHtml(summaryMatch[1])+'</div>';
     if (children.length) {
@@ -827,6 +841,19 @@ function renderTask(t, isSubtask) {
     } else if (t.result && t.result.match(/PR: (https?:\/\/\S+)/)) {
         const prUrl = t.result.match(/PR: (https?:\/\/\S+)/)[1];
         html += '<div style="font-size:0.8rem;margin-top:4px;"><a href="'+escapeHtml(prUrl)+'" target="_blank" style="color:#66aaff;text-decoration:underline;">View Pull Request</a></div>';
+    }
+    // Merge PR button: show when task has pr_url and is completed
+    const taskPrUrl = t.pr_url || (t.result?.match(/PR: (https?:\/\/\S+)/)?.[1] || '');
+    if (taskPrUrl && t.status === 'completed') {
+        const autoMerged = t.result?.includes('Auto-merged: yes');
+        if (autoMerged) {
+            html += '<div style="font-size:0.8rem;color:#66cc66;margin-top:4px;">Auto-merged</div>';
+        } else {
+            html += '<button onclick="mergePr(\''+t.id+'\',\''+escapeHtml(taskPrUrl).replace(/'/g,"\\'")+'\')" style="background:linear-gradient(135deg,#228822,#33aa33);color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:0.8rem;font-weight:bold;margin-top:6px;">Merge PR</button>';
+        }
+    }
+    if (t.auto_merge) {
+        html += '<div style="font-size:0.75rem;color:#888;margin-top:2px;">auto-merge enabled</div>';
     }
     html += '<div class="card-meta">ts:'+t.lamport_ts+' | '+t.created_at+'</div>';
     html += '<div class="card-actions">';
@@ -934,7 +961,7 @@ function djb2Hash(str) {
 function taskDataKey(t) {
     const children = getTaskChildren(t.id);
     const ck = children.map(c => c.id+c.status+c.lamport_ts+c.assigned_to+(c.progress||'').substring(0,40)+(c.result||'').substring(0,40)+(c.review_status||'')).join('|');
-    return JSON.stringify([t.status,t.lamport_ts,t.assigned_to,t.progress,(t.result||'').substring(0,200),(t.error||'').substring(0,100),t.review_status,t.review_feedback,t.git_branch,t.merge_attempts,!!t.work_instructions,!!t.acceptance_criteria,ck]);
+    return JSON.stringify([t.status,t.lamport_ts,t.assigned_to,t.progress,(t.result||'').substring(0,200),(t.error||'').substring(0,100),t.review_status,t.review_feedback,t.git_branch,t.merge_attempts,!!t.work_instructions,!!t.acceptance_criteria,t.pr_url||'',!!t.auto_merge,ck]);
 }
 
 function agentDataKey(a) {
@@ -1134,6 +1161,7 @@ function createTask(e) {
         project_path: f.project_path?.value||'',
         context: f.context?.value||'',
         required_capabilities: caps,
+        auto_merge: !!f.auto_merge?.checked,
     };
     fetch('/api/swarm/tasks', {
         method: 'POST',
@@ -1157,6 +1185,7 @@ function deploySwarm(e) {
         title: title,
         description: instructions,
         project_path: repoUrl,
+        auto_merge: !!f.auto_merge?.checked,
     };
 
     // Save to localStorage history
@@ -1429,6 +1458,23 @@ function closeModal() {
 }
 
 document.addEventListener('keydown', e => { if (e.key==='Escape') closeModal(); });
+
+function mergePr(taskId, prUrl) {
+    if (!confirm('Merge this PR?\n\n'+prUrl+'\n\nThis will merge and delete the branch.')) return;
+    fetch('/api/swarm/tasks/'+taskId+'/merge', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pr_url: prUrl})
+    }).then(r=>r.json()).then(d => {
+        if (d.merged) {
+            addLog('task_completed', 'Merged PR for task '+taskId.substring(0,8));
+        } else {
+            addLog('task_failed', 'Merge failed: '+(d.error||'unknown error'));
+        }
+    }).catch(err => {
+        addLog('task_failed', 'Merge request failed: '+err.message);
+    });
+}
 
 // ---- Contributions (PR list) ----
 function renderContributions() {
