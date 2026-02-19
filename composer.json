@@ -10,14 +10,8 @@
         "ext-openswoole": "*",
         "ext-pdo_sqlite": "*",
         "ext-sockets": "*",
-        "myctobot/aoe-php": "dev-master"
+        "myctobot/aoe-php": "^1.0"
     },
-    "repositories": [
-        {
-            "type": "path",
-            "url": "../aoe-php"
-        }
-    ],
     "autoload": {
         "psr-4": {
             "VoidLux\\": "src/"
