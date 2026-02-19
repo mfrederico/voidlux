@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Launch the VoidLux swarm session (emperor + 2 workers).
+# Launch the VoidLux swarm session (emperor only).
 # Does NOT touch the seneschal — it runs in its own long-lived session.
 #
 # Called by:
@@ -25,13 +25,10 @@ DATA_DIR="${PROJECT_DIR}/data"
 
 SWARM_SESSION="voidlux-swarm"
 
-# Port assignments:     Emperor  Worker1  Worker2
-HTTP_PORTS=(9091 9092 9093)
-P2P_PORTS=(7101 7102 7103)
-DISC_PORTS=(6101 6101 6101)
-
-# Emperor's P2P port for worker seeding
-EMPEROR_P2P="${P2P_PORTS[0]}"
+# Emperor ports
+HTTP_PORT=9091
+P2P_PORT=7101
+DISC_PORT=6101
 
 mkdir -p "${DATA_DIR}"
 
@@ -55,8 +52,8 @@ for s in $(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^vl-'); d
     done
 done
 
-# Kill orphaned processes on swarm ports
-ALL_PORTS=("${HTTP_PORTS[@]}" "${P2P_PORTS[@]}")
+# Kill orphaned processes on emperor ports
+ALL_PORTS=($HTTP_PORT $P2P_PORT)
 for port in "${ALL_PORTS[@]}"; do
     pids=$(ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u || true)
     [ -n "$pids" ] && kill $pids 2>/dev/null || true
@@ -74,58 +71,32 @@ for attempt in $(seq 1 10); do
     sleep 0.5
 done
 
-# ── Create swarm session ────────────────────────────────────────────
-ROLES=(emperor worker worker)
-
+# ── Create swarm session (emperor only) ───────────────────────────
 tmux new-session -d -s "$SWARM_SESSION" -x 200 -y 50
 
-for i in 0 1 2; do
-    HTTP_PORT=${HTTP_PORTS[$i]}
-    P2P_PORT=${P2P_PORTS[$i]}
-    DISC_PORT=${DISC_PORTS[$i]}
-    ROLE=${ROLES[$i]}
+CMD="cd ${PROJECT_DIR} && php bin/voidlux swarm"
+CMD="${CMD} --http-port=${HTTP_PORT}"
+CMD="${CMD} --p2p-port=${P2P_PORT}"
+CMD="${CMD} --discovery-port=${DISC_PORT}"
+CMD="${CMD} --role=emperor"
+CMD="${CMD} --data-dir=${DATA_DIR}"
 
-    # Workers seed to emperor; emperor discovers via UDP
-    if [ "$i" -eq 0 ]; then
-        SEEDS=""
-    else
-        SEEDS="--seeds=127.0.0.1:${EMPEROR_P2P}"
-    fi
+# LLM config
+LLM_MODEL="${VOIDLUX_LLM_MODEL:-qwen3-coder:30b}"
+LLM_PROVIDER="${VOIDLUX_LLM_PROVIDER:-ollama}"
+CMD="${CMD} --llm-provider=${LLM_PROVIDER} --llm-model=${LLM_MODEL}"
+[ -n "${VOIDLUX_LLM_HOST:-}" ] && CMD="${CMD} --llm-host=${VOIDLUX_LLM_HOST}"
+[ -n "${VOIDLUX_LLM_PORT:-}" ] && CMD="${CMD} --llm-port=${VOIDLUX_LLM_PORT}"
+[ -n "${ANTHROPIC_API_KEY:-}" ] && CMD="${CMD} --claude-api-key=${ANTHROPIC_API_KEY}"
 
-    CMD="cd ${PROJECT_DIR} && php bin/voidlux swarm"
-    CMD="${CMD} --http-port=${HTTP_PORT}"
-    CMD="${CMD} --p2p-port=${P2P_PORT}"
-    CMD="${CMD} --discovery-port=${DISC_PORT}"
-    CMD="${CMD} --role=${ROLE}"
-    CMD="${CMD} --data-dir=${DATA_DIR}"
-    [ -n "$SEEDS" ] && CMD="${CMD} ${SEEDS}"
+# Auth secret for P2P connection authentication
+AUTH_SECRET="${VOIDLUX_AUTH_SECRET:-}"
+[ -n "$AUTH_SECRET" ] && CMD="${CMD} --auth-secret=${AUTH_SECRET}"
 
-    # Emperor gets LLM config for AI planning/review
-    if [ "$ROLE" = "emperor" ]; then
-        LLM_MODEL="${VOIDLUX_LLM_MODEL:-qwen3-coder:30b}"
-        LLM_PROVIDER="${VOIDLUX_LLM_PROVIDER:-ollama}"
-        CMD="${CMD} --llm-provider=${LLM_PROVIDER} --llm-model=${LLM_MODEL}"
-        [ -n "${VOIDLUX_LLM_HOST:-}" ] && CMD="${CMD} --llm-host=${VOIDLUX_LLM_HOST}"
-        [ -n "${VOIDLUX_LLM_PORT:-}" ] && CMD="${CMD} --llm-port=${VOIDLUX_LLM_PORT}"
-        [ -n "${ANTHROPIC_API_KEY:-}" ] && CMD="${CMD} --claude-api-key=${ANTHROPIC_API_KEY}"
-    fi
+# Test command for merge-test-retry loop
+TEST_CMD="${VOIDLUX_TEST_COMMAND:-}"
+[ -n "$TEST_CMD" ] && CMD="${CMD} --test-command=${TEST_CMD}"
 
-    # Auth secret for P2P connection authentication
-    AUTH_SECRET="${VOIDLUX_AUTH_SECRET:-}"
-    [ -n "$AUTH_SECRET" ] && CMD="${CMD} --auth-secret=${AUTH_SECRET}"
+tmux send-keys -t "$SWARM_SESSION" "$CMD" C-m
 
-    # Test command for merge-test-retry loop
-    TEST_CMD="${VOIDLUX_TEST_COMMAND:-}"
-    [ -n "$TEST_CMD" ] && CMD="${CMD} --test-command=${TEST_CMD}"
-
-    if [ "$i" -eq 0 ]; then
-        # First pane (already exists from new-session)
-        tmux send-keys -t "$SWARM_SESSION" "$CMD" C-m
-    else
-        tmux split-window -t "$SWARM_SESSION" -v
-        tmux send-keys -t "$SWARM_SESSION" "$CMD" C-m
-        tmux select-layout -t "$SWARM_SESSION" tiled
-    fi
-done
-
-echo "Swarm session launched: $SWARM_SESSION (emperor + 2 workers)"
+echo "Swarm session launched: $SWARM_SESSION (emperor only)"

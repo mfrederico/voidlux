@@ -774,8 +774,8 @@ class Seneschal
 
     private function cycleKillOrphans(): void
     {
-        // Kill anything still holding swarm ports (9091-9093, 7101-7103)
-        $ports = [9091, 9092, 9093, 7101, 7102, 7103];
+        // Kill anything still holding emperor ports
+        $ports = [9091, 7101];
         $killed = 0;
         foreach ($ports as $port) {
             $output = trim(shell_exec("ss -tlnp 'sport = :{$port}' 2>/dev/null | grep -oP 'pid=\\K[0-9]+' | sort -u") ?: '');
