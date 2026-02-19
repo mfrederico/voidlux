@@ -453,10 +453,6 @@ class McpHandler
         if ($task->status->isTerminal()) {
             return $this->toolError("Task already in terminal state: {$task->status->value}");
         }
-        if (!$task->status->isWorkableByAgent()) {
-            return $this->toolError("Cannot fail task in state: {$task->status->value}. Task must be claimed or in_progress.");
-        }
-
         // Enhanced state validation (same pattern as task_complete)
         $stateWarning = $this->validateCompletionState($task);
 
