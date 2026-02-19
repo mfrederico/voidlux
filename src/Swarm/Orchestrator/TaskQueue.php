@@ -863,6 +863,16 @@ class TaskQueue
             $result .= "\n\nPR: {$prUrl}";
         }
 
+        // Auto-merge the PR if the flag is set on the parent task
+        if ($prUrl && $this->git && property_exists($parent, 'autoMerge') && $parent->autoMerge) {
+            $merged = $this->git->autoMergePullRequest($mergeWorkDir, $prUrl);
+            if ($merged) {
+                $result .= "\nAuto-merged: yes";
+            } else {
+                $result .= "\nAuto-merge attempted but failed — PR remains open for manual merge";
+            }
+        }
+
         // Complete parent atomically — only if still in Merging state
         $ts = $this->clock->tick();
         $now = gmdate('Y-m-d\TH:i:s\Z');
