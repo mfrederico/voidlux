@@ -1,0 +1,22 @@
+services:
+  voidlux:
+    build: .
+    ports:
+      - "9090:9090"
+      - "9091:9091"
+    volumes:
+      - ./data:/app/data
+      - ./workbench:/app/workbench
+      - ${CLAUDE_PATH:-/usr/local/bin/claude}:/usr/local/bin/claude:ro
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - VOIDLUX_LLM_PROVIDER=${VOIDLUX_LLM_PROVIDER:-claude}
+      - VOIDLUX_LLM_MODEL=${VOIDLUX_LLM_MODEL:-claude-sonnet-4-5-20250929}
+    # # Ollama configuration (uncomment to use local Ollama instance)
+    # environment:
+    #   - VOIDLUX_LLM_PROVIDER=ollama
+    #   - VOIDLUX_LLM_MODEL=qwen3:32b
+    #   - VOIDLUX_LLM_HOST=host.docker.internal
+    #   - VOIDLUX_LLM_PORT=11434
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
