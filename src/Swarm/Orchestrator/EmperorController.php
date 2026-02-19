@@ -682,6 +682,23 @@ class EmperorController
         $tasks = $this->db->clearAllTasks();
         $count = count($tasks);
 
+        // Gossip terminal state for all tasks so peers don't resurrect them via anti-entropy
+        if ($this->taskGossip && $this->clock && $count > 0) {
+            foreach ($tasks as $task) {
+                if (!$task->status->isTerminal()) {
+                    $ts = $this->clock->tick();
+                    $this->taskGossip->gossipTaskFail(
+                        $task->id,
+                        $task->assignedTo ?? '',
+                        'Cleared by emperor',
+                        $ts
+                    );
+                }
+                // Gossip archive so peers mark them archived (prevents anti-entropy resurrection)
+                $this->taskGossip->gossipTaskArchive($task->id, $this->clock->tick());
+            }
+        }
+
         // Write to log file in data directory
         if ($count > 0) {
             $dataDir = getcwd() . '/data';
