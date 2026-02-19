@@ -68,14 +68,11 @@ class TaskAntiEntropy
     public function handleSyncRequest(Connection $conn, array $message): void
     {
         $sinceLamportTs = $message['since_lamport_ts'] ?? 0;
-        $tasks = $this->db->getTasksSince($sinceLamportTs);
-
-        // Exclude archived tasks from sync responses — peers don't need them
-        $filtered = array_filter($tasks, fn($t) => !$t->archived);
+        $tasks = $this->db->getTasksSince($sinceLamportTs); // already excludes archived
 
         $conn->send([
             'type' => MessageTypes::TASK_SYNC_RSP,
-            'tasks' => array_map(fn($t) => $t->toArray(), $filtered),
+            'tasks' => array_map(fn($t) => $t->toArray(), $tasks),
         ]);
     }
 

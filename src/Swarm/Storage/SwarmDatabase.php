@@ -380,10 +380,10 @@ class SwarmDatabase
     public function getTasksByStatus(?string $status = null): array
     {
         if ($status) {
-            $stmt = $this->pdo->prepare('SELECT * FROM tasks WHERE status = :status ORDER BY priority DESC, created_at ASC');
+            $stmt = $this->pdo->prepare('SELECT * FROM tasks WHERE status = :status AND archived = 0 ORDER BY priority DESC, created_at ASC');
             $stmt->execute([':status' => $status]);
         } else {
-            $stmt = $this->pdo->query('SELECT * FROM tasks ORDER BY priority DESC, created_at ASC');
+            $stmt = $this->pdo->query('SELECT * FROM tasks WHERE archived = 0 ORDER BY priority DESC, created_at ASC');
         }
         return array_map(fn(array $row) => TaskModel::fromArray($row), $stmt->fetchAll());
     }
@@ -393,7 +393,7 @@ class SwarmDatabase
      */
     public function getTasksSince(int $lamportTs): array
     {
-        $stmt = $this->pdo->prepare('SELECT * FROM tasks WHERE lamport_ts > :ts ORDER BY lamport_ts ASC');
+        $stmt = $this->pdo->prepare('SELECT * FROM tasks WHERE lamport_ts > :ts AND archived = 0 ORDER BY lamport_ts ASC');
         $stmt->execute([':ts' => $lamportTs]);
         return array_map(fn(array $row) => TaskModel::fromArray($row), $stmt->fetchAll());
     }
@@ -401,11 +401,11 @@ class SwarmDatabase
     public function getTaskCount(?string $status = null): int
     {
         if ($status) {
-            $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM tasks WHERE status = :status');
+            $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM tasks WHERE status = :status AND archived = 0');
             $stmt->execute([':status' => $status]);
             return (int) $stmt->fetchColumn();
         }
-        return (int) $this->pdo->query('SELECT COUNT(*) FROM tasks')->fetchColumn();
+        return (int) $this->pdo->query('SELECT COUNT(*) FROM tasks WHERE archived = 0')->fetchColumn();
     }
 
     public function getMaxTaskLamportTs(): int
@@ -870,13 +870,22 @@ class SwarmDatabase
     }
 
     /**
-     * Delete all tasks and return them for archiving.
-     * @return TaskModel[]
+     * Archive all tasks (soft-delete) and return the non-archived ones.
+     * Uses UPDATE instead of DELETE so anti-entropy sync can see archived state.
+     * @return TaskModel[] Tasks that were not already archived
      */
     public function clearAllTasks(): array
     {
-        $tasks = $this->getTasksByStatus();
-        $this->pdo->exec('DELETE FROM tasks');
+        // Get non-archived tasks for return value and gossip
+        $stmt = $this->pdo->query("SELECT * FROM tasks WHERE archived = 0 ORDER BY priority DESC, created_at ASC");
+        $tasks = array_map(fn(array $row) => TaskModel::fromArray($row), $stmt->fetchAll());
+
+        // Soft-delete: mark all as archived + terminal status
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $this->pdo->prepare(
+            "UPDATE tasks SET archived = 1, status = 'cancelled', updated_at = :now WHERE archived = 0"
+        )->execute([':now' => $now]);
+
         return $tasks;
     }
 
