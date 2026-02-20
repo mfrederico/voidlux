@@ -73,6 +73,13 @@ services:
       - VOIDLUX_LLM_MODEL=claude-sonnet-4-5-20250929
 ```
 
+> **Docker permissions**: If you get `permission denied` on the Docker socket, add your user to the `docker` group and start a new shell:
+> ```bash
+> sudo usermod -aG docker $USER
+> newgrp docker  # or log out and back in
+> ```
+> Any tmux sessions or background processes started *before* the group change won't inherit it — restart them after.
+
 ## Dashboard
 
 The emperor serves a real-time web dashboard at the seneschal port (default `:9090`):
