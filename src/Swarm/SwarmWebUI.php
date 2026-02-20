@@ -441,7 +441,7 @@ body {
 </head>
 <body>
 <div class="header">
-    <h1>VoidLux Swarm Emperor</h1>
+    <h1><a href="https://github.com/mfrederico/voidlux" target="_blank" style="text-decoration:none;-webkit-text-fill-color:inherit;background:inherit;-webkit-background-clip:text;background-size:inherit;animation:inherit;" title="VoidLux on GitHub">VoidLux Swarm Emperor</a></h1>
     <div class="status-bar">
         <span><span class="dot dot-orange"></span> Node: <span id="node-id"></span></span>
         <span>Tasks: <span id="task-count">0</span></span>
