@@ -54,13 +54,13 @@ EMPEROR_CMD=(php bin/voidlux swarm
     --data-dir="$DATA_DIR"
 )
 
-${VOIDLUX_LLM_PROVIDER:+true} && EMPEROR_CMD+=(--llm-provider="$VOIDLUX_LLM_PROVIDER") || true
-${VOIDLUX_LLM_MODEL:+true} && EMPEROR_CMD+=(--llm-model="$VOIDLUX_LLM_MODEL") || true
-${VOIDLUX_LLM_HOST:+true} && EMPEROR_CMD+=(--llm-host="$VOIDLUX_LLM_HOST") || true
-${VOIDLUX_LLM_PORT:+true} && EMPEROR_CMD+=(--llm-port="$VOIDLUX_LLM_PORT") || true
-${ANTHROPIC_API_KEY:+true} && EMPEROR_CMD+=(--claude-api-key="$ANTHROPIC_API_KEY") || true
-${VOIDLUX_AUTH_SECRET:+true} && EMPEROR_CMD+=(--auth-secret="$VOIDLUX_AUTH_SECRET") || true
-${VOIDLUX_TEST_COMMAND:+true} && EMPEROR_CMD+=(--test-command="$VOIDLUX_TEST_COMMAND") || true
+[ -n "${VOIDLUX_LLM_PROVIDER:-}" ] && EMPEROR_CMD+=(--llm-provider="$VOIDLUX_LLM_PROVIDER")
+[ -n "${VOIDLUX_LLM_MODEL:-}" ]    && EMPEROR_CMD+=(--llm-model="$VOIDLUX_LLM_MODEL")
+[ -n "${VOIDLUX_LLM_HOST:-}" ]     && EMPEROR_CMD+=(--llm-host="$VOIDLUX_LLM_HOST")
+[ -n "${VOIDLUX_LLM_PORT:-}" ]     && EMPEROR_CMD+=(--llm-port="$VOIDLUX_LLM_PORT")
+[ -n "${ANTHROPIC_API_KEY:-}" ]     && EMPEROR_CMD+=(--claude-api-key="$ANTHROPIC_API_KEY")
+[ -n "${VOIDLUX_AUTH_SECRET:-}" ]   && EMPEROR_CMD+=(--auth-secret="$VOIDLUX_AUTH_SECRET")
+[ -n "${VOIDLUX_TEST_COMMAND:-}" ]  && EMPEROR_CMD+=(--test-command="$VOIDLUX_TEST_COMMAND")
 
 # ── Build seneschal command ────────────────────────────────────────
 SENESCHAL_CMD=(php bin/voidlux seneschal
