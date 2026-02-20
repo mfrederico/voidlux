@@ -21,7 +21,7 @@ class TaskPlanner
      * Decompose a parent task into subtask definitions.
      *
      * @return array[] Each element: ['title', 'description', 'work_instructions',
-     *                                'acceptance_criteria', 'requiredCapabilities', 'priority']
+     *                                'acceptance_criteria', 'complexity', 'requiredCapabilities', 'priority']
      */
     public function decompose(TaskModel $request): array
     {
@@ -63,6 +63,7 @@ Return ONLY a valid JSON array (no markdown fences, no explanation). Each elemen
     "description": "What this subtask accomplishes",
     "work_instructions": "Specific files to modify/create, approach to take, code patterns to follow",
     "acceptance_criteria": "How to verify this subtask is done correctly",
+    "complexity": "small|medium|large|xl",
     "requiredCapabilities": [],
     "priority": 0,
     "dependsOn": []
@@ -76,6 +77,11 @@ Rules:
 - If the request is simple enough for one agent, return a single subtask
 - Do NOT include testing/documentation subtasks unless explicitly requested
 - Only declare dependencies when truly needed (e.g., implementation needs analysis output)
+- "complexity" assesses the effort required for each subtask:
+  - "small": single-file change, simple logic, config tweak, or minor fix
+  - "medium": multi-file change within one module, moderate logic, or adding a new method/endpoint
+  - "large": cross-module changes, new feature implementation, or significant refactoring
+  - "xl": architectural changes, new subsystem, or changes spanning many files with complex interactions
 PROMPT;
 
         $userPrompt = "## Request\n";
@@ -312,12 +318,18 @@ PROMPT;
             if (!is_array($item) || empty($item['title'])) {
                 continue;
             }
+            $complexity = (string) ($item['complexity'] ?? 'medium');
+            if (!in_array($complexity, ['small', 'medium', 'large', 'xl'], true)) {
+                $complexity = 'medium';
+            }
+
             $subtasks[] = [
                 'id' => (string) ($item['id'] ?? ''),
                 'title' => (string) $item['title'],
                 'description' => (string) ($item['description'] ?? ''),
                 'work_instructions' => (string) ($item['work_instructions'] ?? ''),
                 'acceptance_criteria' => (string) ($item['acceptance_criteria'] ?? ''),
+                'complexity' => $complexity,
                 'requiredCapabilities' => (array) ($item['requiredCapabilities'] ?? []),
                 'priority' => (int) ($item['priority'] ?? 0),
                 'dependsOn' => (array) ($item['dependsOn'] ?? []),
