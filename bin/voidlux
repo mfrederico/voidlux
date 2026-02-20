@@ -167,6 +167,9 @@ function runSwarm(array $options): void
     $authSecret = $options['auth-secret'] ?? getenv('VOIDLUX_AUTH_SECRET') ?: '';
     $swarmConfig = \VoidLux\Swarm\Config\SwarmConfig::fromCliAndEnv($options);
 
+    // Apply model tier overrides from CLI flags / config file
+    \VoidLux\Swarm\Agent\AgentSizeConfig::applyCliOverrides($options);
+
     $server = new \VoidLux\Swarm\Server(
         httpHost: '0.0.0.0',
         httpPort: $httpPort,
@@ -279,6 +282,11 @@ Swarm Options:
   --claude-api-key=KEY    Claude API key (for claude provider)
   --test-command=CMD      Test command to run after merging subtask branches
   --auth-secret=SECRET    Shared secret for P2P auth (or VOIDLUX_AUTH_SECRET env)
+  --model-small=MODEL     Override model for small complexity tasks
+  --model-medium=MODEL    Override model for medium complexity tasks
+  --model-large=MODEL     Override model for large complexity tasks
+  --model-xl=MODEL        Override model for xl complexity tasks
+  --model-config=PATH     JSON file with per-provider model mappings
 
 Seneschal Options:
   --http-port=PORT        Proxy listen port (default: 9090)

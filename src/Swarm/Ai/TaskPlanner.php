@@ -21,7 +21,7 @@ class TaskPlanner
      * Decompose a parent task into subtask definitions.
      *
      * @return array[] Each element: ['title', 'description', 'work_instructions',
-     *                                'acceptance_criteria', 'requiredCapabilities', 'priority']
+     *                                'acceptance_criteria', 'complexity', 'requiredCapabilities', 'priority']
      */
     public function decompose(TaskModel $request): array
     {

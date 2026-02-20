@@ -7,6 +7,7 @@ namespace VoidLux\Swarm\Agent;
 use Aoe\Session\Status;
 use Aoe\Tmux\StatusDetector;
 use Aoe\Tmux\TmuxService;
+use VoidLux\Swarm\Agent\AgentSizeConfig;
 use VoidLux\Swarm\Ai\TaskPlanner;
 use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Model\AgentModel;
@@ -65,6 +66,16 @@ class AgentBridge
             if ($prepared) {
                 $this->db->updateGitBranch($task->id, $branchName);
             }
+        }
+
+        // Switch to the appropriate model for this task's complexity.
+        // Uses task priority to resolve a size config, then sends /model if
+        // the agent's tool supports it and a preferred model is configured.
+        $provider = ($agent->tool === 'claude') ? 'claude' : 'ollama';
+        $sizeConfig = AgentSizeConfig::forTaskPriority($task->priority, $provider);
+        $targetModel = $sizeConfig->preferredModel;
+        if ($targetModel !== '' && $agent->tool === 'claude') {
+            $this->switchModel($sessionName, $targetModel);
         }
 
         // Clear agent context before new task
