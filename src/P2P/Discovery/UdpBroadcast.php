@@ -54,8 +54,14 @@ class UdpBroadcast
     private function listenLoop(): void
     {
         while ($this->running) {
-            $peer = $this->socket->recvfrom($data, 1.0);
-            if ($peer === false || $data === false || $data === '') {
+            $result = $this->socket->recvfrom($peer, 1.0);
+            if ($result === false || $result === '') {
+                continue;
+            }
+
+            // recvfrom returns the data string, $peer is set to ['address'=>..., 'port'=>...]
+            $data = is_array($result) ? ($result['data'] ?? json_encode($result)) : $result;
+            if (!is_string($data) || $data === '') {
                 continue;
             }
 
@@ -69,7 +75,7 @@ class UdpBroadcast
                 continue; // Ignore our own broadcasts
             }
 
-            $remoteHost = $peer['address'] ?? '';
+            $remoteHost = is_array($peer) ? ($peer['address'] ?? '') : '';
             $remoteP2pPort = $message['p2p_port'] ?? $this->p2pPort;
 
             if ($this->onPeerDiscovered && $remoteHost) {
