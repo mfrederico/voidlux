@@ -122,6 +122,22 @@ class AgentSizeConfig
     }
 
     /**
+     * Resolve the appropriate size config for a task based on its priority.
+     * Priority 0-3 = small, 4-7 = medium, 8-9 = large, 10 = xl.
+     */
+    public static function forTaskPriority(int $priority, string $provider = 'claude'): self
+    {
+        $complexity = match (true) {
+            $priority >= 10 => 'xl',
+            $priority >= 8 => 'large',
+            $priority >= 4 => 'medium',
+            default => 'small',
+        };
+
+        return self::forComplexity($complexity, $provider);
+    }
+
+    /**
      * Get the full size config for a complexity tier.
      */
     public static function forComplexity(string $complexity, string $provider = 'claude'): self

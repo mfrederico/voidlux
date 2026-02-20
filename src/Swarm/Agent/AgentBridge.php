@@ -257,6 +257,35 @@ class AgentBridge
     }
 
     /**
+     * Send /model command to switch the agent's LLM model before task delivery.
+     * Waits for Claude Code to process the switch by polling the pane for
+     * an idle prompt, up to a maximum timeout.
+     */
+    private function switchModel(string $sessionName, string $model): bool
+    {
+        $this->tmux->sendTextByName($sessionName, '/model ' . $model);
+        $this->tmux->sendEnterByName($sessionName);
+
+        // Poll for the agent to return to idle after model switch.
+        // Claude Code processes /model quickly — 5s max is generous.
+        $maxWaitUs = 5_000_000;
+        $pollIntervalUs = 500_000;
+        $waited = 0;
+        while ($waited < $maxWaitUs) {
+            usleep($pollIntervalUs);
+            $waited += $pollIntervalUs;
+            $content = $this->tmux->capturePaneByName($sessionName, 10);
+            $status = $this->detector->detect($content);
+            if ($status === Status::Idle) {
+                return true;
+            }
+        }
+
+        // Timed out — proceed anyway, model may have switched
+        return true;
+    }
+
+    /**
      * Resolve the effective working directory for a task+agent pair.
      * When the task's projectPath is a git URL, uses the agent's worktree
      * (creating one on-the-fly if needed) instead of the raw URL.
