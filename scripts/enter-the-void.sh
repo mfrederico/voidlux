@@ -6,8 +6,7 @@
 #   voidlux-swarm     — Emperor (cyclable)
 #
 # Usage:
-#   bash scripts/enter-the-void.sh          # Start both (skip seneschal if running)
-#   bash scripts/enter-the-void.sh --full   # Force-restart everything including seneschal
+#   bash scripts/enter-the-void.sh          # Full restart (seneschal + emperor)
 #
 
 set -euo pipefail
@@ -18,11 +17,6 @@ DATA_DIR="${PROJECT_DIR}/data"
 
 SENESCHAL_SESSION="voidlux-seneschal"
 SWARM_SESSION="voidlux-swarm"
-
-FULL_RESTART=false
-if [[ "${1:-}" == "--full" ]]; then
-    FULL_RESTART=true
-fi
 
 # Port assignments:            Seneschal  Emperor
 HTTP_PORTS=(9090 9091)
@@ -42,18 +36,11 @@ for s in $(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^vl-'); d
     tmux kill-session -t "$s" 2>/dev/null || true
 done
 
-# Kill seneschal session only if --full
-if $FULL_RESTART; then
-    tmux kill-session -t "$SENESCHAL_SESSION" 2>/dev/null || true
-fi
+# Kill seneschal session
+tmux kill-session -t "$SENESCHAL_SESSION" 2>/dev/null || true
 
 # Kill orphaned PHP/Swoole processes still holding ports
-if $FULL_RESTART; then
-    KILL_PORTS=("${HTTP_PORTS[@]}" "${P2P_PORTS[@]}")
-else
-    # Only kill emperor ports (not seneschal's 9090/7100)
-    KILL_PORTS=(${HTTP_PORTS[@]:1} ${P2P_PORTS[@]:1})
-fi
+KILL_PORTS=("${HTTP_PORTS[@]}" "${P2P_PORTS[@]}")
 for port in "${KILL_PORTS[@]}"; do
     pids=$(ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u || true)
     [ -n "$pids" ] && kill $pids 2>/dev/null || true
@@ -72,19 +59,15 @@ for attempt in $(seq 1 10); do
 done
 
 # ── Seneschal session (create if not running) ────────────────────────
-if ! tmux has-session -t "$SENESCHAL_SESSION" 2>/dev/null; then
-    echo "Starting seneschal session..."
-    tmux new-session -d -s "$SENESCHAL_SESSION" -x 200 -y 50
+echo "Starting seneschal session..."
+tmux new-session -d -s "$SENESCHAL_SESSION" -x 200 -y 50
 
-    CMD="cd ${PROJECT_DIR} && php bin/voidlux seneschal"
-    CMD="${CMD} --http-port=${HTTP_PORTS[0]}"
-    CMD="${CMD} --p2p-port=${P2P_PORTS[0]}"
-    CMD="${CMD} --discovery-port=${DISC_PORTS[0]}"
-    CMD="${CMD} --seeds=127.0.0.1:${EMPEROR_P2P}"
-    tmux send-keys -t "$SENESCHAL_SESSION" "$CMD" C-m
-else
-    echo "Seneschal session already running (use --full to restart)"
-fi
+CMD="cd ${PROJECT_DIR} && php bin/voidlux seneschal"
+CMD="${CMD} --http-port=${HTTP_PORTS[0]}"
+CMD="${CMD} --p2p-port=${P2P_PORTS[0]}"
+CMD="${CMD} --discovery-port=${DISC_PORTS[0]}"
+CMD="${CMD} --seeds=127.0.0.1:${EMPEROR_P2P}"
+tmux send-keys -t "$SENESCHAL_SESSION" "$CMD" C-m
 
 # ── Swarm session (emperor only) ──────────────────────────────────
 bash "$SCRIPT_DIR/launch-swarm-session.sh"
@@ -111,6 +94,6 @@ echo "  curl -s -X POST http://localhost:${HTTP_PORTS[0]}/api/swarm/tasks \\"
 echo "    -H 'Content-Type: application/json' \\"
 echo "    -d '{\"title\":\"Add hello world endpoint\",\"project_path\":\"/tmp/test\"}'"
 echo ""
-echo "  # Full restart (including seneschal):"
-echo "  bash scripts/enter-the-void.sh --full"
+echo "  # Restart:"
+echo "  bash scripts/enter-the-void.sh"
 echo ""

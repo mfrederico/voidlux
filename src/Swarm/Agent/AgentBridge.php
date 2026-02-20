@@ -25,6 +25,7 @@ class AgentBridge
 
     public function __construct(
         private readonly SwarmDatabase $db,
+        private readonly int $httpPort = 9091,
         ?TmuxService $tmux = null,
         ?StatusDetector $detector = null,
         ?GitWorkspace $git = null,
@@ -220,8 +221,12 @@ class AgentBridge
             }
         }
 
-        // Skip if already configured
-        if (isset($config['mcpServers']['voidlux-swarm'])) {
+        $expectedUrl = "http://localhost:{$this->httpPort}/mcp";
+
+        // Skip if already configured with correct URL
+        if (isset($config['mcpServers']['voidlux-swarm'])
+            && ($config['mcpServers']['voidlux-swarm']['url'] ?? '') === $expectedUrl
+        ) {
             return;
         }
 
@@ -231,7 +236,7 @@ class AgentBridge
 
         $config['mcpServers']['voidlux-swarm'] = [
             'type' => 'http',
-            'url' => 'http://localhost:9090/mcp',
+            'url' => "http://localhost:{$this->httpPort}/mcp",
         ];
 
         file_put_contents(

@@ -14,7 +14,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 COUNT=${1:-5}
 TOOL=${2:-claude}
 PROJECT=${3:-$PROJECT_ROOT/workbench}
-PORT=${4:-9090}
+PORT=${4:-9091}
 MODEL=${5:-}
 
 # Ensure workbench exists when using default

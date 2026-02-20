@@ -175,7 +175,7 @@ class Server
         $this->taskQueue->setGlobalTestCommand($this->testCommand);
         $this->taskQueue->setMergeWorkDir(getcwd() . '/workbench/.merge');
         $this->claimResolver = new ClaimResolver($this->db, $this->nodeId);
-        $this->agentBridge = new AgentBridge($this->db);
+        $this->agentBridge = new AgentBridge($this->db, $this->httpPort);
         $this->agentRegistry = new AgentRegistry($this->db, $this->taskGossip, $this->clock, $this->nodeId);
         $this->agentRegistry->setTaskQueue($this->taskQueue);
         $this->agentMonitor = new AgentMonitor($this->db, $this->agentBridge, $this->taskQueue, $this->agentRegistry, $this->nodeId);
