@@ -38,6 +38,7 @@ class TaskModel
         public readonly array $dependsOn = [],
         public readonly bool $autoMerge = false,
         public readonly string $prUrl = '',
+        public readonly ?string $complexity = 'medium',
     ) {}
 
     public static function create(
@@ -84,6 +85,7 @@ class TaskModel
             testCommand: $testCommand,
             dependsOn: $dependsOn,
             autoMerge: $autoMerge,
+            complexity: 'medium',
         );
     }
 
@@ -125,6 +127,7 @@ class TaskModel
                 : ($data['depends_on'] ?? []),
             autoMerge: !empty($data['auto_merge']),
             prUrl: $data['pr_url'] ?? '',
+            complexity: $data['complexity'] ?? 'medium',
         );
     }
 
@@ -162,6 +165,7 @@ class TaskModel
             'depends_on' => $this->dependsOn,
             'auto_merge' => $this->autoMerge,
             'pr_url' => $this->prUrl,
+            'complexity' => $this->complexity,
         ];
     }
 
@@ -199,6 +203,7 @@ class TaskModel
             dependsOn: $this->dependsOn,
             autoMerge: $this->autoMerge,
             prUrl: $this->prUrl,
+            complexity: $this->complexity,
         );
     }
 
