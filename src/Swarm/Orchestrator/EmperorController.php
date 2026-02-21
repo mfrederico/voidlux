@@ -51,6 +51,9 @@ class EmperorController
     /** @var callable|null fn(string $agentId, string $status): void */
     private $onAgentStatusChange = null;
 
+    /** @var callable|null fn(string $event, array $agentData): void — pushes agent updates to WS */
+    private $onAgentEvent = null;
+
     /** @var callable|null fn(string $event, array $taskData): void — pushes task updates to WS */
     private $onTaskEvent = null;
 
@@ -128,11 +131,32 @@ class EmperorController
         $this->onTaskEvent = $callback;
     }
 
+    public function onAgentEvent(callable $callback): void
+    {
+        $this->onAgentEvent = $callback;
+    }
+
     private function fireTaskEvent(string $event, $task): void
     {
         if ($this->onTaskEvent) {
             ($this->onTaskEvent)($event, is_array($task) ? $task : $task->toArray());
         }
+    }
+
+    private function fireAgentEvent(string $event, AgentModel $agent): void
+    {
+        if ($this->onAgentEvent) {
+            ($this->onAgentEvent)($event, $agent->toArray());
+        }
+    }
+
+    /**
+     * Broadcast an agent status change to WebSocket clients.
+     * Called by AgentRegistry and AgentMonitor when local agent status changes occur.
+     */
+    public function broadcastAgentStatus(AgentModel $agent): void
+    {
+        $this->fireAgentEvent('agent_updated', $agent);
     }
 
     public function handle(Request $request, Response $response): void
