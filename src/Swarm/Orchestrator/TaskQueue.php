@@ -803,9 +803,13 @@ class TaskQueue
             }
             $this->gossip->gossipTaskUpdate($parentId, '', TaskStatus::Merging->value, 'Merging subtask branches...', $ts);
 
-            // Spawn merge-test coroutine
+            // Spawn merge-test coroutine — use EmperorController's chain-detection handler if registered
             Coroutine::create(function () use ($parentId, $branches, $completedSubs, $baseDir) {
-                $this->mergeAndTest($parentId, $branches, $completedSubs, $baseDir);
+                if ($this->mergeHandler !== null) {
+                    ($this->mergeHandler)($parentId, $branches, $completedSubs, $baseDir);
+                } else {
+                    $this->mergeAndTest($parentId, $branches, $completedSubs, $baseDir);
+                }
             });
         } catch (\Throwable $e) {
             $this->db->rollback();
