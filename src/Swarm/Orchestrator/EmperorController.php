@@ -44,6 +44,7 @@ class EmperorController
     private ?TaskGossipEngine $taskGossip = null;
     private ?LamportClock $clock = null;
     private ?MarketplaceGossipEngine $marketplaceGossip = null;
+    private ?SwarmOverseer $overseer = null;
 
     /** @var callable|null fn(): void — triggers server shutdown */
     private $shutdownCallback = null;
@@ -111,6 +112,11 @@ class EmperorController
     public function setMarketplaceGossip(MarketplaceGossipEngine $gossip): void
     {
         $this->marketplaceGossip = $gossip;
+    }
+
+    public function setOverseer(SwarmOverseer $overseer): void
+    {
+        $this->overseer = $overseer;
     }
 
     public function onShutdown(callable $callback): void
@@ -235,6 +241,10 @@ class EmperorController
 
             case $path === '/api/swarm/agents/wellness' && $method === 'POST':
                 $this->handleWellnessCheck($response);
+                break;
+
+            case $path === '/api/swarm/overseer' && $method === 'GET':
+                $this->handleOverseerCheck($response);
                 break;
 
             case $path === '/api/swarm/agents/kill-all' && $method === 'POST':
@@ -1932,6 +1942,17 @@ INSTRUCTIONS,
         $this->marketplaceGossip?->gossipTaskDelegate($delegation);
         $response->status(201);
         $this->json($response, $delegation->toArray());
+    }
+
+    private function handleOverseerCheck(Response $response): void
+    {
+        if (!$this->overseer) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Overseer not initialized']);
+            return;
+        }
+        $report = $this->overseer->runCheck();
+        $this->json($response, $report);
     }
 
     private function json(Response $response, array $data): void

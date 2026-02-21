@@ -60,6 +60,9 @@ class SwarmConfig
     // --- Capability Advertisement ---
     public readonly int $capabilityAdvertiseInterval;
 
+    // --- Auto-Spawn ---
+    public readonly int $defaultAgents;
+
     /** Map of config key => default value */
     private const DEFAULTS = [
         'agent_poll_interval'           => 5,
@@ -85,6 +88,7 @@ class SwarmConfig
         'http_proxy_timeout'            => 30,
         'clock_persist_interval'        => 30,
         'capability_advertise_interval' => 60,
+        'default_agents'                => 1,
     ];
 
     public function __construct(array $values = [])
@@ -114,6 +118,7 @@ class SwarmConfig
         $this->httpProxyTimeout           = (int) $get('http_proxy_timeout');
         $this->clockPersistInterval       = (int) $get('clock_persist_interval');
         $this->capabilityAdvertiseInterval = (int) $get('capability_advertise_interval');
+        $this->defaultAgents              = max(0, (int) $get('default_agents'));
     }
 
     /**
@@ -124,7 +129,17 @@ class SwarmConfig
     {
         $values = [];
 
-        // Pass 1: CLI --config-key=value args (lowest priority)
+        // Pass 1a: Direct CLI flags that map to config values
+        $directMappings = [
+            'default-agents' => 'default_agents',
+        ];
+        foreach ($directMappings as $cliKey => $configKey) {
+            if (isset($cliOptions[$cliKey])) {
+                $values[$configKey] = $cliOptions[$cliKey];
+            }
+        }
+
+        // Pass 1b: CLI --config-key=value args (lowest priority)
         foreach ($cliOptions as $key => $value) {
             if (str_starts_with($key, 'config-')) {
                 $configKey = str_replace('-', '_', substr($key, 7));

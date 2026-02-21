@@ -550,6 +550,20 @@ body {
         </div>
     </div>
 
+    <div class="section" id="overseer-section">
+        <h2 style="cursor:pointer;" onclick="toggleOverseer()">
+            Overseer
+            <span id="overseer-badge" style="font-size:0.65rem;padding:2px 6px;border-radius:3px;background:#222;color:#666;margin-left:8px;">idle</span>
+            <button onclick="event.stopPropagation();runOverseerCheck()" style="float:right;background:none;border:1px solid #334;color:#88aaff;padding:2px 10px;border-radius:3px;cursor:pointer;font-size:0.7rem;font-family:inherit;">Run Check Now</button>
+        </h2>
+        <div id="overseer-content" style="display:none;margin-top:12px;">
+            <div id="overseer-summary" style="margin-bottom:10px;"></div>
+            <div id="overseer-findings" style="margin-bottom:10px;"></div>
+            <div id="overseer-agents" style="margin-bottom:10px;"></div>
+            <div id="overseer-planner" style="margin-bottom:10px;"></div>
+        </div>
+    </div>
+
     <div class="section galactic-section">
         <h2>Galactic Marketplace</h2>
         <div class="marketplace-tabs">
@@ -1154,6 +1168,94 @@ function toggleJobLog() {
     document.getElementById('job-log-list').style.display = jobLogOpen ? '' : 'none';
     document.getElementById('job-log-toggle').textContent = jobLogOpen ? 'hide' : 'show';
     if (jobLogOpen) renderJobLog();
+}
+
+let overseerReport = null;
+let overseerOpen = false;
+
+function toggleOverseer() {
+    overseerOpen = !overseerOpen;
+    document.getElementById('overseer-content').style.display = overseerOpen ? '' : 'none';
+    if (overseerOpen && overseerReport) renderOverseer();
+}
+
+function runOverseerCheck() {
+    const badge = document.getElementById('overseer-badge');
+    badge.textContent = 'checking...';
+    badge.style.color = '#ffaa00';
+    fetch('/api/swarm/overseer')
+        .then(r => r.json())
+        .then(data => {
+            overseerReport = data;
+            renderOverseer();
+            addLog('overseer', 'Overseer: ' + (data.actions_taken||0) + ' corrective action(s)');
+        })
+        .catch(e => {
+            badge.textContent = 'error';
+            badge.style.color = '#ff4444';
+        });
+}
+
+function renderOverseer() {
+    if (!overseerReport) return;
+    const r = overseerReport;
+    const badge = document.getElementById('overseer-badge');
+    const actions = r.actions_taken || 0;
+    badge.textContent = actions > 0 ? actions + ' action(s)' : 'ok';
+    badge.style.color = actions > 0 ? '#ffaa00' : '#44ff44';
+
+    // Summary
+    const sumEl = document.getElementById('overseer-summary');
+    sumEl.innerHTML = '<div style="color:#888;font-size:0.75rem;">Last check: ' + (r.timestamp||'?') +
+        ' | Node: ' + (r.node_id||'').substring(0,8) +
+        ' | Actions: ' + actions +
+        ' | Findings: ' + (r.findings||[]).length + '</div>';
+
+    // Findings
+    const fEl = document.getElementById('overseer-findings');
+    const findings = r.findings || [];
+    if (findings.length === 0) {
+        fEl.innerHTML = '<div style="color:#555;font-size:0.75rem;">No findings</div>';
+    } else {
+        fEl.innerHTML = '<div style="font-size:0.7rem;color:#aaa;margin-bottom:4px;font-weight:bold;">Findings</div>' +
+            findings.map(f => {
+                const colors = {stuck_parent:'#ff8844',stale_planning:'#ffaa00',retryable_failed_subtask:'#ff6666',dispatch_mismatch:'#88aaff',long_running:'#ffcc00'};
+                const c = colors[f.type] || '#888';
+                return '<div style="color:'+c+';font-size:0.72rem;padding:2px 0;">'+
+                    '<span style="color:#666;">['+f.type+']</span> '+(f.title||f.task_id||'')+
+                    (f.action ? ' <span style="color:#555;">-> '+f.action+'</span>' : '')+
+                    '</div>';
+            }).join('');
+    }
+
+    // Agent summary
+    const aEl = document.getElementById('overseer-agents');
+    const as = r.agent_summary || {};
+    const counts = as.counts || {};
+    aEl.innerHTML = '<div style="font-size:0.7rem;color:#aaa;margin-bottom:4px;font-weight:bold;">Agents (' + (as.total||0) + ')</div>' +
+        '<div style="font-size:0.72rem;color:#888;">idle:'+
+        (counts.idle||0)+' busy:'+(counts.busy||0)+' starting:'+(counts.starting||0)+' offline:'+(counts.offline||0)+'</div>' +
+        (as.busy_agents||[]).map(ba =>
+            '<div style="font-size:0.7rem;color:#aaa;padding:1px 0;">'+
+            '<span style="color:#ffaa00;">'+ba.agent_name+'</span> '+
+            (ba.role?'['+ba.role+'] ':'')+
+            '<span style="color:#555;">'+((ba.task_title||'').substring(0,40))+'</span>'+
+            (ba.duration_minutes?' <span style="color:#666;">'+ba.duration_minutes+'min</span>':'')+
+            '</div>'
+        ).join('');
+
+    // Planner output
+    const pEl = document.getElementById('overseer-planner');
+    const planners = r.planner_output || [];
+    if (planners.length === 0) {
+        pEl.innerHTML = '';
+    } else {
+        pEl.innerHTML = '<div style="font-size:0.7rem;color:#aaa;margin-bottom:4px;font-weight:bold;">Planner Output</div>' +
+            planners.map(p =>
+                '<div style="margin-bottom:6px;"><span style="color:#88aaff;font-size:0.7rem;">'+p.agent_name+' ('+p.status+')</span>' +
+                '<pre style="background:#0a0a0a;border:1px solid #222;padding:6px;margin:4px 0;font-size:0.65rem;color:#777;max-height:200px;overflow:auto;white-space:pre-wrap;">'+(p.output||'(no output)')+'</pre></div>'
+            ).join('');
+    }
 }
 
 let _renderTimer = null;
@@ -2064,6 +2166,12 @@ function connectWs() {
                 if (msg.status.offering_withdrawn) {
                     state.offerings = state.offerings.filter(x => x.id !== msg.status.offering_withdrawn);
                     renderGalactic();
+                }
+                if (msg.status.overseer_report) {
+                    overseerReport = msg.status.overseer_report;
+                    renderOverseer();
+                    const a = overseerReport.actions_taken || 0;
+                    if (a > 0) addLog('overseer', 'Overseer: ' + a + ' corrective action(s)');
                 }
                 break;
             case 'board_message':

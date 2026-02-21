@@ -30,6 +30,7 @@ use VoidLux\Swarm\Leadership\LeaderElection;
 use VoidLux\Swarm\Orchestrator\ClaimResolver;
 use VoidLux\Swarm\Orchestrator\EmperorController;
 use VoidLux\Swarm\Orchestrator\OverflowDelegator;
+use VoidLux\Swarm\Orchestrator\SwarmOverseer;
 use VoidLux\Swarm\Orchestrator\TaskDispatcher;
 use VoidLux\Swarm\Orchestrator\TaskQueue;
 use VoidLux\Swarm\Galactic\GalacticMarketplace;
@@ -64,6 +65,7 @@ class Server
     private LeaderElection $leaderElection;
     private ?TaskDispatcher $taskDispatcher = null;
     private ?OverflowDelegator $overflowDelegator = null;
+    private ?SwarmOverseer $overseer = null;
     private ?EmperorConnectionProtocol $connectionProtocol = null;
     private ?DhtStorage $dhtStorage = null;
     private ?DhtEngine $dhtEngine = null;
@@ -216,6 +218,7 @@ class Server
         $this->controller->onShutdown(function () {
             $this->log("Regicide: stopping all coroutine loops...");
             $this->running = false;
+            $this->overseer?->stop();
             $this->overflowDelegator?->stop();
             $this->taskDispatcher?->stop();
             $this->agentMonitor->stop();
@@ -324,6 +327,7 @@ class Server
             // all coroutines and let the process exit for supervisor restart
             if ($this->server) {
                 $this->running = false;
+                $this->overseer?->stop();
                 $this->taskDispatcher?->stop();
                 $this->agentMonitor->stop();
                 $this->agentRegistry->stop();
@@ -1021,6 +1025,14 @@ class Server
         Coroutine::create(function () use ($overflowDelegator) {
             $overflowDelegator->start();
         });
+
+        // Start periodic overseer health check
+        $this->overseer = new SwarmOverseer(
+            $this->db, $this->taskQueue, $this->agentBridge,
+            $this->taskDispatcher, $this->wsHandler, $this->nodeId,
+        );
+        $this->controller->setOverseer($this->overseer);
+        Coroutine::create(fn() => $this->overseer->start());
 
         $this->log("Emperor AI initialized (LLM: {$this->llmProvider}/{$this->llmModel})");
     }
