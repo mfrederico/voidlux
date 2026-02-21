@@ -50,6 +50,7 @@ class AgentRegistry
         ?string $tmuxSessionId = null,
         string $projectPath = '',
         int $maxConcurrentTasks = 1,
+        string $role = '',
     ): AgentModel {
         $ts = $this->clock->tick();
         $agent = AgentModel::create(
@@ -62,6 +63,7 @@ class AgentRegistry
             tmuxSessionId: $tmuxSessionId,
             projectPath: $projectPath,
             maxConcurrentTasks: $maxConcurrentTasks,
+            role: $role,
         );
 
         $this->db->insertAgent($agent);

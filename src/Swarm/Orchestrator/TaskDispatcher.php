@@ -90,13 +90,20 @@ class TaskDispatcher
         // Phase 2: Unblock tasks whose dependencies are now satisfied
         $this->unblockReadyTasks();
 
-        // Phase 3: Dispatch pending tasks to idle agents
+        // Phase 3: Dispatch planning tasks to idle planner agents
+        $this->dispatchPlanningTasks();
+
+        // Phase 4: Dispatch pending tasks to idle worker agents
         $pendingTasks = $this->db->getTasksByStatus('pending');
         if (empty($pendingTasks)) {
             return;
         }
 
-        $idleAgents = $this->db->getAllIdleAgents();
+        // Get idle agents, excluding planner-role agents (they only handle planning)
+        $idleAgents = array_values(array_filter(
+            $this->db->getAllIdleAgents(),
+            fn(AgentModel $a) => $a->role !== 'planner',
+        ));
 
         // If no local agents, try marketplace delegation directly
         if (empty($idleAgents)) {
@@ -151,6 +158,56 @@ class TaskDispatcher
             return;
         }
         $this->overflowDelegator->delegateOverflow($tasks);
+    }
+
+    /**
+     * Dispatch unassigned Planning tasks to idle planner agents.
+     * When a planner agent goes idle and there are queued planning tasks,
+     * this assigns the next one.
+     */
+    private function dispatchPlanningTasks(): void
+    {
+        $planningTasks = $this->db->getTasksByStatus('planning');
+        if (empty($planningTasks)) {
+            return;
+        }
+
+        // Only dispatch unassigned planning tasks
+        $unassigned = array_filter($planningTasks, fn(TaskModel $t) => $t->assignedTo === null || $t->assignedTo === '');
+        if (empty($unassigned)) {
+            return;
+        }
+
+        $plannerAgent = $this->db->getIdlePlannerAgent();
+        if (!$plannerAgent) {
+            return;
+        }
+
+        // Dispatch one planning task at a time (planner processes sequentially)
+        $task = reset($unassigned);
+
+        // Local delivery only (planner is always local)
+        if ($plannerAgent->nodeId !== $this->nodeId || !$this->agentBridge) {
+            return;
+        }
+
+        $claimed = $this->taskQueue->claim($task->id, $plannerAgent->id);
+        if (!$claimed) {
+            return;
+        }
+
+        $this->db->updateAgentStatus($plannerAgent->id, 'busy', $task->id);
+        $task = $this->db->getTask($task->id); // Re-read after claim
+
+        if ($task) {
+            $delivered = $this->agentBridge->deliverPlanningTask($plannerAgent, $task);
+            if (!$delivered) {
+                $this->taskQueue->requeue($task->id, 'Planner agent not ready');
+                $this->db->updateAgentStatus($plannerAgent->id, 'idle', null);
+                return;
+            }
+            $this->taskQueue->updateProgress($task->id, $plannerAgent->id, 'Planner agent analyzing codebase');
+        }
     }
 
     /**

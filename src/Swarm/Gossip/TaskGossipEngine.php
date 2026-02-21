@@ -437,6 +437,7 @@ class TaskGossipEngine
             'status' => $agent->status,
             'current_task_id' => $agent->currentTaskId,
             'lamport_ts' => $lamportTs,
+            'role' => $agent->role,
         ]);
     }
 
@@ -509,6 +510,7 @@ class TaskGossipEngine
                 'last_heartbeat' => gmdate('Y-m-d\TH:i:s\Z'),
                 'lamport_ts' => $msg['lamport_ts'] ?? 0,
                 'registered_at' => gmdate('Y-m-d\TH:i:s\Z'),
+                'role' => $msg['role'] ?? '',
             ]);
             $this->db->insertAgent($agent);
         } else {

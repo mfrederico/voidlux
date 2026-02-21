@@ -146,6 +146,9 @@ class SwarmDatabase
         if (!in_array('model', $agentExisting, true)) {
             $this->pdo->exec("ALTER TABLE agents ADD COLUMN model TEXT NOT NULL DEFAULT ''");
         }
+        if (!in_array('role', $agentExisting, true)) {
+            $this->pdo->exec("ALTER TABLE agents ADD COLUMN role TEXT NOT NULL DEFAULT ''");
+        }
 
         // Swarm node registry table
         $this->pdo->exec('
@@ -359,7 +362,7 @@ class SwarmDatabase
             UPDATE tasks SET
                 status = :status, assigned_to = :agent_id, assigned_node = :node_id,
                 lamport_ts = :lamport_ts, claimed_at = :claimed_at, updated_at = :updated_at
-            WHERE id = :id AND status = \'pending\'
+            WHERE id = :id AND status IN (\'pending\', \'planning\')
         ');
 
         $stmt->execute([
@@ -584,6 +587,19 @@ class SwarmDatabase
     }
 
     /**
+     * Get an idle planner agent (role='planner').
+     */
+    public function getIdlePlannerAgent(): ?AgentModel
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT * FROM agents WHERE role = 'planner' AND status = 'idle' AND current_task_id IS NULL LIMIT 1"
+        );
+        $stmt->execute();
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $row ? AgentModel::fromArray($row) : null;
+    }
+
+    /**
      * Get subtasks for a parent task.
      * @return TaskModel[]
      */
@@ -757,10 +773,10 @@ class SwarmDatabase
         $stmt = $this->pdo->prepare('
             INSERT OR REPLACE INTO agents
                 (id, node_id, name, tool, model, capabilities, tmux_session_id, project_path,
-                 max_concurrent_tasks, status, current_task_id, last_heartbeat, lamport_ts, registered_at)
+                 max_concurrent_tasks, status, current_task_id, last_heartbeat, lamport_ts, registered_at, role)
             VALUES
                 (:id, :node_id, :name, :tool, :model, :capabilities, :tmux_session_id, :project_path,
-                 :max_concurrent_tasks, :status, :current_task_id, :last_heartbeat, :lamport_ts, :registered_at)
+                 :max_concurrent_tasks, :status, :current_task_id, :last_heartbeat, :lamport_ts, :registered_at, :role)
         ');
 
         return $stmt->execute([
@@ -778,6 +794,7 @@ class SwarmDatabase
             ':last_heartbeat' => $agent->lastHeartbeat,
             ':lamport_ts' => $agent->lamportTs,
             ':registered_at' => $agent->registeredAt,
+            ':role' => $agent->role,
         ]);
     }
 

@@ -12,6 +12,8 @@ use VoidLux\Swarm\Agent\AgentBridge;
 use VoidLux\Swarm\Agent\AgentMonitor;
 use VoidLux\Swarm\Agent\AgentRegistry;
 use VoidLux\Swarm\Ai\TaskPlanner;
+use VoidLux\Swarm\Model\AgentModel;
+use VoidLux\Swarm\Model\TaskModel;
 use VoidLux\Swarm\Galactic\GalacticMarketplace;
 use VoidLux\Swarm\Gossip\MarketplaceGossipEngine;
 use VoidLux\Swarm\Git\GitWorkspace;
@@ -451,8 +453,11 @@ class EmperorController
             return;
         }
 
-        // If planner is available, create as a planning parent task and decompose
-        if ($this->taskPlanner !== null) {
+        // If planner is available (agent or LLM), create as a planning parent task
+        $hasPlannerAgent = $this->db->getIdlePlannerAgent() !== null;
+        $hasLlmPlanner = $this->taskPlanner !== null;
+
+        if ($hasPlannerAgent || $hasLlmPlanner) {
             $task = $this->taskQueue->createTask(
                 title: $body['title'],
                 description: $body['description'] ?? '',
@@ -477,111 +482,17 @@ class EmperorController
             // Push parent task creation to WS immediately
             $this->fireTaskEvent('task_created', $task);
 
-            // Decompose in background coroutine
-            $taskId = $task->id;
-            $planner = $this->taskPlanner;
-            $taskQueue = $this->taskQueue;
-            $db = $this->db;
-            $dispatcher = $this->taskDispatcher;
-            $wsCallback = $this->onTaskEvent;
+            // Try planner agent first — it has codebase access
+            $plannerAgent = $this->db->getIdlePlannerAgent();
+            if ($plannerAgent) {
+                $this->dispatchToPlanner($task, $plannerAgent);
+                return;
+            }
 
-            Coroutine::create(function () use ($taskId, $planner, $taskQueue, $db, $dispatcher, $wsCallback) {
-                $parentTask = $db->getTask($taskId);
-                if (!$parentTask) {
-                    return;
-                }
-
-                $subtaskDefs = $planner->decompose($parentTask);
-
-                if (empty($subtaskDefs)) {
-                    // Decomposition failed — convert to regular pending task
-                    $updated = $parentTask->withStatus(TaskStatus::Pending, $parentTask->lamportTs);
-                    $db->updateTask($updated);
-                    if ($wsCallback) {
-                        ($wsCallback)('task_updated', $updated->toArray());
-                    }
-                    $dispatcher?->triggerDispatch();
-                    return;
-                }
-
-                // Two-pass creation: first create all subtasks, then resolve dependency IDs
-                $idMap = []; // localId => realUUID
-                $subtasks = [];
-
-                // Pass 1: Create all subtasks without dependencies
-                foreach ($subtaskDefs as $def) {
-                    $subtask = $taskQueue->createTask(
-                        title: $def['title'],
-                        description: $def['description'],
-                        priority: $def['priority'],
-                        requiredCapabilities: $def['requiredCapabilities'],
-                        projectPath: $parentTask->projectPath,
-                        context: $parentTask->context,
-                        createdBy: $parentTask->createdBy,
-                        parentId: $parentTask->id,
-                        workInstructions: $def['work_instructions'],
-                        acceptanceCriteria: $def['acceptance_criteria'],
-                        complexity: $def['complexity'] ?? 'medium',
-                    );
-                    $localId = $def['id'] ?? '';
-                    if ($localId !== '') {
-                        $idMap[$localId] = $subtask->id;
-                    }
-                    $subtasks[] = ['task' => $subtask, 'def' => $def];
-                }
-
-                // Pass 2: Resolve local dependency IDs to real UUIDs and update blocked tasks
-                foreach ($subtasks as $item) {
-                    $def = $item['def'];
-                    $subtask = $item['task'];
-                    $localDeps = $def['dependsOn'] ?? [];
-
-                    if (!empty($localDeps)) {
-                        $resolvedDeps = [];
-                        foreach ($localDeps as $localDepId) {
-                            if (isset($idMap[$localDepId])) {
-                                $resolvedDeps[] = $idMap[$localDepId];
-                            }
-                        }
-                        if (!empty($resolvedDeps)) {
-                            // Update task in DB with resolved deps and Blocked status
-                            $ts = $subtask->lamportTs;
-                            $blocked = new \VoidLux\Swarm\Model\TaskModel(
-                                id: $subtask->id, title: $subtask->title, description: $subtask->description,
-                                status: \VoidLux\Swarm\Model\TaskStatus::Blocked, priority: $subtask->priority,
-                                requiredCapabilities: $subtask->requiredCapabilities, createdBy: $subtask->createdBy,
-                                assignedTo: $subtask->assignedTo, assignedNode: $subtask->assignedNode,
-                                result: $subtask->result, error: $subtask->error, progress: $subtask->progress,
-                                projectPath: $subtask->projectPath, context: $subtask->context,
-                                lamportTs: $ts, claimedAt: $subtask->claimedAt, completedAt: $subtask->completedAt,
-                                createdAt: $subtask->createdAt, updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
-                                parentId: $subtask->parentId, workInstructions: $subtask->workInstructions,
-                                acceptanceCriteria: $subtask->acceptanceCriteria, reviewStatus: $subtask->reviewStatus,
-                                reviewFeedback: $subtask->reviewFeedback, archived: $subtask->archived,
-                                gitBranch: $subtask->gitBranch, mergeAttempts: $subtask->mergeAttempts,
-                                testCommand: $subtask->testCommand, dependsOn: $resolvedDeps,
-                                autoMerge: $subtask->autoMerge, prUrl: $subtask->prUrl,
-                            );
-                            $db->updateTask($blocked);
-                            $subtask = $blocked;
-                        }
-                    }
-
-                    // Push each subtask to WS
-                    if ($wsCallback) {
-                        ($wsCallback)('task_created', $subtask->toArray());
-                    }
-                }
-
-                // Mark parent as in_progress (subtasks being worked on — NOT pending, to avoid dispatch)
-                $updated = $parentTask->withStatus(TaskStatus::InProgress, $parentTask->lamportTs);
-                $db->updateTask($updated);
-                if ($wsCallback) {
-                    ($wsCallback)('task_updated', $updated->toArray());
-                }
-
-                $dispatcher?->triggerDispatch();
-            });
+            // Fall back to LLM API decomposition
+            if ($this->taskPlanner !== null) {
+                $this->decomposeWithLlm($task);
+            }
 
             return;
         }
@@ -609,6 +520,165 @@ class EmperorController
 
         $response->status(201);
         $this->json($response, $task->toArray());
+    }
+
+    /**
+     * Dispatch a planning task to the planner agent (tmux-based Claude Code).
+     * The planner explores the codebase and calls task_plan MCP tool with subtask definitions.
+     */
+    private function dispatchToPlanner(TaskModel $task, AgentModel $plannerAgent): void
+    {
+        // Claim the planning task for the planner agent
+        $this->taskQueue->claim($task->id, $plannerAgent->id);
+        $this->db->updateAgentStatus($plannerAgent->id, 'busy', $task->id);
+
+        // Deliver planning prompt to planner's tmux session
+        $delivered = $this->bridge->deliverPlanningTask($plannerAgent, $task);
+        if (!$delivered) {
+            // Planner not ready — unclaim and fall back to LLM
+            $this->taskQueue->requeue($task->id, 'Planner agent not ready');
+            $this->db->updateAgentStatus($plannerAgent->id, 'idle', null);
+
+            if ($this->taskPlanner !== null) {
+                // Re-set to Planning status (requeue sets to Pending)
+                $refreshed = $this->db->getTask($task->id);
+                if ($refreshed) {
+                    $planning = $refreshed->withStatus(TaskStatus::Planning, $refreshed->lamportTs);
+                    $this->db->updateTask($planning);
+                    $this->decomposeWithLlm($planning);
+                }
+            }
+            return;
+        }
+
+        // Transition to in_progress
+        $this->taskQueue->updateProgress($task->id, $plannerAgent->id, 'Planner agent analyzing codebase');
+        $this->fireTaskEvent('task_updated', $this->db->getTask($task->id)?->toArray() ?? $task->toArray());
+
+        $agent = $this->db->getAgent($plannerAgent->id);
+        if ($agent) {
+            $this->wsHandler('agent_busy', $agent);
+        }
+    }
+
+    /**
+     * Fall back to LLM API decomposition (original TaskPlanner flow).
+     */
+    private function decomposeWithLlm(TaskModel $task): void
+    {
+        $taskId = $task->id;
+        $planner = $this->taskPlanner;
+        $taskQueue = $this->taskQueue;
+        $db = $this->db;
+        $dispatcher = $this->taskDispatcher;
+        $wsCallback = $this->onTaskEvent;
+
+        Coroutine::create(function () use ($taskId, $planner, $taskQueue, $db, $dispatcher, $wsCallback) {
+            $parentTask = $db->getTask($taskId);
+            if (!$parentTask) {
+                return;
+            }
+
+            $subtaskDefs = $planner->decompose($parentTask);
+
+            if (empty($subtaskDefs)) {
+                // Decomposition failed — convert to regular pending task
+                $updated = $parentTask->withStatus(TaskStatus::Pending, $parentTask->lamportTs);
+                $db->updateTask($updated);
+                if ($wsCallback) {
+                    ($wsCallback)('task_updated', $updated->toArray());
+                }
+                $dispatcher?->triggerDispatch();
+                return;
+            }
+
+            // Two-pass creation: first create all subtasks, then resolve dependency IDs
+            $idMap = []; // localId => realUUID
+            $subtasks = [];
+
+            // Pass 1: Create all subtasks without dependencies
+            foreach ($subtaskDefs as $def) {
+                $subtask = $taskQueue->createTask(
+                    title: $def['title'],
+                    description: $def['description'],
+                    priority: $def['priority'],
+                    requiredCapabilities: $def['requiredCapabilities'],
+                    projectPath: $parentTask->projectPath,
+                    context: $parentTask->context,
+                    createdBy: $parentTask->createdBy,
+                    parentId: $parentTask->id,
+                    workInstructions: $def['work_instructions'],
+                    acceptanceCriteria: $def['acceptance_criteria'],
+                    complexity: $def['complexity'] ?? 'medium',
+                );
+                $localId = $def['id'] ?? '';
+                if ($localId !== '') {
+                    $idMap[$localId] = $subtask->id;
+                }
+                $subtasks[] = ['task' => $subtask, 'def' => $def];
+            }
+
+            // Pass 2: Resolve local dependency IDs to real UUIDs and update blocked tasks
+            foreach ($subtasks as $item) {
+                $def = $item['def'];
+                $subtask = $item['task'];
+                $localDeps = $def['dependsOn'] ?? [];
+
+                if (!empty($localDeps)) {
+                    $resolvedDeps = [];
+                    foreach ($localDeps as $localDepId) {
+                        if (isset($idMap[$localDepId])) {
+                            $resolvedDeps[] = $idMap[$localDepId];
+                        }
+                    }
+                    if (!empty($resolvedDeps)) {
+                        $ts = $subtask->lamportTs;
+                        $blocked = new \VoidLux\Swarm\Model\TaskModel(
+                            id: $subtask->id, title: $subtask->title, description: $subtask->description,
+                            status: \VoidLux\Swarm\Model\TaskStatus::Blocked, priority: $subtask->priority,
+                            requiredCapabilities: $subtask->requiredCapabilities, createdBy: $subtask->createdBy,
+                            assignedTo: $subtask->assignedTo, assignedNode: $subtask->assignedNode,
+                            result: $subtask->result, error: $subtask->error, progress: $subtask->progress,
+                            projectPath: $subtask->projectPath, context: $subtask->context,
+                            lamportTs: $ts, claimedAt: $subtask->claimedAt, completedAt: $subtask->completedAt,
+                            createdAt: $subtask->createdAt, updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+                            parentId: $subtask->parentId, workInstructions: $subtask->workInstructions,
+                            acceptanceCriteria: $subtask->acceptanceCriteria, reviewStatus: $subtask->reviewStatus,
+                            reviewFeedback: $subtask->reviewFeedback, archived: $subtask->archived,
+                            gitBranch: $subtask->gitBranch, mergeAttempts: $subtask->mergeAttempts,
+                            testCommand: $subtask->testCommand, dependsOn: $resolvedDeps,
+                            autoMerge: $subtask->autoMerge, prUrl: $subtask->prUrl,
+                        );
+                        $db->updateTask($blocked);
+                        $subtask = $blocked;
+                    }
+                }
+
+                // Push each subtask to WS
+                if ($wsCallback) {
+                    ($wsCallback)('task_created', $subtask->toArray());
+                }
+            }
+
+            // Mark parent as in_progress (subtasks being worked on)
+            $updated = $parentTask->withStatus(TaskStatus::InProgress, $parentTask->lamportTs);
+            $db->updateTask($updated);
+            if ($wsCallback) {
+                ($wsCallback)('task_updated', $updated->toArray());
+            }
+
+            $dispatcher?->triggerDispatch();
+        });
+    }
+
+    /**
+     * Helper to push agent status to WS (avoids exposing wsHandler directly).
+     */
+    private function wsHandler(string $event, AgentModel $agent): void
+    {
+        if ($this->onAgentStatusChange) {
+            ($this->onAgentStatusChange)($agent->id, str_replace('agent_', '', $event));
+        }
     }
 
     private function handleGetTask(string $taskId, Response $response): void
@@ -931,6 +1001,7 @@ INSTRUCTIONS,
             tmuxSessionId: $tmuxSession,
             projectPath: $projectPath,
             maxConcurrentTasks: (int) ($body['max_concurrent_tasks'] ?? 1),
+            role: $body['role'] ?? '',
         );
 
         $this->taskDispatcher?->triggerDispatch();
@@ -1058,7 +1129,7 @@ INSTRUCTIONS,
     /**
      * Register a single agent from a spec array.
      * @param array{tool?: string, project_path?: string, name?: string, name_prefix?: string,
-     *              capabilities?: string[], model?: string, env?: array<string,string>} $spec
+     *              capabilities?: string[], model?: string, env?: array<string,string>, role?: string} $spec
      */
     private function registerOneAgent(array $spec, string $nodeShort, int $index): array
     {
@@ -1067,7 +1138,8 @@ INSTRUCTIONS,
         $capabilities = $spec['capabilities'] ?? [];
         $model = $spec['model'] ?? '';
         $env = $spec['env'] ?? [];
-        $namePrefix = $spec['name_prefix'] ?? 'agent';
+        $role = $spec['role'] ?? '';
+        $namePrefix = $spec['name_prefix'] ?? ($role === 'planner' ? 'planner' : 'agent');
 
         // Explicit name or auto-generated
         $agentName = $spec['name'] ?? ($namePrefix . '-' . $nodeShort . '-' . $index);
@@ -1102,6 +1174,7 @@ INSTRUCTIONS,
             capabilities: $capabilities,
             tmuxSessionId: $projectPath ? $sessionName : null,
             projectPath: $projectPath,
+            role: $role,
         );
 
         return $agent->toArray();
@@ -1192,6 +1265,9 @@ INSTRUCTIONS,
             }
             if ($this->onAgentStatusChange !== null) {
                 $this->mcpHandler->onAgentStatusChange($this->onAgentStatusChange);
+            }
+            if ($this->onTaskEvent !== null) {
+                $this->mcpHandler->onTaskEvent($this->onTaskEvent);
             }
             if ($this->offerPayEngine !== null) {
                 $this->mcpHandler->setOfferPayEngine($this->offerPayEngine);

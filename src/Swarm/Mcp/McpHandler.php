@@ -36,6 +36,9 @@ class McpHandler
     /** @var callable|null fn(string $agentId, string $status): void */
     private $onAgentStatusChange = null;
 
+    /** @var callable|null fn(string $event, array $taskData): void */
+    private $onTaskEvent = null;
+
     public function __construct(
         private readonly TaskQueue $taskQueue,
         private readonly SwarmDatabase $db,
@@ -67,6 +70,11 @@ class McpHandler
     public function onAgentStatusChange(callable $callback): void
     {
         $this->onAgentStatusChange = $callback;
+    }
+
+    public function onTaskEvent(callable $callback): void
+    {
+        $this->onTaskEvent = $callback;
     }
 
     public function handle(Request $request, Response $response): void
@@ -173,6 +181,35 @@ class McpHandler
                             'question' => (object) ['type' => 'string', 'description' => 'What input or clarification is needed'],
                         ],
                         'required' => ['task_id', 'question'],
+                    ],
+                ],
+                (object) [
+                    'name' => 'task_plan',
+                    'description' => 'Submit subtask decomposition for a planning task. Called by the planner agent after analyzing the codebase.',
+                    'inputSchema' => (object) [
+                        'type' => 'object',
+                        'properties' => (object) [
+                            'task_id' => (object) ['type' => 'string', 'description' => 'The parent task ID being decomposed'],
+                            'subtasks' => (object) [
+                                'type' => 'array',
+                                'description' => 'Array of subtask definitions',
+                                'items' => (object) [
+                                    'type' => 'object',
+                                    'properties' => (object) [
+                                        'id' => (object) ['type' => 'string', 'description' => 'Local subtask ID (e.g. subtask-1)'],
+                                        'title' => (object) ['type' => 'string', 'description' => 'Short imperative title'],
+                                        'description' => (object) ['type' => 'string', 'description' => 'What this subtask accomplishes'],
+                                        'work_instructions' => (object) ['type' => 'string', 'description' => 'Specific files, approach, code patterns'],
+                                        'acceptance_criteria' => (object) ['type' => 'string', 'description' => 'How to verify correctness'],
+                                        'complexity' => (object) ['type' => 'string', 'description' => 'small|medium|large|xl'],
+                                        'priority' => (object) ['type' => 'integer', 'description' => 'Higher = more important'],
+                                        'dependsOn' => (object) ['type' => 'array', 'items' => (object) ['type' => 'string'], 'description' => 'IDs of subtasks that must complete first'],
+                                    ],
+                                    'required' => ['id', 'title'],
+                                ],
+                            ],
+                        ],
+                        'required' => ['task_id', 'subtasks'],
                     ],
                 ],
                 (object) [
@@ -302,6 +339,7 @@ class McpHandler
             'task_progress' => $this->callTaskProgress($args),
             'task_failed' => $this->callTaskFailed($args),
             'task_needs_input' => $this->callTaskNeedsInput($args),
+            'task_plan' => $this->callTaskPlan($args),
             'agent_ready' => $this->callAgentReady($args),
             'offer_create' => $this->callOfferCreate($args),
             'offer_accept' => $this->callOfferAccept($args),
@@ -535,6 +573,143 @@ class McpHandler
         }
 
         return $this->toolResult(['status' => 'ready', 'agent_name' => $agentName]);
+    }
+
+    /**
+     * Handle task_plan: planner agent submits subtask decomposition.
+     * Creates subtasks with two-pass dependency resolution, sets parent to InProgress.
+     */
+    private function callTaskPlan(array $args): array
+    {
+        $taskId = $args['task_id'] ?? '';
+        $subtaskDefs = $args['subtasks'] ?? [];
+
+        if (!$taskId || empty($subtaskDefs)) {
+            return $this->toolError('task_id and non-empty subtasks array are required');
+        }
+
+        $parentTask = $this->db->getTask($taskId);
+        if (!$parentTask) {
+            return $this->toolError("Parent task not found: {$taskId}");
+        }
+
+        // Accept planning from Planning (unassigned) or InProgress/Claimed (assigned to planner)
+        $planningStates = [TaskStatus::Planning, TaskStatus::InProgress, TaskStatus::Claimed];
+        if (!in_array($parentTask->status, $planningStates, true)) {
+            return $this->toolError("Task is not in a plannable state: {$parentTask->status->value}");
+        }
+
+        $this->log("task_plan: received " . count($subtaskDefs) . " subtask(s) for '{$parentTask->title}'");
+
+        // Two-pass subtask creation (same logic as EmperorController)
+        $idMap = []; // localId => realUUID
+        $subtasks = [];
+
+        // Pass 1: Create all subtasks without dependencies
+        foreach ($subtaskDefs as $def) {
+            if (empty($def['title'])) {
+                continue;
+            }
+
+            $complexity = (string) ($def['complexity'] ?? 'medium');
+            if (!in_array($complexity, ['small', 'medium', 'large', 'xl'], true)) {
+                $complexity = 'medium';
+            }
+
+            $subtask = $this->taskQueue->createTask(
+                title: (string) $def['title'],
+                description: (string) ($def['description'] ?? ''),
+                priority: (int) ($def['priority'] ?? 0),
+                requiredCapabilities: (array) ($def['requiredCapabilities'] ?? $def['required_capabilities'] ?? []),
+                projectPath: $parentTask->projectPath,
+                context: $parentTask->context,
+                createdBy: $parentTask->createdBy,
+                parentId: $parentTask->id,
+                workInstructions: (string) ($def['work_instructions'] ?? ''),
+                acceptanceCriteria: (string) ($def['acceptance_criteria'] ?? ''),
+                complexity: $complexity,
+            );
+
+            $localId = (string) ($def['id'] ?? '');
+            if ($localId !== '') {
+                $idMap[$localId] = $subtask->id;
+            }
+            $subtasks[] = ['task' => $subtask, 'def' => $def];
+        }
+
+        if (empty($subtasks)) {
+            return $this->toolError('No valid subtasks provided');
+        }
+
+        // Pass 2: Resolve local dependency IDs to real UUIDs and update blocked tasks
+        foreach ($subtasks as $item) {
+            $def = $item['def'];
+            $subtask = $item['task'];
+            $localDeps = $def['dependsOn'] ?? $def['depends_on'] ?? [];
+
+            if (!empty($localDeps)) {
+                $resolvedDeps = [];
+                foreach ($localDeps as $localDepId) {
+                    if (isset($idMap[$localDepId])) {
+                        $resolvedDeps[] = $idMap[$localDepId];
+                    }
+                }
+                if (!empty($resolvedDeps)) {
+                    $ts = $subtask->lamportTs;
+                    $blocked = new TaskModel(
+                        id: $subtask->id, title: $subtask->title, description: $subtask->description,
+                        status: TaskStatus::Blocked, priority: $subtask->priority,
+                        requiredCapabilities: $subtask->requiredCapabilities, createdBy: $subtask->createdBy,
+                        assignedTo: $subtask->assignedTo, assignedNode: $subtask->assignedNode,
+                        result: $subtask->result, error: $subtask->error, progress: $subtask->progress,
+                        projectPath: $subtask->projectPath, context: $subtask->context,
+                        lamportTs: $ts, claimedAt: $subtask->claimedAt, completedAt: $subtask->completedAt,
+                        createdAt: $subtask->createdAt, updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+                        parentId: $subtask->parentId, workInstructions: $subtask->workInstructions,
+                        acceptanceCriteria: $subtask->acceptanceCriteria, reviewStatus: $subtask->reviewStatus,
+                        reviewFeedback: $subtask->reviewFeedback, archived: $subtask->archived,
+                        gitBranch: $subtask->gitBranch, mergeAttempts: $subtask->mergeAttempts,
+                        testCommand: $subtask->testCommand, dependsOn: $resolvedDeps,
+                        autoMerge: $subtask->autoMerge, prUrl: $subtask->prUrl,
+                    );
+                    $this->db->updateTask($blocked);
+                    $subtask = $blocked;
+                }
+            }
+
+            // Push subtask to WS
+            if ($this->onTaskEvent) {
+                ($this->onTaskEvent)('task_created', $subtask->toArray());
+            }
+        }
+
+        // Mark parent as in_progress (subtasks being worked on)
+        $updated = $parentTask->withStatus(TaskStatus::InProgress, $parentTask->lamportTs);
+        $this->db->updateTask($updated);
+        if ($this->onTaskEvent) {
+            ($this->onTaskEvent)('task_updated', $updated->toArray());
+        }
+
+        // Mark planner agent as idle
+        $agentId = $parentTask->assignedTo ?? '';
+        if ($agentId) {
+            $this->db->updateAgentStatus($agentId, 'idle', null);
+            if ($this->onAgentStatusChange) {
+                ($this->onAgentStatusChange)($agentId, 'idle');
+            }
+        }
+
+        // Trigger dispatch for new subtasks
+        $this->taskDispatcher?->triggerDispatch();
+
+        $this->log("task_plan: created " . count($subtasks) . " subtask(s), parent '{$parentTask->title}' → in_progress");
+
+        return $this->toolResult([
+            'status' => 'planned',
+            'parent_task_id' => $taskId,
+            'subtask_count' => count($subtasks),
+            'subtask_ids' => array_map(fn($s) => $s['task']->id, $subtasks),
+        ]);
     }
 
     private function callOfferCreate(array $args): array

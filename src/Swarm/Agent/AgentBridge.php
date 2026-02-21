@@ -100,6 +100,107 @@ class AgentBridge
     }
 
     /**
+     * Deliver a planning task to the planner agent's tmux session.
+     * Unlike regular task delivery, this skips git branch prep and model switching.
+     * The planner agent explores the codebase and calls task_plan MCP tool.
+     */
+    public function deliverPlanningTask(AgentModel $planner, TaskModel $task): bool
+    {
+        $sessionName = $planner->tmuxSessionId;
+        if (!$sessionName) {
+            return false;
+        }
+
+        // Check agent is idle before sending
+        $status = $this->detectStatus($planner);
+        if ($status !== Status::Idle) {
+            return false;
+        }
+
+        // Clear agent context before new planning task
+        $this->tmux->sendTextByName($sessionName, '/clear');
+        $this->tmux->sendEnterByName($sessionName);
+        usleep(1_500_000);
+
+        // Build planning-specific prompt
+        $prompt = $this->buildPlannerPrompt($task);
+
+        // Paste into tmux
+        $sent = $this->tmux->pasteTextByName($sessionName, $prompt);
+        $lineCount = substr_count($prompt, "\n") + 1;
+        usleep(max(500_000, $lineCount * 250_000));
+        $this->tmux->sendEnterByName($sessionName);
+
+        return $sent;
+    }
+
+    /**
+     * Build a prompt for the planner agent. Instructs it to explore the codebase
+     * and call task_plan MCP tool with subtask definitions.
+     */
+    private function buildPlannerPrompt(TaskModel $task): string
+    {
+        $prompt = "## Planning Request\n\n";
+        $prompt .= "You are the architect/planner for the VoidLux swarm. ";
+        $prompt .= "Decompose the following task into specific subtasks that AI coding agents can execute independently.\n\n";
+
+        $prompt .= "### Task to Decompose\n";
+        $prompt .= "**Title**: {$task->title}\n";
+        if ($task->description) {
+            $prompt .= "**Description**: {$task->description}\n";
+        }
+        if ($task->context) {
+            $prompt .= "**Context**: {$task->context}\n";
+        }
+
+        $effectiveDir = $task->projectPath;
+        if ($effectiveDir && is_dir($effectiveDir)) {
+            $prompt .= "\n**Project Path**: {$effectiveDir}\n";
+        }
+
+        $prompt .= <<<'INSTRUCTIONS'
+
+### Instructions
+
+1. **Explore the codebase** — read files, understand the project structure, existing patterns, and conventions.
+2. **Identify the changes needed** — which files to create or modify, what approach to take.
+3. **Decompose into subtasks** — each should be assignable to a single agent working independently.
+4. **Define dependencies** — if subtask B needs subtask A's output, declare the dependency.
+5. **Include architecture context** — describe how data flows across subtasks so each agent understands the full picture.
+6. **Call the `task_plan` MCP tool** with your subtask definitions.
+
+### Output Format
+
+Call `task_plan` with these arguments:
+INSTRUCTIONS;
+
+        $prompt .= "\n- `task_id`: \"{$task->id}\"\n";
+        $prompt .= <<<'FORMAT'
+- `subtasks`: array of objects, each with:
+  - `id`: unique local ID (e.g. "subtask-1", "subtask-2")
+  - `title`: short imperative title
+  - `description`: what this subtask accomplishes
+  - `work_instructions`: specific files to modify/create, approach, code patterns. Include architecture context here.
+  - `acceptance_criteria`: how to verify correctness
+  - `complexity`: "small" | "medium" | "large" | "xl"
+  - `priority`: integer (higher = more important)
+  - `dependsOn`: array of subtask IDs that must complete first (e.g. ["subtask-1"])
+
+### Rules
+- Return 1-8 subtasks
+- Reference exact file paths from the actual codebase (explore first!)
+- Only declare dependencies when truly needed
+- Include architecture context in work_instructions so agents know how pieces connect
+- Do NOT include testing/documentation subtasks unless the task explicitly requests them
+FORMAT;
+
+        $prompt .= "\n\n---\nTASK ID: {$task->id}\n";
+        $prompt .= "Call `task_plan` when your decomposition is ready.\n";
+
+        return $prompt;
+    }
+
+    /**
      * Detect the current status of an agent by reading its tmux pane.
      */
     public function detectStatus(AgentModel $agent): Status

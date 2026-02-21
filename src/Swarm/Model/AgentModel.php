@@ -21,6 +21,7 @@ class AgentModel
         public readonly ?string $lastHeartbeat,
         public readonly int $lamportTs,
         public readonly string $registeredAt,
+        public readonly string $role = '',
     ) {}
 
     public static function create(
@@ -33,6 +34,7 @@ class AgentModel
         ?string $tmuxSessionId = null,
         string $projectPath = '',
         int $maxConcurrentTasks = 1,
+        string $role = '',
     ): self {
         $now = gmdate('Y-m-d\TH:i:s\Z');
         return new self(
@@ -50,6 +52,7 @@ class AgentModel
             lastHeartbeat: $now,
             lamportTs: $lamportTs,
             registeredAt: $now,
+            role: $role,
         );
     }
 
@@ -72,6 +75,7 @@ class AgentModel
             lastHeartbeat: $data['last_heartbeat'] ?? null,
             lamportTs: (int) ($data['lamport_ts'] ?? 0),
             registeredAt: $data['registered_at'] ?? gmdate('Y-m-d\TH:i:s\Z'),
+            role: $data['role'] ?? '',
         );
     }
 
@@ -92,6 +96,7 @@ class AgentModel
             'last_heartbeat' => $this->lastHeartbeat,
             'lamport_ts' => $this->lamportTs,
             'registered_at' => $this->registeredAt,
+            'role' => $this->role,
         ];
     }
 

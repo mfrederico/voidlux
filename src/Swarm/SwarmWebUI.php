@@ -529,7 +529,7 @@ body {
 
     <div class="section">
         <h2>Register Agents</h2>
-        <form class="task-form" id="bulk-agent-form" onsubmit="bulkRegister(event)" style="grid-template-columns: 80px 1fr 120px 160px auto;">
+        <form class="task-form" id="bulk-agent-form" onsubmit="bulkRegister(event)" style="grid-template-columns: 80px 1fr 120px 160px auto auto;">
             <input type="number" name="count" value="5" min="1" max="50" title="Count" />
             <input type="text" name="project_path" id="agent-project-path" placeholder="Project path" />
             <select name="tool" onchange="toggleModelField(this)" style="background:#1a1a1a;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:4px;font-family:inherit;">
@@ -539,6 +539,7 @@ body {
             </select>
             <input type="text" name="model" id="model-field" placeholder="Model (optional)" style="background:#1a1a1a;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:4px;font-family:inherit;display:none;" />
             <button type="submit">Register</button>
+            <button type="button" onclick="registerPlanner()" style="background:#331155;border-color:#663399;" title="Register a planner agent (uses same tool/model settings)">+ Planner</button>
         </form>
     </div>
 
@@ -915,7 +916,8 @@ function getTaskChildren(parentId) {
 function renderAgent(a) {
     const shortPath = a.project_path ? a.project_path.replace(/^\/home\/[^/]+\//, '~/') : '';
     let html = '<div class="card" id="agent-'+a.id+'">';
-    html += '<div class="card-title" title="Agent ID: '+a.id+'">'+escapeHtml(a.name)+' '+statusBadge(a.status)+'</div>';
+    const roleBadge = a.role === 'planner' ? ' <span style="font-size:0.7rem;padding:1px 5px;border-radius:3px;background:#663399;color:#ddd;">planner</span>' : '';
+    html += '<div class="card-title" title="Agent ID: '+a.id+'">'+escapeHtml(a.name)+roleBadge+' '+statusBadge(a.status)+'</div>';
     html += '<div style="font-size:0.85rem;color:#aaa;">Tool: '+a.tool;
     if (a.model) html += ' | Model: '+escapeHtml(a.model);
     html += ' | <span title="Worker node running this agent\'s tmux session (full: '+a.node_id+')">Node: '+a.node_id.substring(0,8)+'</span></div>';
@@ -976,7 +978,7 @@ function taskDataKey(t) {
 }
 
 function agentDataKey(a) {
-    return JSON.stringify([a.status,a.current_task_id,a.name,a.project_path,a.tmux_session_id,a.capabilities?.join(','),a.model,a.node_id]);
+    return JSON.stringify([a.status,a.current_task_id,a.name,a.project_path,a.tmux_session_id,a.capabilities?.join(','),a.model,a.node_id,a.role]);
 }
 
 function diffCardGrid(container, items, renderFn, dataKeyFn, hashCache, emptyMsg) {
@@ -1312,6 +1314,31 @@ function bulkRegister(e) {
         body: JSON.stringify(body)
     }).then(r=>r.json()).then(agents => {
         addLog('agent_registered', 'Registered '+agents.length+' agent(s)');
+    });
+}
+
+function registerPlanner() {
+    const f = document.getElementById('bulk-agent-form');
+    const toolVal = f.tool.value;
+    const isOllama = toolVal === 'claude-ollama';
+    const body = {
+        count: 1,
+        tool: isOllama ? 'claude' : toolVal,
+        project_path: f.project_path.value,
+        name_prefix: 'planner',
+        capabilities: [],
+        role: 'planner',
+    };
+    if (isOllama) {
+        body.env = {ANTHROPIC_AUTH_TOKEN: 'ollama', ANTHROPIC_BASE_URL: 'http://localhost:11434'};
+        if (f.model.value) body.model = f.model.value;
+    }
+    fetch('/api/swarm/agents/bulk', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    }).then(r=>r.json()).then(agents => {
+        addLog('agent_registered', 'Registered planner agent');
     });
 }
 

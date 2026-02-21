@@ -7,6 +7,7 @@
 #   register-agents.sh 3 claude /tmp/test 9092
 #   register-agents.sh 3 claude /tmp/test 9092 claude-sonnet-4-5-20250929
 #   OLLAMA=1 register-agents.sh 3 claude /tmp/test 9092 qwen3:32b
+#   ROLE=planner register-agents.sh 1 claude /tmp/test 9092
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -23,7 +24,17 @@ if [ "$PROJECT" = "$PROJECT_ROOT/workbench" ]; then
 fi
 
 # Build JSON payload
-JSON="{\"count\":$COUNT,\"tool\":\"$TOOL\",\"capabilities\":[],\"project_path\":\"$PROJECT\",\"name_prefix\":\"agent\""
+ROLE="${ROLE:-}"
+NAME_PREFIX="agent"
+if [ "$ROLE" = "planner" ]; then
+    NAME_PREFIX="planner"
+fi
+
+JSON="{\"count\":$COUNT,\"tool\":\"$TOOL\",\"capabilities\":[],\"project_path\":\"$PROJECT\",\"name_prefix\":\"$NAME_PREFIX\""
+
+if [ -n "$ROLE" ]; then
+    JSON="$JSON,\"role\":\"$ROLE\""
+fi
 
 if [ -n "$MODEL" ]; then
     JSON="$JSON,\"model\":\"$MODEL\""
