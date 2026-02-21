@@ -517,6 +517,7 @@ class EmperorController
                         parentId: $parentTask->id,
                         workInstructions: $def['work_instructions'],
                         acceptanceCriteria: $def['acceptance_criteria'],
+                        complexity: $def['complexity'] ?? 'medium',
                     );
                     $localId = $def['id'] ?? '';
                     if ($localId !== '') {

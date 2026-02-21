@@ -715,6 +715,14 @@ function statusBadge(status) {
     return '<span class="card-status status-'+status+'">'+status+'</span>';
 }
 
+function complexityBadge(complexity) {
+    if (!complexity) return '';
+    const colors = {small:'#448844',medium:'#886644',large:'#884444',xl:'#884488'};
+    const models = {small:'haiku',medium:'sonnet',large:'opus',xl:'opus'};
+    const c = complexity.toLowerCase();
+    return ' <span style="font-size:0.7rem;padding:1px 5px;border-radius:3px;background:'+(colors[c]||'#555')+';color:#ddd;">'+c+' &rarr; '+(models[c]||c)+'</span>';
+}
+
 function getPipelinePhase(t, children) {
     if (t.status === 'failed') return -1;
     if (t.status === 'completed') return 6;
@@ -792,7 +800,7 @@ function renderTask(t, isSubtask) {
         const attempt = t.merge_attempts || 0;
         html += '<div style="font-size:0.85rem;color:#aa88ff;margin:4px 0;">Merging subtask branches and running tests...' + (attempt > 0 ? ' (attempt '+attempt+'/3)' : '') + '</div>';
     } else {
-        html += '<div class="card-title">'+escapeHtml(t.title)+' '+statusBadge(t.status)+'</div>';
+        html += '<div class="card-title">'+escapeHtml(t.title)+' '+statusBadge(t.status)+complexityBadge(t.complexity)+'</div>';
     }
 
     if (t.status === 'blocked' && t.depends_on && t.depends_on.length) {

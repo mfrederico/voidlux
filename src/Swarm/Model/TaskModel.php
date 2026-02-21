@@ -57,6 +57,7 @@ class TaskModel
         string $testCommand = '',
         array $dependsOn = [],
         bool $autoMerge = false,
+        string $complexity = 'medium',
     ): self {
         $now = gmdate('Y-m-d\TH:i:s\Z');
         return new self(
@@ -85,7 +86,7 @@ class TaskModel
             testCommand: $testCommand,
             dependsOn: $dependsOn,
             autoMerge: $autoMerge,
-            complexity: 'medium',
+            complexity: $complexity,
         );
     }
 

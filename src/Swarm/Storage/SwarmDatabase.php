@@ -136,6 +136,9 @@ class SwarmDatabase
         if (!in_array('pr_url', $existing, true)) {
             $this->pdo->exec("ALTER TABLE tasks ADD COLUMN pr_url TEXT NOT NULL DEFAULT ''");
         }
+        if (!in_array('complexity', $existing, true)) {
+            $this->pdo->exec("ALTER TABLE tasks ADD COLUMN complexity TEXT NOT NULL DEFAULT 'medium'");
+        }
 
         // Add model column to agents table
         $agentColumns = $this->pdo->query("PRAGMA table_info(agents)")->fetchAll();

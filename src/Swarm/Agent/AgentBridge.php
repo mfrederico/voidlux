@@ -69,10 +69,9 @@ class AgentBridge
         }
 
         // Switch to the appropriate model for this task's complexity.
-        // Uses task priority to resolve a size config, then sends /model if
-        // the agent's tool supports it and a preferred model is configured.
+        // Uses the planner-assigned complexity field to resolve model tier.
         $provider = ($agent->tool === 'claude') ? 'claude' : 'ollama';
-        $sizeConfig = AgentSizeConfig::forTaskPriority($task->priority, $provider);
+        $sizeConfig = AgentSizeConfig::forComplexity($task->complexity ?? 'medium', $provider);
         $targetModel = $sizeConfig->preferredModel;
         if ($targetModel !== '' && $agent->tool === 'claude') {
             $this->switchModel($sessionName, $targetModel);
