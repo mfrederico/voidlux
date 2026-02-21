@@ -442,7 +442,8 @@ class TaskQueue
             return;
         }
 
-        $reviewResult = $this->reviewer->review($task, $task->result ?? '');
+        $parentTask = $task->parentId ? $this->db->getTask($task->parentId) : null;
+        $reviewResult = $this->reviewer->review($task, $task->result ?? '', $parentTask);
         $ts = $this->clock->tick();
 
         if ($reviewResult->accepted) {

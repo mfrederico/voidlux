@@ -17,8 +17,12 @@ class TaskReviewer
 
     /**
      * Review a task's result against its acceptance criteria.
+     *
+     * @param TaskModel      $task       The subtask being reviewed
+     * @param string         $result     The agent's reported result
+     * @param TaskModel|null $parentTask The parent task (for broader context)
      */
-    public function review(TaskModel $task, string $result): ReviewResult
+    public function review(TaskModel $task, string $result, ?TaskModel $parentTask = null): ReviewResult
     {
         // If no acceptance criteria, auto-accept
         if (trim($task->acceptanceCriteria) === '') {
@@ -26,19 +30,39 @@ class TaskReviewer
         }
 
         $systemPrompt = <<<'PROMPT'
-You are a code reviewer. Given a task with acceptance criteria and the agent's reported result, determine if the work meets the criteria.
+You are a thorough code reviewer. Given a subtask with acceptance criteria and the agent's reported result, determine if the work meets the criteria AND fits correctly into the larger feature.
 
-Be pragmatic:
-- If the agent reports completing the work and the result description is reasonable, accept it.
-- Only reject if there are clear signs the work is incomplete, incorrect, or the agent gave up.
-- IMPORTANT: The work instructions may reference wrong file paths or the wrong programming language (e.g. Python paths for a PHP project). This happens when the planner couldn't detect the project type. If the agent correctly identified the real language and modified the correct files to achieve the task's INTENT, that is a PASS — do not reject because the file paths or language differ from what the instructions said.
-- Focus on whether the goal was achieved, not whether the exact steps in the instructions were followed verbatim.
+Review checklist:
+1. Does the result satisfy the acceptance criteria?
+2. If architecture context is provided, does the implementation follow the specified data flow, field names, and integration points?
+3. Are there signs of semantic mismatches? (e.g., using the wrong field name, reading from the wrong source, missing a DB migration for a new field)
+4. Did the agent complete the full scope or only part of it?
+
+Be pragmatic but thorough:
+- Accept work that achieves the goal, even if it takes a different approach than specified.
+- REJECT if the agent used wrong field/method names that won't integrate with other subtasks (check the architecture context).
+- REJECT if the agent added a new data field but forgot the database migration.
+- REJECT if the agent's changes are incomplete (e.g., added a field to one method but not the create/update paths).
+- IMPORTANT: Wrong file paths or language due to planner error is NOT a rejection reason if the agent adapted correctly.
+- When rejecting, be specific about what needs to change so the agent can fix it.
 
 Return ONLY valid JSON (no markdown fences, no explanation):
-{"accepted": true|false, "feedback": "Brief explanation of your decision"}
+{"accepted": true|false, "feedback": "Specific explanation. If rejecting, describe exactly what needs to change."}
 PROMPT;
 
-        $userPrompt = "## Task\n";
+        $userPrompt = '';
+
+        // Include parent task context if available
+        if ($parentTask) {
+            $userPrompt .= "## Parent Task (overall goal)\n";
+            $userPrompt .= "Title: {$parentTask->title}\n";
+            if ($parentTask->description) {
+                $userPrompt .= "Description: " . substr($parentTask->description, 0, 1000) . "\n";
+            }
+            $userPrompt .= "\n";
+        }
+
+        $userPrompt .= "## Subtask Being Reviewed\n";
         $userPrompt .= "Title: {$task->title}\n";
         if ($task->description) {
             $userPrompt .= "Description: {$task->description}\n";
@@ -49,7 +73,7 @@ PROMPT;
         $userPrompt .= "\n## Acceptance Criteria\n{$task->acceptanceCriteria}\n";
         $userPrompt .= "\n## Agent's Result\n{$result}\n";
 
-        $this->log("Reviewing task: {$task->title}");
+        $this->log("Reviewing task: {$task->title}" . ($parentTask ? " (parent: {$parentTask->title})" : ''));
         $response = $this->llm->chat($systemPrompt, $userPrompt);
         if ($response === null) {
             $this->log("LLM unavailable — auto-accepting");
