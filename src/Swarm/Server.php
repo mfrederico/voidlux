@@ -204,6 +204,7 @@ class Server
             $this->startTime,
         );
         $this->controller->setAgentMonitor($this->agentMonitor);
+        $this->controller->registerMergeHandler();
         $this->controller->onAgentStatusChange(function (string $agentId, string $status) {
             $agent = $this->db->getAgent($agentId);
             if ($agent) {
