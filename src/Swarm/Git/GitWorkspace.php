@@ -10,6 +10,15 @@ namespace VoidLux\Swarm\Git;
  */
 class GitWorkspace
 {
+    /**
+     * Branch chain map stored after successful isLinearChain() validation.
+     * Maps taskId → [successor taskId, ...] in dependency order.
+     * Populated by isLinearChain() and consumed by the EmperorController merge decision.
+     *
+     * @var array<string, string[]>
+     */
+    public array $branchChainMap = [];
+
     public function isGitUrl(string $path): bool
     {
         // Matches: https://, git://, ssh://, git@host:, and SCP-style host:path
