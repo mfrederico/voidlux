@@ -79,6 +79,7 @@ class TaskQueue
         string $testCommand = '',
         array $dependsOn = [],
         bool $autoMerge = false,
+        string $complexity = 'medium',
     ): TaskModel {
         $ts = $this->clock->tick();
 
@@ -103,6 +104,7 @@ class TaskQueue
             testCommand: $testCommand,
             dependsOn: $dependsOn,
             autoMerge: $autoMerge,
+            complexity: $complexity,
         );
 
         return $this->gossip->createTask($task);

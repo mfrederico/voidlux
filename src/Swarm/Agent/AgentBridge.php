@@ -7,6 +7,7 @@ namespace VoidLux\Swarm\Agent;
 use Aoe\Session\Status;
 use Aoe\Tmux\StatusDetector;
 use Aoe\Tmux\TmuxService;
+use VoidLux\Swarm\Agent\AgentSizeConfig;
 use VoidLux\Swarm\Ai\TaskPlanner;
 use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Model\AgentModel;
@@ -65,6 +66,15 @@ class AgentBridge
             if ($prepared) {
                 $this->db->updateGitBranch($task->id, $branchName);
             }
+        }
+
+        // Switch to the appropriate model for this task's complexity.
+        // Uses the planner-assigned complexity field to resolve model tier.
+        $provider = ($agent->tool === 'claude') ? 'claude' : 'ollama';
+        $sizeConfig = AgentSizeConfig::forComplexity($task->complexity ?? 'medium', $provider);
+        $targetModel = $sizeConfig->preferredModel;
+        if ($targetModel !== '' && $agent->tool === 'claude') {
+            $this->switchModel($sessionName, $targetModel);
         }
 
         // Clear agent context before new task
@@ -243,6 +253,35 @@ class AgentBridge
             $mcpFile,
             json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"
         );
+    }
+
+    /**
+     * Send /model command to switch the agent's LLM model before task delivery.
+     * Waits for Claude Code to process the switch by polling the pane for
+     * an idle prompt, up to a maximum timeout.
+     */
+    private function switchModel(string $sessionName, string $model): bool
+    {
+        $this->tmux->sendTextByName($sessionName, '/model ' . $model);
+        $this->tmux->sendEnterByName($sessionName);
+
+        // Poll for the agent to return to idle after model switch.
+        // Claude Code processes /model quickly — 5s max is generous.
+        $maxWaitUs = 5_000_000;
+        $pollIntervalUs = 500_000;
+        $waited = 0;
+        while ($waited < $maxWaitUs) {
+            usleep($pollIntervalUs);
+            $waited += $pollIntervalUs;
+            $content = $this->tmux->capturePaneByName($sessionName, 10);
+            $status = $this->detector->detect($content);
+            if ($status === Status::Idle) {
+                return true;
+            }
+        }
+
+        // Timed out — proceed anyway, model may have switched
+        return true;
     }
 
     /**
