@@ -49,7 +49,22 @@ open http://localhost:9090
 ### Docker
 
 ```bash
-docker compose up -d
+# Install Docker Compose if not already installed
+# Modern plugin (recommended):
+sudo apt-get install docker-compose-v2     # Ubuntu/Debian
+# OR legacy standalone:
+sudo apt-get install docker-compose
+
+# Manual install (no sudo required):
+mkdir -p ~/.docker/cli-plugins/
+curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
+  -o ~/.docker/cli-plugins/docker-compose
+chmod +x ~/.docker/cli-plugins/docker-compose
+
+# Start the swarm
+docker compose up -d    # plugin syntax
+# OR
+docker-compose up -d    # standalone syntax
 
 # Register agents (Claude Code binary mounted from host)
 bash scripts/register-agents.sh 3 claude https://github.com/you/your-repo.git 9091
@@ -72,6 +87,13 @@ services:
       - VOIDLUX_LLM_PROVIDER=claude
       - VOIDLUX_LLM_MODEL=claude-sonnet-4-5-20250929
 ```
+
+> **Docker Compose gotcha**: The package name varies by distribution:
+> - Ubuntu/Debian: `docker-compose-v2` (NOT `docker-compose-plugin`)
+> - Manual install works everywhere: see commands above
+> - Legacy standalone: `docker-compose` package
+>
+> Modern Docker uses `docker compose` (plugin). Older systems use `docker-compose` (standalone binary). Both syntaxes work with this project.
 
 > **Docker permissions**: If you get `permission denied` on the Docker socket, add your user to the `docker` group and start a new shell:
 > ```bash
