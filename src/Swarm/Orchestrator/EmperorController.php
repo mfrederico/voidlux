@@ -203,6 +203,10 @@ class EmperorController
                 $this->handleMergePr($m[1], $response);
                 break;
 
+            case preg_match('#^/api/swarm/tasks/([^/]+)/review-fix$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleReviewFix($m[1], $request, $response);
+                break;
+
             case preg_match('#^/api/swarm/tasks/([^/]+)/subtasks$#', $path, $m) === 1 && $method === 'GET':
                 $this->handleGetSubtasks($m[1], $response);
                 break;
@@ -687,6 +691,89 @@ class EmperorController
             $this->taskDispatcher?->triggerDispatch();
             $this->json($response, ['status' => 'rejected', 'task_id' => $taskId, 'feedback' => $feedback]);
         }
+    }
+
+    /**
+     * Handle PR review feedback: decompose issues into fix subtasks on the existing integration branch.
+     * POST /api/swarm/tasks/{id}/review-fix { "issues": ["issue 1", "issue 2", ...] }
+     */
+    private function handleReviewFix(string $taskId, Request $request, Response $response): void
+    {
+        $task = $this->taskQueue->getTask($taskId);
+        if (!$task) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Task not found']);
+            return;
+        }
+
+        // Must be a parent task with a PR (completed or in_progress)
+        if (!$task->prUrl && !$task->gitBranch) {
+            $response->status(422);
+            $this->json($response, ['error' => 'Task has no PR or integration branch']);
+            return;
+        }
+
+        $body = json_decode($request->getContent(), true);
+        $issues = $body['issues'] ?? [];
+        if (empty($issues) || !is_array($issues)) {
+            $response->status(422);
+            $this->json($response, ['error' => 'Must provide "issues" array']);
+            return;
+        }
+
+        $branch = $task->gitBranch ?: ('integrate/' . substr($task->id, 0, 8));
+
+        // Set parent back to in_progress
+        $updated = $task->withStatus(TaskStatus::InProgress, $task->lamportTs + 1);
+        $this->db->updateTask($updated);
+        $this->fireTaskEvent('task_updated', $updated->toArray());
+
+        // Create fix subtasks — one per issue, all on the integration branch
+        $fixTasks = [];
+        foreach ($issues as $i => $issue) {
+            $issueText = is_string($issue) ? $issue : json_encode($issue);
+            $fixTask = $this->taskQueue->createTask(
+                title: 'Fix: ' . substr($issueText, 0, 80),
+                description: "Fix issue found during PR review of parent task \"{$task->title}\".",
+                projectPath: $task->projectPath,
+                createdBy: $task->createdBy,
+                parentId: $task->id,
+                workInstructions: <<<INSTRUCTIONS
+## PR Review Fix
+
+You are fixing an issue found during code review of an existing PR.
+
+**Branch**: `{$branch}`
+**IMPORTANT**: You MUST work on the `{$branch}` branch, NOT create a new task branch. Check out this branch first:
+```
+git checkout {$branch}
+git pull origin {$branch}
+```
+
+**Issue to fix**:
+{$issueText}
+
+**Original task**: {$task->title}
+
+After fixing, commit and push to `{$branch}`. Do NOT create a new branch.
+INSTRUCTIONS,
+                acceptanceCriteria: "The issue is resolved: {$issueText}",
+                complexity: 'small',
+            );
+            $fixTasks[] = $fixTask;
+
+            $this->fireTaskEvent('task_created', $fixTask->toArray());
+        }
+
+        $this->taskDispatcher?->triggerDispatch();
+
+        $this->json($response, [
+            'status' => 'fix_dispatched',
+            'parent_id' => $taskId,
+            'branch' => $branch,
+            'fix_count' => count($fixTasks),
+            'fix_task_ids' => array_map(fn($t) => $t->id, $fixTasks),
+        ]);
     }
 
     private function handleMergePr(string $taskId, Response $response): void

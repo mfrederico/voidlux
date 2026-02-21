@@ -108,7 +108,72 @@ PROMPT;
         $subtasks = $this->parseResponse($response);
         $this->log("Parsed " . count($subtasks) . " subtask(s)");
 
+        // Generate architecture context and inject into each subtask
+        if (count($subtasks) > 1) {
+            $archContext = $this->generateArchitectureContext($request, $subtasks);
+            if ($archContext !== '') {
+                foreach ($subtasks as &$st) {
+                    $st['work_instructions'] = $st['work_instructions'] . "\n\n" . $archContext;
+                }
+                unset($st);
+                $this->log("Injected architecture context (" . strlen($archContext) . " chars) into " . count($subtasks) . " subtasks");
+            }
+        }
+
         return $subtasks;
+    }
+
+    /**
+     * Generate architecture context that gets injected into every subtask.
+     * Asks the LLM to produce a data flow map showing how new fields/concepts
+     * connect across files, so each agent understands the full picture.
+     */
+    private function generateArchitectureContext(TaskModel $request, array $subtasks): string
+    {
+        $subtaskSummary = '';
+        foreach ($subtasks as $i => $st) {
+            $subtaskSummary .= ($i + 1) . ". [{$st['id']}] {$st['title']}: {$st['description']}\n";
+            if (!empty($st['work_instructions'])) {
+                $subtaskSummary .= "   Files: " . $this->extractFilePaths($st['work_instructions']) . "\n";
+            }
+        }
+
+        $systemPrompt = <<<'PROMPT'
+You are a senior architect. Given a parent task decomposed into subtasks, produce a concise "Architecture Context" section that every agent will receive.
+
+This section must describe:
+1. **Data Flow**: How new fields, concepts, or data structures flow across files and subtasks. Show the chain: where data originates → where it's stored → where it's consumed.
+2. **Integration Points**: Which files/methods connect subtasks together. If subtask A adds a field and subtask B reads it, name the exact field and both locations.
+3. **DB Migrations**: If any new database columns are needed, list them explicitly.
+4. **Naming Conventions**: If a field/method name is chosen in one subtask, all other subtasks MUST use the same name.
+
+Keep it under 500 words. Use bullet points. Be specific — reference exact file paths and method names where possible. Do NOT repeat the subtask descriptions.
+
+Return ONLY the architecture context text (no JSON, no fences).
+PROMPT;
+
+        $userPrompt = "## Parent Task\n{$request->title}\n";
+        if ($request->description) {
+            $userPrompt .= "{$request->description}\n";
+        }
+        $userPrompt .= "\n## Subtasks\n{$subtaskSummary}";
+
+        $response = $this->llm->chat($systemPrompt, $userPrompt);
+        if ($response === null || trim($response) === '') {
+            return '';
+        }
+
+        return "## Architecture Context (shared across all subtasks)\n\n" . trim($response);
+    }
+
+    /**
+     * Extract file paths mentioned in work instructions for the architecture context.
+     */
+    private function extractFilePaths(string $text): string
+    {
+        preg_match_all('/(?:src\/|bin\/|scripts\/|tests?\/)[\w\/\-.]+\.\w+/', $text, $matches);
+        $paths = array_unique($matches[0] ?? []);
+        return $paths ? implode(', ', array_slice($paths, 0, 5)) : '(unspecified)';
     }
 
     /**

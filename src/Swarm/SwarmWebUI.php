@@ -850,14 +850,17 @@ function renderTask(t, isSubtask) {
         const prUrl = t.result.match(/PR: (https?:\/\/\S+)/)[1];
         html += '<div style="font-size:0.8rem;margin-top:4px;"><a href="'+escapeHtml(prUrl)+'" target="_blank" style="color:#66aaff;text-decoration:underline;">View Pull Request</a></div>';
     }
-    // Merge PR button: show when task has pr_url and is completed
+    // Merge PR / Request Fixes buttons: show when task has pr_url and is completed
     const taskPrUrl = t.pr_url || (t.result?.match(/PR: (https?:\/\/\S+)/)?.[1] || '');
     if (taskPrUrl && t.status === 'completed') {
         const autoMerged = t.result?.includes('Auto-merged: yes');
         if (autoMerged) {
             html += '<div style="font-size:0.8rem;color:#66cc66;margin-top:4px;">Auto-merged</div>';
         } else {
-            html += '<button onclick="mergePr(\''+t.id+'\',\''+escapeHtml(taskPrUrl).replace(/'/g,"\\'")+'\')" style="background:linear-gradient(135deg,#228822,#33aa33);color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:0.8rem;font-weight:bold;margin-top:6px;">Merge PR</button>';
+            html += '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">';
+            html += '<button onclick="mergePr(\''+t.id+'\',\''+escapeHtml(taskPrUrl).replace(/'/g,"\\'")+'\')" style="background:linear-gradient(135deg,#228822,#33aa33);color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:0.8rem;font-weight:bold;">Merge PR</button>';
+            html += '<button onclick="requestFixes(\''+t.id+'\')" style="background:linear-gradient(135deg,#885522,#aa6633);color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:0.8rem;font-weight:bold;">Request Fixes</button>';
+            html += '</div>';
         }
     }
     if (t.auto_merge) {
@@ -1481,6 +1484,26 @@ function mergePr(taskId, prUrl) {
         }
     }).catch(err => {
         addLog('task_failed', 'Merge request failed: '+err.message);
+    });
+}
+
+function requestFixes(taskId) {
+    const input = prompt('Describe the issues to fix (one per line):');
+    if (!input || !input.trim()) return;
+    const issues = input.trim().split('\n').filter(l => l.trim());
+    if (!issues.length) return;
+    fetch('/api/swarm/tasks/'+taskId+'/review-fix', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({issues: issues})
+    }).then(r=>r.json()).then(d => {
+        if (d.status === 'fix_dispatched') {
+            addLog('task_assigned', 'Dispatched '+d.fix_count+' fix task(s) on branch '+d.branch);
+        } else {
+            addLog('task_failed', 'Review-fix failed: '+(d.error||'unknown'));
+        }
+    }).catch(err => {
+        addLog('task_failed', 'Review-fix request failed: '+err.message);
     });
 }
 
