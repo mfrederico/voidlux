@@ -7,6 +7,7 @@ namespace VoidLux\Swarm\Mcp;
 use Swoole\Http\Request;
 use Swoole\Http\Response;
 use VoidLux\P2P\Protocol\LamportClock;
+use VoidLux\Swarm\Capabilities\PluginManager;
 use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Gossip\TaskGossipEngine;
 use VoidLux\Swarm\Model\MessageModel;
@@ -31,6 +32,7 @@ class McpHandler
     private ?OfferPayEngine $offerPayEngine = null;
     private ?TaskGossipEngine $taskGossip = null;
     private ?LamportClock $clock = null;
+    private ?PluginManager $pluginManager = null;
     private GitWorkspace $git;
 
     /** @var callable|null fn(string $agentId, string $status): void */
@@ -65,6 +67,11 @@ class McpHandler
     public function setLamportClock(LamportClock $clock): void
     {
         $this->clock = $clock;
+    }
+
+    public function setPluginManager(PluginManager $manager): void
+    {
+        $this->pluginManager = $manager;
     }
 
     public function onAgentStatusChange(callable $callback): void
@@ -133,8 +140,25 @@ class McpHandler
 
     private function handleToolsList(): array
     {
+        $tools = $this->getCoreTools();
+
+        // Merge plugin tools
+        if ($this->pluginManager) {
+            foreach ($this->pluginManager->getAllPlugins() as $plugin) {
+                if ($plugin instanceof \VoidLux\Swarm\Capabilities\McpToolProvider) {
+                    $tools = array_merge($tools, $plugin->getTools());
+                }
+            }
+        }
+
         return [
-            'tools' => [
+            'tools' => $tools,
+        ];
+    }
+
+    private function getCoreTools(): array
+    {
+        return [
                 (object) [
                     'name' => 'task_complete',
                     'description' => 'Mark a swarm task as completed with a summary of what was accomplished.',
@@ -221,6 +245,17 @@ class McpHandler
                             'agent_name' => (object) ['type' => 'string', 'description' => 'Your agent name (e.g. agent-62dec4-1)'],
                         ],
                         'required' => ['agent_name'],
+                    ],
+                ],
+                (object) [
+                    'name' => 'plugin_install',
+                    'description' => 'Install dependencies for a plugin. Use this when a plugin is marked as unavailable and you need to install its requirements.',
+                    'inputSchema' => (object) [
+                        'type' => 'object',
+                        'properties' => (object) [
+                            'plugin_name' => (object) ['type' => 'string', 'description' => 'Plugin name to install (e.g. "browser")'],
+                        ],
+                        'required' => ['plugin_name'],
                     ],
                 ],
                 (object) [
@@ -325,7 +360,6 @@ class McpHandler
                         'required' => ['message_id', 'agent_name'],
                     ],
                 ],
-            ],
         ];
     }
 
@@ -334,6 +368,31 @@ class McpHandler
         $toolName = $params['name'] ?? '';
         $args = $params['arguments'] ?? [];
 
+        // Try core tools first
+        $coreResult = $this->handleCoreTools($toolName, $args);
+        if ($coreResult !== null) {
+            return $coreResult;
+        }
+
+        // Try plugin tools
+        if ($this->pluginManager) {
+            $agentId = $this->extractAgentIdFromArgs($args);
+            if ($agentId) {
+                $pluginResult = $this->pluginManager->handleToolCall($toolName, $args, $agentId);
+                if ($pluginResult !== null) {
+                    return $pluginResult;
+                }
+            }
+        }
+
+        // Unknown tool
+        return ['content' => [['type' => 'text', 'text' => json_encode([
+            'error' => "Unknown tool: {$toolName}",
+        ])]], 'isError' => true];
+    }
+
+    private function handleCoreTools(string $toolName, array $args): ?array
+    {
         return match ($toolName) {
             'task_complete' => $this->callTaskComplete($args),
             'task_progress' => $this->callTaskProgress($args),
@@ -341,6 +400,7 @@ class McpHandler
             'task_needs_input' => $this->callTaskNeedsInput($args),
             'task_plan' => $this->callTaskPlan($args),
             'agent_ready' => $this->callAgentReady($args),
+            'plugin_install' => $this->callPluginInstall($args),
             'offer_create' => $this->callOfferCreate($args),
             'offer_accept' => $this->callOfferAccept($args),
             'offer_reject' => $this->callOfferReject($args),
@@ -349,10 +409,14 @@ class McpHandler
             'post_message' => $this->callPostMessage($args),
             'list_messages' => $this->callListMessages($args),
             'claim_bounty' => $this->callClaimBounty($args),
-            default => ['content' => [['type' => 'text', 'text' => json_encode([
-                'error' => "Unknown tool: {$toolName}",
-            ])]], 'isError' => true],
+            default => null,
         };
+    }
+
+    private function extractAgentIdFromArgs(array $args): ?string
+    {
+        // Try to extract agent ID from common argument names
+        return $args['agent_name'] ?? $args['agent_id'] ?? null;
     }
 
     private function callTaskComplete(array $args): array
@@ -573,6 +637,46 @@ class McpHandler
         }
 
         return $this->toolResult(['status' => 'ready', 'agent_name' => $agentName]);
+    }
+
+    private function callPluginInstall(array $args): array
+    {
+        $pluginName = $args['plugin_name'] ?? '';
+        if (!$pluginName) {
+            return $this->toolError('plugin_name is required');
+        }
+
+        if (!$this->pluginManager) {
+            return $this->toolError('Plugin system not initialized');
+        }
+
+        try {
+            $plugin = $this->pluginManager->getPlugin($pluginName);
+        } catch (\Exception $e) {
+            return $this->toolError("Plugin not found: {$pluginName}");
+        }
+
+        // Check if already available
+        if ($plugin->checkAvailability()) {
+            return $this->toolResult([
+                'status' => 'already_installed',
+                'plugin' => $pluginName,
+                'message' => 'Plugin dependencies already available',
+            ]);
+        }
+
+        // Run plugin installation
+        $result = $plugin->install();
+
+        if ($result['success']) {
+            return $this->toolResult([
+                'status' => 'installed',
+                'plugin' => $pluginName,
+                'message' => $result['message'],
+            ]);
+        } else {
+            return $this->toolError($result['message']);
+        }
     }
 
     /**

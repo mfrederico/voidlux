@@ -9,6 +9,7 @@ use Aoe\Tmux\StatusDetector;
 use Aoe\Tmux\TmuxService;
 use VoidLux\Swarm\Agent\AgentSizeConfig;
 use VoidLux\Swarm\Ai\TaskPlanner;
+use VoidLux\Swarm\Capabilities\PluginManager;
 use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Model\AgentModel;
 use VoidLux\Swarm\Model\TaskModel;
@@ -23,6 +24,7 @@ class AgentBridge
     private TmuxService $tmux;
     private StatusDetector $detector;
     private GitWorkspace $git;
+    private ?PluginManager $pluginManager = null;
 
     public function __construct(
         private readonly SwarmDatabase $db,
@@ -34,6 +36,11 @@ class AgentBridge
         $this->tmux = $tmux ?? new TmuxService('swarm', 'vl');
         $this->detector = $detector ?? new StatusDetector();
         $this->git = $git ?? new GitWorkspace();
+    }
+
+    public function setPluginManager(PluginManager $manager): void
+    {
+        $this->pluginManager = $manager;
     }
 
     /**
@@ -85,7 +92,7 @@ class AgentBridge
         usleep(1_500_000);
 
         // Build the task prompt with the resolved working directory
-        $prompt = $this->buildTaskPrompt($task, $workDir);
+        $prompt = $this->buildTaskPrompt($task, $workDir, $agent);
 
         // Paste into tmux using load-buffer + paste-buffer (bracketed paste mode).
         // Unlike send-keys -l, this handles newlines, emojis, and special characters
@@ -426,7 +433,7 @@ FORMAT;
      * "Work in this directory" and project type detection, instead of
      * the raw task projectPath which may be a git URL.
      */
-    private function buildTaskPrompt(TaskModel $task, string $workDir = ''): string
+    private function buildTaskPrompt(TaskModel $task, string $workDir = '', ?AgentModel $agent = null): string
     {
         $prompt = "## Task: " . $task->title . "\n\n";
         $prompt .= $task->description ?: $task->title;
@@ -471,6 +478,14 @@ FORMAT;
             $projectType = TaskPlanner::detectProjectType($projectDir);
             if ($projectType) {
                 $prompt .= "\n\n## Project Type\n" . $projectType;
+            }
+        }
+
+        // Inject plugin context if available
+        if ($this->pluginManager && $agent) {
+            $pluginContext = $this->pluginManager->getPromptContext($task, $agent);
+            if ($pluginContext) {
+                $prompt .= "\n\n## Available Plugin Tools\n" . $pluginContext;
             }
         }
 

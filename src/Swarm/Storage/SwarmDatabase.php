@@ -241,6 +241,21 @@ class SwarmDatabase
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_board_lamport ON board_messages(lamport_ts)');
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_board_parent ON board_messages(parent_id)');
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_board_author ON board_messages(author_id)');
+
+        // Agent plugins table (many-to-many: agents <-> plugins)
+        $this->pdo->exec('
+            CREATE TABLE IF NOT EXISTS agent_plugins (
+                agent_id TEXT NOT NULL,
+                plugin_name TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                config TEXT NOT NULL DEFAULT \'{}\',
+                enabled_at TEXT NOT NULL,
+                PRIMARY KEY (agent_id, plugin_name),
+                FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+            )
+        ');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_agent_plugins_agent ON agent_plugins(agent_id)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_agent_plugins_enabled ON agent_plugins(enabled)');
     }
 
     // --- Task operations ---
@@ -1321,5 +1336,72 @@ class SwarmDatabase
             return (int) $stmt->fetchColumn();
         }
         return (int) $this->pdo->query('SELECT COUNT(*) FROM board_messages')->fetchColumn();
+    }
+
+    // --- Plugin operations ---
+
+    /**
+     * Enable a plugin for a specific agent.
+     */
+    public function enableAgentPlugin(string $agentId, string $pluginName): void
+    {
+        $stmt = $this->pdo->prepare('
+            INSERT OR REPLACE INTO agent_plugins
+                (agent_id, plugin_name, enabled, config, enabled_at)
+            VALUES
+                (:agent_id, :plugin_name, 1, :config, :enabled_at)
+        ');
+        $stmt->execute([
+            ':agent_id' => $agentId,
+            ':plugin_name' => $pluginName,
+            ':config' => '{}',
+            ':enabled_at' => gmdate('Y-m-d\TH:i:s\Z'),
+        ]);
+    }
+
+    /**
+     * Disable a plugin for a specific agent.
+     */
+    public function disableAgentPlugin(string $agentId, string $pluginName): void
+    {
+        $stmt = $this->pdo->prepare('
+            DELETE FROM agent_plugins
+            WHERE agent_id = :agent_id AND plugin_name = :plugin_name
+        ');
+        $stmt->execute([
+            ':agent_id' => $agentId,
+            ':plugin_name' => $pluginName,
+        ]);
+    }
+
+    /**
+     * Get all enabled plugin names for an agent.
+     *
+     * @return string[]
+     */
+    public function getAgentPlugins(string $agentId): array
+    {
+        $stmt = $this->pdo->prepare('
+            SELECT plugin_name FROM agent_plugins
+            WHERE agent_id = :agent_id AND enabled = 1
+        ');
+        $stmt->execute([':agent_id' => $agentId]);
+        return array_column($stmt->fetchAll(), 'plugin_name');
+    }
+
+    /**
+     * Update agent capabilities (from plugin aggregation).
+     */
+    public function updateAgentCapabilities(string $agentId, array $capabilities): void
+    {
+        $stmt = $this->pdo->prepare('
+            UPDATE agents
+            SET capabilities = :capabilities
+            WHERE id = :agent_id
+        ');
+        $stmt->execute([
+            ':agent_id' => $agentId,
+            ':capabilities' => json_encode($capabilities),
+        ]);
     }
 }
