@@ -65,8 +65,8 @@ class ClaudeAuthManager
      */
     public function isAuthenticated(): bool
     {
-        // Check if Claude credentials exist
-        $credentialsPath = getenv('HOME') . '/.claude/credentials.json';
+        // Check if Claude credentials exist (note: Claude uses .credentials.json with a dot)
+        $credentialsPath = getenv('HOME') . '/.claude/.credentials.json';
         return file_exists($credentialsPath);
     }
 
@@ -125,7 +125,7 @@ class ClaudeAuthManager
      */
     public function getCredentialsInfo(): ?array
     {
-        $credentialsPath = getenv('HOME') . '/.claude/credentials.json';
+        $credentialsPath = getenv('HOME') . '/.claude/.credentials.json';
 
         if (!file_exists($credentialsPath)) {
             return null;
@@ -136,11 +136,15 @@ class ClaudeAuthManager
             return null;
         }
 
+        // Extract info from the claudeAiOauth section
+        $oauth = $data['claudeAiOauth'] ?? $data;
+
         // Return non-sensitive info only
         return [
             'authenticated' => true,
-            'expires_at' => $data['expires_at'] ?? null,
-            'workspace_id' => $data['workspace_id'] ?? null,
+            'expires_at' => $oauth['expiresAt'] ?? null,
+            'subscription_type' => $oauth['subscriptionType'] ?? null,
+            'rate_limit_tier' => $oauth['rateLimitTier'] ?? null,
         ];
     }
 }
