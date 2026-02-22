@@ -304,6 +304,43 @@ class EmperorController
                 $this->handleDisableAgentPlugin($m[1], $m[2], $response);
                 break;
 
+            // --- Plugin Marketplace API ---
+            case $path === '/api/marketplace/offerings' && $method === 'GET':
+                $this->handleMarketplaceOfferings($response);
+                break;
+
+            case $path === '/api/marketplace/offerings' && $method === 'POST':
+                $this->handleMarketplacePublish($request, $response);
+                break;
+
+            case $path === '/api/marketplace/install' && $method === 'POST':
+                $this->handleMarketplaceInstall($request, $response);
+                break;
+
+            case $path === '/api/marketplace/installations' && $method === 'GET':
+                $this->handleMarketplaceInstallations($response);
+                break;
+
+            case preg_match('#^/api/marketplace/installations/([^/]+)$#', $path, $m) === 1 && $method === 'DELETE':
+                $this->handleMarketplaceUninstall($m[1], $response);
+                break;
+
+            case $path === '/api/marketplace/review' && $method === 'POST':
+                $this->handleMarketplaceReview($request, $response);
+                break;
+
+            case $path === '/api/marketplace/bounties' && $method === 'GET':
+                $this->handleMarketplaceBounties($response);
+                break;
+
+            case $path === '/api/marketplace/bounties' && $method === 'POST':
+                $this->handleMarketplacePostBounty($request, $response);
+                break;
+
+            case preg_match('#^/api/marketplace/bounties/([^/]+)/claim$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleMarketplaceClaimBounty($m[1], $request, $response);
+                break;
+
             // --- Claude Authentication API ---
             case $path === '/api/swarm/auth/status' && $method === 'GET':
                 $this->handleAuthStatus($response);
@@ -2224,5 +2261,176 @@ INSTRUCTIONS,
     {
         $response->header('Content-Type', 'application/json');
         $response->end(json_encode($data, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+    }
+
+    // === Plugin Marketplace Handlers ===
+
+    private function handleMarketplaceOfferings(Response $response): void
+    {
+        if (!$this->pluginMarketplace) {
+            $this->json($response, ['plugins' => []]);
+            return;
+        }
+
+        // Call the MCP marketplace_browse tool
+        $result = $this->pluginMarketplace->handleToolCall('marketplace_browse', [
+            'agent_name' => $this->nodeId,
+            'limit' => 100,
+        ]);
+
+        // Extract JSON from MCP result
+        $text = $result['content'][0]->text ?? '{}';
+        $data = json_decode($text, true);
+        $this->json($response, $data);
+    }
+
+    private function handleMarketplacePublish(Request $request, Response $response): void
+    {
+        if (!$this->pluginMarketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not available']);
+            return;
+        }
+
+        $body = json_decode($request->rawContent(), true);
+
+        $result = $this->pluginMarketplace->handleToolCall('marketplace_offer_plugin', [
+            'agent_name' => $body['agent_name'] ?? '',
+            'plugin_name' => $body['plugin_name'] ?? '',
+            'version' => $body['version'] ?? '',
+            'description' => $body['description'] ?? '',
+            'capabilities' => $body['capabilities'] ?? [],
+            'requirements' => $body['requirements'] ?? [],
+            'code_url' => $body['code_url'] ?? null,
+        ]);
+
+        $text = $result['content'][0]->text ?? '{}';
+        $data = json_decode($text, true);
+        $this->json($response, $data);
+    }
+
+    private function handleMarketplaceInstall(Request $request, Response $response): void
+    {
+        if (!$this->pluginMarketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not available']);
+            return;
+        }
+
+        $body = json_decode($request->rawContent(), true);
+
+        $result = $this->pluginMarketplace->handleToolCall('marketplace_install', [
+            'agent_name' => $body['agent_name'] ?? '',
+            'plugin_name' => $body['plugin_name'] ?? '',
+        ]);
+
+        $text = $result['content'][0]->text ?? '{}';
+        $data = json_decode($text, true);
+        $this->json($response, $data);
+    }
+
+    private function handleMarketplaceInstallations(Response $response): void
+    {
+        if (!$this->pluginMarketplace) {
+            $this->json($response, ['installations' => []]);
+            return;
+        }
+
+        // TODO: Need to add marketplace_installations MCP tool
+        // For now return empty list
+        $this->json($response, ['installations' => []]);
+    }
+
+    private function handleMarketplaceUninstall(string $installId, Response $response): void
+    {
+        if (!$this->pluginMarketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not available']);
+            return;
+        }
+
+        // TODO: Need to add marketplace_uninstall MCP tool
+        $this->json($response, ['status' => 'uninstalled']);
+    }
+
+    private function handleMarketplaceReview(Request $request, Response $response): void
+    {
+        if (!$this->pluginMarketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not available']);
+            return;
+        }
+
+        $body = json_decode($request->rawContent(), true);
+
+        $result = $this->pluginMarketplace->handleToolCall('marketplace_review', [
+            'agent_name' => $body['agent_name'] ?? '',
+            'plugin_name' => $body['plugin_name'] ?? '',
+            'rating' => $body['rating'] ?? 0,
+            'review_text' => $body['review_text'] ?? null,
+        ]);
+
+        $text = $result['content'][0]->text ?? '{}';
+        $data = json_decode($text, true);
+        $this->json($response, $data);
+    }
+
+    private function handleMarketplaceBounties(Response $response): void
+    {
+        if (!$this->pluginMarketplace) {
+            $this->json($response, ['bounties' => []]);
+            return;
+        }
+
+        $result = $this->pluginMarketplace->handleToolCall('marketplace_bounties', [
+            'agent_name' => $this->nodeId,
+        ]);
+
+        $text = $result['content'][0]->text ?? '{}';
+        $data = json_decode($text, true);
+        $this->json($response, $data);
+    }
+
+    private function handleMarketplacePostBounty(Request $request, Response $response): void
+    {
+        if (!$this->pluginMarketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not available']);
+            return;
+        }
+
+        $body = json_decode($request->rawContent(), true);
+
+        $result = $this->pluginMarketplace->handleToolCall('marketplace_post_bounty', [
+            'agent_name' => $body['agent_name'] ?? '',
+            'plugin_name' => $body['plugin_name'] ?? '',
+            'description' => $body['description'] ?? '',
+            'required_capabilities' => $body['required_capabilities'] ?? [],
+            'reward' => $body['reward'] ?? null,
+        ]);
+
+        $text = $result['content'][0]->text ?? '{}';
+        $data = json_decode($text, true);
+        $this->json($response, $data);
+    }
+
+    private function handleMarketplaceClaimBounty(string $bountyId, Request $request, Response $response): void
+    {
+        if (!$this->pluginMarketplace) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Marketplace not available']);
+            return;
+        }
+
+        $body = json_decode($request->rawContent(), true);
+
+        $result = $this->pluginMarketplace->handleToolCall('marketplace_claim_bounty', [
+            'agent_name' => $body['agent_name'] ?? '',
+            'bounty_id' => $bountyId,
+        ]);
+
+        $text = $result['content'][0]->text ?? '{}';
+        $data = json_decode($text, true);
+        $this->json($response, $data);
     }
 }

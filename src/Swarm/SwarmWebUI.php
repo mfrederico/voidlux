@@ -618,6 +618,75 @@ body {
         <div id="plugin-info" style="font-size:0.8rem;color:#668;margin-bottom:10px;"></div>
     </div>
 
+    <div class="section">
+        <h2>🌌 Plugin Marketplace</h2>
+        <div class="marketplace-tabs" style="margin-bottom:14px;">
+            <button class="marketplace-tab active" onclick="switchPluginTab('browse')" id="tab-browse">Browse</button>
+            <button class="marketplace-tab" onclick="switchPluginTab('installations')" id="tab-installations">My Plugins</button>
+            <button class="marketplace-tab" onclick="switchPluginTab('bounties')" id="tab-bounties">Bounties</button>
+            <button class="marketplace-tab" onclick="switchPluginTab('offer')" id="tab-offer">Publish</button>
+        </div>
+
+        <!-- Browse Plugins Panel -->
+        <div class="marketplace-panel active" id="plugin-panel-browse">
+            <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;">
+                <input type="text" id="plugin-search" placeholder="Search plugins..." oninput="searchPlugins()" style="flex:1;background:#1a1a2a;border:1px solid #334466;color:#aaa;padding:6px 12px;border-radius:4px;font-family:inherit;">
+                <button onclick="refreshPlugins()" style="background:#336;border:1px solid #447;color:#88aaff;padding:6px 12px;border-radius:4px;cursor:pointer;">Refresh</button>
+            </div>
+            <div class="card-grid" id="plugin-list">
+                <div class="empty">Loading plugins...</div>
+            </div>
+        </div>
+
+        <!-- My Installations Panel -->
+        <div class="marketplace-panel" id="plugin-panel-installations" style="display:none;">
+            <div style="margin-bottom:12px;">
+                <button onclick="refreshInstallations()" style="background:#363;border:1px solid #474;color:#8f8;padding:6px 12px;border-radius:4px;cursor:pointer;">Refresh</button>
+            </div>
+            <div class="card-grid" id="installation-list">
+                <div class="empty">No plugins installed yet</div>
+            </div>
+        </div>
+
+        <!-- Plugin Bounties Panel -->
+        <div class="marketplace-panel" id="plugin-panel-bounties" style="display:none;">
+            <div style="margin-bottom:12px;display:flex;gap:8px;">
+                <button onclick="togglePluginBountyForm()" style="background:#663300;border:1px solid #884422;color:#ffaa66;padding:6px 12px;border-radius:4px;cursor:pointer;">+ Post Bounty</button>
+                <button onclick="refreshPluginBounties()" style="background:#336;border:1px solid #447;color:#88aaff;padding:6px 12px;border-radius:4px;cursor:pointer;">Refresh</button>
+            </div>
+            <div id="plugin-bounty-form" style="display:none;margin-bottom:14px;background:#1a0d00;padding:14px;border:1px solid #332211;border-radius:6px;">
+                <form onsubmit="postPluginBounty(event)">
+                    <input name="plugin_name" placeholder="Plugin name (e.g., spotify-control)" required style="width:100%;margin-bottom:8px;background:#0d0d1a;border:1px solid #332211;color:#aaa;padding:8px;border-radius:4px;font-family:inherit;">
+                    <textarea name="description" placeholder="What should this plugin do?" rows="3" required style="width:100%;margin-bottom:8px;background:#0d0d1a;border:1px solid #332211;color:#aaa;padding:8px;border-radius:4px;font-family:inherit;resize:vertical;"></textarea>
+                    <input name="capabilities" placeholder="Required capabilities (comma-separated)" required style="width:100%;margin-bottom:8px;background:#0d0d1a;border:1px solid #332211;color:#aaa;padding:8px;border-radius:4px;font-family:inherit;">
+                    <input name="reward" placeholder="Reward (optional)" style="width:100%;margin-bottom:12px;background:#0d0d1a;border:1px solid #332211;color:#aaa;padding:8px;border-radius:4px;font-family:inherit;">
+                    <div style="display:flex;gap:8px;">
+                        <button type="submit" style="flex:1;background:#663300;border:1px solid #884422;color:#ffaa66;padding:8px;border-radius:4px;cursor:pointer;font-family:inherit;">Post Bounty</button>
+                        <button type="button" onclick="togglePluginBountyForm()" style="background:#333;border:1px solid #444;color:#aaa;padding:8px 16px;border-radius:4px;cursor:pointer;font-family:inherit;">Cancel</button>
+                    </div>
+                </form>
+            </div>
+            <div class="card-grid" id="plugin-bounty-list">
+                <div class="empty">No open bounties</div>
+            </div>
+        </div>
+
+        <!-- Offer Plugin Panel -->
+        <div class="marketplace-panel" id="plugin-panel-offer" style="display:none;">
+            <div style="background:#0d1a0d;padding:14px;border:1px solid #2244 22;border-radius:6px;">
+                <form onsubmit="offerPlugin(event)">
+                    <input name="plugin_name" placeholder="Plugin name" required style="width:100%;margin-bottom:8px;background:#0d0d1a;border:1px solid#224422;color:#aaa;padding:8px;border-radius:4px;font-family:inherit;">
+                    <input name="version" placeholder="Version (e.g., 1.0.0)" required style="width:100%;margin-bottom:8px;background:#0d0d1a;border:1px solid #224422;color:#aaa;padding:8px;border-radius:4px;font-family:inherit;">
+                    <textarea name="description" placeholder="What does your plugin do?" rows="3" required style="width:100%;margin-bottom:8px;background:#0d0d1a;border:1px solid #224422;color:#aaa;padding:8px;border-radius:4px;font-family:inherit;resize:vertical;"></textarea>
+                    <input name="capabilities" placeholder="Capabilities provided (comma-separated)" required style="width:100%;margin-bottom:8px;background:#0d0d1a;border:1px solid #224422;color:#aaa;padding:8px;border-radius:4px;font-family:inherit;">
+                    <input name="requirements" placeholder="Requirements (comma-separated, optional)" style="width:100%;margin-bottom:8px;background:#0d0d1a;border:1px solid #224422;color:#aaa;padding:8px;border-radius:4px;font-family:inherit;">
+                    <input name="code_url" placeholder="Code URL (git repo or file path)" style="width:100%;margin-bottom:12px;background:#0d0d1a;border:1px solid #224422;color:#aaa;padding:8px;border-radius:4px;font-family:inherit;">
+                    <button type="submit" style="width:100%;background:#336633;border:1px solid #447744;color:#88ff88;padding:10px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:1rem;">🚀 Publish Plugin</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div class="section" id="overseer-section">
         <h2 style="cursor:pointer;" onclick="toggleOverseer()">
             Overseer
@@ -2474,6 +2543,391 @@ function disablePluginForAgent() {
             }
         })
         .catch(e => alert('Request failed: ' + e.message));
+}
+
+// ---- Galactic Marketplace (Plugin Economy) ----
+
+let marketplacePlugins = [];
+let pluginInstallations = [];
+let pluginBounties = [];
+
+function switchPluginTab(tab) {
+    // Remove active class from all tabs and panels
+    document.querySelectorAll('.marketplace-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.marketplace-panel').forEach(p => {
+        p.style.display = 'none';
+        p.classList.remove('active');
+    });
+
+    // Activate selected tab and panel
+    document.getElementById('tab-' + tab).classList.add('active');
+    const panel = document.getElementById('plugin-panel-' + tab);
+    panel.style.display = 'block';
+    panel.classList.add('active');
+
+    // Load data for the selected tab
+    switch(tab) {
+        case 'browse':
+            refreshPlugins();
+            break;
+        case 'installations':
+            refreshInstallations();
+            break;
+        case 'bounties':
+            refreshPluginBounties();
+            break;
+    }
+}
+
+function refreshPlugins() {
+    fetch('/api/marketplace/offerings')
+        .then(r => r.json())
+        .then(d => {
+            marketplacePlugins = d.plugins || [];
+            renderPluginList(marketplacePlugins);
+        })
+        .catch(e => {
+            console.error('Failed to load marketplace plugins:', e);
+            document.getElementById('plugin-list').innerHTML = '<div class="empty">Failed to load plugins</div>';
+        });
+}
+
+function renderPluginList(plugins) {
+    const el = document.getElementById('plugin-list');
+
+    if (!plugins.length) {
+        el.innerHTML = '<div class="empty">No plugins available in marketplace</div>';
+        return;
+    }
+
+    el.innerHTML = plugins.map(p => {
+        const stars = '⭐'.repeat(Math.round(p.rating || 0));
+        let html = '<div class="card">';
+        html += '<div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">';
+        html += '<span>' + escapeHtml(p.name) + '</span>';
+        html += '<span style="font-size:0.7rem;color:#666;">' + escapeHtml(p.version) + '</span>';
+        html += '</div>';
+        html += '<div style="font-size:0.85rem;color:#999;margin-top:6px;">' + escapeHtml(p.description) + '</div>';
+
+        // Capabilities
+        if (p.capabilities && p.capabilities.length) {
+            html += '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">';
+            p.capabilities.forEach(c => {
+                html += '<span style="font-size:0.7rem;background:#223344;color:#66aacc;padding:2px 6px;border-radius:3px;">' + escapeHtml(c) + '</span>';
+            });
+            html += '</div>';
+        }
+
+        // Stats
+        html += '<div class="card-meta" style="margin-top:8px;">';
+        html += stars + ' (' + p.rating.toFixed(1) + ')';
+        html += ' &middot; ' + p.downloads + ' installs';
+        html += ' &middot; by ' + escapeHtml(p.author).substring(0, 8);
+        if (p.featured) html += ' &middot; <span style="color:#ffaa00;">⭐ Featured</span>';
+        html += '</div>';
+
+        // Actions
+        html += '<div class="card-actions" style="margin-top:10px;">';
+        html += '<button onclick="installPlugin(\'' + p.id + '\', \'' + escapeHtml(p.name) + '\')">Install</button>';
+        html += '<button onclick="viewPluginDetails(\'' + p.id + '\')" style="background:#333;">Details</button>';
+        html += '</div>';
+        html += '</div>';
+        return html;
+    }).join('');
+}
+
+function searchPlugins() {
+    const query = document.getElementById('plugin-search').value.toLowerCase();
+    if (!query) {
+        renderPluginList(marketplacePlugins);
+        return;
+    }
+
+    const filtered = marketplacePlugins.filter(p =>
+        p.name.toLowerCase().includes(query) ||
+        p.description.toLowerCase().includes(query) ||
+        (p.capabilities || []).some(c => c.toLowerCase().includes(query))
+    );
+    renderPluginList(filtered);
+}
+
+function installPlugin(offeringId, pluginName) {
+    if (!confirm(`Install plugin "${pluginName}"?`)) return;
+
+    // Get current agent name from config
+    fetch('/api/swarm/config')
+        .then(r => r.json())
+        .then(config => {
+            const agentName = 'node-' + (config.NODE_ID || 'unknown').substring(0, 6);
+
+            // Call marketplace MCP tool via controller
+            return fetch('/api/marketplace/install', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    agent_name: agentName,
+                    plugin_name: pluginName
+                })
+            });
+        })
+        .then(r => r.json())
+        .then(d => {
+            if (d.error) {
+                alert('Installation failed: ' + d.error);
+            } else {
+                addLog('plugin_installed', `Installed ${pluginName} from marketplace`);
+                // Show capabilities gained
+                if (d.capabilities && d.capabilities.length) {
+                    addLog('capabilities_gained', `New capabilities: ${d.capabilities.join(', ')}`);
+                }
+                refreshInstallations();
+            }
+        })
+        .catch(e => alert('Installation failed: ' + e.message));
+}
+
+function refreshInstallations() {
+    fetch('/api/marketplace/installations')
+        .then(r => r.json())
+        .then(d => {
+            pluginInstallations = d.installations || [];
+            renderInstallations();
+        })
+        .catch(e => {
+            console.error('Failed to load installations:', e);
+            document.getElementById('installation-list').innerHTML = '<div class="empty">Failed to load installations</div>';
+        });
+}
+
+function renderInstallations() {
+    const el = document.getElementById('installation-list');
+
+    if (!pluginInstallations.length) {
+        el.innerHTML = '<div class="empty">No plugins installed yet</div>';
+        return;
+    }
+
+    el.innerHTML = pluginInstallations.map(i => {
+        let html = '<div class="card">';
+        html += '<div class="card-title">' + escapeHtml(i.plugin_name) + '</div>';
+        html += '<div style="font-size:0.85rem;color:#999;margin-top:4px;">Version: ' + escapeHtml(i.version) + '</div>';
+        html += '<div class="card-meta" style="margin-top:8px;">';
+        html += 'Installed: ' + (i.installed_at || '');
+        html += '</div>';
+        html += '<div class="card-actions" style="margin-top:10px;">';
+        html += '<button onclick="uninstallPlugin(\'' + i.id + '\', \'' + escapeHtml(i.plugin_name) + '\')" style="background:#663333;">Uninstall</button>';
+        html += '<button onclick="reviewPlugin(\'' + escapeHtml(i.plugin_name) + '\')" style="background:#336633;">Review</button>';
+        html += '</div>';
+        html += '</div>';
+        return html;
+    }).join('');
+}
+
+function uninstallPlugin(installId, pluginName) {
+    if (!confirm(`Uninstall plugin "${pluginName}"?`)) return;
+
+    fetch(`/api/marketplace/installations/${installId}`, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(d => {
+            if (d.error) {
+                alert('Uninstall failed: ' + d.error);
+            } else {
+                addLog('plugin_uninstalled', `Uninstalled ${pluginName}`);
+                refreshInstallations();
+            }
+        })
+        .catch(e => alert('Uninstall failed: ' + e.message));
+}
+
+function reviewPlugin(pluginName) {
+    const rating = prompt(`Rate "${pluginName}" (1-5 stars):`);
+    if (!rating || rating < 1 || rating > 5) return;
+
+    const reviewText = prompt('Review (optional):');
+
+    fetch('/api/swarm/config')
+        .then(r => r.json())
+        .then(config => {
+            const agentName = 'node-' + (config.NODE_ID || 'unknown').substring(0, 6);
+
+            return fetch('/api/marketplace/review', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    agent_name: agentName,
+                    plugin_name: pluginName,
+                    rating: parseInt(rating),
+                    review_text: reviewText || null
+                })
+            });
+        })
+        .then(r => r.json())
+        .then(d => {
+            if (d.error) {
+                alert('Review failed: ' + d.error);
+            } else {
+                addLog('plugin_reviewed', `Reviewed ${pluginName}: ${rating} stars`);
+            }
+        })
+        .catch(e => alert('Review failed: ' + e.message));
+}
+
+function togglePluginBountyForm() {
+    const form = document.getElementById('plugin-bounty-form');
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+function refreshPluginBounties() {
+    fetch('/api/marketplace/bounties')
+        .then(r => r.json())
+        .then(d => {
+            pluginBounties = d.bounties || [];
+            renderPluginBounties();
+        })
+        .catch(e => {
+            console.error('Failed to load bounties:', e);
+            document.getElementById('plugin-bounty-list').innerHTML = '<div class="empty">Failed to load bounties</div>';
+        });
+}
+
+function renderPluginBounties() {
+    const el = document.getElementById('plugin-bounty-list');
+
+    if (!pluginBounties.length) {
+        el.innerHTML = '<div class="empty">No open bounties</div>';
+        return;
+    }
+
+    el.innerHTML = pluginBounties.map(b => {
+        let html = '<div class="card">';
+        html += '<div class="card-title">' + escapeHtml(b.plugin_name) + '</div>';
+        html += '<div style="font-size:0.85rem;color:#999;margin-top:6px;">' + escapeHtml(b.description) + '</div>';
+
+        // Required capabilities
+        if (b.required_capabilities && b.required_capabilities.length) {
+            html += '<div style="margin-top:8px;">';
+            html += '<strong style="font-size:0.8rem;color:#888;">Required capabilities:</strong> ';
+            html += b.required_capabilities.map(c =>
+                '<span style="font-size:0.7rem;background:#332211;color:#ffaa66;padding:2px 6px;border-radius:3px;">' + escapeHtml(c) + '</span>'
+            ).join(' ');
+            html += '</div>';
+        }
+
+        html += '<div class="card-meta" style="margin-top:8px;">';
+        html += 'Posted: ' + (b.created_at || '');
+        html += ' &middot; Requester: ' + escapeHtml(b.requester).substring(0, 8);
+        if (b.reward) html += ' &middot; Reward: ' + escapeHtml(b.reward);
+        html += '</div>';
+
+        html += '<div class="card-actions" style="margin-top:10px;">';
+        html += '<button onclick="claimPluginBounty(\'' + b.id + '\', \'' + escapeHtml(b.plugin_name) + '\')" style="background:#663300;">Claim Bounty</button>';
+        html += '</div>';
+        html += '</div>';
+        return html;
+    }).join('');
+}
+
+function postPluginBounty(event) {
+    event.preventDefault();
+    const form = event.target;
+    const data = {
+        plugin_name: form.plugin_name.value,
+        description: form.description.value,
+        required_capabilities: form.capabilities.value.split(',').map(c => c.trim()).filter(c => c),
+        reward: form.reward.value || null
+    };
+
+    fetch('/api/swarm/config')
+        .then(r => r.json())
+        .then(config => {
+            data.agent_name = 'node-' + (config.NODE_ID || 'unknown').substring(0, 6);
+
+            return fetch('/api/marketplace/bounties', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+        })
+        .then(r => r.json())
+        .then(d => {
+            if (d.error) {
+                alert('Failed to post bounty: ' + d.error);
+            } else {
+                addLog('bounty_posted', `Posted bounty for ${data.plugin_name}`);
+                form.reset();
+                togglePluginBountyForm();
+                refreshPluginBounties();
+            }
+        })
+        .catch(e => alert('Failed to post bounty: ' + e.message));
+}
+
+function claimPluginBounty(bountyId, pluginName) {
+    if (!confirm(`Claim bounty for "${pluginName}"? You commit to building this plugin.`)) return;
+
+    fetch('/api/swarm/config')
+        .then(r => r.json())
+        .then(config => {
+            const agentName = 'node-' + (config.NODE_ID || 'unknown').substring(0, 6);
+
+            return fetch('/api/marketplace/bounties/' + bountyId + '/claim', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ agent_name: agentName })
+            });
+        })
+        .then(r => r.json())
+        .then(d => {
+            if (d.error) {
+                alert('Failed to claim bounty: ' + d.error);
+            } else {
+                addLog('bounty_claimed', `Claimed bounty for ${pluginName}`);
+                refreshPluginBounties();
+            }
+        })
+        .catch(e => alert('Failed to claim bounty: ' + e.message));
+}
+
+function offerPlugin(event) {
+    event.preventDefault();
+    const form = event.target;
+    const data = {
+        plugin_name: form.plugin_name.value,
+        version: form.version.value,
+        description: form.description.value,
+        capabilities: form.capabilities.value.split(',').map(c => c.trim()).filter(c => c),
+        requirements: form.requirements.value ? form.requirements.value.split(',').map(r => r.trim()).filter(r => r) : [],
+        code_url: form.code_url.value || null
+    };
+
+    fetch('/api/swarm/config')
+        .then(r => r.json())
+        .then(config => {
+            data.agent_name = 'node-' + (config.NODE_ID || 'unknown').substring(0, 6);
+
+            return fetch('/api/marketplace/offerings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+        })
+        .then(r => r.json())
+        .then(d => {
+            if (d.error) {
+                alert('Failed to publish plugin: ' + d.error);
+            } else {
+                addLog('plugin_published', `Published ${data.plugin_name} to marketplace`);
+                form.reset();
+                // Switch to browse tab to see the new offering
+                switchPluginTab('browse');
+            }
+        })
+        .catch(e => alert('Failed to publish plugin: ' + e.message));
+}
+
+function viewPluginDetails(offeringId) {
+    // TODO: Show modal with full plugin details, reviews, etc.
+    alert('Plugin details view - coming soon!');
 }
 
 function connectWs() {
