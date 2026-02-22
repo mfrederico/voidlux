@@ -314,6 +314,11 @@ FORMAT;
             $command = $envPrefix . $command;
         }
 
+        // Ensure Claude credentials are available in the working directory
+        if ($tool === 'claude') {
+            $this->ensureClaudeAuth($cwd);
+        }
+
         $created = $this->tmux->createSessionWithName($sessionName, $cwd, $command);
 
         if ($created) {
@@ -321,6 +326,27 @@ FORMAT;
         }
 
         return $created;
+    }
+
+    /**
+     * Ensure Claude Code can find authentication credentials in the working directory.
+     * Creates a symlink from workdir/.claude to the root user's .claude if it doesn't exist.
+     */
+    private function ensureClaudeAuth(string $workDir): void
+    {
+        $workdirClaude = rtrim($workDir, '/') . '/.claude';
+        $rootClaude = $_SERVER['HOME'] ?? '/root';
+        $rootClaude = rtrim($rootClaude, '/') . '/.claude';
+
+        // Skip if already exists (symlink or directory)
+        if (file_exists($workdirClaude)) {
+            return;
+        }
+
+        // Create symlink to root's .claude if it exists
+        if (is_dir($rootClaude)) {
+            @symlink($rootClaude, $workdirClaude);
+        }
     }
 
     /**
