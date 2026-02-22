@@ -75,6 +75,7 @@ class Server
     private ?Gossip\MarketplaceAntiEntropy $marketplaceAntiEntropy = null;
     private ?UpgradeHandler $upgradeHandler = null;
     private ?SwarmWebSocketHandler $wsHandler = null;
+    private ?\VoidLux\Swarm\Scheduler\TaskScheduler $scheduler = null;
     private ?Auth\TerminalWebSocketHandler $terminalWsHandler = null;
     private ?WsServer $server = null;
     private Registry $swarmRegistry;
@@ -210,7 +211,7 @@ class Server
         );
 
         // Initialize task scheduler for cron and event-based scheduling
-        $scheduler = new \VoidLux\Swarm\Scheduler\TaskScheduler($this->db, $this->taskQueue);
+        $this->scheduler = new \VoidLux\Swarm\Scheduler\TaskScheduler($this->db, $this->taskQueue);
 
         $this->agentBridge = new AgentBridge($this->db, $this->httpPort);
         $this->agentBridge->setPluginManager($pluginManager);
@@ -244,7 +245,7 @@ class Server
         $this->controller->setAgentMonitor($this->agentMonitor);
         $this->controller->setPluginManager($pluginManager);
         $this->controller->setAuthManager($authManager);
-        $this->controller->setScheduler($scheduler);
+        $this->controller->setScheduler($this->scheduler);
         $this->controller->onAgentStatusChange(function (string $agentId, string $status) {
             $agent = $this->db->getAgent($agentId);
             if ($agent) {
@@ -489,8 +490,8 @@ class Server
         });
 
         // Task scheduler (evaluates cron schedules)
-        Coroutine::create(function () use ($scheduler) {
-            $scheduler->start();
+        Coroutine::create(function () {
+            $this->scheduler->start();
         });
 
         // Leader election (heartbeats + failover)
@@ -1044,7 +1045,7 @@ class Server
         $this->controller->setTaskPlanner($planner);
         $this->taskQueue->setReviewer($reviewer);
         $this->taskQueue->setTaskDispatcher($this->taskDispatcher);
-        $this->taskQueue->setScheduler($scheduler);
+        $this->taskQueue->setScheduler($this->scheduler);
         $this->agentMonitor->setTaskDispatcher($this->taskDispatcher);
         $this->taskDispatcher->setAgentBridge($this->agentBridge);
 
