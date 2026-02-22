@@ -39,6 +39,10 @@ composer install
 # Launch seneschal (stable proxy) + emperor
 bash scripts/enter-the-void.sh
 
+# Authenticate Claude Code in workbench (one-time setup)
+cd workbench && claude
+# Complete OAuth flow, then /exit
+
 # Register 3 agents with Claude Code
 bash scripts/register-agents.sh 3 claude https://github.com/you/your-repo.git
 
@@ -65,6 +69,11 @@ chmod +x ~/.docker/cli-plugins/docker-compose
 docker compose up -d    # plugin syntax
 # OR
 docker-compose up -d    # standalone syntax
+
+# Authenticate Claude Code in the workbench (one-time setup)
+# This creates authentication state that all agents will inherit
+docker compose exec -it voidlux bash -c "cd /app/workbench && claude"
+# Complete the OAuth flow, then type /exit when done
 
 # Register agents (Claude Code binary mounted from host)
 bash scripts/register-agents.sh 3 claude https://github.com/you/your-repo.git 9091
