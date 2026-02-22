@@ -646,6 +646,8 @@ CONTEXT;
         return <<<MD
 ## X11 Desktop Environment Available
 
+🎉 **Your virtual desktop is AUTO-STARTED!** You already have a dedicated X11 display running.
+
 You have a **full desktop environment** with GUI applications! Two ways to use it:
 
 ### 1. Stateful MCP Tools (Recommended for Complex Workflows)
@@ -770,15 +772,76 @@ MD;
 
     public function onEnable(string $agentId): void
     {
-        // Initialize session storage for this agent if needed
+        // Auto-start X11 virtual display for this agent
+        // Each agent gets their own isolated display
+
+        // Check if already has a session
+        if (isset(self::$sessions[$agentId])) {
+            return;
+        }
+
+        // Find free display number
+        $display = $this->findFreeDisplay();
+        $width = 1920;
+        $height = 1080;
+        $depth = 24;
+
+        // Start Xvfb
+        $cmd = sprintf(
+            'Xvfb %s -screen 0 %dx%dx%d > /dev/null 2>&1 & echo $!',
+            $display,
+            $width,
+            $height,
+            $depth
+        );
+
+        $pid = (int) trim(shell_exec($cmd));
+        if (!$pid) {
+            error_log("X11Plugin: Failed to auto-start Xvfb for agent {$agentId}");
+            return;
+        }
+
+        // Wait for X server to be ready
+        sleep(1);
+
+        // Verify it's running
+        if (!$this->isDisplayRunning($display)) {
+            error_log("X11Plugin: Xvfb started but display {$display} not responding for agent {$agentId}");
+            return;
+        }
+
+        // Start lightweight Fluxbox window manager
+        $wmCmd = sprintf(
+            'DISPLAY=%s fluxbox > /dev/null 2>&1 &',
+            escapeshellarg($display)
+        );
+        shell_exec($wmCmd);
+
+        // Store session
+        self::$sessions[$agentId] = [
+            'display' => $display,
+            'pid' => $pid,
+        ];
+
+        error_log("X11Plugin: Auto-started display {$display} for agent {$agentId}");
     }
 
     public function onDisable(string $agentId): void
     {
         // Clean up any running X11 session
         if (isset(self::$sessions[$agentId])) {
-            $pid = self::$sessions[$agentId]['pid'];
-            exec("kill {$pid} 2>/dev/null");
+            $session = self::$sessions[$agentId];
+
+            // Kill VNC if running
+            if (isset($session['vnc_pid'])) {
+                exec("kill {$session['vnc_pid']} 2>/dev/null");
+            }
+
+            // Kill Xvfb
+            exec("kill {$session['pid']} 2>/dev/null");
+
+            error_log("X11Plugin: Stopped display {$session['display']} for agent {$agentId}");
+
             unset(self::$sessions[$agentId]);
         }
     }
