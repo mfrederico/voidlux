@@ -45,6 +45,8 @@ class EmperorController
     private ?LamportClock $clock = null;
     private ?MarketplaceGossipEngine $marketplaceGossip = null;
     private ?SwarmOverseer $overseer = null;
+    private ?\VoidLux\Swarm\Capabilities\PluginManager $pluginManager = null;
+    private ?\VoidLux\Swarm\Auth\ClaudeAuthManager $authManager = null;
 
     /** @var callable|null fn(): void — triggers server shutdown */
     private $shutdownCallback = null;
@@ -97,6 +99,16 @@ class EmperorController
     public function setOfferPayEngine(OfferPayEngine $engine): void
     {
         $this->offerPayEngine = $engine;
+    }
+
+    public function setPluginManager(\VoidLux\Swarm\Capabilities\PluginManager $manager): void
+    {
+        $this->pluginManager = $manager;
+    }
+
+    public function setAuthManager(\VoidLux\Swarm\Auth\ClaudeAuthManager $manager): void
+    {
+        $this->authManager = $manager;
     }
 
     public function setTaskGossip(TaskGossipEngine $gossip): void
@@ -265,6 +277,36 @@ class EmperorController
 
             case preg_match('#^/api/swarm/agents/([^/]+)$#', $path, $m) === 1 && $method === 'DELETE':
                 $this->handleDeregisterAgent($m[1], $response);
+                break;
+
+            // --- Plugin Management API ---
+            case $path === '/api/swarm/plugins' && $method === 'GET':
+                $this->handleListPlugins($response);
+                break;
+
+            case preg_match('#^/api/swarm/agents/([^/]+)/plugins/([^/]+)/enable$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleEnableAgentPlugin($m[1], $m[2], $response);
+                break;
+
+            case preg_match('#^/api/swarm/agents/([^/]+)/plugins/([^/]+)/disable$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleDisableAgentPlugin($m[1], $m[2], $response);
+                break;
+
+            // --- Claude Authentication API ---
+            case $path === '/api/swarm/auth/status' && $method === 'GET':
+                $this->handleAuthStatus($response);
+                break;
+
+            case $path === '/api/swarm/auth/start' && $method === 'POST':
+                $this->handleAuthStart($response);
+                break;
+
+            case preg_match('#^/api/swarm/auth/session/([^/]+)$#', $path, $m) === 1 && $method === 'GET':
+                $this->handleAuthSessionStatus($m[1], $response);
+                break;
+
+            case preg_match('#^/api/swarm/auth/session/([^/]+)$#', $path, $m) === 1 && $method === 'DELETE':
+                $this->handleAuthSessionKill($m[1], $response);
                 break;
 
             // --- DHT (decentralized storage) API ---
@@ -1242,6 +1284,208 @@ INSTRUCTIONS,
         ]);
     }
 
+    // --- Plugin Management Handlers ---
+
+    private function handleListPlugins(Response $response): void
+    {
+        if (!$this->pluginManager) {
+            $this->json($response, ['plugins' => []]);
+            return;
+        }
+
+        $plugins = [];
+        foreach ($this->pluginManager->getAllPlugins() as $plugin) {
+            $plugins[] = [
+                'name' => $plugin->getName(),
+                'version' => $plugin->getVersion(),
+                'description' => $plugin->getDescription(),
+                'capabilities' => $plugin->getCapabilities(),
+                'requirements' => $plugin->getRequirements(),
+                'available' => $plugin->checkAvailability(),
+            ];
+        }
+
+        $this->json($response, ['plugins' => $plugins]);
+    }
+
+    private function handleEnableAgentPlugin(string $agentId, string $pluginName, Response $response): void
+    {
+        if (!$this->pluginManager) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Plugin system not initialized']);
+            return;
+        }
+
+        $agent = $this->db->getAgent($agentId);
+        if (!$agent) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Agent not found']);
+            return;
+        }
+
+        try {
+            // Enable plugin for agent
+            $this->pluginManager->enablePlugin($agentId, $pluginName);
+
+            // Update agent capabilities
+            $capabilities = $this->pluginManager->detectCapabilities($agentId);
+            $this->db->updateAgentCapabilities($agentId, $capabilities);
+
+            // Gossip the updated agent state
+            if ($this->onAgentStatusChange) {
+                ($this->onAgentStatusChange)($agentId, $agent->status);
+            }
+
+            $this->json($response, [
+                'status' => 'enabled',
+                'plugin' => $pluginName,
+                'agent_id' => $agentId,
+                'capabilities' => $capabilities,
+            ]);
+        } catch (\VoidLux\Swarm\Capabilities\Exceptions\PluginNotFoundException $e) {
+            $response->status(404);
+            $this->json($response, ['error' => $e->getMessage()]);
+        } catch (\VoidLux\Swarm\Capabilities\Exceptions\DependencyMissingException $e) {
+            $response->status(400);
+            $this->json($response, ['error' => $e->getMessage()]);
+        } catch (\Exception $e) {
+            $response->status(500);
+            $this->json($response, ['error' => $e->getMessage()]);
+        }
+    }
+
+    private function handleDisableAgentPlugin(string $agentId, string $pluginName, Response $response): void
+    {
+        if (!$this->pluginManager) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Plugin system not initialized']);
+            return;
+        }
+
+        $agent = $this->db->getAgent($agentId);
+        if (!$agent) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Agent not found']);
+            return;
+        }
+
+        try {
+            // Disable plugin for agent
+            $this->pluginManager->disablePlugin($agentId, $pluginName);
+
+            // Update agent capabilities
+            $capabilities = $this->pluginManager->detectCapabilities($agentId);
+            $this->db->updateAgentCapabilities($agentId, $capabilities);
+
+            // Gossip the updated agent state
+            if ($this->onAgentStatusChange) {
+                ($this->onAgentStatusChange)($agentId, $agent->status);
+            }
+
+            $this->json($response, [
+                'status' => 'disabled',
+                'plugin' => $pluginName,
+                'agent_id' => $agentId,
+                'capabilities' => $capabilities,
+            ]);
+        } catch (\Exception $e) {
+            $response->status(500);
+            $this->json($response, ['error' => $e->getMessage()]);
+        }
+    }
+
+    // --- Claude Authentication Handlers ---
+
+    private function handleAuthStatus(Response $response): void
+    {
+        if (!$this->authManager) {
+            $this->json($response, [
+                'authenticated' => false,
+                'error' => 'Auth manager not initialized',
+            ]);
+            return;
+        }
+
+        $authenticated = $this->authManager->isAuthenticated();
+        $credentials = $this->authManager->getCredentialsInfo();
+        $sessions = $this->authManager->listAuthSessions();
+
+        $this->json($response, [
+            'authenticated' => $authenticated,
+            'credentials' => $credentials,
+            'active_sessions' => array_map(fn($s) => $s['name'], $sessions),
+        ]);
+    }
+
+    private function handleAuthStart(Response $response): void
+    {
+        if (!$this->authManager) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Auth manager not initialized']);
+            return;
+        }
+
+        $result = $this->authManager->startAuthSession();
+
+        if (!$result['success']) {
+            $response->status(500);
+            $this->json($response, ['error' => $result['error'] ?? 'Failed to start auth session']);
+            return;
+        }
+
+        $this->json($response, [
+            'session_name' => $result['session_name'],
+            'attach_command' => $result['attach_command'],
+            'output' => $result['output'],
+            'instructions' => [
+                '1. Run this command to attach to the session:',
+                "   docker compose exec voidlux {$result['attach_command']}",
+                '2. Follow the OAuth prompts in the session',
+                '3. Copy the URL and open it in your browser',
+                '4. Authorize and paste the code back',
+                '5. Press Ctrl+B then D to detach when done',
+            ],
+        ]);
+    }
+
+    private function handleAuthSessionStatus(string $sessionName, Response $response): void
+    {
+        if (!$this->authManager) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Auth manager not initialized']);
+            return;
+        }
+
+        $status = $this->authManager->getAuthSessionStatus($sessionName);
+
+        if (!$status['exists']) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Session not found']);
+            return;
+        }
+
+        $this->json($response, $status);
+    }
+
+    private function handleAuthSessionKill(string $sessionName, Response $response): void
+    {
+        if (!$this->authManager) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Auth manager not initialized']);
+            return;
+        }
+
+        $killed = $this->authManager->killAuthSession($sessionName);
+
+        if (!$killed) {
+            $response->status(400);
+            $this->json($response, ['error' => 'Failed to kill session']);
+            return;
+        }
+
+        $this->json($response, ['status' => 'killed']);
+    }
+
     private function handleOllamaModels(Response $response): void
     {
         $client = new \Swoole\Coroutine\Http\Client('127.0.0.1', 11434);
@@ -1287,6 +1531,9 @@ INSTRUCTIONS,
             }
             if ($this->clock !== null) {
                 $this->mcpHandler->setLamportClock($this->clock);
+            }
+            if ($this->pluginManager !== null) {
+                $this->mcpHandler->setPluginManager($this->pluginManager);
             }
         }
         return $this->mcpHandler;

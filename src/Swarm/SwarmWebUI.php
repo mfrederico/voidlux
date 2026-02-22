@@ -20,6 +20,9 @@ class SwarmWebUI
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VoidLux Swarm Emperor</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -437,6 +440,35 @@ body {
     font-family: 'Courier New', monospace; font-size: 0.85rem;
     white-space: pre-wrap; line-height: 1.4; color: #ccc; background: #0a0a0a;
 }
+
+/* Terminal modal */
+.terminal-modal {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9);
+    z-index: 200; justify-content: center; align-items: center;
+}
+.terminal-modal.active { display: flex; }
+.terminal-container {
+    background: #000; border: 2px solid #336633; border-radius: 8px;
+    width: 90%; max-width: 1200px; height: 80vh;
+    display: flex; flex-direction: column; overflow: hidden;
+}
+.terminal-header {
+    padding: 12px 16px; border-bottom: 2px solid #336633;
+    display: flex; justify-content: space-between; align-items: center;
+    background: #1a2a1a;
+}
+.terminal-header h3 { font-size: 1rem; color: #88ff88; }
+.terminal-status { font-size: 0.8rem; color: #88cc88; margin-left: 12px; }
+.terminal-close {
+    background: #663333; border: 1px solid #883333; color: #ff6666;
+    padding: 6px 16px; border-radius: 4px; cursor: pointer;
+    font-family: inherit; font-size: 0.85rem; font-weight: bold;
+}
+.terminal-close:hover { background: #883333; }
+.terminal-body {
+    flex: 1; padding: 8px; background: #000; overflow: hidden;
+}
+#terminal { width: 100%; height: 100%; }
 </style>
 </head>
 <body>
@@ -528,6 +560,26 @@ body {
     </div>
 
     <div class="section">
+        <h2>Claude Authentication</h2>
+        <div id="auth-status" style="margin-bottom:12px;padding:12px;background:#1a1a1a;border:1px solid #333;border-radius:4px;">
+            <span style="color:#888;">Checking authentication status...</span>
+        </div>
+        <div id="auth-session-info" style="display:none;margin-bottom:12px;padding:12px;background:#1a2a1a;border:1px solid #336633;border-radius:4px;">
+            <div style="color:#88cc88;margin-bottom:6px;"><strong>Auth Session Active</strong></div>
+            <div style="font-size:0.85rem;color:#668866;margin-bottom:4px;">Session: <code id="auth-session-name" style="color:#aaffaa;"></code></div>
+            <div style="font-size:0.85rem;color:#668866;margin-bottom:8px;">Attach with:</div>
+            <pre id="auth-attach-cmd" style="background:#0d0d0d;padding:8px;border-radius:3px;font-size:0.8rem;color:#aaffaa;overflow-x:auto;"></pre>
+            <div style="margin-top:8px;font-size:0.8rem;color:#888;">
+                1. Run the attach command in your terminal<br>
+                2. Follow the OAuth prompts to authorize<br>
+                3. Press Ctrl+B then D to detach when done
+            </div>
+            <button onclick="killAuthSession()" style="background:#663333;border:1px solid #883333;color:#ff6666;padding:4px 12px;border-radius:3px;cursor:pointer;font-family:inherit;font-size:0.75rem;margin-top:8px;">Kill Session</button>
+        </div>
+        <button id="start-auth-btn" onclick="startAuthSession()" style="background:#336633;border:1px solid #44aa44;color:#88ff88;padding:8px 16px;border-radius:4px;cursor:pointer;font-family:inherit;font-weight:bold;">Setup Authentication</button>
+    </div>
+
+    <div class="section">
         <h2>Register Agents</h2>
         <form class="task-form" id="bulk-agent-form" onsubmit="bulkRegister(event)" style="grid-template-columns: 80px 1fr 120px 160px auto auto;">
             <input type="number" name="count" value="5" min="1" max="50" title="Count" />
@@ -548,6 +600,22 @@ body {
         <div class="card-grid" id="agent-list">
             <div class="empty">No agents registered</div>
         </div>
+    </div>
+
+    <div class="section">
+        <h2>Agent Plugins</h2>
+        <p style="font-size:0.85rem;color:#888;margin-bottom:14px;">Enable plugins to extend agent capabilities (browser automation, git operations, etc.)</p>
+        <div id="plugin-controls" style="display:flex;gap:8px;margin-bottom:14px;">
+            <select id="plugin-agent-select" style="background:#1a1a2a;border:1px solid #334466;color:#aaa;padding:6px 10px;flex:1;border-radius:3px;font-family:inherit;font-size:0.85rem;">
+                <option value="">Select an agent...</option>
+            </select>
+            <select id="plugin-list-select" style="background:#1a1a2a;border:1px solid #334466;color:#aaa;padding:6px 10px;flex:1;border-radius:3px;font-family:inherit;font-size:0.85rem;">
+                <option value="">Select a plugin...</option>
+            </select>
+            <button onclick="enablePluginForAgent()" style="background:#336666;border:1px solid #448888;color:#aaffdd;padding:6px 16px;border-radius:3px;cursor:pointer;font-size:0.85rem;font-family:inherit;">Enable</button>
+            <button onclick="disablePluginForAgent()" style="background:#663333;border:1px solid #884444;color:#ffaaaa;padding:6px 16px;border-radius:3px;cursor:pointer;font-size:0.85rem;font-family:inherit;">Disable</button>
+        </div>
+        <div id="plugin-info" style="font-size:0.8rem;color:#668;margin-bottom:10px;"></div>
     </div>
 
     <div class="section" id="overseer-section">
@@ -681,6 +749,22 @@ body {
             <button class="modal-close" onclick="closeModal()">&times;</button>
         </div>
         <div class="modal-body" id="modal-body"></div>
+    </div>
+</div>
+
+<!-- Terminal Modal -->
+<div class="terminal-modal" id="terminal-modal">
+    <div class="terminal-container">
+        <div class="terminal-header">
+            <div style="display:flex;align-items:center;">
+                <h3>Claude Authentication Terminal</h3>
+                <span class="terminal-status" id="terminal-status">Connected</span>
+            </div>
+            <button class="terminal-close" onclick="closeTerminal()">Close & Kill Session</button>
+        </div>
+        <div class="terminal-body">
+            <div id="terminal"></div>
+        </div>
     </div>
 </div>
 
@@ -1353,6 +1437,190 @@ function loadHeroHistory(sel) {
     form.repo_url.value = entry.repo || '';
     form.instructions.value = entry.instructions || '';
     sel.value = '';
+}
+
+// Authentication functions
+let authSessionName = null;
+
+function checkAuthStatus() {
+    fetch('/api/swarm/auth/status')
+        .then(r => r.json())
+        .then(data => {
+            const authStatus = document.getElementById('auth-status');
+            const startBtn = document.getElementById('start-auth-btn');
+
+            if (data.authenticated) {
+                authStatus.innerHTML = '<span style="color:#00ff66;">✓ Authenticated</span>' +
+                    (data.workspace_id ? '<span style="color:#666;margin-left:8px;font-size:0.8rem;">Workspace: ' + data.workspace_id + '</span>' : '');
+                startBtn.style.display = 'none';
+            } else {
+                authStatus.innerHTML = '<span style="color:#ff6666;">✗ Not authenticated</span>';
+                startBtn.style.display = 'inline-block';
+            }
+        })
+        .catch(() => {
+            document.getElementById('auth-status').innerHTML = '<span style="color:#ff6666;">Error checking auth status</span>';
+        });
+}
+
+let terminalWs = null;
+let term = null;
+let fitAddon = null;
+
+function startAuthSession() {
+    fetch('/api/swarm/auth/start', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.session_name) {
+                authSessionName = data.session_name;
+                document.getElementById('start-auth-btn').style.display = 'none';
+                addLog('auth_started', 'Opening terminal for: ' + data.session_name);
+
+                // Open terminal modal
+                openTerminal(data.session_name);
+
+                // Poll for completion in background
+                const pollInterval = setInterval(() => {
+                    checkAuthStatus();
+                    fetch('/api/swarm/auth/session/' + authSessionName)
+                        .then(r => r.json())
+                        .then(status => {
+                            if (status.authenticated) {
+                                clearInterval(pollInterval);
+                                closeTerminal();
+                                addLog('auth_complete', 'Authentication completed successfully!');
+                            } else if (!status.exists) {
+                                clearInterval(pollInterval);
+                            }
+                        });
+                }, 3000);
+            }
+        })
+        .catch(err => {
+            addLog('auth_error', 'Failed to start auth session: ' + err.message);
+        });
+}
+
+function openTerminal(sessionName) {
+    // Show modal
+    document.getElementById('terminal-modal').classList.add('active');
+
+    // Initialize xterm.js
+    term = new Terminal({
+        cursorBlink: true,
+        fontSize: 14,
+        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+        theme: {
+            background: '#000000',
+            foreground: '#ffffff',
+            cursor: '#00ff00',
+            selection: '#336633'
+        },
+        rows: 30,
+        cols: 120
+    });
+
+    // Add fit addon
+    fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+
+    // Open terminal in the container
+    term.open(document.getElementById('terminal'));
+    fitAddon.fit();
+
+    // Resize handler
+    window.addEventListener('resize', () => {
+        if (fitAddon) fitAddon.fit();
+    });
+
+    // Connect WebSocket directly to Emperor (port 9091) to bypass Seneschal proxy
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const emperorPort = 9091;
+    const wsHost = location.hostname + ':' + emperorPort;
+    terminalWs = new WebSocket(wsProtocol + '//' + wsHost + '/ws/terminal/' + sessionName);
+
+    console.log('Terminal WebSocket connecting to:', wsProtocol + '//' + wsHost + '/ws/terminal/' + sessionName);
+
+    terminalWs.onopen = () => {
+        console.log('[Terminal] WebSocket OPEN');
+        document.getElementById('terminal-status').textContent = 'Connected';
+        document.getElementById('terminal-status').style.color = '#00ff66';
+
+        // Send terminal dimensions to server so it can resize tmux pane
+        const dims = {
+            type: 'resize',
+            rows: term.rows,
+            cols: term.cols
+        };
+        console.log('[Terminal] Sending resize:', dims);
+        terminalWs.send(JSON.stringify(dims));
+    };
+
+    terminalWs.onmessage = (event) => {
+        console.log('[Terminal] Received:', event.data.length, 'bytes');
+        term.write(event.data);
+    };
+
+    terminalWs.onerror = (error) => {
+        console.error('[Terminal] WebSocket ERROR:', error);
+        document.getElementById('terminal-status').textContent = 'Connection Error';
+        document.getElementById('terminal-status').style.color = '#ff6666';
+    };
+
+    terminalWs.onclose = (event) => {
+        console.log('[Terminal] WebSocket CLOSED - Code:', event.code, 'Reason:', event.reason);
+        document.getElementById('terminal-status').textContent = 'Disconnected';
+        document.getElementById('terminal-status').style.color = '#ff6666';
+    };
+
+    // Send keystrokes to tmux
+    term.onData((data) => {
+        console.log('[Terminal] Sending keystroke:', data.charCodeAt(0), data.length > 1 ? '...' : '');
+        if (terminalWs && terminalWs.readyState === WebSocket.OPEN) {
+            terminalWs.send(data);
+        } else {
+            console.warn('[Terminal] Cannot send - WebSocket not open. State:', terminalWs?.readyState);
+        }
+    });
+}
+
+function closeTerminal() {
+    // Close WebSocket
+    if (terminalWs) {
+        terminalWs.close();
+        terminalWs = null;
+    }
+
+    // Dispose terminal
+    if (term) {
+        term.dispose();
+        term = null;
+    }
+
+    // Hide modal
+    document.getElementById('terminal-modal').classList.remove('active');
+
+    // Kill the auth session
+    if (authSessionName) {
+        fetch('/api/swarm/auth/session/' + authSessionName, { method: 'DELETE' })
+            .then(() => {
+                addLog('auth_killed', 'Auth session terminated');
+                authSessionName = null;
+                document.getElementById('start-auth-btn').style.display = 'inline-block';
+                checkAuthStatus();
+            });
+    }
+}
+
+function killAuthSession() {
+    if (!authSessionName) return;
+    fetch('/api/swarm/auth/session/' + authSessionName, { method: 'DELETE' })
+        .then(() => {
+            document.getElementById('auth-session-info').style.display = 'none';
+            document.getElementById('start-auth-btn').style.display = 'inline-block';
+            authSessionName = null;
+            addLog('auth_killed', 'Auth session terminated');
+        });
 }
 
 // Restore last repo URL on page load and populate history dropdown
@@ -2110,10 +2378,110 @@ function renderBoard() {
     }).join('');
 }
 
+// ---- Plugin Management ----
+
+let availablePlugins = [];
+
+function loadAvailablePlugins() {
+    fetch('/api/swarm/plugins')
+        .then(r => r.json())
+        .then(d => {
+            availablePlugins = d.plugins || [];
+            renderPluginSelects();
+        })
+        .catch(e => console.error('Failed to load plugins:', e));
+}
+
+function renderPluginSelects() {
+    const agentSelect = document.getElementById('plugin-agent-select');
+    const pluginSelect = document.getElementById('plugin-list-select');
+
+    // Populate agent dropdown
+    agentSelect.innerHTML = '<option value="">Select an agent...</option>';
+    Object.values(state.agents || {}).forEach(a => {
+        const caps = a.capabilities || [];
+        const capStr = caps.length ? ` [${caps.join(', ')}]` : '';
+        agentSelect.innerHTML += `<option value="${a.id}">${a.name}${capStr}</option>`;
+    });
+
+    // Populate plugin dropdown with availability indicator
+    pluginSelect.innerHTML = '<option value="">Select a plugin...</option>';
+    availablePlugins.forEach(p => {
+        const status = p.available ? '✓' : '✗';
+        const reqStr = p.requirements.length ? ` (needs: ${p.requirements.join(', ')})` : '';
+        pluginSelect.innerHTML += `<option value="${p.name}" ${!p.available?'disabled':''}>${status} ${p.name} - ${p.description}${reqStr}</option>`;
+    });
+
+    // Update plugin info when selection changes
+    pluginSelect.onchange = () => {
+        const selected = availablePlugins.find(p => p.name === pluginSelect.value);
+        const infoDiv = document.getElementById('plugin-info');
+        if (selected) {
+            infoDiv.innerHTML = `<strong>${selected.name}</strong> (${selected.version}): ${selected.description}<br>Capabilities: ${selected.capabilities.join(', ')}${selected.available ? '' : '<br><span style="color:#ff6666;">⚠ Requirements not met: '+selected.requirements.join(', ')+'</span>'}`;
+        } else {
+            infoDiv.innerHTML = '';
+        }
+    };
+}
+
+function enablePluginForAgent() {
+    const agentId = document.getElementById('plugin-agent-select').value;
+    const pluginName = document.getElementById('plugin-list-select').value;
+
+    if (!agentId || !pluginName) {
+        alert('Please select both an agent and a plugin');
+        return;
+    }
+
+    fetch(`/api/swarm/agents/${agentId}/plugins/${pluginName}/enable`, { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+            if (d.error) {
+                alert('Error: ' + d.error);
+            } else {
+                addLog('plugin_enabled', `Enabled ${pluginName} for agent (capabilities: ${d.capabilities.join(', ')})`);
+                // Refresh agent list to show updated capabilities
+                renderAgents();
+                renderPluginSelects();
+            }
+        })
+        .catch(e => alert('Request failed: ' + e.message));
+}
+
+function disablePluginForAgent() {
+    const agentId = document.getElementById('plugin-agent-select').value;
+    const pluginName = document.getElementById('plugin-list-select').value;
+
+    if (!agentId || !pluginName) {
+        alert('Please select both an agent and a plugin');
+        return;
+    }
+
+    if (!confirm(`Disable plugin "${pluginName}" for this agent?`)) {
+        return;
+    }
+
+    fetch(`/api/swarm/agents/${agentId}/plugins/${pluginName}/disable`, { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+            if (d.error) {
+                alert('Error: ' + d.error);
+            } else {
+                addLog('plugin_disabled', `Disabled ${pluginName} for agent (capabilities: ${d.capabilities.join(', ')})`);
+                // Refresh agent list to show updated capabilities
+                renderAgents();
+                renderPluginSelects();
+            }
+        })
+        .catch(e => alert('Request failed: ' + e.message));
+}
+
 function connectWs() {
     ws = new WebSocket('ws://'+location.host+'/ws');
     ws.onopen = () => {
         document.getElementById('ws-status').textContent = 'connected';
+        // Check authentication status
+        checkAuthStatus();
         // Fetch tributes (local state not in WS full_state)
         fetch('/api/swarm/tributes').then(r=>r.json()).then(t => {
             if (Array.isArray(t)) { state.tributes = t; renderGalactic(); }
@@ -2188,6 +2556,7 @@ function connectWs() {
 }
 
 connectWs();
+loadAvailablePlugins();
 JS
         . "\n</script>\n</body>\n</html>";
     }

@@ -12,6 +12,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     iproute2 \
     libsqlite3-dev \
+    nodejs \
+    npm \
+    curl \
+    wget \
+    xvfb \
+    xdotool \
+    imagemagick \
+    x11-utils \
+    x11vnc \
+    net-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # PHP extensions
@@ -38,6 +48,14 @@ RUN composer dump-autoload --no-dev --optimize
 # Persistent data and agent workspace
 RUN mkdir -p /app/data /app/workbench
 VOLUME ["/app/data", "/app/workbench"]
+
+# Install noVNC for web-based VNC viewing
+RUN git clone https://github.com/novnc/noVNC.git /opt/noVNC \
+    && git clone https://github.com/novnc/websockify /opt/noVNC/utils/websockify \
+    && ln -s /opt/noVNC/vnc.html /opt/noVNC/index.html
+
+# Install Claude Code CLI globally via npm
+RUN npm install -g @anthropic-ai/claude-code
 
 # Seneschal HTTP, Emperor HTTP, P2P ports
 EXPOSE 9090 9091 7100 7101

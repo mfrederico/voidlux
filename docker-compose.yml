@@ -1,13 +1,18 @@
+volumes:
+  claude-auth:
+
 services:
   voidlux:
     build: .
     ports:
       - "9090:9090"
       - "9091:9091"
+      - "5900-5910:5900-5910"  # VNC ports for X11 displays
+      - "6080:6080"            # noVNC web interface
     volumes:
       - ./data:/app/data
       - ./workbench:/app/workbench
-      - ${CLAUDE_PATH:-/usr/local/bin/claude}:/usr/local/bin/claude:ro
+      - claude-auth:/root/.claude  # Persist Claude authentication
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - VOIDLUX_LLM_PROVIDER=${VOIDLUX_LLM_PROVIDER:-claude}

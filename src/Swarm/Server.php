@@ -75,6 +75,7 @@ class Server
     private ?Gossip\MarketplaceAntiEntropy $marketplaceAntiEntropy = null;
     private ?UpgradeHandler $upgradeHandler = null;
     private ?SwarmWebSocketHandler $wsHandler = null;
+    private ?Auth\TerminalWebSocketHandler $terminalWsHandler = null;
     private ?WsServer $server = null;
     private Registry $swarmRegistry;
     private Status $swarmStatus;
@@ -131,6 +132,9 @@ class Server
         ]);
 
         $this->wsHandler = new SwarmWebSocketHandler($server);
+        $this->terminalWsHandler = new Auth\TerminalWebSocketHandler(
+            new \Aoe\Tmux\TmuxService('swarm', 'vl')
+        );
 
         $server->on('start', function () {
             $this->log("Swarm server started");
@@ -141,16 +145,35 @@ class Server
         });
 
         $server->on('open', function (WsServer $srv, Request $request) {
+            $path = $request->server['request_uri'] ?? '/ws';
+            $this->log("WebSocket connection: path={$path} fd={$request->fd}");
+
+            // Route terminal WebSocket connections
+            if (preg_match('#^/ws/terminal/([^/]+)$#', $path, $matches)) {
+                $sessionName = $matches[1];
+                $this->log("Routing to terminal WebSocket: session={$sessionName}");
+                $this->terminalWsHandler->onOpen($srv, $request->fd, $sessionName);
+                return;
+            }
+
+            // Regular dashboard WebSocket
+            $this->log("Routing to dashboard WebSocket");
             $this->wsHandler->onOpen($request->fd);
             $this->pushFullStateToClient($request->fd);
         });
 
         $server->on('message', function (WsServer $srv, Frame $frame) {
-            // Client WS messages can be handled here if needed
+            // Route to appropriate handler based on connection type
+            if ($this->terminalWsHandler->hasConnection($frame->fd)) {
+                $this->terminalWsHandler->onMessage($srv, $frame->fd, $frame);
+            }
+            // Dashboard WebSocket messages can be handled here if needed
         });
 
         $server->on('close', function (WsServer $srv, int $fd) {
+            // Close both handlers (they'll check if they own this fd)
             $this->wsHandler->onClose($fd);
+            $this->terminalWsHandler->onClose($fd);
         });
 
         $server->on('workerStart', function () {
@@ -177,7 +200,17 @@ class Server
         $this->taskQueue->setGlobalTestCommand($this->testCommand);
         $this->taskQueue->setMergeWorkDir(getcwd() . '/workbench/.merge');
         $this->claimResolver = new ClaimResolver($this->db, $this->nodeId);
+
+        // Initialize plugin manager for capability extensions
+        $pluginManager = new \VoidLux\Swarm\Capabilities\PluginManager($this->db);
+
+        // Initialize Claude authentication manager
+        $authManager = new \VoidLux\Swarm\Auth\ClaudeAuthManager(
+            new \Aoe\Tmux\TmuxService('swarm', 'vl')
+        );
+
         $this->agentBridge = new AgentBridge($this->db, $this->httpPort);
+        $this->agentBridge->setPluginManager($pluginManager);
         $this->agentRegistry = new AgentRegistry($this->db, $this->taskGossip, $this->clock, $this->nodeId);
         $this->agentRegistry->setTaskQueue($this->taskQueue);
         $this->agentMonitor = new AgentMonitor($this->db, $this->agentBridge, $this->taskQueue, $this->agentRegistry, $this->nodeId);
@@ -206,6 +239,8 @@ class Server
             $this->startTime,
         );
         $this->controller->setAgentMonitor($this->agentMonitor);
+        $this->controller->setPluginManager($pluginManager);
+        $this->controller->setAuthManager($authManager);
         $this->controller->onAgentStatusChange(function (string $agentId, string $status) {
             $agent = $this->db->getAgent($agentId);
             if ($agent) {
