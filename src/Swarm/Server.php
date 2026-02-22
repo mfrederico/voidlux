@@ -209,6 +209,9 @@ class Server
             new \Aoe\Tmux\TmuxService('swarm', 'vl')
         );
 
+        // Initialize task scheduler for cron and event-based scheduling
+        $scheduler = new \VoidLux\Swarm\Scheduler\TaskScheduler($this->db, $this->taskQueue);
+
         $this->agentBridge = new AgentBridge($this->db, $this->httpPort);
         $this->agentBridge->setPluginManager($pluginManager);
         $this->agentRegistry = new AgentRegistry($this->db, $this->taskGossip, $this->clock, $this->nodeId);
@@ -241,6 +244,7 @@ class Server
         $this->controller->setAgentMonitor($this->agentMonitor);
         $this->controller->setPluginManager($pluginManager);
         $this->controller->setAuthManager($authManager);
+        $this->controller->setScheduler($scheduler);
         $this->controller->onAgentStatusChange(function (string $agentId, string $status) {
             $agent = $this->db->getAgent($agentId);
             if ($agent) {
@@ -482,6 +486,11 @@ class Server
         // Agent monitor (polls busy agents)
         Coroutine::create(function () {
             $this->agentMonitor->start();
+        });
+
+        // Task scheduler (evaluates cron schedules)
+        Coroutine::create(function () use ($scheduler) {
+            $scheduler->start();
         });
 
         // Leader election (heartbeats + failover)
@@ -1035,6 +1044,7 @@ class Server
         $this->controller->setTaskPlanner($planner);
         $this->taskQueue->setReviewer($reviewer);
         $this->taskQueue->setTaskDispatcher($this->taskDispatcher);
+        $this->taskQueue->setScheduler($scheduler);
         $this->agentMonitor->setTaskDispatcher($this->taskDispatcher);
         $this->taskDispatcher->setAgentBridge($this->agentBridge);
 

@@ -47,6 +47,7 @@ class EmperorController
     private ?SwarmOverseer $overseer = null;
     private ?\VoidLux\Swarm\Capabilities\PluginManager $pluginManager = null;
     private ?\VoidLux\Swarm\Auth\ClaudeAuthManager $authManager = null;
+    private ?\VoidLux\Swarm\Scheduler\TaskScheduler $scheduler = null;
 
     /** @var callable|null fn(): void — triggers server shutdown */
     private $shutdownCallback = null;
@@ -109,6 +110,11 @@ class EmperorController
     public function setAuthManager(\VoidLux\Swarm\Auth\ClaudeAuthManager $manager): void
     {
         $this->authManager = $manager;
+    }
+
+    public function setScheduler(\VoidLux\Swarm\Scheduler\TaskScheduler $scheduler): void
+    {
+        $this->scheduler = $scheduler;
     }
 
     public function setTaskGossip(TaskGossipEngine $gossip): void
@@ -1534,6 +1540,9 @@ INSTRUCTIONS,
             }
             if ($this->pluginManager !== null) {
                 $this->mcpHandler->setPluginManager($this->pluginManager);
+            }
+            if ($this->scheduler !== null) {
+                $this->mcpHandler->setScheduler($this->scheduler);
             }
         }
         return $this->mcpHandler;

@@ -25,6 +25,7 @@ class TaskQueue
     private string $mergeWorkDir = '';
     private string $baseRepoDir = '';
     private ?TaskDispatcher $dispatcher = null;
+    private ?\VoidLux\Swarm\Scheduler\TaskScheduler $scheduler = null;
     private const MAX_REJECTIONS = 3;
 
     public function __construct(
@@ -47,6 +48,11 @@ class TaskQueue
     public function setGlobalTestCommand(string $cmd): void
     {
         $this->globalTestCommand = $cmd;
+    }
+
+    public function setScheduler(\VoidLux\Swarm\Scheduler\TaskScheduler $scheduler): void
+    {
+        $this->scheduler = $scheduler;
     }
 
     public function setMergeWorkDir(string $dir): void
@@ -385,6 +391,11 @@ class TaskQueue
         // Check if all subtasks are done — complete the parent
         if ($task->parentId) {
             $this->tryCompleteParent($task->parentId);
+        }
+
+        // Fire scheduler event for task completion
+        if ($this->scheduler) {
+            $this->scheduler->fireEvent("task_complete:{$taskId}");
         }
 
         return true;
