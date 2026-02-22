@@ -16,12 +16,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     npm \
     curl \
     wget \
+    # X11 and Desktop Environment
     xvfb \
     xdotool \
     imagemagick \
     x11-utils \
     x11vnc \
+    # Lightweight desktop environment
+    xfce4 \
+    xfce4-terminal \
+    # Window manager alternative (lighter than full XFCE)
+    fluxbox \
+    # GUI Applications
+    firefox-esr \
+    gedit \
+    thunar \
+    feh \
+    evince \
+    scrot \
+    # Development tools
+    vim-gtk3 \
+    # Utilities
     net-tools \
+    xclip \
     && rm -rf /var/lib/apt/lists/*
 
 # PHP extensions

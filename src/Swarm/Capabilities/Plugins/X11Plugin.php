@@ -644,9 +644,9 @@ CONTEXT;
         }
 
         return <<<MD
-## X11 Desktop Automation Available
+## X11 Desktop Environment Available
 
-You have **two ways** to use X11 automation:
+You have a **full desktop environment** with GUI applications! Two ways to use it:
 
 ### 1. Stateful MCP Tools (Recommended for Complex Workflows)
 
@@ -665,15 +665,30 @@ Use these MCP primitives for managed virtual display sessions:
 
 ### 2. Direct Bash (For Quick Tasks)
 
-For simple one-off operations, use your native **Bash** tool:
+For simple operations, use your native **Bash** tool:
 
 ```bash
 # Start Xvfb manually
 Xvfb :99 -screen 0 1920x1080x24 &
 export DISPLAY=:99
 
-# Take screenshot with ImageMagick
+# Launch full XFCE desktop
+DISPLAY=:99 startxfce4 &
+
+# Or use lightweight Fluxbox
+DISPLAY=:99 fluxbox &
+
+# Take screenshot
 DISPLAY=:99 import -window root screenshot.png
+DISPLAY=:99 scrot screenshot.png  # Alternative
+
+# Launch GUI applications
+DISPLAY=:99 firefox &               # Web browser
+DISPLAY=:99 gedit file.txt &        # Text editor
+DISPLAY=:99 thunar &                # File manager
+DISPLAY=:99 xfce4-terminal &        # Terminal
+DISPLAY=:99 evince document.pdf &   # PDF viewer
+DISPLAY=:99 feh image.png &         # Image viewer
 
 # Click with xdotool
 DISPLAY=:99 xdotool mousemove 100 200 click 1
@@ -681,14 +696,75 @@ DISPLAY=:99 xdotool mousemove 100 200 click 1
 # Type text
 DISPLAY=:99 xdotool type "Hello World"
 
-# Launch GUI app
-DISPLAY=:99 firefox &
+# Find window and interact
+DISPLAY=:99 xdotool search --name "Firefox" windowactivate
+DISPLAY=:99 xdotool key ctrl+l  # Focus address bar
+
+# Copy/paste with xclip
+echo "text" | DISPLAY=:99 xclip -selection clipboard
+DISPLAY=:99 xclip -selection clipboard -o
 ```
 
-**Choose MCP tools** when you need persistent sessions or VNC viewing.
-**Choose Bash** for quick screenshots or single-action tasks.
+### Available Desktop Applications
+
+**Browsers:**
+- `firefox` - Full web browser
+
+**Editors:**
+- `gedit` - Simple text editor
+- `vim-gtk3` - Vim with GUI and clipboard support
+
+**File Management:**
+- `thunar` - File manager with GUI
+
+**Terminals:**
+- `xfce4-terminal` - Terminal emulator
+
+**Viewers:**
+- `evince` - PDF/document viewer
+- `feh` - Image viewer
+
+**Desktop Environments:**
+- `xfce4` - Full desktop (window manager, panels, etc.)
+- `fluxbox` - Minimal window manager
+
+### Example Workflows
+
+**Web Scraping with Browser:**
+```bash
+# Start display + VNC
+x11_start(agent_name: "{$agent->name}")
+x11_vnc_start(agent_name: "{$agent->name}")
+
+# Launch browser
+x11_launch(agent_name: "{$agent->name}", command: "firefox https://example.com", wait: 5)
+
+# Take screenshot
+x11_screenshot(agent_name: "{$agent->name}", path: "/tmp/page.png")
+
+# Analyze screenshot, then interact
+x11_click(agent_name: "{$agent->name}", x: 500, y: 300)
+```
+
+**Document Editing:**
+```bash
+DISPLAY=:99 Xvfb :99 &
+DISPLAY=:99 gedit /app/document.txt &
+sleep 2
+DISPLAY=:99 scrot screenshot.png
+```
+
+**File Browsing:**
+```bash
+DISPLAY=:99 thunar /app/workbench &
+DISPLAY=:99 import -window root filebrowser.png
+```
+
+**Choose MCP tools** for complex workflows with VNC viewing.
+**Choose Bash** for quick operations or scripting.
 
 **IMPORTANT**: Always pass your agent_name ("{$agent->name}") when using MCP tools.
+**VNC Access**: After x11_vnc_start, humans can watch at the returned web_url!
 MD;
     }
 
