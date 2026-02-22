@@ -213,6 +213,10 @@ class Server
         // Initialize task scheduler for cron and event-based scheduling
         $this->scheduler = new \VoidLux\Swarm\Scheduler\TaskScheduler($this->db, $this->taskQueue);
 
+        // Initialize Galactic Marketplace for plugin economy
+        $marketplaceDb = new \VoidLux\Swarm\Marketplace\MarketplaceDatabase(__DIR__ . '/../../data/marketplace.db');
+        $marketplace = new \VoidLux\Swarm\Marketplace\MarketplaceMcp($marketplaceDb);
+
         $this->agentBridge = new AgentBridge($this->db, $this->httpPort);
         $this->agentBridge->setPluginManager($pluginManager);
         $this->agentRegistry = new AgentRegistry($this->db, $this->taskGossip, $this->clock, $this->nodeId);
@@ -246,6 +250,7 @@ class Server
         $this->controller->setPluginManager($pluginManager);
         $this->controller->setAuthManager($authManager);
         $this->controller->setScheduler($this->scheduler);
+        $this->controller->setPluginMarketplace($marketplace);
         $this->controller->onAgentStatusChange(function (string $agentId, string $status) {
             $agent = $this->db->getAgent($agentId);
             if ($agent) {

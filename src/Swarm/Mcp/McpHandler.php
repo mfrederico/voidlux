@@ -10,6 +10,7 @@ use VoidLux\P2P\Protocol\LamportClock;
 use VoidLux\Swarm\Capabilities\PluginManager;
 use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Gossip\TaskGossipEngine;
+use VoidLux\Swarm\Marketplace\MarketplaceMcp;
 use VoidLux\Swarm\Model\MessageModel;
 use VoidLux\Swarm\Model\TaskModel;
 use VoidLux\Swarm\Model\TaskStatus;
@@ -34,6 +35,7 @@ class McpHandler
     private ?LamportClock $clock = null;
     private ?PluginManager $pluginManager = null;
     private ?\VoidLux\Swarm\Scheduler\TaskScheduler $scheduler = null;
+    private ?MarketplaceMcp $marketplace = null;
     private GitWorkspace $git;
 
     /** @var callable|null fn(string $agentId, string $status): void */
@@ -78,6 +80,11 @@ class McpHandler
     public function setScheduler(\VoidLux\Swarm\Scheduler\TaskScheduler $scheduler): void
     {
         $this->scheduler = $scheduler;
+    }
+
+    public function setMarketplace(MarketplaceMcp $marketplace): void
+    {
+        $this->marketplace = $marketplace;
     }
 
     public function onAgentStatusChange(callable $callback): void
@@ -155,6 +162,11 @@ class McpHandler
                     $tools = array_merge($tools, $plugin->getTools());
                 }
             }
+        }
+
+        // Merge marketplace tools
+        if ($this->marketplace) {
+            $tools = array_merge($tools, $this->marketplace->getTools());
         }
 
         return [
@@ -413,6 +425,14 @@ class McpHandler
                 if ($pluginResult !== null) {
                     return $pluginResult;
                 }
+            }
+        }
+
+        // Try marketplace tools
+        if ($this->marketplace && str_starts_with($toolName, 'marketplace_')) {
+            $marketplaceResult = $this->marketplace->handleToolCall($toolName, $args);
+            if ($marketplaceResult !== null) {
+                return $marketplaceResult;
             }
         }
 

@@ -48,6 +48,7 @@ class EmperorController
     private ?\VoidLux\Swarm\Capabilities\PluginManager $pluginManager = null;
     private ?\VoidLux\Swarm\Auth\ClaudeAuthManager $authManager = null;
     private ?\VoidLux\Swarm\Scheduler\TaskScheduler $scheduler = null;
+    private ?\VoidLux\Swarm\Marketplace\MarketplaceMcp $pluginMarketplace = null;
 
     /** @var callable|null fn(): void — triggers server shutdown */
     private $shutdownCallback = null;
@@ -115,6 +116,11 @@ class EmperorController
     public function setScheduler(\VoidLux\Swarm\Scheduler\TaskScheduler $scheduler): void
     {
         $this->scheduler = $scheduler;
+    }
+
+    public function setPluginMarketplace(\VoidLux\Swarm\Marketplace\MarketplaceMcp $marketplace): void
+    {
+        $this->pluginMarketplace = $marketplace;
     }
 
     public function setTaskGossip(TaskGossipEngine $gossip): void
@@ -1543,6 +1549,9 @@ INSTRUCTIONS,
             }
             if ($this->scheduler !== null) {
                 $this->mcpHandler->setScheduler($this->scheduler);
+            }
+            if ($this->pluginMarketplace !== null) {
+                $this->mcpHandler->setMarketplace($this->pluginMarketplace);
             }
         }
         return $this->mcpHandler;
