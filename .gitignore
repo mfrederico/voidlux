@@ -7,3 +7,4 @@
 .env
 .phpunit.result.cache
 /workbench/
+node_modules/
