@@ -256,6 +256,27 @@ class SwarmDatabase
         ');
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_agent_plugins_agent ON agent_plugins(agent_id)');
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_agent_plugins_enabled ON agent_plugins(enabled)');
+
+        // Scheduled tasks table (calendar/cron system)
+        $this->pdo->exec('
+            CREATE TABLE IF NOT EXISTS scheduled_tasks (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                description TEXT,
+                cron_expression TEXT,
+                event_trigger TEXT,
+                template TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                next_run_at TEXT,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                last_run_at TEXT,
+                run_count INTEGER NOT NULL DEFAULT 0
+            )
+        ');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_scheduled_enabled ON scheduled_tasks(enabled)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_scheduled_next_run ON scheduled_tasks(next_run_at)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_scheduled_event ON scheduled_tasks(event_trigger)');
     }
 
     // --- Task operations ---
@@ -1403,5 +1424,133 @@ class SwarmDatabase
             ':agent_id' => $agentId,
             ':capabilities' => json_encode($capabilities),
         ]);
+    }
+
+    // --- Scheduled task operations ---
+
+    /**
+     * Insert a new scheduled task.
+     */
+    public function insertScheduledTask(\VoidLux\Swarm\Model\ScheduledTaskModel $task): bool
+    {
+        $stmt = $this->pdo->prepare('
+            INSERT OR IGNORE INTO scheduled_tasks
+                (id, title, description, cron_expression, event_trigger, template,
+                 created_by, created_at, next_run_at, enabled, last_run_at, run_count)
+            VALUES
+                (:id, :title, :description, :cron_expression, :event_trigger, :template,
+                 :created_by, :created_at, :next_run_at, :enabled, :last_run_at, :run_count)
+        ');
+        return $stmt->execute([
+            ':id' => $task->id,
+            ':title' => $task->title,
+            ':description' => $task->description,
+            ':cron_expression' => $task->cronExpression,
+            ':event_trigger' => $task->eventTrigger,
+            ':template' => json_encode($task->template),
+            ':created_by' => $task->createdBy,
+            ':created_at' => $task->createdAt,
+            ':next_run_at' => $task->nextRunAt,
+            ':enabled' => $task->enabled ? 1 : 0,
+            ':last_run_at' => $task->lastRunAt,
+            ':run_count' => $task->runCount,
+        ]);
+    }
+
+    /**
+     * Get a scheduled task by ID.
+     */
+    public function getScheduledTask(string $id): ?\VoidLux\Swarm\Model\ScheduledTaskModel
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM scheduled_tasks WHERE id = :id');
+        $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch();
+        return $row ? \VoidLux\Swarm\Model\ScheduledTaskModel::fromRow($row) : null;
+    }
+
+    /**
+     * Get all scheduled tasks.
+     */
+    public function getAllScheduledTasks(): array
+    {
+        $stmt = $this->pdo->query('SELECT * FROM scheduled_tasks ORDER BY next_run_at ASC');
+        $tasks = [];
+        while ($row = $stmt->fetch()) {
+            $tasks[] = \VoidLux\Swarm\Model\ScheduledTaskModel::fromRow($row);
+        }
+        return $tasks;
+    }
+
+    /**
+     * Get scheduled tasks that are due to run (next_run_at <= now).
+     */
+    public function getDueScheduledTasks(): array
+    {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $stmt = $this->pdo->prepare('
+            SELECT * FROM scheduled_tasks
+            WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= :now
+            ORDER BY next_run_at ASC
+        ');
+        $stmt->execute([':now' => $now]);
+        $tasks = [];
+        while ($row = $stmt->fetch()) {
+            $tasks[] = \VoidLux\Swarm\Model\ScheduledTaskModel::fromRow($row);
+        }
+        return $tasks;
+    }
+
+    /**
+     * Get scheduled tasks with a specific event trigger.
+     */
+    public function getScheduledTasksByEvent(string $eventTrigger): array
+    {
+        $stmt = $this->pdo->prepare('
+            SELECT * FROM scheduled_tasks
+            WHERE enabled = 1 AND event_trigger = :event
+        ');
+        $stmt->execute([':event' => $eventTrigger]);
+        $tasks = [];
+        while ($row = $stmt->fetch()) {
+            $tasks[] = \VoidLux\Swarm\Model\ScheduledTaskModel::fromRow($row);
+        }
+        return $tasks;
+    }
+
+    /**
+     * Update scheduled task's next run time and run count.
+     */
+    public function updateScheduledTaskRun(string $id, ?string $nextRunAt): void
+    {
+        $stmt = $this->pdo->prepare('
+            UPDATE scheduled_tasks
+            SET last_run_at = :last_run_at,
+                next_run_at = :next_run_at,
+                run_count = run_count + 1
+            WHERE id = :id
+        ');
+        $stmt->execute([
+            ':id' => $id,
+            ':last_run_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            ':next_run_at' => $nextRunAt,
+        ]);
+    }
+
+    /**
+     * Enable/disable a scheduled task.
+     */
+    public function setScheduledTaskEnabled(string $id, bool $enabled): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE scheduled_tasks SET enabled = :enabled WHERE id = :id');
+        $stmt->execute([':id' => $id, ':enabled' => $enabled ? 1 : 0]);
+    }
+
+    /**
+     * Delete a scheduled task.
+     */
+    public function deleteScheduledTask(string $id): void
+    {
+        $stmt = $this->pdo->prepare('DELETE FROM scheduled_tasks WHERE id = :id');
+        $stmt->execute([':id' => $id]);
     }
 }

@@ -33,6 +33,7 @@ class McpHandler
     private ?TaskGossipEngine $taskGossip = null;
     private ?LamportClock $clock = null;
     private ?PluginManager $pluginManager = null;
+    private ?\VoidLux\Swarm\Scheduler\TaskScheduler $scheduler = null;
     private GitWorkspace $git;
 
     /** @var callable|null fn(string $agentId, string $status): void */
@@ -72,6 +73,11 @@ class McpHandler
     public function setPluginManager(PluginManager $manager): void
     {
         $this->pluginManager = $manager;
+    }
+
+    public function setScheduler(\VoidLux\Swarm\Scheduler\TaskScheduler $scheduler): void
+    {
+        $this->scheduler = $scheduler;
     }
 
     public function onAgentStatusChange(callable $callback): void
@@ -248,6 +254,31 @@ class McpHandler
                     ],
                 ],
                 (object) [
+                    'name' => 'schedule_task',
+                    'description' => 'Schedule a task to run at a specific time (cron) or when an event occurs. Use this for recurring workflows (weekly GitHub sync), retry logic, or event-driven automation.',
+                    'inputSchema' => (object) [
+                        'type' => 'object',
+                        'properties' => (object) [
+                            'title' => (object) ['type' => 'string', 'description' => 'Title for the schedule'],
+                            'description' => (object) ['type' => 'string', 'description' => 'Description of what this schedule does'],
+                            'cron_expression' => (object) ['type' => 'string', 'description' => 'Cron expression for recurring tasks (e.g., "0 2 * * 1" for Mondays at 2am UTC). Leave empty for event-based.'],
+                            'event_trigger' => (object) ['type' => 'string', 'description' => 'Event to trigger on (e.g., "task_complete:parent-id"). Leave empty for cron-based.'],
+                            'template' => (object) [
+                                'type' => 'object',
+                                'description' => 'Task template (title, description, project_path, etc.) to create when triggered',
+                                'properties' => (object) [
+                                    'title' => (object) ['type' => 'string'],
+                                    'description' => (object) ['type' => 'string'],
+                                    'project_path' => (object) ['type' => 'string'],
+                                    'required_capabilities' => (object) ['type' => 'array', 'items' => (object) ['type' => 'string']],
+                                ],
+                            ],
+                            'agent_name' => (object) ['type' => 'string', 'description' => 'Your agent name'],
+                        ],
+                        'required' => ['title', 'template', 'agent_name'],
+                    ],
+                ],
+                (object) [
                     'name' => 'plugin_install',
                     'description' => 'Install dependencies for a plugin. Use this when a plugin is marked as unavailable and you need to install its requirements.',
                     'inputSchema' => (object) [
@@ -400,6 +431,7 @@ class McpHandler
             'task_needs_input' => $this->callTaskNeedsInput($args),
             'task_plan' => $this->callTaskPlan($args),
             'agent_ready' => $this->callAgentReady($args),
+            'schedule_task' => $this->callScheduleTask($args),
             'plugin_install' => $this->callPluginInstall($args),
             'offer_create' => $this->callOfferCreate($args),
             'offer_accept' => $this->callOfferAccept($args),
@@ -637,6 +669,53 @@ class McpHandler
         }
 
         return $this->toolResult(['status' => 'ready', 'agent_name' => $agentName]);
+    }
+
+    private function callScheduleTask(array $args): array
+    {
+        if (!$this->scheduler) {
+            return $this->toolError('Scheduler not available');
+        }
+
+        $title = $args['title'] ?? '';
+        $description = $args['description'] ?? '';
+        $cronExpression = $args['cron_expression'] ?? null;
+        $eventTrigger = $args['event_trigger'] ?? null;
+        $template = $args['template'] ?? [];
+        $agentName = $args['agent_name'] ?? '';
+
+        if (!$title || !$agentName) {
+            return $this->toolError('title and agent_name are required');
+        }
+
+        if (!$cronExpression && !$eventTrigger) {
+            return $this->toolError('Either cron_expression or event_trigger is required');
+        }
+
+        if (empty($template)) {
+            return $this->toolError('template is required (must contain at least title)');
+        }
+
+        try {
+            $schedule = $this->scheduler->createSchedule(
+                title: $title,
+                description: $description,
+                cronExpression: $cronExpression,
+                eventTrigger: $eventTrigger,
+                template: $template,
+                createdBy: $agentName
+            );
+
+            return $this->toolResult([
+                'status' => 'scheduled',
+                'schedule_id' => $schedule->id,
+                'next_run_at' => $schedule->nextRunAt,
+                'cron_expression' => $schedule->cronExpression,
+                'event_trigger' => $schedule->eventTrigger,
+            ]);
+        } catch (\Exception $e) {
+            return $this->toolError('Failed to create schedule: ' . $e->getMessage());
+        }
     }
 
     private function callPluginInstall(array $args): array
