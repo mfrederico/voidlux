@@ -293,7 +293,7 @@ FORMAT;
         $env = $options['env'] ?? [];
 
         $command = match ($tool) {
-            'claude' => 'claude --dangerously-skip-permissions' . ($model ? ' --model ' . escapeshellarg($model) : ''),
+            'claude' => 'claude' . ($model ? ' --model ' . escapeshellarg($model) : ''),
             'opencode' => 'opencode',
             default => '',
         };
