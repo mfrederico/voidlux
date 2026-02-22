@@ -10,13 +10,16 @@ use VoidLux\Swarm\Model\{AgentModel, TaskModel};
 /**
  * X11 desktop automation plugin using Xvfb virtual display.
  *
- * Provides MCP tools for:
- * - Starting/stopping virtual X11 displays
- * - Taking screenshots
- * - Mouse clicks and keyboard input
- * - Launching GUI applications
+ * Provides stateful MCP primitives for managing virtual displays:
+ * - Session management (start/stop X11 displays per agent)
+ * - VNC server control (humans can watch agent work)
+ * - Display interaction (click, type, screenshot, launch apps)
  *
- * Requires: Xvfb, xdotool, ImageMagick (import/convert)
+ * NOTE: This is one of the few legitimate MCP tool providers because
+ * it manages complex state (display sessions, PIDs) that bash alone
+ * cannot easily maintain. Most plugins should just inject context.
+ *
+ * Requires: Xvfb, xdotool, ImageMagick, x11vnc
  */
 class X11Plugin extends McpToolProvider
 {
@@ -627,22 +630,65 @@ class X11Plugin extends McpToolProvider
     public function injectPromptContext(TaskModel $task, AgentModel $agent): string
     {
         $available = $this->checkAvailability();
-        $installNote = $available ? '' : "\n**NOTE**: Plugin not installed. Call `plugin_install(plugin_name: \"x11\")` first.";
+
+        if (!$available) {
+            return <<<'CONTEXT'
+## X11 Desktop Automation - NOT INSTALLED
+
+To enable virtual display automation, install X11 tools:
+```bash
+apt-get update && apt-get install -y xvfb xdotool imagemagick x11-utils x11vnc
+```
+
+CONTEXT;
+        }
 
         return <<<MD
-**X11 Desktop Automation**: You have access to virtual display automation tools:
+## X11 Desktop Automation Available
+
+You have **two ways** to use X11 automation:
+
+### 1. Stateful MCP Tools (Recommended for Complex Workflows)
+
+Use these MCP primitives for managed virtual display sessions:
+
 - `x11_start(agent_name: "{$agent->name}", width?, height?, depth?)` - Start virtual X11 display (default: 1920x1080x24)
 - `x11_screenshot(agent_name: "{$agent->name}", path)` - Capture display screenshot
-- `x11_click(agent_name: "{$agent->name}", x, y, button?)` - Click at coordinates (button: 1=left, 2=middle, 3=right)
+- `x11_click(agent_name: "{$agent->name}", x, y, button?)` - Click at coordinates
 - `x11_type(agent_name: "{$agent->name}", text)` - Type text via keyboard
 - `x11_launch(agent_name: "{$agent->name}", command, wait?)` - Launch GUI application
-- `x11_vnc_start(agent_name: "{$agent->name}", password?)` - Start VNC server for remote viewing (humans can watch you work!)
-- `x11_vnc_stop(agent_name: "{$agent->name}")` - Stop VNC server
-- `x11_stop(agent_name: "{$agent->name}")` - Stop virtual display
+- `x11_vnc_start(agent_name: "{$agent->name}", password?)` - Start VNC (humans can watch!)
+- `x11_vnc_stop(agent_name: "{$agent->name}")` - Stop VNC
+- `x11_stop(agent_name: "{$agent->name}")` - Stop display
 
-**Workflow**: Start display → [Optional: Start VNC] → Launch apps → Screenshot → Analyze → Click/Type → Screenshot → Verify → Stop
-**VNC Viewing**: After calling x11_vnc_start, humans can watch your desktop at the returned web_url
-**IMPORTANT**: Always pass your agent_name ("{$agent->name}") to plugin tools for routing.{$installNote}
+**Workflow**: Start display → [Optional: Start VNC] → Launch apps → Screenshot → Analyze → Click/Type → Verify → Stop
+
+### 2. Direct Bash (For Quick Tasks)
+
+For simple one-off operations, use your native **Bash** tool:
+
+```bash
+# Start Xvfb manually
+Xvfb :99 -screen 0 1920x1080x24 &
+export DISPLAY=:99
+
+# Take screenshot with ImageMagick
+DISPLAY=:99 import -window root screenshot.png
+
+# Click with xdotool
+DISPLAY=:99 xdotool mousemove 100 200 click 1
+
+# Type text
+DISPLAY=:99 xdotool type "Hello World"
+
+# Launch GUI app
+DISPLAY=:99 firefox &
+```
+
+**Choose MCP tools** when you need persistent sessions or VNC viewing.
+**Choose Bash** for quick screenshots or single-action tasks.
+
+**IMPORTANT**: Always pass your agent_name ("{$agent->name}") when using MCP tools.
 MD;
     }
 

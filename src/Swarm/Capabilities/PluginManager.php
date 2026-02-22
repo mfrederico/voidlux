@@ -195,11 +195,10 @@ class PluginManager
         $context = [];
 
         foreach ($plugins as $plugin) {
-            if ($plugin instanceof McpToolProvider) {
-                $pluginContext = $plugin->injectPromptContext($task, $agent);
-                if ($pluginContext) {
-                    $context[] = $pluginContext;
-                }
+            // All plugins can provide context (not just MCP tool providers)
+            $pluginContext = $plugin->injectPromptContext($task, $agent);
+            if ($pluginContext) {
+                $context[] = $pluginContext;
             }
         }
 

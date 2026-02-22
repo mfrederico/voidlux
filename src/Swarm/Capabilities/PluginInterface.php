@@ -9,9 +9,16 @@ namespace VoidLux\Swarm\Capabilities;
  *
  * Plugins extend agent capabilities by providing:
  * - Capability tags (e.g., 'browser', 'email', 'database')
- * - MCP tools (via McpToolProvider subclass)
+ * - Prompt context (instructions for using native Claude Code tools)
+ * - Optional: MCP tools (via McpToolProvider subclass) - only for true primitives
  * - Runtime dependency checking
  * - Lifecycle hooks for enable/disable events
+ *
+ * ARCHITECTURE NOTE:
+ * Most plugins should provide context/instructions, NOT MCP tools.
+ * MCP tools are only for swarm primitives (task lifecycle) and stateful
+ * operations (X11 session management). For everything else, inject context
+ * and let agents use their native Bash, Read, Write, Edit tools.
  */
 interface PluginInterface
 {
@@ -75,4 +82,25 @@ interface PluginInterface
      * @param string $agentId The agent ID this plugin is being disabled for
      */
     public function onDisable(string $agentId): void;
+
+    /**
+     * Inject plugin-specific context into task prompts.
+     *
+     * This is the PRIMARY way plugins extend agent capabilities. Instead of
+     * creating custom MCP tools, provide rich context showing agents how to
+     * use their native Bash, Read, Write tools to accomplish tasks.
+     *
+     * Example (BrowserPlugin):
+     * ```
+     * ## Browser Automation Available
+     * Use Playwright via native Bash tool:
+     * - npx playwright screenshot "https://example.com" output.png
+     * - npx playwright eval "url" "document.title"
+     * ```
+     *
+     * @param TaskModel $task The task being assigned to the agent
+     * @param AgentModel $agent The agent receiving the task
+     * @return string Markdown-formatted context to inject into the task prompt
+     */
+    public function injectPromptContext(\VoidLux\Swarm\Model\TaskModel $task, \VoidLux\Swarm\Model\AgentModel $agent): string;
 }

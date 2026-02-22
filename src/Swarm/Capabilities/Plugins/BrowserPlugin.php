@@ -4,21 +4,21 @@ declare(strict_types=1);
 
 namespace VoidLux\Swarm\Capabilities\Plugins;
 
-use VoidLux\Swarm\Capabilities\McpToolProvider;
+use VoidLux\Swarm\Capabilities\PluginInterface;
 use VoidLux\Swarm\Model\{AgentModel, TaskModel};
 
 /**
  * Browser automation plugin using Playwright.
  *
- * Provides MCP tools for:
+ * Provides context for agents to use native Bash tool for:
  * - Navigating to URLs
  * - Taking screenshots
- * - Clicking elements
  * - Extracting page content
+ * - UI testing and web scraping
  *
- * Requires: Playwright CLI installed (https://playwright.dev/)
+ * Requires: Playwright installed (https://playwright.dev/)
  */
-class BrowserPlugin extends McpToolProvider
+class BrowserPlugin implements PluginInterface
 {
     public function getName(): string
     {
@@ -97,186 +97,79 @@ class BrowserPlugin extends McpToolProvider
         ];
     }
 
-    public function getTools(): array
-    {
-        return [
-            (object) [
-                'name' => 'browser_navigate',
-                'description' => 'Navigate browser to a URL and optionally wait for a specific element',
-                'inputSchema' => (object) [
-                    'type' => 'object',
-                    'properties' => (object) [
-                        'agent_name' => (object) [
-                            'type' => 'string',
-                            'description' => 'Your agent name for plugin routing',
-                        ],
-                        'url' => (object) [
-                            'type' => 'string',
-                            'description' => 'The URL to navigate to',
-                        ],
-                        'wait_for' => (object) [
-                            'type' => 'string',
-                            'description' => 'Optional CSS selector to wait for before returning',
-                        ],
-                    ],
-                    'required' => ['agent_name', 'url'],
-                ],
-            ],
-            (object) [
-                'name' => 'browser_screenshot',
-                'description' => 'Take a screenshot of the current page or a specific element',
-                'inputSchema' => (object) [
-                    'type' => 'object',
-                    'properties' => (object) [
-                        'agent_name' => (object) [
-                            'type' => 'string',
-                            'description' => 'Your agent name for plugin routing',
-                        ],
-                        'path' => (object) [
-                            'type' => 'string',
-                            'description' => 'Output file path for the screenshot',
-                        ],
-                        'selector' => (object) [
-                            'type' => 'string',
-                            'description' => 'Optional CSS selector to screenshot (default: full page)',
-                        ],
-                        'full_page' => (object) [
-                            'type' => 'boolean',
-                            'description' => 'Capture full scrollable page (default: false)',
-                        ],
-                    ],
-                    'required' => ['agent_name', 'path'],
-                ],
-            ],
-            (object) [
-                'name' => 'browser_extract',
-                'description' => 'Extract text content from the current page or a specific element',
-                'inputSchema' => (object) [
-                    'type' => 'object',
-                    'properties' => (object) [
-                        'agent_name' => (object) [
-                            'type' => 'string',
-                            'description' => 'Your agent name for plugin routing',
-                        ],
-                        'selector' => (object) [
-                            'type' => 'string',
-                            'description' => 'CSS selector to extract text from (default: body)',
-                        ],
-                    ],
-                    'required' => ['agent_name'],
-                ],
-            ],
-        ];
-    }
-
-    public function handleToolCall(string $toolName, array $args, string $agentId): array
-    {
-        return match ($toolName) {
-            'browser_navigate' => $this->handleNavigate($args),
-            'browser_screenshot' => $this->handleScreenshot($args),
-            'browser_extract' => $this->handleExtract($args),
-            default => $this->toolError("Unknown browser tool: {$toolName}"),
-        };
-    }
-
-    private function handleNavigate(array $args): array
-    {
-        $url = $args['url'] ?? '';
-        if (!$url) {
-            return $this->toolError('url is required');
-        }
-
-        $waitFor = $args['wait_for'] ?? '';
-
-        // Simple Playwright navigation via codegen
-        // In production, you'd use a proper Playwright script
-        $cmd = sprintf(
-            'playwright codegen --save-storage=/tmp/pw-state.json %s 2>&1',
-            escapeshellarg($url)
-        );
-
-        // For now, just verify URL is reachable
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_NOBODY, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-        $result = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($result === false || $httpCode >= 400) {
-            return $this->toolError("Failed to navigate to {$url} (HTTP {$httpCode})");
-        }
-
-        return $this->toolResult([
-            'status' => 'navigated',
-            'url' => $url,
-            'http_code' => $httpCode,
-        ]);
-    }
-
-    private function handleScreenshot(array $args): array
-    {
-        $path = $args['path'] ?? '';
-        if (!$path) {
-            return $this->toolError('path is required');
-        }
-
-        // Ensure path is writable
-        $dir = dirname($path);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-
-        // Simple example: screenshot google.com
-        // In production, you'd maintain browser state across tool calls
-        $url = 'https://www.google.com';
-        $cmd = sprintf(
-            'playwright screenshot --full-page %s %s 2>&1',
-            escapeshellarg($url),
-            escapeshellarg($path)
-        );
-
-        exec($cmd, $output, $exitCode);
-
-        if ($exitCode !== 0 || !file_exists($path)) {
-            return $this->toolError("Screenshot failed: " . implode("\n", $output));
-        }
-
-        return $this->toolResult([
-            'status' => 'screenshot_taken',
-            'path' => $path,
-            'size_bytes' => filesize($path),
-        ]);
-    }
-
-    private function handleExtract(array $args): array
-    {
-        $selector = $args['selector'] ?? 'body';
-
-        // Example implementation
-        // In production, maintain browser state and use proper Playwright API
-        return $this->toolResult([
-            'status' => 'extracted',
-            'selector' => $selector,
-            'content' => 'Example: This would contain extracted text from the page',
-        ]);
-    }
-
     public function injectPromptContext(TaskModel $task, AgentModel $agent): string
     {
         $available = $this->checkAvailability();
-        $installNote = $available ? '' : "\n**NOTE**: Plugin not installed. Call `plugin_install(plugin_name: \"browser\")` first.";
 
-        return <<<MD
-**Browser Automation (Playwright)**: You have access to browser automation tools:
-- `browser_navigate(agent_name: "{$agent->name}", url, wait_for?)` - Navigate to a URL, optionally wait for an element
-- `browser_screenshot(agent_name: "{$agent->name}", path, selector?, full_page?)` - Take a screenshot
-- `browser_extract(agent_name: "{$agent->name}", selector?)` - Extract text content from the page
+        if (!$available) {
+            return <<<'CONTEXT'
+## Browser Automation (Playwright) - NOT INSTALLED
 
-Use these for web scraping, UI testing, or automated browsing tasks.
-**IMPORTANT**: Always pass your agent_name ("{$agent->name}") to plugin tools for routing.{$installNote}
-MD;
+To enable browser automation, install Playwright first:
+```bash
+npm install -g playwright && npx playwright install chromium
+```
+
+CONTEXT;
+        }
+
+        return <<<'CONTEXT'
+## Browser Automation Available (Playwright)
+
+You have Playwright installed for browser automation. Use your native **Bash** tool:
+
+### Navigate to URL and extract content:
+```bash
+npx playwright eval "https://example.com" "document.body.innerText"
+```
+
+### Take full-page screenshot:
+```bash
+npx playwright screenshot --full-page "https://example.com" screenshot.png
+```
+
+### Take element screenshot:
+```bash
+npx playwright screenshot --selector ".main-content" "https://example.com" element.png
+```
+
+### Generate Playwright script for complex interactions:
+```bash
+npx playwright codegen https://example.com
+# Opens browser for recording, generates script to stdout
+```
+
+### Run custom Playwright script:
+Create a script file with the Playwright API, then:
+```bash
+node your-script.js
+```
+
+**Example script** (save as `scrape.js`):
+```javascript
+const { chromium } = require('playwright');
+
+(async () => {
+  const browser = await chromium.launch();
+  const page = await browser.newPage();
+  await page.goto('https://example.com');
+
+  // Extract data
+  const title = await page.title();
+  const content = await page.textContent('body');
+
+  console.log(JSON.stringify({ title, content }));
+  await browser.close();
+})();
+```
+
+**Tips:**
+- Use `--browser=chromium|firefox|webkit` to choose browser
+- Add `--timeout=30000` for slow pages
+- Combine with `jq` to parse JSON output
+- Screenshots are saved relative to current directory
+
+CONTEXT;
     }
 
     public function onEnable(string $agentId): void
