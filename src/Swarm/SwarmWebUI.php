@@ -2510,7 +2510,7 @@ function enablePluginForAgent() {
             } else {
                 addLog('plugin_enabled', `Enabled ${pluginName} for agent (capabilities: ${d.capabilities.join(', ')})`);
                 // Refresh agent list to show updated capabilities
-                renderAgents();
+                renderAll();
                 renderPluginSelects();
             }
         })
@@ -2538,7 +2538,7 @@ function disablePluginForAgent() {
             } else {
                 addLog('plugin_disabled', `Disabled ${pluginName} for agent (capabilities: ${d.capabilities.join(', ')})`);
                 // Refresh agent list to show updated capabilities
-                renderAgents();
+                renderAll();
                 renderPluginSelects();
             }
         })
