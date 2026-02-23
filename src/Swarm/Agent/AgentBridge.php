@@ -285,7 +285,10 @@ FORMAT;
      */
     public function ensureSession(string $sessionName, string $cwd, string $tool = 'claude', array $options = []): bool
     {
+        file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " ensureSession called for {$sessionName} in {$cwd}\n", FILE_APPEND);
+
         if ($this->tmux->sessionExistsByName($sessionName)) {
+            file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " session {$sessionName} already exists\n", FILE_APPEND);
             return true;
         }
 
@@ -319,10 +322,15 @@ FORMAT;
             $this->ensureClaudeAuth($cwd);
         }
 
+        file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " attempting to create session {$sessionName} with command: {$command}\n", FILE_APPEND);
         $created = $this->tmux->createSessionWithName($sessionName, $cwd, $command);
+        file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " createSessionWithName returned: " . ($created ? 'TRUE' : 'FALSE') . "\n", FILE_APPEND);
 
         if ($created) {
             $this->ensureMcpConfig($cwd);
+            file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " MCP config created for {$sessionName}\n", FILE_APPEND);
+        } else {
+            file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " FAILED to create session {$sessionName}\n", FILE_APPEND);
         }
 
         return $created;

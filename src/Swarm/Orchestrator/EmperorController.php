@@ -1246,6 +1246,8 @@ INSTRUCTIONS,
         $role = $spec['role'] ?? '';
         $namePrefix = $spec['name_prefix'] ?? ($role === 'planner' ? 'planner' : 'agent');
 
+        error_log("registerOneAgent: projectPath={$projectPath}, tool={$tool}, namePrefix={$namePrefix}");
+
         // Explicit name or auto-generated
         $agentName = $spec['name'] ?? ($namePrefix . '-' . $nodeShort . '-' . $index);
         $suffix = substr(bin2hex(random_bytes(4)), 0, 8);
@@ -1266,10 +1268,14 @@ INSTRUCTIONS,
         }
 
         if ($projectPath) {
+            error_log("registerOneAgent: calling ensureSession for {$sessionName} at {$projectPath}");
             $this->bridge->ensureSession($sessionName, $projectPath, $tool, [
                 'model' => $model,
                 'env' => $env,
             ]);
+            error_log("registerOneAgent: ensureSession completed for {$sessionName}");
+        } else {
+            error_log("registerOneAgent: NO projectPath - skipping session creation");
         }
 
         $agent = $this->agentRegistry->register(
