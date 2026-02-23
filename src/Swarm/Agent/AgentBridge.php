@@ -293,7 +293,7 @@ FORMAT;
         $env = $options['env'] ?? [];
 
         $command = match ($tool) {
-            'claude' => 'claude' . ($model ? ' --model ' . escapeshellarg($model) : ''),
+            'claude' => 'claude --allowed-tools "*"' . ($model ? ' --model ' . escapeshellarg($model) : ''),
             'opencode' => 'opencode',
             default => '',
         };
