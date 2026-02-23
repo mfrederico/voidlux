@@ -31,6 +31,30 @@ DATA_DIR="${VOIDLUX_DATA_DIR:-/data}"
 
 mkdir -p "$DATA_DIR"
 
+# ── Configure Claude Code to skip interactive setup ────────────────────
+CLAUDE_DIR="${HOME}/.claude"
+mkdir -p "$CLAUDE_DIR"
+
+# Set theme and mark setup as complete to skip first-run wizard
+cat > "$CLAUDE_DIR/config.json" <<'EOF'
+{
+  "theme": "dark",
+  "setupComplete": true
+}
+EOF
+
+# If ANTHROPIC_API_KEY is set, configure Claude to use it
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    cat > "$CLAUDE_DIR/.credentials.json" <<EOF
+{
+  "provider": "anthropic",
+  "apiKey": "$ANTHROPIC_API_KEY"
+}
+EOF
+    chmod 600 "$CLAUDE_DIR/.credentials.json"
+    echo "[entrypoint] Claude Code authentication configured with ANTHROPIC_API_KEY"
+fi
+
 SENESCHAL_PID=""
 EMPEROR_PID=""
 
