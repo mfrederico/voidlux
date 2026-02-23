@@ -287,6 +287,10 @@ class EmperorController
                 $this->handleAgentOutput($m[1], $request, $response);
                 break;
 
+            case preg_match('#^/api/swarm/agents/([^/]+)/vnc$#', $path, $m) === 1 && $method === 'GET':
+                $this->handleAgentVncInfo($m[1], $response);
+                break;
+
             case preg_match('#^/api/swarm/agents/([^/]+)$#', $path, $m) === 1 && $method === 'DELETE':
                 $this->handleDeregisterAgent($m[1], $response);
                 break;
@@ -1330,6 +1334,44 @@ INSTRUCTIONS,
             'agent_id' => $agentId,
             'status' => $status->value,
             'output' => $output,
+        ]);
+    }
+
+    private function handleAgentVncInfo(string $agentId, Response $response): void
+    {
+        $agent = $this->agentRegistry->getAgent($agentId);
+        if (!$agent) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Agent not found']);
+            return;
+        }
+
+        // Get X11 plugin session info
+        if (!$this->pluginManager) {
+            $this->json($response, ['vnc_available' => false]);
+            return;
+        }
+
+        $x11Plugin = $this->pluginManager->getPlugin('x11');
+        if (!$x11Plugin) {
+            $this->json($response, ['vnc_available' => false]);
+            return;
+        }
+
+        $sessionInfo = $x11Plugin->getSessionInfo($agentId);
+        if (!$sessionInfo) {
+            $this->json($response, ['vnc_available' => false]);
+            return;
+        }
+
+        $this->json($response, [
+            'vnc_available' => true,
+            'display' => $sessionInfo['display'] ?? null,
+            'vnc_port' => $sessionInfo['vnc_port'] ?? null,
+            'web_port' => $sessionInfo['web_port'] ?? null,
+            'web_url' => isset($sessionInfo['web_port'])
+                ? "http://localhost:{$sessionInfo['web_port']}/vnc.html"
+                : null,
         ]);
     }
 

@@ -1095,7 +1095,7 @@ function renderAgent(a) {
     html += '<div class="card-actions">';
     html += '<button onclick="viewOutput(\''+a.id+'\',\''+escapeHtml(a.name)+'\')">View Output</button>';
     if (a.capabilities && a.capabilities.includes('x11')) {
-        html += '<button onclick="openVncViewer(\''+escapeHtml(a.name)+'\')" style="background:#336633;" title="Open VNC desktop viewer">🖥️ View Desktop</button>';
+        html += '<button onclick="openVncViewer(\''+a.id+'\',\''+escapeHtml(a.name)+'\')" style="background:#336633;" title="Open VNC desktop viewer">🖥️ View Desktop</button>';
     }
     html += '<button onclick="changeDir(\''+a.id+'\',\''+escapeHtml(a.name)+'\')" title="Send /cd to change working directory">cd</button>';
     html += '<button onclick="deregisterAgent(\''+a.id+'\')">Remove</button>';
@@ -2935,26 +2935,25 @@ function viewPluginDetails(offeringId) {
 
 // ---- VNC Desktop Viewer ----
 
-function openVncViewer(agentName) {
-    // Map agent names to VNC ports
-    const agentVncMap = {
-        'email-agent': 6080,
-        'linkedin-agent': 6081,
-        'news-agent': 6082,
-        'market-agent': 6083,
-        'builder-agent': 6084
-    };
+async function openVncViewer(agentId, agentName) {
+    try {
+        // Fetch VNC info from API
+        const response = await fetch(`/api/swarm/agents/${agentId}/vnc`);
+        const data = await response.json();
 
-    let port = agentVncMap[agentName];
+        if (!data.vnc_available || !data.web_url) {
+            addLog('vnc_error', `VNC not available for ${agentName}. Agent may need to call x11_start first.`);
+            alert(`VNC not yet available for ${agentName}. The agent needs to start its X11 display first.`);
+            return;
+        }
 
-    // Fallback: if agent not in map, use first available port
-    if (!port) {
-        port = 6080;
+        // Open VNC viewer in new window
+        window.open(data.web_url, `vnc_${agentId}`, 'width=1600,height=900,menubar=no,toolbar=no,location=no,status=no');
+        addLog('vnc_opened', `Opened VNC viewer for ${agentName} (${data.display})`);
+    } catch (error) {
+        addLog('vnc_error', `Failed to get VNC info: ${error.message}`);
+        alert(`Failed to open VNC viewer: ${error.message}`);
     }
-
-    const url = `http://localhost:${port}/vnc.html`;
-    window.open(url, '_blank', 'width=1600,height=900,menubar=no,toolbar=no,location=no,status=no');
-    addLog('vnc_opened', `Opened VNC viewer for ${agentName}`);
 }
 
 function connectWs() {

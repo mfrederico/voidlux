@@ -627,6 +627,23 @@ class X11Plugin extends McpToolProvider
         return 5900; // Fallback
     }
 
+    private function findFreeWebVncPort(): int
+    {
+        // Start from 6080 and look for free port
+        for ($port = 6080; $port < 6130; $port++) {
+            exec("netstat -tuln 2>/dev/null | grep :{$port} > /dev/null", $output, $exitCode);
+            if ($exitCode !== 0) {
+                return $port;
+            }
+        }
+        return 6080; // Fallback
+    }
+
+    public function getSessionInfo(string $agentId): ?array
+    {
+        return self::$sessions[$agentId] ?? null;
+    }
+
     public function injectPromptContext(TaskModel $task, AgentModel $agent): string
     {
         $available = $this->checkAvailability();
@@ -823,7 +840,40 @@ MD;
             'pid' => $pid,
         ];
 
-        error_log("X11Plugin: Auto-started display {$display} for agent {$agentId}");
+        // Auto-start VNC server for remote viewing
+        $vncPort = $this->findFreeVncPort();
+        $vncCmd = sprintf(
+            'x11vnc -display %s -rfbport %d -forever -shared -nopw > /dev/null 2>&1 & echo $!',
+            escapeshellarg($display),
+            $vncPort
+        );
+        $vncPid = (int) trim(shell_exec($vncCmd));
+
+        if ($vncPid) {
+            sleep(1); // Wait for VNC to be ready
+            self::$sessions[$agentId]['vnc_pid'] = $vncPid;
+            self::$sessions[$agentId]['vnc_port'] = $vncPort;
+
+            // Auto-start websockify for web-based VNC access
+            $webPort = $this->findFreeWebVncPort();
+            $websockifyCmd = sprintf(
+                'python3 -m websockify --web=/usr/share/novnc %d localhost:%d > /dev/null 2>&1 & echo $!',
+                $webPort,
+                $vncPort
+            );
+            $websockifyPid = (int) trim(shell_exec($websockifyCmd));
+
+            if ($websockifyPid) {
+                sleep(1);
+                self::$sessions[$agentId]['websockify_pid'] = $websockifyPid;
+                self::$sessions[$agentId]['web_port'] = $webPort;
+                error_log("X11Plugin: Auto-started display {$display}, VNC port {$vncPort}, web port {$webPort} for agent {$agentId}");
+            } else {
+                error_log("X11Plugin: Auto-started display {$display}, VNC port {$vncPort} (websockify failed) for agent {$agentId}");
+            }
+        } else {
+            error_log("X11Plugin: Auto-started display {$display} (VNC failed) for agent {$agentId}");
+        }
     }
 
     public function onDisable(string $agentId): void
@@ -831,6 +881,11 @@ MD;
         // Clean up any running X11 session
         if (isset(self::$sessions[$agentId])) {
             $session = self::$sessions[$agentId];
+
+            // Kill websockify if running
+            if (isset($session['websockify_pid'])) {
+                exec("kill {$session['websockify_pid']} 2>/dev/null");
+            }
 
             // Kill VNC if running
             if (isset($session['vnc_pid'])) {
