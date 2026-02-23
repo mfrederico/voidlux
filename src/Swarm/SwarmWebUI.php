@@ -1094,6 +1094,9 @@ function renderAgent(a) {
     html += '<div class="card-meta" title="tmux session name for this agent">Session: '+(a.tmux_session_id||'none')+'</div>';
     html += '<div class="card-actions">';
     html += '<button onclick="viewOutput(\''+a.id+'\',\''+escapeHtml(a.name)+'\')">View Output</button>';
+    if (a.capabilities && a.capabilities.includes('x11')) {
+        html += '<button onclick="openVncViewer(\''+escapeHtml(a.name)+'\')" style="background:#336633;" title="Open VNC desktop viewer">🖥️ View Desktop</button>';
+    }
     html += '<button onclick="changeDir(\''+a.id+'\',\''+escapeHtml(a.name)+'\')" title="Send /cd to change working directory">cd</button>';
     html += '<button onclick="deregisterAgent(\''+a.id+'\')">Remove</button>';
     html += '</div></div>';
@@ -2928,6 +2931,30 @@ function offerPlugin(event) {
 function viewPluginDetails(offeringId) {
     // TODO: Show modal with full plugin details, reviews, etc.
     alert('Plugin details view - coming soon!');
+}
+
+// ---- VNC Desktop Viewer ----
+
+function openVncViewer(agentName) {
+    // Map agent names to VNC ports
+    const agentVncMap = {
+        'email-agent': 6080,
+        'linkedin-agent': 6081,
+        'news-agent': 6082,
+        'market-agent': 6083,
+        'builder-agent': 6084
+    };
+
+    let port = agentVncMap[agentName];
+
+    // Fallback: if agent not in map, use first available port
+    if (!port) {
+        port = 6080;
+    }
+
+    const url = `http://localhost:${port}/vnc.html`;
+    window.open(url, '_blank', 'width=1600,height=900,menubar=no,toolbar=no,location=no,status=no');
+    addLog('vnc_opened', `Opened VNC viewer for ${agentName}`);
 }
 
 function connectWs() {
