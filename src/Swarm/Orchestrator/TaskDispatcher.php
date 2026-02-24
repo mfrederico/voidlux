@@ -14,6 +14,7 @@ use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Model\AgentModel;
 use VoidLux\Swarm\Model\TaskModel;
 use VoidLux\Swarm\Model\TaskStatus;
+use VoidLux\Swarm\Forum\ForumOrchestrator;
 use VoidLux\Swarm\Storage\SwarmDatabase;
 
 /**
@@ -33,6 +34,7 @@ class TaskDispatcher
     private ?Channel $signal = null;
     private ?AgentBridge $agentBridge = null;
     private ?OverflowDelegator $overflowDelegator = null;
+    private ?ForumOrchestrator $forumOrchestrator = null;
 
     public function __construct(
         private readonly SwarmDatabase $db,
@@ -50,6 +52,11 @@ class TaskDispatcher
     public function setOverflowDelegator(OverflowDelegator $delegator): void
     {
         $this->overflowDelegator = $delegator;
+    }
+
+    public function setForumOrchestrator(ForumOrchestrator $forum): void
+    {
+        $this->forumOrchestrator = $forum;
     }
 
     public function getOverflowDelegator(): ?OverflowDelegator
@@ -84,6 +91,12 @@ class TaskDispatcher
 
     private function dispatchAll(): void
     {
+        // Phase 0: Route new pending tasks through discussion if persona agents exist
+        $this->routeNewTasksToDiscussion();
+
+        // Phase 0b: Check active discussions for vote results or timeout
+        $this->checkActiveDiscussions();
+
         // Phase 1: Cascade-fail blocked tasks whose dependencies failed
         $this->failBlockedWithFailedDeps();
 
@@ -158,6 +171,78 @@ class TaskDispatcher
             return;
         }
         $this->overflowDelegator->delegateOverflow($tasks);
+    }
+
+    /**
+     * Route new pending top-level tasks (no parentId) to discussion if persona agents exist.
+     * Skips if no ForumOrchestrator or no persona agents registered.
+     */
+    private function routeNewTasksToDiscussion(): void
+    {
+        if (!$this->forumOrchestrator) {
+            return;
+        }
+
+        $personaAgents = $this->forumOrchestrator->getPersonaAgents();
+        if (empty($personaAgents)) {
+            return; // No persona agents — skip discussion phase
+        }
+
+        $pendingTasks = $this->db->getTasksByStatus('pending');
+        foreach ($pendingTasks as $task) {
+            // Only top-level tasks (not subtasks) enter discussion
+            if ($task->parentId) {
+                continue;
+            }
+
+            // Transition to Discussing
+            $updated = $task->withStatus(TaskStatus::Discussing, $this->clock->tick());
+            $this->db->updateTask($updated);
+
+            // Start discussion channel
+            $this->forumOrchestrator->startDiscussion($updated);
+
+            // Deliver prompts to idle persona agents
+            $idlePersonas = $this->forumOrchestrator->getIdlePersonaAgents();
+            if (!empty($idlePersonas)) {
+                $this->forumOrchestrator->deliverDiscussionPrompts($updated, $idlePersonas);
+            }
+        }
+    }
+
+    /**
+     * Check active discussions for vote majority or timeout.
+     * Advances approved tasks to Planning, rejected to WaitingInput.
+     */
+    private function checkActiveDiscussions(): void
+    {
+        if (!$this->forumOrchestrator) {
+            return;
+        }
+
+        $discussingTasks = $this->db->getTasksByStatus('discussing');
+        foreach ($discussingTasks as $task) {
+            $channelId = $task->id;
+
+            // Check votes
+            $result = $this->forumOrchestrator->checkVotes($channelId);
+
+            if ($result === null && !$this->forumOrchestrator->isTimedOut($channelId)) {
+                continue; // No majority yet and not timed out
+            }
+
+            // Auto-advance on timeout or majority approve
+            if ($result === 'approve' || $result === null) {
+                // null = timeout, treat as auto-advance
+                $updated = $task->withStatus(TaskStatus::Planning, $this->clock->tick());
+                $this->db->updateTask($updated);
+                $this->forumOrchestrator->resolveChannel($channelId, $result ?? 'timeout');
+            } elseif ($result === 'reject') {
+                $updated = $task->withStatus(TaskStatus::WaitingInput, $this->clock->tick());
+                $this->db->updateTask($updated);
+                $this->forumOrchestrator->resolveChannel($channelId, 'reject');
+            }
+        }
     }
 
     /**

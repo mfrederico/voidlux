@@ -115,6 +115,54 @@ class SwarmWebSocketHandler
         ]);
     }
 
+    /**
+     * Broadcast a forum message to all connected clients.
+     */
+    public function pushForumMessage(string $channelId, array $messageData): void
+    {
+        $this->broadcast([
+            'type' => 'forum_message',
+            'channel_id' => $channelId,
+            'message' => $messageData,
+        ]);
+    }
+
+    /**
+     * Broadcast vote tally update for a channel.
+     */
+    public function pushForumVoteUpdate(string $channelId, array $voteTally): void
+    {
+        $this->broadcast([
+            'type' => 'forum_vote_update',
+            'channel_id' => $channelId,
+            'tally' => $voteTally,
+        ]);
+    }
+
+    /**
+     * Broadcast channel creation event.
+     */
+    public function pushForumChannelCreated(string $channelId, string $taskTitle): void
+    {
+        $this->broadcast([
+            'type' => 'forum_channel_created',
+            'channel_id' => $channelId,
+            'task_title' => $taskTitle,
+        ]);
+    }
+
+    /**
+     * Broadcast channel resolution event.
+     */
+    public function pushForumChannelResolved(string $channelId, string $outcome): void
+    {
+        $this->broadcast([
+            'type' => 'forum_channel_resolved',
+            'channel_id' => $channelId,
+            'outcome' => $outcome,
+        ]);
+    }
+
     private function pushTo(int $fd, array $payload): void
     {
         if ($this->server->isEstablished($fd)) {

@@ -11,4 +11,8 @@ enum MessageCategory: string
     case Bounty = 'bounty';
     case Announcement = 'announcement';
     case Discussion = 'discussion';
+    case Forum = 'forum';
+    case Vote = 'vote';
+    case Review = 'review';
+    case DirectMessage = 'dm';
 }

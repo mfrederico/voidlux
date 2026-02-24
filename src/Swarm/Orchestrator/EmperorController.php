@@ -25,6 +25,7 @@ use VoidLux\Swarm\Model\MessageModel;
 use VoidLux\Swarm\Model\TaskStatus;
 use VoidLux\Swarm\Orchestrator\TaskDispatcher;
 use VoidLux\Swarm\Storage\DhtEngine;
+use VoidLux\Swarm\Forum\ForumOrchestrator;
 use VoidLux\Swarm\Storage\SwarmDatabase;
 use VoidLux\Swarm\SwarmWebUI;
 
@@ -49,6 +50,7 @@ class EmperorController
     private ?\VoidLux\Swarm\Auth\ClaudeAuthManager $authManager = null;
     private ?\VoidLux\Swarm\Scheduler\TaskScheduler $scheduler = null;
     private ?\VoidLux\Swarm\Marketplace\MarketplaceMcp $pluginMarketplace = null;
+    private ?ForumOrchestrator $forumOrchestrator = null;
 
     /** @var callable|null fn(): void — triggers server shutdown */
     private $shutdownCallback = null;
@@ -121,6 +123,11 @@ class EmperorController
     public function setPluginMarketplace(\VoidLux\Swarm\Marketplace\MarketplaceMcp $marketplace): void
     {
         $this->pluginMarketplace = $marketplace;
+    }
+
+    public function setForumOrchestrator(ForumOrchestrator $forum): void
+    {
+        $this->forumOrchestrator = $forum;
     }
 
     public function setTaskGossip(TaskGossipEngine $gossip): void
@@ -516,6 +523,47 @@ class EmperorController
 
             case $path === '/api/swarm/delegations' && $method === 'POST':
                 $this->handleCreateDelegation($request, $response);
+                break;
+
+            // --- SwarmTalk Forum API ---
+            case $path === '/api/swarm/forum/channels' && $method === 'GET':
+                $this->handleForumListChannels($response);
+                break;
+
+            case preg_match('#^/api/swarm/forum/([^/]+)/messages$#', $path, $m) === 1 && $method === 'GET':
+                $this->handleForumListMessages($request, $response, $m[1]);
+                break;
+
+            case preg_match('#^/api/swarm/forum/([^/]+)/post$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleForumPost($request, $response, $m[1]);
+                break;
+
+            case preg_match('#^/api/swarm/forum/([^/]+)/override$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleForumOverride($request, $response, $m[1]);
+                break;
+
+            case preg_match('#^/api/swarm/forum/([^/]+)/votes$#', $path, $m) === 1 && $method === 'GET':
+                $this->handleForumVoteStatus($response, $m[1]);
+                break;
+
+            case preg_match('#^/api/swarm/forum/dm/([^/]+)$#', $path, $m) === 1 && $method === 'GET':
+                $this->handleForumGetDMs($response, $m[1]);
+                break;
+
+            case preg_match('#^/api/swarm/forum/dm/([^/]+)$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleForumSendDM($request, $response, $m[1]);
+                break;
+
+            case $path === '/api/swarm/forum/personas' && $method === 'GET':
+                $this->handleForumListPersonas($response);
+                break;
+
+            case $path === '/api/swarm/forum/personas' && $method === 'POST':
+                $this->handleSavePersonas($request, $response);
+                break;
+
+            case preg_match('#^/api/swarm/forum/personas/([^/]+)$#', $path, $m) === 1 && $method === 'DELETE':
+                $this->handleDeletePersona(urldecode($m[1]), $response);
                 break;
 
             default:
@@ -1115,6 +1163,7 @@ INSTRUCTIONS,
             projectPath: $projectPath,
             maxConcurrentTasks: (int) ($body['max_concurrent_tasks'] ?? 1),
             role: $body['role'] ?? '',
+            persona: $body['persona'] ?? '',
         );
 
         $this->taskDispatcher?->triggerDispatch();
@@ -1252,6 +1301,7 @@ INSTRUCTIONS,
         $model = $spec['model'] ?? '';
         $env = $spec['env'] ?? [];
         $role = $spec['role'] ?? '';
+        $persona = $spec['persona'] ?? '';
         $namePrefix = $spec['name_prefix'] ?? ($role === 'planner' ? 'planner' : 'agent');
 
         error_log("registerOneAgent: projectPath={$projectPath}, tool={$tool}, namePrefix={$namePrefix}");
@@ -1294,6 +1344,7 @@ INSTRUCTIONS,
             tmuxSessionId: $projectPath ? $sessionName : null,
             projectPath: $projectPath,
             role: $role,
+            persona: $persona,
         );
 
         return $agent->toArray();
@@ -2557,5 +2608,264 @@ INSTRUCTIONS,
         $text = $result['content'][0]->text ?? '{}';
         $data = json_decode($text, true);
         $this->json($response, $data);
+    }
+
+    // --- SwarmTalk Forum Handlers ---
+
+    private function handleForumListChannels(Response $response): void
+    {
+        $channels = $this->db->getActiveChannels();
+        // Enrich with task titles
+        foreach ($channels as &$ch) {
+            $channelId = $ch['channel_id'];
+            $taskId = str_starts_with($channelId, 'review:') ? substr($channelId, 7) : $channelId;
+            $task = $this->db->getTask($taskId);
+            $ch['task_title'] = $task ? $task->title : '';
+            $ch['type'] = str_starts_with($channelId, 'review:') ? 'review' : 'discussion';
+        }
+        $this->json($response, ['channels' => $channels]);
+    }
+
+    private function handleForumListMessages(Request $request, Response $response, string $channelId): void
+    {
+        $sinceTs = isset($request->get['since_ts']) ? (int) $request->get['since_ts'] : null;
+        $messages = $this->db->getMessagesByChannel(urldecode($channelId), $sinceTs);
+
+        $result = array_map(function (MessageModel $m) {
+            $arr = $m->toArray();
+            $agent = $this->db->getAgentByName($m->authorName);
+            if ($agent && $agent->persona) {
+                $persona = json_decode($agent->persona, true);
+                if ($persona) {
+                    $arr['persona'] = $persona;
+                }
+            }
+            return $arr;
+        }, $messages);
+
+        $this->json($response, ['channel_id' => $channelId, 'count' => count($result), 'messages' => $result]);
+    }
+
+    private function handleForumPost(Request $request, Response $response, string $channelId): void
+    {
+        $body = json_decode($request->rawContent(), true);
+        $content = $body['content'] ?? '';
+        $authorName = $body['author_name'] ?? 'Human Operator';
+
+        if (!$content) {
+            $response->status(400);
+            $this->json($response, ['error' => 'content is required']);
+            return;
+        }
+
+        if (!$this->taskGossip || !$this->clock) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Forum not initialized']);
+            return;
+        }
+
+        $msg = MessageModel::create(
+            authorId: 'human',
+            authorName: $authorName,
+            category: 'forum',
+            title: '',
+            content: $content,
+            lamportTs: $this->clock->tick(),
+            channelId: urldecode($channelId),
+        );
+
+        $this->taskGossip->createBoardMessage($msg);
+        $this->fireTaskEvent('forum_message', $msg->toArray());
+
+        $this->json($response, ['status' => 'posted', 'message_id' => $msg->id]);
+    }
+
+    private function handleForumOverride(Request $request, Response $response, string $channelId): void
+    {
+        if (!$this->forumOrchestrator) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Forum not initialized']);
+            return;
+        }
+
+        $body = json_decode($request->rawContent(), true);
+        $decision = $body['decision'] ?? 'approve';
+
+        if (!in_array($decision, ['approve', 'reject'], true)) {
+            $response->status(400);
+            $this->json($response, ['error' => 'decision must be approve or reject']);
+            return;
+        }
+
+        $decodedChannelId = urldecode($channelId);
+        $this->forumOrchestrator->forceAdvance($decodedChannelId, $decision);
+
+        // Advance the task from discussing to planning
+        $taskId = str_starts_with($decodedChannelId, 'review:') ? substr($decodedChannelId, 7) : $decodedChannelId;
+        $task = $this->db->getTask($taskId);
+        if ($task && $task->status === TaskStatus::Discussing) {
+            $updated = $task->withStatus(
+                $decision === 'approve' ? TaskStatus::Planning : TaskStatus::WaitingInput,
+                $this->clock ? $this->clock->tick() : $task->lamportTs
+            );
+            $this->db->updateTask($updated);
+            $this->fireTaskEvent('task_updated', $updated->toArray());
+            $this->taskDispatcher?->triggerDispatch();
+        }
+
+        $this->json($response, ['status' => 'overridden', 'decision' => $decision, 'channel_id' => $decodedChannelId]);
+    }
+
+    private function handleForumVoteStatus(Response $response, string $channelId): void
+    {
+        $votes = $this->db->getVotesByChannel(urldecode($channelId));
+        $latestVotes = [];
+        foreach ($votes as $v) {
+            $latestVotes[$v->authorName] = $v->vote;
+        }
+        $tally = ['approve' => 0, 'reject' => 0, 'abstain' => 0, 'voters' => []];
+        foreach ($latestVotes as $name => $vote) {
+            if (isset($tally[$vote])) {
+                $tally[$vote]++;
+            }
+            $tally['voters'][] = ['agent' => $name, 'vote' => $vote];
+        }
+        $tally['total'] = $tally['approve'] + $tally['reject'] + $tally['abstain'];
+        $this->json($response, ['channel_id' => $channelId, 'tally' => $tally]);
+    }
+
+    private function handleForumGetDMs(Response $response, string $agentName): void
+    {
+        $messages = $this->db->getDMs(urldecode($agentName));
+        $result = array_map(fn(MessageModel $m) => $m->toArray(), $messages);
+        $this->json($response, ['agent' => $agentName, 'count' => count($result), 'messages' => $result]);
+    }
+
+    private function handleForumSendDM(Request $request, Response $response, string $agentName): void
+    {
+        $body = json_decode($request->rawContent(), true);
+        $content = $body['content'] ?? '';
+
+        if (!$content) {
+            $response->status(400);
+            $this->json($response, ['error' => 'content is required']);
+            return;
+        }
+
+        if (!$this->taskGossip || !$this->clock) {
+            $response->status(503);
+            $this->json($response, ['error' => 'Forum not initialized']);
+            return;
+        }
+
+        $decodedName = urldecode($agentName);
+        $msg = MessageModel::create(
+            authorId: 'human',
+            authorName: 'Human Operator',
+            category: 'dm',
+            title: '',
+            content: $content,
+            lamportTs: $this->clock->tick(),
+            tags: [$decodedName],
+            channelId: "dm:Human Operator:{$decodedName}",
+        );
+
+        $this->taskGossip->createBoardMessage($msg);
+        $this->fireTaskEvent('forum_dm', $msg->toArray());
+
+        // Deliver to agent's tmux session if online
+        $agent = $this->db->getAgentByName($decodedName);
+        if ($agent && $agent->tmuxSessionId) {
+            $this->bridge->sendText($agent, "[DM from Human Operator] {$content}");
+        }
+
+        $this->json($response, ['status' => 'sent', 'message_id' => $msg->id]);
+    }
+
+    private function handleForumListPersonas(Response $response): void
+    {
+        if ($this->forumOrchestrator) {
+            $personas = $this->forumOrchestrator->getPersonaDefs();
+            $this->json($response, ['personas' => array_values($personas)]);
+        } else {
+            $configPath = dirname(__DIR__, 3) . '/config/personas.json';
+            if (file_exists($configPath)) {
+                $data = json_decode(file_get_contents($configPath), true) ?? [];
+                $this->json($response, ['personas' => $data]);
+            } else {
+                $this->json($response, ['personas' => []]);
+            }
+        }
+    }
+
+    private function handleSavePersonas(Request $request, Response $response): void
+    {
+        $body = json_decode($request->getContent(), true);
+        if (!$body || !isset($body['personas']) || !is_array($body['personas'])) {
+            $response->status(400);
+            $this->json($response, ['error' => 'personas array is required']);
+            return;
+        }
+
+        foreach ($body['personas'] as $persona) {
+            if (empty($persona['slug']) || empty($persona['display_name'])) {
+                $response->status(400);
+                $this->json($response, ['error' => 'Each persona requires slug and display_name']);
+                return;
+            }
+        }
+
+        $configPath = dirname(__DIR__, 3) . '/config/personas.json';
+        $configDir = dirname($configPath);
+        if (!is_dir($configDir)) {
+            mkdir($configDir, 0755, true);
+        }
+
+        $json = json_encode(
+            array_values($body['personas']),
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+        );
+
+        if (file_put_contents($configPath, $json . "\n") === false) {
+            $response->status(500);
+            $this->json($response, ['error' => 'Failed to write config file']);
+            return;
+        }
+
+        if ($this->forumOrchestrator) {
+            $this->forumOrchestrator->loadPersonas($configPath);
+        }
+
+        $this->json($response, ['status' => 'saved', 'count' => count($body['personas'])]);
+    }
+
+    private function handleDeletePersona(string $slug, Response $response): void
+    {
+        $configPath = dirname(__DIR__, 3) . '/config/personas.json';
+        $personas = [];
+        if (file_exists($configPath)) {
+            $personas = json_decode(file_get_contents($configPath), true) ?? [];
+        }
+
+        $before = count($personas);
+        $personas = array_values(array_filter($personas, fn($p) => ($p['slug'] ?? '') !== $slug));
+
+        if (count($personas) === $before) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Persona not found: ' . $slug]);
+            return;
+        }
+
+        $json = json_encode(
+            $personas,
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+        );
+        file_put_contents($configPath, $json . "\n");
+
+        if ($this->forumOrchestrator) {
+            $this->forumOrchestrator->loadPersonas($configPath);
+        }
+
+        $this->json($response, ['status' => 'deleted', 'slug' => $slug]);
     }
 }

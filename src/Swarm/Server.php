@@ -292,7 +292,7 @@ class Server
             }
         });
         $this->controller->onTaskEvent(function (string $event, array $taskData) {
-            $this->wsHandler?->pushTaskUpdate($event, $taskData);
+            $this->routeWsEvent($event, $taskData);
         });
         $this->controller->onShutdown(function () {
             $this->log("Regicide: stopping all coroutine loops...");
@@ -1101,6 +1101,36 @@ class Server
         $this->overflowDelegator = $overflowDelegator;
         $this->taskDispatcher->setOverflowDelegator($overflowDelegator);
 
+        // Initialize SwarmTalk Forum Orchestrator
+        $forumOrchestrator = new \VoidLux\Swarm\Forum\ForumOrchestrator(
+            $this->db, $this->agentBridge, $this->taskGossip, $this->clock,
+        );
+        $personasConfig = dirname(__DIR__, 2) . '/config/personas.json';
+        $forumOrchestrator->loadPersonas($personasConfig);
+        $forumOrchestrator->onTaskEvent(function (string $event, array $data) {
+            $this->routeWsEvent($event, $data);
+        });
+        $this->taskDispatcher->setForumOrchestrator($forumOrchestrator);
+        $this->controller->setForumOrchestrator($forumOrchestrator);
+
+        // Start forum notification coroutine (notifies persona agents of new messages every 15s)
+        Coroutine::create(function () use ($forumOrchestrator) {
+            while ($this->running) {
+                Coroutine::sleep(15);
+                $channels = $forumOrchestrator->getActiveChannels();
+                if (empty($channels)) {
+                    continue;
+                }
+                $personaAgents = $forumOrchestrator->getPersonaAgents();
+                if (empty($personaAgents)) {
+                    continue;
+                }
+                foreach ($channels as $channelId) {
+                    $forumOrchestrator->notifyNewMessages($channelId, $personaAgents);
+                }
+            }
+        });
+
         // Start dispatcher coroutine
         Coroutine::create(function () {
             $this->taskDispatcher->start();
@@ -1336,6 +1366,61 @@ class Server
 </body>
 </html>
 HTML;
+    }
+
+    /**
+     * Route WS events: forum events go to dedicated push methods, everything else to pushTaskUpdate.
+     */
+    private function routeWsEvent(string $event, array $data): void
+    {
+        if (!$this->wsHandler) {
+            return;
+        }
+
+        match ($event) {
+            'forum_message', 'forum_dm' => $this->wsHandler->pushForumMessage(
+                $data['channel_id'] ?? '',
+                $data,
+            ),
+            'forum_vote' => $this->handleForumVoteWs($data),
+            'forum_channel_created' => $this->wsHandler->pushForumChannelCreated(
+                $data['channel_id'] ?? '',
+                $data['task_title'] ?? '',
+            ),
+            'forum_channel_resolved' => $this->wsHandler->pushForumChannelResolved(
+                $data['channel_id'] ?? '',
+                $data['outcome'] ?? '',
+            ),
+            default => $this->wsHandler->pushTaskUpdate($event, $data),
+        };
+    }
+
+    /**
+     * Push a forum vote as both a chat message and a vote tally update.
+     */
+    private function handleForumVoteWs(array $data): void
+    {
+        $channelId = $data['channel_id'] ?? '';
+
+        // Push vote as a chat message so it appears in the conversation
+        $this->wsHandler->pushForumMessage($channelId, $data);
+
+        // Compute and push updated tally
+        $votes = $this->db->getVotesByChannel($channelId);
+        $latestVotes = [];
+        foreach ($votes as $v) {
+            $latestVotes[$v->authorName] = $v->vote;
+        }
+        $tally = ['approve' => 0, 'reject' => 0, 'abstain' => 0, 'voters' => []];
+        foreach ($latestVotes as $name => $vote) {
+            if (isset($tally[$vote])) {
+                $tally[$vote]++;
+            }
+            $tally['voters'][] = ['agent' => $name, 'vote' => $vote];
+        }
+        $tally['total'] = $tally['approve'] + $tally['reject'] + $tally['abstain'];
+
+        $this->wsHandler->pushForumVoteUpdate($channelId, $tally);
     }
 
     private function log(string $message): void

@@ -51,6 +51,7 @@ class AgentRegistry
         string $projectPath = '',
         int $maxConcurrentTasks = 1,
         string $role = '',
+        string $persona = '',
     ): AgentModel {
         $ts = $this->clock->tick();
         $agent = AgentModel::create(
@@ -64,6 +65,7 @@ class AgentRegistry
             projectPath: $projectPath,
             maxConcurrentTasks: $maxConcurrentTasks,
             role: $role,
+            persona: $persona,
         );
 
         $this->db->insertAgent($agent);

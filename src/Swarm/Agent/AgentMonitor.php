@@ -113,6 +113,10 @@ class AgentMonitor
                     if ($updatedAgent) {
                         $this->registry->gossipAgentNow($updatedAgent);
                     }
+                    // Inject persona system prompt if this is a persona agent
+                    if ($agent->persona) {
+                        $this->bridge->injectPersona($agent);
+                    }
                     $this->emit('', $agent->id, 'agent_ready', ['name' => $agent->name]);
                     $this->taskDispatcher?->triggerDispatch();
                 } elseif ($bridgeStatus === Status::Stopped) {

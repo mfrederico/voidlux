@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoidLux Settings</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'Courier New', monospace; font-size: 14px;
+    min-height: 100vh;
+}
+.header {
+    background: linear-gradient(135deg, #1a0033 0%, #0d001a 50%, #001a0d 100%);
+    padding: 16px 24px; text-align: center; position: relative; overflow: hidden;
+}
+.header::before {
+    content: ''; position: absolute; top: 0; left: -100%;
+    width: 200%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(204,102,0,0.06), transparent);
+    animation: shimmer 8s ease-in-out infinite;
+}
+@keyframes shimmer { 0%,100%{left:-100%} 50%{left:0%} }
+.header h1 {
+    background: linear-gradient(135deg, #cc6600, #ff9933, #cc6600);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-size: 200% 200%; animation: grad 4s ease infinite;
+    font-size: 1.3rem; position: relative;
+}
+@keyframes grad { 0%,100%{background-position:0% 50%} 50%{background-position:100% 50%} }
+.header-nav {
+    display: flex; justify-content: center; align-items: center; gap: 16px;
+    margin-top: 8px; position: relative;
+}
+.header-nav a {
+    color: #888; text-decoration: none; font-size: 0.8rem;
+    transition: color 0.2s;
+}
+.header-nav a:hover { color: #cc6600; }
+
+.main { max-width: 900px; margin: 0 auto; padding: 24px; }
+
+.section { margin-bottom: 32px; }
+.section h2 {
+    font-size: 0.85rem; color: #cc6600; margin-bottom: 12px;
+    letter-spacing: 2px; border-bottom: 1px solid #222; padding-bottom: 8px;
+}
+
+.persona-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.persona-card {
+    background: #111; border: 1px solid #222; border-radius: 6px; padding: 16px;
+    transition: border-color 0.2s; position: relative;
+}
+.persona-card:hover { border-color: #333; }
+.persona-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.persona-avatar {
+    width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-size: 1.1rem; font-weight: bold; color: #fff; flex-shrink: 0;
+}
+.persona-name { font-weight: bold; font-size: 0.95rem; }
+.persona-title { color: #888; font-size: 0.75rem; margin-top: 2px; }
+.persona-slug { color: #555; font-size: 0.7rem; font-style: italic; }
+.persona-prompt {
+    color: #999; font-size: 0.75rem; margin-top: 8px; line-height: 1.4;
+    max-height: 60px; overflow: hidden; text-overflow: ellipsis;
+}
+.persona-actions {
+    display: flex; gap: 8px; margin-top: 12px; border-top: 1px solid #1a1a1a; padding-top: 10px;
+}
+.btn {
+    background: #1a1a1a; border: 1px solid #333; color: #ccc; padding: 5px 14px;
+    border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 0.75rem;
+    transition: all 0.2s;
+}
+.btn:hover { background: #222; border-color: #444; }
+.btn-primary { background: #cc6600; border-color: #cc6600; color: #fff; }
+.btn-primary:hover { background: #dd7700; border-color: #dd7700; }
+.btn-danger { border-color: #662222; color: #cc4444; }
+.btn-danger:hover { background: #1a0a0a; border-color: #cc4444; }
+.btn-add {
+    background: #0a1a0a; border: 1px dashed #336633; color: #66cc66;
+    padding: 20px; border-radius: 6px; cursor: pointer; font-family: inherit;
+    font-size: 0.85rem; text-align: center; width: 100%; transition: all 0.2s;
+}
+.btn-add:hover { background: #0a2a0a; border-color: #44aa44; }
+
+/* Modal */
+.modal-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+    background: #111; border: 1px solid #333; border-radius: 8px;
+    width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto;
+    box-shadow: 0 0 40px rgba(204,102,0,0.1);
+}
+.modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 20px; border-bottom: 1px solid #222;
+}
+.modal-header h3 { font-size: 0.9rem; color: #cc6600; }
+.modal-close {
+    background: none; border: none; color: #666; font-size: 1.3rem;
+    cursor: pointer; padding: 0 4px;
+}
+.modal-close:hover { color: #ccc; }
+.modal-body { padding: 20px; }
+.modal-footer {
+    padding: 12px 20px; border-top: 1px solid #222;
+    display: flex; justify-content: flex-end; gap: 8px;
+}
+
+.form-group { margin-bottom: 14px; }
+.form-group label {
+    display: block; font-size: 0.75rem; color: #888;
+    margin-bottom: 4px; letter-spacing: 1px;
+}
+.form-group input, .form-group textarea {
+    width: 100%; background: #0a0a0a; border: 1px solid #333; color: #e0e0e0;
+    padding: 8px 10px; border-radius: 3px; font-family: inherit; font-size: 0.85rem;
+    transition: border-color 0.2s;
+}
+.form-group input:focus, .form-group textarea:focus {
+    outline: none; border-color: #cc6600;
+}
+.form-group textarea { resize: vertical; min-height: 80px; line-height: 1.4; }
+.form-row { display: flex; gap: 12px; }
+.form-row .form-group { flex: 1; }
+.color-preview {
+    display: flex; align-items: center; gap: 8px;
+}
+.color-preview input[type="color"] {
+    width: 40px; height: 34px; border: 1px solid #333; border-radius: 3px;
+    background: none; cursor: pointer; padding: 0;
+}
+.color-preview .color-hex {
+    flex: 1;
+}
+
+.toast {
+    position: fixed; bottom: 20px; right: 20px; background: #1a1a1a;
+    border: 1px solid #333; border-radius: 6px; padding: 12px 20px;
+    color: #ccc; font-size: 0.8rem; z-index: 2000;
+    transform: translateY(100px); opacity: 0; transition: all 0.3s;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.success { border-color: #336633; color: #66cc66; }
+.toast.error { border-color: #663333; color: #cc6666; }
+</style>
+</head>
+<body>
+
+<div class="header">
+    <h1>VoidLux Settings</h1>
+    <div class="header-nav">
+        <a href="/">&larr; Dashboard</a>
+        <span style="color:#333;">|</span>
+        <span style="color:#555;font-size:0.75rem;">Persona Management</span>
+    </div>
+</div>
+
+<div class="main">
+    <div class="section">
+        <h2>PERSONAS</h2>
+        <div class="persona-grid" id="persona-grid">
+            <div style="color:#555;padding:20px;">Loading...</div>
+        </div>
+        <div style="margin-top:16px;">
+            <button class="btn-add" onclick="openAddModal()">+ Add New Persona</button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit/Add Modal -->
+<div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 id="modal-title">Edit Persona</h3>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="edit-index" value="-1">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>DISPLAY NAME</label>
+                    <input type="text" id="field-display-name" placeholder="Marcus">
+                </div>
+                <div class="form-group">
+                    <label>SLUG</label>
+                    <input type="text" id="field-slug" placeholder="marcus">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>TITLE / ROLE</label>
+                    <input type="text" id="field-title" placeholder="Senior PHP Dev">
+                </div>
+                <div class="form-group">
+                    <label>AVATAR COLOR</label>
+                    <div class="color-preview">
+                        <input type="color" id="field-color" value="#cc6600">
+                        <input type="text" id="field-color-hex" class="color-hex" placeholder="#cc6600">
+                    </div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>PERSONALITY (short description)</label>
+                <textarea id="field-personality" rows="2" placeholder="Brief personality description for UI display..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>SYSTEM PROMPT (injected into agent)</label>
+                <textarea id="field-system-prompt" rows="6" placeholder="You are Marcus, a senior PHP developer who insists on PSR compliance..."></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="savePersona()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal-overlay" id="delete-overlay">
+    <div class="modal" style="max-width:400px;">
+        <div class="modal-header">
+            <h3>Delete Persona</h3>
+            <button class="modal-close" onclick="closeDeleteModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p>Delete <strong id="delete-name"></strong>? This cannot be undone.</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeDeleteModal()">Cancel</button>
+            <button class="btn btn-danger" onclick="confirmDelete()">Delete</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let personas = [];
+let deleteSlug = null;
+
+function toast(msg, type) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show ' + (type || '');
+    setTimeout(() => { el.className = 'toast'; }, 3000);
+}
+
+function loadPersonas() {
+    fetch('/api/swarm/forum/personas')
+        .then(r => r.json())
+        .then(data => {
+            personas = Array.isArray(data.personas) ? data.personas : Object.values(data.personas || {});
+            renderPersonas();
+        })
+        .catch(err => {
+            toast('Failed to load personas: ' + err.message, 'error');
+        });
+}
+
+function renderPersonas() {
+    const grid = document.getElementById('persona-grid');
+    if (personas.length === 0) {
+        grid.innerHTML = '<div style="color:#555;padding:20px;">No personas defined. Add one to get started.</div>';
+        return;
+    }
+    grid.innerHTML = personas.map((p, i) => {
+        const color = p.avatar_color || '#666';
+        const initial = (p.display_name || '?')[0].toUpperCase();
+        const prompt = (p.system_prompt || '').substring(0, 120);
+        return '<div class="persona-card">' +
+            '<div class="persona-header">' +
+                '<div class="persona-avatar" style="background:' + esc(color) + '">' + esc(initial) + '</div>' +
+                '<div>' +
+                    '<div class="persona-name" style="color:' + esc(color) + '">' + esc(p.display_name || '') + '</div>' +
+                    '<div class="persona-title">' + esc(p.title || '') + '</div>' +
+                    '<div class="persona-slug">@' + esc(p.slug || '') + '</div>' +
+                '</div>' +
+            '</div>' +
+            (p.personality ? '<div class="persona-prompt">' + esc(p.personality) + '</div>' : '') +
+            '<div class="persona-prompt">' + esc(prompt) + (prompt.length >= 120 ? '...' : '') + '</div>' +
+            '<div class="persona-actions">' +
+                '<button class="btn" onclick="openEditModal(' + i + ')">Edit</button>' +
+                '<button class="btn btn-danger" onclick="openDeleteModal(\'' + esc(p.slug) + '\', \'' + esc(p.display_name) + '\')">Delete</button>' +
+            '</div>' +
+        '</div>';
+    }).join('');
+}
+
+function esc(s) {
+    return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function openAddModal() {
+    document.getElementById('modal-title').textContent = 'Add Persona';
+    document.getElementById('edit-index').value = '-1';
+    document.getElementById('field-display-name').value = '';
+    document.getElementById('field-slug').value = '';
+    document.getElementById('field-title').value = '';
+    document.getElementById('field-color').value = '#cc6600';
+    document.getElementById('field-color-hex').value = '#cc6600';
+    document.getElementById('field-personality').value = '';
+    document.getElementById('field-system-prompt').value = '';
+    document.getElementById('modal-overlay').classList.add('active');
+    document.getElementById('field-display-name').focus();
+}
+
+function openEditModal(index) {
+    const p = personas[index];
+    if (!p) return;
+    document.getElementById('modal-title').textContent = 'Edit Persona';
+    document.getElementById('edit-index').value = index;
+    document.getElementById('field-display-name').value = p.display_name || '';
+    document.getElementById('field-slug').value = p.slug || '';
+    document.getElementById('field-title').value = p.title || '';
+    document.getElementById('field-color').value = p.avatar_color || '#cc6600';
+    document.getElementById('field-color-hex').value = p.avatar_color || '#cc6600';
+    document.getElementById('field-personality').value = p.personality || '';
+    document.getElementById('field-system-prompt').value = p.system_prompt || '';
+    document.getElementById('modal-overlay').classList.add('active');
+    document.getElementById('field-display-name').focus();
+}
+
+function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('active');
+}
+
+function savePersona() {
+    const idx = parseInt(document.getElementById('edit-index').value);
+    const displayName = document.getElementById('field-display-name').value.trim();
+    const slug = document.getElementById('field-slug').value.trim() ||
+        displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const title = document.getElementById('field-title').value.trim();
+    const color = document.getElementById('field-color-hex').value.trim() || '#cc6600';
+    const personality = document.getElementById('field-personality').value.trim();
+    const systemPrompt = document.getElementById('field-system-prompt').value.trim();
+
+    if (!displayName) {
+        toast('Display name is required', 'error');
+        return;
+    }
+    if (!slug) {
+        toast('Slug is required', 'error');
+        return;
+    }
+
+    // Check slug uniqueness (skip self when editing)
+    const duplicate = personas.find((p, i) => p.slug === slug && i !== idx);
+    if (duplicate) {
+        toast('Slug "' + slug + '" already exists', 'error');
+        return;
+    }
+
+    const persona = {
+        slug: slug,
+        display_name: displayName,
+        title: title,
+        personality: personality,
+        system_prompt: systemPrompt,
+        avatar_color: color,
+    };
+
+    if (idx >= 0 && idx < personas.length) {
+        personas[idx] = persona;
+    } else {
+        personas.push(persona);
+    }
+
+    closeModal();
+    saveAll();
+}
+
+function saveAll() {
+    fetch('/api/swarm/forum/personas', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({personas: personas}),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            toast('Save failed: ' + data.error, 'error');
+        } else {
+            toast('Saved ' + (data.count || personas.length) + ' personas', 'success');
+            renderPersonas();
+        }
+    })
+    .catch(err => toast('Save failed: ' + err.message, 'error'));
+}
+
+function openDeleteModal(slug, name) {
+    deleteSlug = slug;
+    document.getElementById('delete-name').textContent = name;
+    document.getElementById('delete-overlay').classList.add('active');
+}
+
+function closeDeleteModal() {
+    deleteSlug = null;
+    document.getElementById('delete-overlay').classList.remove('active');
+}
+
+function confirmDelete() {
+    if (!deleteSlug) return;
+    personas = personas.filter(p => p.slug !== deleteSlug);
+    closeDeleteModal();
+    saveAll();
+}
+
+// Sync color picker <-> hex input
+document.getElementById('field-color').addEventListener('input', function() {
+    document.getElementById('field-color-hex').value = this.value;
+});
+document.getElementById('field-color-hex').addEventListener('input', function() {
+    const v = this.value;
+    if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+        document.getElementById('field-color').value = v;
+    }
+});
+
+// Auto-generate slug from display name (only when adding new)
+document.getElementById('field-display-name').addEventListener('input', function() {
+    if (document.getElementById('edit-index').value === '-1') {
+        const slug = this.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        document.getElementById('field-slug').value = slug;
+    }
+});
+
+// Close modals on overlay click
+document.getElementById('modal-overlay').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+});
+document.getElementById('delete-overlay').addEventListener('click', function(e) {
+    if (e.target === this) closeDeleteModal();
+});
+
+// Close modals on Escape
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeModal();
+        closeDeleteModal();
+    }
+});
+
+loadPersonas();
+</script>
+</body>
+</html>

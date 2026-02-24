@@ -256,6 +256,28 @@ FORMAT;
     }
 
     /**
+     * Inject persona system prompt into an agent's tmux session.
+     * Called once after agent starts and reaches idle state.
+     */
+    public function injectPersona(AgentModel $agent): bool
+    {
+        if (!$agent->persona) {
+            return false;
+        }
+
+        $persona = json_decode($agent->persona, true);
+        if (!$persona || empty($persona['system_prompt'])) {
+            return false;
+        }
+
+        $prompt = "## Your Persona\n\n{$persona['system_prompt']}\n\n";
+        $prompt .= "You are **{$persona['display_name']}** ({$persona['title']}). ";
+        $prompt .= "Stay in character during all discussions. Use the forum_post, forum_list, and forum_vote MCP tools to participate in SwarmTalk discussions.\n";
+
+        return $this->sendText($agent, $prompt);
+    }
+
+    /**
      * Extract task result from pane output.
      * Looks for TASK_RESULT: marker or returns the last N lines.
      */

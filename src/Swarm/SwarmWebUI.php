@@ -55,7 +55,7 @@ body {
 .dot-green { background: #00ff66; box-shadow: 0 0 4px #00ff66; }
 .dot-orange { background: #ff9900; box-shadow: 0 0 4px #ff9900; }
 
-.main { max-width: 1200px; margin: 0 auto; padding: 20px 24px; }
+.main { max-width: 1200px; margin: 0 auto; padding: 20px 24px; flex: 1; overflow-x: hidden; }
 
 .section { margin-bottom: 24px; }
 .section h2 {
@@ -469,6 +469,117 @@ body {
     flex: 1; padding: 8px; background: #000; overflow: hidden;
 }
 #terminal { width: 100%; height: 100%; }
+
+/* SwarmTalk Sidebar */
+.app-layout { display: flex; min-height: calc(100vh - 90px); }
+.swarmtalk-sidebar {
+    width: 280px; min-width: 280px; background: #0d0d14; border-right: 1px solid #222;
+    display: flex; flex-direction: column; transition: width 0.2s, min-width 0.2s;
+    overflow: hidden;
+}
+.swarmtalk-sidebar.collapsed { width: 40px; min-width: 40px; }
+.swarmtalk-sidebar.collapsed .st-body { display: none; }
+.swarmtalk-sidebar.collapsed .st-title { display: none; }
+.swarmtalk-sidebar.collapsed .st-toggle { transform: rotate(180deg); }
+.st-header {
+    padding: 10px 12px; display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; border-bottom: 1px solid #222; background: #0a0a12;
+}
+.st-title { font-size: 0.75rem; font-weight: bold; color: #cc6600; letter-spacing: 1px; }
+.st-toggle { color: #666; font-size: 0.8rem; transition: transform 0.2s; }
+.st-body { flex: 1; overflow-y: auto; }
+.st-section { border-bottom: 1px solid #1a1a22; }
+.st-section-title {
+    font-size: 0.65rem; color: #555; padding: 8px 12px 4px; letter-spacing: 1px;
+}
+.st-agent {
+    display: flex; align-items: center; gap: 8px; padding: 4px 12px; cursor: pointer;
+    font-size: 0.8rem;
+}
+.st-agent:hover { background: #1a1a22; }
+.st-agent-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.st-agent-name { color: #ccc; }
+.st-agent-title { color: #666; font-size: 0.7rem; }
+.st-channel {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 5px 12px; cursor: pointer; font-size: 0.8rem; color: #999;
+}
+.st-channel:hover { background: #1a1a22; color: #ccc; }
+.st-channel.active { background: #1a1a2a; color: #cc6600; }
+.st-channel-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-badge {
+    background: #cc6600; color: #000; font-size: 0.65rem; padding: 1px 5px;
+    border-radius: 8px; font-weight: bold; min-width: 16px; text-align: center;
+}
+.st-chat {
+    display: flex; flex-direction: column; border-top: 1px solid #333;
+    flex: 1; min-height: 200px;
+}
+.st-chat-header {
+    padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;
+    background: #0a0a18; border-bottom: 1px solid #222; font-size: 0.8rem; color: #cc6600;
+}
+.st-close-btn { background: none; border: none; color: #666; cursor: pointer; font-size: 1.1rem; }
+.st-close-btn:hover { color: #ccc; }
+.st-messages {
+    flex: 1; overflow-y: auto; padding: 8px; max-height: 300px; min-height: 100px;
+}
+.st-msg {
+    margin-bottom: 8px; font-size: 0.8rem; display: flex; gap: 8px;
+}
+.st-avatar {
+    width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-size: 0.7rem; font-weight: bold; color: #fff; flex-shrink: 0;
+}
+.st-msg-body { flex: 1; }
+.st-msg-header { display: flex; gap: 6px; align-items: baseline; margin-bottom: 2px; }
+.st-msg-name { font-weight: bold; color: #ccc; font-size: 0.75rem; }
+.st-msg-time { color: #555; font-size: 0.65rem; }
+.st-msg-content { color: #aaa; line-height: 1.4; word-break: break-word; }
+.st-msg-vote {
+    display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.7rem;
+    font-weight: bold; margin-top: 2px;
+}
+.st-msg-vote.approve { background: #0a3a0a; color: #33cc33; }
+.st-msg-vote.reject { background: #3a0a0a; color: #cc3333; }
+.st-msg-vote.abstain { background: #1a1a2a; color: #8888cc; }
+.st-vote-bar {
+    display: flex; height: 6px; margin: 0 8px;
+}
+.st-vote-approve { background: #33cc33; transition: flex 0.3s; }
+.st-vote-reject { background: #cc3333; transition: flex 0.3s; }
+.st-vote-abstain { background: #555; transition: flex 0.3s; }
+.st-vote-labels {
+    display: flex; justify-content: space-around; padding: 2px 8px; font-size: 0.65rem; color: #888;
+}
+.st-input-area {
+    display: flex; gap: 4px; padding: 6px 8px; border-top: 1px solid #222;
+}
+.st-input-area input {
+    flex: 1; background: #111; border: 1px solid #333; color: #ccc; padding: 6px 8px;
+    border-radius: 3px; font-family: inherit; font-size: 0.8rem;
+}
+.st-input-area input:focus { outline: none; border-color: #cc6600; }
+.st-input-area button {
+    background: #cc6600; color: #fff; border: none; padding: 6px 12px;
+    border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 0.8rem;
+}
+.st-input-area button:hover { background: #dd7700; }
+.st-override {
+    display: flex; gap: 6px; padding: 6px 8px; justify-content: center;
+}
+.st-approve-btn {
+    background: #0a3a0a; border: 1px solid #33cc33; color: #33cc33; padding: 4px 12px;
+    border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 0.75rem;
+}
+.st-approve-btn:hover { background: #0a4a0a; }
+.st-reject-btn {
+    background: #3a0a0a; border: 1px solid #cc3333; color: #cc3333; padding: 4px 12px;
+    border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 0.75rem;
+}
+.st-reject-btn:hover { background: #4a0a0a; }
 </style>
 </head>
 <body>
@@ -480,6 +591,7 @@ body {
         <span>Agents: <span id="agent-count">0</span></span>
         <span>WS: <span id="ws-status">connecting</span></span>
         <span class="wallet-badge" id="wallet-badge">-- VOID</span>
+        <a href="/settings" style="color:#888;text-decoration:none;font-size:0.8rem;margin-left:12px;" title="Settings">&#9881; Settings</a>
     </div>
 </div>
 <div class="emperor-banner self" id="emperor-banner">
@@ -493,6 +605,49 @@ body {
     </span>
 </div>
 
+<div class="app-layout">
+<!-- SwarmTalk Sidebar -->
+<div class="swarmtalk-sidebar" id="swarmtalk-sidebar">
+    <div class="st-header" onclick="toggleSwarmTalk()">
+        <span class="st-title">SWARMTALK</span>
+        <span class="st-toggle" id="st-toggle">&#9664;</span>
+    </div>
+    <div class="st-body" id="st-body">
+        <div class="st-section">
+            <div class="st-section-title">AGENTS</div>
+            <div id="st-agents"></div>
+        </div>
+        <div class="st-section">
+            <div class="st-section-title">CHANNELS</div>
+            <div id="st-channels"></div>
+        </div>
+        <div class="st-section">
+            <div class="st-section-title">DIRECT MESSAGES</div>
+            <div id="st-dms"></div>
+        </div>
+        <div class="st-chat" id="st-chat" style="display:none;">
+            <div class="st-chat-header">
+                <span id="st-chat-title">Select a channel</span>
+                <button class="st-close-btn" onclick="closeChat()">&times;</button>
+            </div>
+            <div class="st-messages" id="st-messages"></div>
+            <div class="st-vote-bar" id="st-vote-bar" style="display:none;">
+                <div class="st-vote-approve" id="st-vote-approve"></div>
+                <div class="st-vote-reject" id="st-vote-reject"></div>
+                <div class="st-vote-abstain" id="st-vote-abstain"></div>
+            </div>
+            <div class="st-vote-labels" id="st-vote-labels" style="display:none;"></div>
+            <div class="st-input-area">
+                <input type="text" id="st-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendForumMsg()">
+                <button onclick="sendForumMsg()">Send</button>
+            </div>
+            <div class="st-override" id="st-override" style="display:none;">
+                <button class="st-approve-btn" onclick="forumOverride('approve')">Force Approve</button>
+                <button class="st-reject-btn" onclick="forumOverride('reject')">Force Reject</button>
+            </div>
+        </div>
+    </div>
+</div>
 <div class="main">
     <div class="hero-card">
         <h2>Quick Task <select id="hero-history" onchange="loadHeroHistory(this)" style="background:#0d0d1a;border:1px solid #0f3460;color:#888;padding:4px 8px;border-radius:4px;font-family:inherit;font-size:0.75rem;margin-left:8px;max-width:300px;"><option value="">-- recent --</option></select></h2>
@@ -830,6 +985,7 @@ body {
         </div>
     </div>
 </div>
+</div><!-- end app-layout -->
 
 <script>
 HTML
@@ -1271,6 +1427,9 @@ function renderAll() {
 
     // Message board
     renderBoard();
+
+    // SwarmTalk sidebar agents
+    if (typeof renderForumAgents === 'function') renderForumAgents();
 }
 
 function renderJobLog() {
@@ -3033,9 +3192,278 @@ function connectWs() {
                 delete state.boardMessages[msg.message_id];
                 renderBoard();
                 break;
+            case 'forum_message':
+                handleForumMessage(msg);
+                break;
+            case 'forum_vote_update':
+                handleForumVoteUpdate(msg);
+                break;
+            case 'forum_channel_created':
+                handleForumChannelCreated(msg);
+                break;
+            case 'forum_channel_resolved':
+                handleForumChannelResolved(msg);
+                break;
         }
     };
 }
+
+// --- SwarmTalk Forum ---
+const forumState = {
+    channels: [],
+    currentChannel: null,
+    messages: {},       // channelId => [msg, ...]
+    unread: {},         // channelId => count
+    lastSeenTs: {},     // channelId => lamport ts
+    collapsed: false,
+};
+
+function toggleSwarmTalk() {
+    const sb = document.getElementById('swarmtalk-sidebar');
+    forumState.collapsed = !forumState.collapsed;
+    sb.classList.toggle('collapsed', forumState.collapsed);
+}
+
+function renderForumAgents() {
+    const el = document.getElementById('st-agents');
+    if (!el) return;
+    const agents = Object.values(state.agents || {});
+    const personaAgents = agents.filter(a => a.persona);
+    if (personaAgents.length === 0) {
+        el.innerHTML = '<div style="padding:4px 12px;color:#444;font-size:0.7rem;">No persona agents</div>';
+        return;
+    }
+    el.innerHTML = personaAgents.map(a => {
+        const p = typeof a.persona === 'string' ? JSON.parse(a.persona || '{}') : (a.persona || {});
+        const color = p.avatar_color || '#666';
+        const dotClass = a.status === 'idle' ? 'dot-green' : (a.status === 'busy' ? 'dot-orange' : '');
+        const statusColor = a.status === 'idle' ? '#00ff66' : (a.status === 'busy' ? '#ff9900' : (a.status === 'offline' ? '#555' : '#888'));
+        return '<div class="st-agent" onclick="openDM(\'' + a.name + '\')">' +
+            '<span class="st-agent-dot" style="background:' + statusColor + ';box-shadow:0 0 3px ' + statusColor + '"></span>' +
+            '<span class="st-agent-name" style="color:' + color + '">' + (p.display_name || a.name) + '</span>' +
+            '<span class="st-agent-title">' + (p.title || '') + '</span></div>';
+    }).join('');
+}
+
+function renderForumChannels() {
+    const el = document.getElementById('st-channels');
+    if (!el) return;
+    if (forumState.channels.length === 0) {
+        el.innerHTML = '<div style="padding:4px 12px;color:#444;font-size:0.7rem;">No active channels</div>';
+        return;
+    }
+    el.innerHTML = forumState.channels.map(ch => {
+        const active = forumState.currentChannel === ch.channel_id ? ' active' : '';
+        const unread = forumState.unread[ch.channel_id] || 0;
+        const prefix = ch.type === 'review' ? 'QA: ' : '# ';
+        const label = prefix + (ch.task_title || ch.channel_id.substring(0,8));
+        return '<div class="st-channel' + active + '" onclick="openChannel(\'' + ch.channel_id + '\')">' +
+            '<span class="st-channel-name">' + escHtml(label) + '</span>' +
+            (unread > 0 ? '<span class="st-badge">' + unread + '</span>' : '') + '</div>';
+    }).join('');
+}
+
+function escHtml(s) {
+    return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function openChannel(channelId) {
+    forumState.currentChannel = channelId;
+    forumState.unread[channelId] = 0;
+    document.getElementById('st-chat').style.display = 'flex';
+    const ch = forumState.channels.find(c => c.channel_id === channelId);
+    document.getElementById('st-chat-title').textContent = ch ? (ch.task_title || channelId.substring(0,12)) : channelId.substring(0,12);
+    renderForumChannels();
+    loadChannelMessages(channelId);
+    // Show override buttons for discussing tasks
+    const taskId = channelId.startsWith('review:') ? channelId.substring(7) : channelId;
+    const task = state.tasks[taskId];
+    document.getElementById('st-override').style.display = (task && (task.status === 'discussing' || task.status === 'pending_review')) ? 'flex' : 'none';
+}
+
+function openDM(agentName) {
+    // For now, just open a simple DM channel
+    const channelId = 'dm:Human Operator:' + agentName;
+    forumState.currentChannel = channelId;
+    document.getElementById('st-chat').style.display = 'flex';
+    document.getElementById('st-chat-title').textContent = 'DM: ' + agentName;
+    document.getElementById('st-override').style.display = 'none';
+    loadChannelMessages(channelId);
+}
+
+function closeChat() {
+    forumState.currentChannel = null;
+    document.getElementById('st-chat').style.display = 'none';
+    renderForumChannels();
+}
+
+function loadChannelMessages(channelId) {
+    fetch('/api/swarm/forum/' + encodeURIComponent(channelId) + '/messages')
+        .then(r => r.json())
+        .then(data => {
+            forumState.messages[channelId] = data.messages || [];
+            renderChatMessages();
+            loadVoteTally(channelId);
+        })
+        .catch(() => {});
+}
+
+function renderChatMessages() {
+    const el = document.getElementById('st-messages');
+    if (!el || !forumState.currentChannel) return;
+    const msgs = forumState.messages[forumState.currentChannel] || [];
+    if (msgs.length === 0) {
+        el.innerHTML = '<div style="color:#444;font-size:0.75rem;padding:8px;">No messages yet</div>';
+        return;
+    }
+    el.innerHTML = msgs.map(m => {
+        const p = m.persona || {};
+        const color = p.avatar_color || '#666';
+        const initial = (p.display_name || m.author_name || '?')[0].toUpperCase();
+        const name = p.display_name || m.author_name || 'Unknown';
+        const time = (m.created_at || '').substring(11, 16);
+        let voteTag = '';
+        if (m.category === 'vote' && m.vote) {
+            voteTag = ' <span class="st-msg-vote ' + m.vote + '">' + m.vote.toUpperCase() + '</span>';
+        }
+        return '<div class="st-msg">' +
+            '<div class="st-avatar" style="background:' + color + '">' + initial + '</div>' +
+            '<div class="st-msg-body">' +
+            '<div class="st-msg-header"><span class="st-msg-name" style="color:' + color + '">' + escHtml(name) + '</span><span class="st-msg-time">' + time + '</span></div>' +
+            '<div class="st-msg-content">' + escHtml(m.content) + voteTag + '</div>' +
+            '</div></div>';
+    }).join('');
+    el.scrollTop = el.scrollHeight;
+}
+
+function loadVoteTally(channelId) {
+    fetch('/api/swarm/forum/' + encodeURIComponent(channelId) + '/votes')
+        .then(r => r.json())
+        .then(data => {
+            const t = data.tally || {};
+            updateVoteBar(t);
+        })
+        .catch(() => {});
+}
+
+function updateVoteBar(tally) {
+    const total = (tally.approve || 0) + (tally.reject || 0) + (tally.abstain || 0);
+    const bar = document.getElementById('st-vote-bar');
+    const labels = document.getElementById('st-vote-labels');
+    if (!bar) return;
+    if (total === 0) {
+        bar.style.display = 'none';
+        labels.style.display = 'none';
+        return;
+    }
+    bar.style.display = 'flex';
+    labels.style.display = 'flex';
+    document.getElementById('st-vote-approve').style.flex = tally.approve || 0;
+    document.getElementById('st-vote-reject').style.flex = tally.reject || 0;
+    document.getElementById('st-vote-abstain').style.flex = tally.abstain || 0;
+    labels.innerHTML = '<span style="color:#33cc33">Approve: ' + (tally.approve||0) + '</span>' +
+        '<span style="color:#cc3333">Reject: ' + (tally.reject||0) + '</span>' +
+        '<span style="color:#888">Abstain: ' + (tally.abstain||0) + '</span>';
+}
+
+function sendForumMsg() {
+    const input = document.getElementById('st-input');
+    const content = input.value.trim();
+    if (!content || !forumState.currentChannel) return;
+    input.value = '';
+    const channelId = forumState.currentChannel;
+
+    let url, body;
+    if (channelId.startsWith('dm:')) {
+        const parts = channelId.split(':');
+        const toAgent = parts[2] || '';
+        url = '/api/swarm/forum/dm/' + encodeURIComponent(toAgent);
+        body = {content: content};
+    } else {
+        url = '/api/swarm/forum/' + encodeURIComponent(channelId) + '/post';
+        body = {content: content, author_name: 'Human Operator'};
+    }
+
+    fetch(url, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'posted' || data.status === 'sent') {
+            loadChannelMessages(channelId);
+        } else {
+            addLog('forum_error', 'Post failed: ' + (data.error || 'unknown'));
+        }
+    })
+    .catch(err => addLog('forum_error', 'Post failed: ' + err.message));
+}
+
+function forumOverride(decision) {
+    if (!forumState.currentChannel) return;
+    fetch('/api/swarm/forum/' + encodeURIComponent(forumState.currentChannel) + '/override', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({decision: decision})
+    }).then(() => {
+        addLog('forum_override', 'Forum override: ' + decision);
+        document.getElementById('st-override').style.display = 'none';
+    });
+}
+
+function loadForumChannels() {
+    fetch('/api/swarm/forum/channels')
+        .then(r => r.json())
+        .then(data => {
+            forumState.channels = data.channels || [];
+            renderForumChannels();
+        })
+        .catch(() => {});
+}
+
+// WS event handlers for forum
+function handleForumMessage(msg) {
+    const channelId = msg.channel_id || msg.message?.channel_id;
+    if (!channelId) return;
+    if (!forumState.messages[channelId]) forumState.messages[channelId] = [];
+    forumState.messages[channelId].push(msg.message);
+    if (forumState.currentChannel === channelId) {
+        renderChatMessages();
+    } else {
+        forumState.unread[channelId] = (forumState.unread[channelId] || 0) + 1;
+        renderForumChannels();
+    }
+}
+
+function handleForumVoteUpdate(msg) {
+    if (forumState.currentChannel === msg.channel_id) {
+        updateVoteBar(msg.tally);
+    }
+}
+
+function handleForumChannelCreated(msg) {
+    forumState.channels.push({
+        channel_id: msg.channel_id,
+        task_title: msg.task_title,
+        type: msg.type || 'discussion',
+        message_count: 0
+    });
+    renderForumChannels();
+    addLog('forum_channel', 'New channel: ' + (msg.task_title || msg.channel_id.substring(0,8)));
+}
+
+function handleForumChannelResolved(msg) {
+    forumState.channels = forumState.channels.filter(c => c.channel_id !== msg.channel_id);
+    if (forumState.currentChannel === msg.channel_id) {
+        closeChat();
+    }
+    renderForumChannels();
+    addLog('forum_resolved', 'Channel resolved: ' + msg.outcome);
+}
+
+// Load forum channels on startup
+setTimeout(() => { loadForumChannels(); renderForumAgents(); }, 1000);
+// Refresh channels periodically
+setInterval(loadForumChannels, 30000);
 
 connectWs();
 loadAvailablePlugins();

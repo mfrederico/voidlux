@@ -347,6 +347,11 @@ class Seneschal
             return;
         }
 
+        // Serve static files from public/ before proxying to emperor
+        if ($method === 'GET' && $this->tryServeStaticFile($path, $response)) {
+            return;
+        }
+
         $isApi = str_starts_with($path, '/api/') || $path === '/mcp';
 
         if ($this->emperorHttpPort === 0) {
@@ -537,6 +542,64 @@ class Seneschal
     }
 
     // ── Seneschal-Owned API Endpoints ──────────────────────────────────
+
+    /**
+     * Serve static files from public/ directory.
+     * Supports extensionless URLs (e.g. /settings -> public/settings.html).
+     */
+    private function tryServeStaticFile(string $path, Response $response): bool
+    {
+        // Skip API, MCP, and WebSocket paths
+        if (str_starts_with($path, '/api/') || $path === '/mcp' || $path === '/ws') {
+            return false;
+        }
+
+        $publicDir = dirname(__DIR__, 2) . '/public';
+        if (!is_dir($publicDir)) {
+            return false;
+        }
+
+        $cleanPath = parse_url($path, PHP_URL_PATH) ?? $path;
+        $cleanPath = urldecode($cleanPath);
+
+        if (str_contains($cleanPath, '..') || str_contains($cleanPath, "\0")) {
+            return false;
+        }
+
+        $relative = ltrim($cleanPath, '/');
+
+        // Try exact match, then .html suffix, then index.html for directories
+        $candidates = [];
+        if ($relative !== '') {
+            $candidates[] = $publicDir . '/' . $relative;
+            $candidates[] = $publicDir . '/' . $relative . '.html';
+        }
+        if ($relative === '' || str_ends_with($relative, '/')) {
+            $candidates[] = $publicDir . '/' . $relative . 'index.html';
+        }
+
+        foreach ($candidates as $filePath) {
+            $realPath = realpath($filePath);
+            if ($realPath && str_starts_with($realPath, realpath($publicDir)) && is_file($realPath)) {
+                $ext = pathinfo($realPath, PATHINFO_EXTENSION);
+                $mimeTypes = [
+                    'html' => 'text/html; charset=utf-8',
+                    'css' => 'text/css',
+                    'js' => 'application/javascript',
+                    'json' => 'application/json',
+                    'png' => 'image/png',
+                    'jpg' => 'image/jpeg',
+                    'svg' => 'image/svg+xml',
+                    'ico' => 'image/x-icon',
+                ];
+                $response->header('Content-Type', $mimeTypes[$ext] ?? 'application/octet-stream');
+                $response->end(file_get_contents($realPath));
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /**
      * Handle endpoints owned by the Seneschal (not proxied to emperor).

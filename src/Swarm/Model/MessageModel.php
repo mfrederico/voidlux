@@ -22,6 +22,8 @@ class MessageModel
         public readonly int $lamportTs,
         public readonly string $createdAt,
         public readonly string $updatedAt,
+        public readonly string $vote = '',
+        public readonly string $channelId = '',
     ) {}
 
     public static function create(
@@ -35,6 +37,8 @@ class MessageModel
         array $tags = [],
         ?string $parentId = null,
         ?string $taskId = null,
+        string $vote = '',
+        string $channelId = '',
     ): self {
         $now = gmdate('Y-m-d\TH:i:s\Z');
         return new self(
@@ -53,6 +57,8 @@ class MessageModel
             lamportTs: $lamportTs,
             createdAt: $now,
             updatedAt: $now,
+            vote: $vote,
+            channelId: $channelId,
         );
     }
 
@@ -76,6 +82,8 @@ class MessageModel
             lamportTs: (int) ($data['lamport_ts'] ?? 0),
             createdAt: $data['created_at'] ?? gmdate('Y-m-d\TH:i:s\Z'),
             updatedAt: $data['updated_at'] ?? gmdate('Y-m-d\TH:i:s\Z'),
+            vote: $data['vote'] ?? '',
+            channelId: $data['channel_id'] ?? '',
         );
     }
 
@@ -97,6 +105,8 @@ class MessageModel
             'lamport_ts' => $this->lamportTs,
             'created_at' => $this->createdAt,
             'updated_at' => $this->updatedAt,
+            'vote' => $this->vote,
+            'channel_id' => $this->channelId,
         ];
     }
 
@@ -118,6 +128,8 @@ class MessageModel
             lamportTs: $lamportTs,
             createdAt: $this->createdAt,
             updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            vote: $this->vote,
+            channelId: $this->channelId,
         );
     }
 
@@ -139,6 +151,8 @@ class MessageModel
             lamportTs: $lamportTs,
             createdAt: $this->createdAt,
             updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            vote: $this->vote,
+            channelId: $this->channelId,
         );
     }
 
@@ -160,6 +174,54 @@ class MessageModel
             lamportTs: $lamportTs,
             createdAt: $this->createdAt,
             updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            vote: $this->vote,
+            channelId: $this->channelId,
+        );
+    }
+
+    public function withVote(string $vote, int $lamportTs): self
+    {
+        return new self(
+            id: $this->id,
+            authorId: $this->authorId,
+            authorName: $this->authorName,
+            category: $this->category,
+            title: $this->title,
+            content: $this->content,
+            priority: $this->priority,
+            tags: $this->tags,
+            status: $this->status,
+            claimedBy: $this->claimedBy,
+            parentId: $this->parentId,
+            taskId: $this->taskId,
+            lamportTs: $lamportTs,
+            createdAt: $this->createdAt,
+            updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            vote: $vote,
+            channelId: $this->channelId,
+        );
+    }
+
+    public function withChannelId(string $channelId, int $lamportTs): self
+    {
+        return new self(
+            id: $this->id,
+            authorId: $this->authorId,
+            authorName: $this->authorName,
+            category: $this->category,
+            title: $this->title,
+            content: $this->content,
+            priority: $this->priority,
+            tags: $this->tags,
+            status: $this->status,
+            claimedBy: $this->claimedBy,
+            parentId: $this->parentId,
+            taskId: $this->taskId,
+            lamportTs: $lamportTs,
+            createdAt: $this->createdAt,
+            updatedAt: gmdate('Y-m-d\TH:i:s\Z'),
+            vote: $this->vote,
+            channelId: $channelId,
         );
     }
 

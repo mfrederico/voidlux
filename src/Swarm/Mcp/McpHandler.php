@@ -403,6 +403,71 @@ class McpHandler
                         'required' => ['message_id', 'agent_name'],
                     ],
                 ],
+                // --- SwarmTalk Forum Tools ---
+                (object) [
+                    'name' => 'forum_post',
+                    'description' => 'Post a message to a SwarmTalk discussion channel. Use this to share your thoughts, opinions, and suggestions during task discussions or QA reviews.',
+                    'inputSchema' => (object) [
+                        'type' => 'object',
+                        'properties' => (object) [
+                            'channel_id' => (object) ['type' => 'string', 'description' => 'The channel ID to post to (usually a task ID or review:{taskId})'],
+                            'content' => (object) ['type' => 'string', 'description' => 'Your message content'],
+                            'agent_name' => (object) ['type' => 'string', 'description' => 'Your agent name'],
+                            'reply_to' => (object) ['type' => 'string', 'description' => 'Optional message ID to reply to'],
+                        ],
+                        'required' => ['channel_id', 'content', 'agent_name'],
+                    ],
+                ],
+                (object) [
+                    'name' => 'forum_list',
+                    'description' => 'Read messages from a SwarmTalk discussion channel. Use this to catch up on the conversation before posting.',
+                    'inputSchema' => (object) [
+                        'type' => 'object',
+                        'properties' => (object) [
+                            'channel_id' => (object) ['type' => 'string', 'description' => 'The channel ID to read messages from'],
+                            'since_ts' => (object) ['type' => 'integer', 'description' => 'Optional: only return messages after this lamport timestamp'],
+                        ],
+                        'required' => ['channel_id'],
+                    ],
+                ],
+                (object) [
+                    'name' => 'forum_vote',
+                    'description' => 'Cast your vote on the current discussion. Vote approve to advance, reject to block, or abstain.',
+                    'inputSchema' => (object) [
+                        'type' => 'object',
+                        'properties' => (object) [
+                            'channel_id' => (object) ['type' => 'string', 'description' => 'The channel ID to vote on'],
+                            'vote' => (object) ['type' => 'string', 'description' => 'Your vote: approve, reject, or abstain'],
+                            'reason' => (object) ['type' => 'string', 'description' => 'Explanation for your vote'],
+                            'agent_name' => (object) ['type' => 'string', 'description' => 'Your agent name'],
+                        ],
+                        'required' => ['channel_id', 'vote', 'reason', 'agent_name'],
+                    ],
+                ],
+                (object) [
+                    'name' => 'forum_vote_status',
+                    'description' => 'Check the current vote tally for a discussion channel.',
+                    'inputSchema' => (object) [
+                        'type' => 'object',
+                        'properties' => (object) [
+                            'channel_id' => (object) ['type' => 'string', 'description' => 'The channel ID to check votes for'],
+                        ],
+                        'required' => ['channel_id'],
+                    ],
+                ],
+                (object) [
+                    'name' => 'forum_dm',
+                    'description' => 'Send a direct message to another agent. Use this for private side-conversations.',
+                    'inputSchema' => (object) [
+                        'type' => 'object',
+                        'properties' => (object) [
+                            'to_agent' => (object) ['type' => 'string', 'description' => 'Name of the agent to message'],
+                            'content' => (object) ['type' => 'string', 'description' => 'Your message content'],
+                            'agent_name' => (object) ['type' => 'string', 'description' => 'Your agent name (sender)'],
+                        ],
+                        'required' => ['to_agent', 'content', 'agent_name'],
+                    ],
+                ],
         ];
     }
 
@@ -461,6 +526,11 @@ class McpHandler
             'post_message' => $this->callPostMessage($args),
             'list_messages' => $this->callListMessages($args),
             'claim_bounty' => $this->callClaimBounty($args),
+            'forum_post' => $this->callForumPost($args),
+            'forum_list' => $this->callForumList($args),
+            'forum_vote' => $this->callForumVote($args),
+            'forum_vote_status' => $this->callForumVoteStatus($args),
+            'forum_dm' => $this->callForumDm($args),
             default => null,
         };
     }
@@ -1084,6 +1154,212 @@ class McpHandler
             'message_id' => $messageId,
             'claimed_by' => $claimerId,
         ]);
+    }
+
+    // --- SwarmTalk Forum Tool Handlers ---
+
+    private function callForumPost(array $args): array
+    {
+        $channelId = $args['channel_id'] ?? '';
+        $content = $args['content'] ?? '';
+        $agentName = $args['agent_name'] ?? '';
+        $replyTo = $args['reply_to'] ?? null;
+
+        if (!$channelId || !$content || !$agentName) {
+            return $this->toolError('channel_id, content, and agent_name are required');
+        }
+
+        if (!$this->taskGossip || !$this->clock) {
+            return $this->toolError('Forum not initialized');
+        }
+
+        $agent = $this->db->getAgentByName($agentName);
+        $authorId = $agent ? $agent->id : $agentName;
+
+        $msg = MessageModel::create(
+            authorId: $authorId,
+            authorName: $agentName,
+            category: 'forum',
+            title: '',
+            content: $content,
+            lamportTs: $this->clock->tick(),
+            parentId: $replyTo,
+            channelId: $channelId,
+        );
+
+        $this->taskGossip->createBoardMessage($msg);
+
+        if ($this->onTaskEvent) {
+            ($this->onTaskEvent)('forum_message', $msg->toArray());
+        }
+
+        return $this->toolResult([
+            'status' => 'posted',
+            'message_id' => $msg->id,
+            'channel_id' => $channelId,
+        ]);
+    }
+
+    private function callForumList(array $args): array
+    {
+        $channelId = $args['channel_id'] ?? '';
+        if (!$channelId) {
+            return $this->toolError('channel_id is required');
+        }
+
+        $sinceTs = isset($args['since_ts']) ? (int) $args['since_ts'] : null;
+        $messages = $this->db->getMessagesByChannel($channelId, $sinceTs);
+
+        $result = array_map(function (MessageModel $m) {
+            $arr = $m->toArray();
+            // Include persona display info if available
+            $agent = $this->db->getAgentByName($m->authorName);
+            if ($agent && $agent->persona) {
+                $persona = json_decode($agent->persona, true);
+                if ($persona) {
+                    $arr['persona_display_name'] = $persona['display_name'] ?? $m->authorName;
+                    $arr['persona_title'] = $persona['title'] ?? '';
+                }
+            }
+            return $arr;
+        }, $messages);
+
+        return $this->toolResult([
+            'channel_id' => $channelId,
+            'count' => count($result),
+            'messages' => $result,
+        ]);
+    }
+
+    private function callForumVote(array $args): array
+    {
+        $channelId = $args['channel_id'] ?? '';
+        $vote = $args['vote'] ?? '';
+        $reason = $args['reason'] ?? '';
+        $agentName = $args['agent_name'] ?? '';
+
+        if (!$channelId || !$vote || !$reason || !$agentName) {
+            return $this->toolError('channel_id, vote, reason, and agent_name are required');
+        }
+
+        if (!in_array($vote, ['approve', 'reject', 'abstain'], true)) {
+            return $this->toolError('vote must be: approve, reject, or abstain');
+        }
+
+        if (!$this->taskGossip || !$this->clock) {
+            return $this->toolError('Forum not initialized');
+        }
+
+        $agent = $this->db->getAgentByName($agentName);
+        $authorId = $agent ? $agent->id : $agentName;
+
+        $msg = MessageModel::create(
+            authorId: $authorId,
+            authorName: $agentName,
+            category: 'vote',
+            title: $vote,
+            content: $reason,
+            lamportTs: $this->clock->tick(),
+            vote: $vote,
+            channelId: $channelId,
+        );
+
+        $this->taskGossip->createBoardMessage($msg);
+
+        if ($this->onTaskEvent) {
+            ($this->onTaskEvent)('forum_vote', $msg->toArray());
+        }
+
+        // Return current tally
+        $tally = $this->getVoteTally($channelId);
+
+        return $this->toolResult([
+            'status' => 'vote_cast',
+            'channel_id' => $channelId,
+            'your_vote' => $vote,
+            'tally' => $tally,
+        ]);
+    }
+
+    private function callForumVoteStatus(array $args): array
+    {
+        $channelId = $args['channel_id'] ?? '';
+        if (!$channelId) {
+            return $this->toolError('channel_id is required');
+        }
+
+        $tally = $this->getVoteTally($channelId);
+
+        return $this->toolResult([
+            'channel_id' => $channelId,
+            'tally' => $tally,
+        ]);
+    }
+
+    private function callForumDm(array $args): array
+    {
+        $toAgent = $args['to_agent'] ?? '';
+        $content = $args['content'] ?? '';
+        $agentName = $args['agent_name'] ?? '';
+
+        if (!$toAgent || !$content || !$agentName) {
+            return $this->toolError('to_agent, content, and agent_name are required');
+        }
+
+        if (!$this->taskGossip || !$this->clock) {
+            return $this->toolError('Forum not initialized');
+        }
+
+        $agent = $this->db->getAgentByName($agentName);
+        $authorId = $agent ? $agent->id : $agentName;
+
+        $msg = MessageModel::create(
+            authorId: $authorId,
+            authorName: $agentName,
+            category: 'dm',
+            title: '',
+            content: $content,
+            lamportTs: $this->clock->tick(),
+            tags: [$toAgent],
+            channelId: "dm:{$agentName}:{$toAgent}",
+        );
+
+        $this->taskGossip->createBoardMessage($msg);
+
+        if ($this->onTaskEvent) {
+            ($this->onTaskEvent)('forum_dm', $msg->toArray());
+        }
+
+        return $this->toolResult([
+            'status' => 'sent',
+            'message_id' => $msg->id,
+            'to' => $toAgent,
+        ]);
+    }
+
+    /**
+     * Calculate vote tally for a channel. Uses latest vote per agent (allows vote changes).
+     */
+    private function getVoteTally(string $channelId): array
+    {
+        $votes = $this->db->getVotesByChannel($channelId);
+
+        // Latest vote per agent wins (allows changing votes)
+        $latestVotes = [];
+        foreach ($votes as $v) {
+            $latestVotes[$v->authorName] = $v->vote;
+        }
+
+        $tally = ['approve' => 0, 'reject' => 0, 'abstain' => 0, 'voters' => []];
+        foreach ($latestVotes as $name => $vote) {
+            if (isset($tally[$vote])) {
+                $tally[$vote]++;
+            }
+            $tally['voters'][] = ['agent' => $name, 'vote' => $vote];
+        }
+        $tally['total'] = $tally['approve'] + $tally['reject'] + $tally['abstain'];
+
+        return $tally;
     }
 
     private function toolResult(array $data): array

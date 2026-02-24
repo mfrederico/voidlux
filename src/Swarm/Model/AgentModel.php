@@ -22,6 +22,7 @@ class AgentModel
         public readonly int $lamportTs,
         public readonly string $registeredAt,
         public readonly string $role = '',
+        public readonly string $persona = '',
     ) {}
 
     public static function create(
@@ -35,6 +36,7 @@ class AgentModel
         string $projectPath = '',
         int $maxConcurrentTasks = 1,
         string $role = '',
+        string $persona = '',
     ): self {
         $now = gmdate('Y-m-d\TH:i:s\Z');
         return new self(
@@ -53,6 +55,7 @@ class AgentModel
             lamportTs: $lamportTs,
             registeredAt: $now,
             role: $role,
+            persona: $persona,
         );
     }
 
@@ -76,6 +79,7 @@ class AgentModel
             lamportTs: (int) ($data['lamport_ts'] ?? 0),
             registeredAt: $data['registered_at'] ?? gmdate('Y-m-d\TH:i:s\Z'),
             role: $data['role'] ?? '',
+            persona: $data['persona'] ?? '',
         );
     }
 
@@ -97,6 +101,7 @@ class AgentModel
             'lamport_ts' => $this->lamportTs,
             'registered_at' => $this->registeredAt,
             'role' => $this->role,
+            'persona' => $this->persona,
         ];
     }
 

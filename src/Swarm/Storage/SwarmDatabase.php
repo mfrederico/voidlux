@@ -149,6 +149,9 @@ class SwarmDatabase
         if (!in_array('role', $agentExisting, true)) {
             $this->pdo->exec("ALTER TABLE agents ADD COLUMN role TEXT NOT NULL DEFAULT ''");
         }
+        if (!in_array('persona', $agentExisting, true)) {
+            $this->pdo->exec("ALTER TABLE agents ADD COLUMN persona TEXT NOT NULL DEFAULT ''");
+        }
 
         // Swarm node registry table
         $this->pdo->exec('
@@ -241,6 +244,17 @@ class SwarmDatabase
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_board_lamport ON board_messages(lamport_ts)');
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_board_parent ON board_messages(parent_id)');
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_board_author ON board_messages(author_id)');
+
+        // SwarmTalk forum columns on board_messages
+        $msgColumns = $this->pdo->query("PRAGMA table_info(board_messages)")->fetchAll();
+        $msgExisting = array_column($msgColumns, 'name');
+        if (!in_array('vote', $msgExisting, true)) {
+            $this->pdo->exec("ALTER TABLE board_messages ADD COLUMN vote TEXT NOT NULL DEFAULT ''");
+        }
+        if (!in_array('channel_id', $msgExisting, true)) {
+            $this->pdo->exec("ALTER TABLE board_messages ADD COLUMN channel_id TEXT NOT NULL DEFAULT ''");
+        }
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_board_channel ON board_messages(channel_id)');
 
         // Agent plugins table (many-to-many: agents <-> plugins)
         $this->pdo->exec('
@@ -809,10 +823,10 @@ class SwarmDatabase
         $stmt = $this->pdo->prepare('
             INSERT OR REPLACE INTO agents
                 (id, node_id, name, tool, model, capabilities, tmux_session_id, project_path,
-                 max_concurrent_tasks, status, current_task_id, last_heartbeat, lamport_ts, registered_at, role)
+                 max_concurrent_tasks, status, current_task_id, last_heartbeat, lamport_ts, registered_at, role, persona)
             VALUES
                 (:id, :node_id, :name, :tool, :model, :capabilities, :tmux_session_id, :project_path,
-                 :max_concurrent_tasks, :status, :current_task_id, :last_heartbeat, :lamport_ts, :registered_at, :role)
+                 :max_concurrent_tasks, :status, :current_task_id, :last_heartbeat, :lamport_ts, :registered_at, :role, :persona)
         ');
 
         return $stmt->execute([
@@ -831,6 +845,7 @@ class SwarmDatabase
             ':lamport_ts' => $agent->lamportTs,
             ':registered_at' => $agent->registeredAt,
             ':role' => $agent->role,
+            ':persona' => $agent->persona,
         ]);
     }
 
@@ -1226,10 +1241,12 @@ class SwarmDatabase
         $stmt = $this->pdo->prepare('
             INSERT OR IGNORE INTO board_messages
                 (id, author_id, author_name, category, title, content, priority,
-                 tags, status, claimed_by, parent_id, task_id, lamport_ts, created_at, updated_at)
+                 tags, status, claimed_by, parent_id, task_id, lamport_ts, created_at, updated_at,
+                 vote, channel_id)
             VALUES
                 (:id, :author_id, :author_name, :category, :title, :content, :priority,
-                 :tags, :status, :claimed_by, :parent_id, :task_id, :lamport_ts, :created_at, :updated_at)
+                 :tags, :status, :claimed_by, :parent_id, :task_id, :lamport_ts, :created_at, :updated_at,
+                 :vote, :channel_id)
         ');
 
         return $stmt->execute([
@@ -1248,6 +1265,8 @@ class SwarmDatabase
             ':lamport_ts' => $msg->lamportTs,
             ':created_at' => $msg->createdAt,
             ':updated_at' => $msg->updatedAt,
+            ':vote' => $msg->vote,
+            ':channel_id' => $msg->channelId,
         ]);
     }
 
@@ -1256,7 +1275,8 @@ class SwarmDatabase
         $stmt = $this->pdo->prepare('
             UPDATE board_messages SET
                 status = :status, claimed_by = :claimed_by, task_id = :task_id,
-                lamport_ts = :lamport_ts, updated_at = :updated_at
+                lamport_ts = :lamport_ts, updated_at = :updated_at,
+                vote = :vote, channel_id = :channel_id
             WHERE id = :id
         ');
 
@@ -1267,6 +1287,8 @@ class SwarmDatabase
             ':task_id' => $msg->taskId,
             ':lamport_ts' => $msg->lamportTs,
             ':updated_at' => $msg->updatedAt,
+            ':vote' => $msg->vote,
+            ':channel_id' => $msg->channelId,
         ]);
     }
 
@@ -1357,6 +1379,82 @@ class SwarmDatabase
             return (int) $stmt->fetchColumn();
         }
         return (int) $this->pdo->query('SELECT COUNT(*) FROM board_messages')->fetchColumn();
+    }
+
+    /**
+     * Get messages in a forum channel, optionally since a lamport timestamp.
+     * @return MessageModel[]
+     */
+    public function getMessagesByChannel(string $channelId, ?int $sinceTs = null): array
+    {
+        if ($sinceTs !== null) {
+            $stmt = $this->pdo->prepare(
+                'SELECT * FROM board_messages WHERE channel_id = :channel_id AND lamport_ts > :since_ts ORDER BY lamport_ts ASC'
+            );
+            $stmt->execute([':channel_id' => $channelId, ':since_ts' => $sinceTs]);
+        } else {
+            $stmt = $this->pdo->prepare(
+                'SELECT * FROM board_messages WHERE channel_id = :channel_id ORDER BY lamport_ts ASC'
+            );
+            $stmt->execute([':channel_id' => $channelId]);
+        }
+        return array_map(fn(array $row) => MessageModel::fromArray($row), $stmt->fetchAll());
+    }
+
+    /**
+     * Get vote messages in a channel.
+     * @return MessageModel[]
+     */
+    public function getVotesByChannel(string $channelId): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT * FROM board_messages WHERE channel_id = :channel_id AND category = 'vote' ORDER BY lamport_ts ASC"
+        );
+        $stmt->execute([':channel_id' => $channelId]);
+        return array_map(fn(array $row) => MessageModel::fromArray($row), $stmt->fetchAll());
+    }
+
+    /**
+     * Get direct messages for an agent (where agent name is in tags).
+     * @return MessageModel[]
+     */
+    public function getDMs(string $agentName, ?int $sinceTs = null): array
+    {
+        if ($sinceTs !== null) {
+            $stmt = $this->pdo->prepare(
+                "SELECT * FROM board_messages WHERE category = 'dm' AND (tags LIKE :to_pattern OR author_name = :author) AND lamport_ts > :since_ts ORDER BY lamport_ts ASC"
+            );
+            $stmt->execute([
+                ':to_pattern' => '%"' . $agentName . '"%',
+                ':author' => $agentName,
+                ':since_ts' => $sinceTs,
+            ]);
+        } else {
+            $stmt = $this->pdo->prepare(
+                "SELECT * FROM board_messages WHERE category = 'dm' AND (tags LIKE :to_pattern OR author_name = :author) ORDER BY lamport_ts ASC"
+            );
+            $stmt->execute([
+                ':to_pattern' => '%"' . $agentName . '"%',
+                ':author' => $agentName,
+            ]);
+        }
+        return array_map(fn(array $row) => MessageModel::fromArray($row), $stmt->fetchAll());
+    }
+
+    /**
+     * Get all active forum channels (distinct channel_ids with messages).
+     * @return array<array{channel_id: string, message_count: int, last_message_at: string}>
+     */
+    public function getActiveChannels(): array
+    {
+        $stmt = $this->pdo->query("
+            SELECT channel_id, COUNT(*) as message_count, MAX(created_at) as last_message_at
+            FROM board_messages
+            WHERE channel_id != '' AND status = 'active'
+            GROUP BY channel_id
+            ORDER BY last_message_at DESC
+        ");
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC);
     }
 
     // --- Plugin operations ---
