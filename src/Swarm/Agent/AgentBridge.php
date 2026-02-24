@@ -329,11 +329,36 @@ FORMAT;
         if ($created) {
             $this->ensureMcpConfig($cwd);
             file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " MCP config created for {$sessionName}\n", FILE_APPEND);
+
+            // Auto-complete Claude Code setup wizard if needed
+            if ($tool === 'claude') {
+                $this->autoCompleteClaudeSetup($sessionName);
+            }
         } else {
             file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " FAILED to create session {$sessionName}\n", FILE_APPEND);
         }
 
         return $created;
+    }
+
+    /**
+     * Auto-complete Claude Code startup prompts.
+     * With hasCompletedOnboarding=true in ~/.claude.json, onboarding is fully skipped.
+     * The only remaining prompt is the workspace trust dialog ("Yes, I trust this folder").
+     */
+    private function autoCompleteClaudeSetup(string $sessionName): void
+    {
+        // Wait for Claude to start and show trust dialog
+        sleep(4);
+
+        // Press Enter to accept "Yes, I trust this folder"
+        $this->tmux->sendKeysByName($sessionName, 'Enter');
+        sleep(2);
+
+        // One more Enter for any follow-up prompt (Grove policy, etc.)
+        $this->tmux->sendKeysByName($sessionName, 'Enter');
+
+        file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " Auto-completed trust dialog for {$sessionName}\n", FILE_APPEND);
     }
 
     /**

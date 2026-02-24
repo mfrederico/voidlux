@@ -35,13 +35,36 @@ mkdir -p "$DATA_DIR"
 CLAUDE_DIR="${HOME}/.claude"
 mkdir -p "$CLAUDE_DIR"
 
-# Set theme and mark setup as complete to skip first-run wizard
-cat > "$CLAUDE_DIR/config.json" <<'EOF'
+# Claude Code's REAL config file is ~/.claude.json (NOT ~/.claude/config.json).
+# The path is: $CLAUDE_CONFIG_DIR/.claude.json or $HOME/.claude.json
+# Setting theme + hasCompletedOnboarding skips the entire onboarding wizard.
+# We persist a backup in the volume so config survives container restarts.
+CLAUDE_CONFIG="${HOME}/.claude.json"
+CLAUDE_CONFIG_BACKUP="${CLAUDE_DIR}/.claude.json.bak"
+if [ ! -f "$CLAUDE_CONFIG" ] && [ -f "$CLAUDE_CONFIG_BACKUP" ]; then
+    cp "$CLAUDE_CONFIG_BACKUP" "$CLAUDE_CONFIG"
+    echo "[entrypoint] Restored Claude config from volume backup"
+fi
+if [ -f "$CLAUDE_CONFIG" ]; then
+    # Merge into existing config (preserve runtime state like oauthAccount, caches)
+    node -e "
+      const fs = require('fs');
+      const cfg = JSON.parse(fs.readFileSync('$CLAUDE_CONFIG', 'utf8'));
+      cfg.theme = cfg.theme || 'dark';
+      cfg.hasCompletedOnboarding = true;
+      fs.writeFileSync('$CLAUDE_CONFIG', JSON.stringify(cfg, null, 2));
+    "
+else
+    cat > "$CLAUDE_CONFIG" <<'EOF'
 {
   "theme": "dark",
-  "setupComplete": true
+  "hasCompletedOnboarding": true
 }
 EOF
+fi
+# Backup to volume for persistence across restarts
+cp "$CLAUDE_CONFIG" "$CLAUDE_CONFIG_BACKUP" 2>/dev/null || true
+echo "[entrypoint] Claude Code onboarding configured (${CLAUDE_CONFIG})"
 
 # If ANTHROPIC_API_KEY is set, configure Claude to use it
 if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
