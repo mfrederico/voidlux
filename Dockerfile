@@ -66,9 +66,8 @@ RUN composer dump-autoload --no-dev --optimize
 RUN mkdir -p /app/data /app/workbench
 VOLUME ["/app/data", "/app/workbench"]
 
-# Install noVNC for web-based VNC viewing
+# Install noVNC client (JS only — WebSocket relay is handled by OpenSwoole)
 RUN git clone https://github.com/novnc/noVNC.git /opt/noVNC \
-    && git clone https://github.com/novnc/websockify /opt/noVNC/utils/websockify \
     && ln -s /opt/noVNC/vnc.html /opt/noVNC/index.html
 
 # Install Claude Code CLI globally via npm

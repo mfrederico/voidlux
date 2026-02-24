@@ -564,19 +564,13 @@ body {
         <div id="auth-status" style="margin-bottom:12px;padding:12px;background:#1a1a1a;border:1px solid #333;border-radius:4px;">
             <span style="color:#888;">Checking authentication status...</span>
         </div>
-        <div id="auth-session-info" style="display:none;margin-bottom:12px;padding:12px;background:#1a2a1a;border:1px solid #336633;border-radius:4px;">
-            <div style="color:#88cc88;margin-bottom:6px;"><strong>Auth Session Active</strong></div>
-            <div style="font-size:0.85rem;color:#668866;margin-bottom:4px;">Session: <code id="auth-session-name" style="color:#aaffaa;"></code></div>
-            <div style="font-size:0.85rem;color:#668866;margin-bottom:8px;">Attach with:</div>
-            <pre id="auth-attach-cmd" style="background:#0d0d0d;padding:8px;border-radius:3px;font-size:0.8rem;color:#aaffaa;overflow-x:auto;"></pre>
-            <div style="margin-top:8px;font-size:0.8rem;color:#888;">
-                1. Run the attach command in your terminal<br>
-                2. Follow the OAuth prompts to authorize<br>
-                3. Press Ctrl+B then D to detach when done
-            </div>
-            <button onclick="killAuthSession()" style="background:#663333;border:1px solid #883333;color:#ff6666;padding:4px 12px;border-radius:3px;cursor:pointer;font-family:inherit;font-size:0.75rem;margin-top:8px;">Kill Session</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <button id="start-auth-btn" onclick="startAuthSession()" style="background:#336633;border:1px solid #44aa44;color:#88ff88;padding:8px 16px;border-radius:4px;cursor:pointer;font-family:inherit;font-weight:bold;">🔑 Setup Authentication</button>
+            <button id="reauth-btn" onclick="startAuthSession()" style="display:none;background:#664433;border:1px solid #aa6644;color:#ffaa88;padding:8px 16px;border-radius:4px;cursor:pointer;font-family:inherit;font-weight:bold;">🔄 Re-Authenticate</button>
         </div>
-        <button id="start-auth-btn" onclick="startAuthSession()" style="background:#336633;border:1px solid #44aa44;color:#88ff88;padding:8px 16px;border-radius:4px;cursor:pointer;font-family:inherit;font-weight:bold;">Setup Authentication</button>
+        <div style="margin-top:12px;font-size:0.85rem;color:#666;">
+            Authenticate once, and all agents will share the credentials automatically.
+        </div>
     </div>
 
     <div class="section">
@@ -1520,14 +1514,17 @@ function checkAuthStatus() {
         .then(data => {
             const authStatus = document.getElementById('auth-status');
             const startBtn = document.getElementById('start-auth-btn');
+            const reauthBtn = document.getElementById('reauth-btn');
 
             if (data.authenticated) {
                 authStatus.innerHTML = '<span style="color:#00ff66;">✓ Authenticated</span>' +
                     (data.workspace_id ? '<span style="color:#666;margin-left:8px;font-size:0.8rem;">Workspace: ' + data.workspace_id + '</span>' : '');
                 startBtn.style.display = 'none';
+                reauthBtn.style.display = 'inline-block';
             } else {
                 authStatus.innerHTML = '<span style="color:#ff6666;">✗ Not authenticated</span>';
                 startBtn.style.display = 'inline-block';
+                reauthBtn.style.display = 'none';
             }
         })
         .catch(() => {
@@ -1937,7 +1934,11 @@ function closeModal() {
     document.getElementById('pane-modal').classList.remove('active');
 }
 
-document.addEventListener('keydown', e => { if (e.key==='Escape') closeModal(); });
+document.addEventListener('keydown', e => {
+    if (e.key==='Escape') {
+        closeModal();
+    }
+});
 
 function mergePr(taskId, prUrl) {
     if (!confirm('Merge this PR?\n\n'+prUrl+'\n\nThis will merge and delete the branch.')) return;
@@ -2947,8 +2948,9 @@ async function openVncViewer(agentId, agentName) {
             return;
         }
 
-        // Open VNC viewer in new window
-        window.open(data.web_url, `vnc_${agentId}`, 'width=1600,height=900,menubar=no,toolbar=no,location=no,status=no');
+        // Open VNC viewer via OpenSwoole relay (no websockify needed)
+        const vncUrl = location.origin + data.web_url;
+        window.open(vncUrl, `vnc_${agentId}`, 'width=1600,height=900,menubar=no,toolbar=no,location=no,status=no');
         addLog('vnc_opened', `Opened VNC viewer for ${agentName} (${data.display})`);
     } catch (error) {
         addLog('vnc_error', `Failed to get VNC info: ${error.message}`);

@@ -40,6 +40,7 @@ use VoidLux\Swarm\Storage\DhtStorage;
 use VoidLux\Swarm\Storage\SwarmDatabase;
 use VoidLux\Swarm\Config\SwarmConfig;
 use VoidLux\Swarm\Upgrade\UpgradeHandler;
+use VoidLux\Swarm\Vnc\VncWebSocketRelay;
 
 /**
  * Main swarm server combining HTTP/WebSocket + TCP mesh + UDP discovery.
@@ -77,6 +78,7 @@ class Server
     private ?SwarmWebSocketHandler $wsHandler = null;
     private ?\VoidLux\Swarm\Scheduler\TaskScheduler $scheduler = null;
     private ?Auth\TerminalWebSocketHandler $terminalWsHandler = null;
+    private ?VncWebSocketRelay $vncRelay = null;
     private ?WsServer $server = null;
     private Registry $swarmRegistry;
     private Status $swarmStatus;
@@ -136,18 +138,43 @@ class Server
         $this->terminalWsHandler = new Auth\TerminalWebSocketHandler(
             new \Aoe\Tmux\TmuxService('swarm', 'vl')
         );
+        $this->vncRelay = new VncWebSocketRelay();
 
         $server->on('start', function () {
             $this->log("Swarm server started");
         });
 
         $server->on('request', function (Request $request, Response $response) {
+            $path = $request->server['request_uri'] ?? '/';
+
+            // Serve noVNC static files from /opt/noVNC/
+            if (str_starts_with($path, '/novnc/')) {
+                $this->serveNoVncStatic($path, $response);
+                return;
+            }
+
+            // Serve vnc.html convenience redirect
+            if ($path === '/vnc.html') {
+                $query = $request->server['query_string'] ?? '';
+                $response->header('Content-Type', 'text/html; charset=utf-8');
+                $response->end($this->renderVncPage($query));
+                return;
+            }
+
             $this->controller->handle($request, $response);
         });
 
         $server->on('open', function (WsServer $srv, Request $request) {
             $path = $request->server['request_uri'] ?? '/ws';
             $this->log("WebSocket connection: path={$path} fd={$request->fd}");
+
+            // Route VNC WebSocket relay connections: /vnc-ws/{port}
+            if (preg_match('#^/vnc-ws/(\d+)$#', $path, $matches)) {
+                $vncPort = (int) $matches[1];
+                $this->log("Routing to VNC relay: port={$vncPort} fd={$request->fd}");
+                $this->vncRelay->handleOpen($srv, $request->fd, $vncPort);
+                return;
+            }
 
             // Route terminal WebSocket connections
             if (preg_match('#^/ws/terminal/([^/]+)$#', $path, $matches)) {
@@ -164,6 +191,12 @@ class Server
         });
 
         $server->on('message', function (WsServer $srv, Frame $frame) {
+            // Route VNC relay messages (binary WS frames -> TCP)
+            if ($this->vncRelay->isVncConnection($frame->fd)) {
+                $this->vncRelay->handleMessage($srv, $frame);
+                return;
+            }
+
             // Route to appropriate handler based on connection type
             if ($this->terminalWsHandler->hasConnection($frame->fd)) {
                 $this->terminalWsHandler->onMessage($srv, $frame->fd, $frame);
@@ -172,7 +205,8 @@ class Server
         });
 
         $server->on('close', function (WsServer $srv, int $fd) {
-            // Close both handlers (they'll check if they own this fd)
+            // Close all handlers (they'll check if they own this fd)
+            $this->vncRelay->handleClose($fd);
             $this->wsHandler->onClose($fd);
             $this->terminalWsHandler->onClose($fd);
         });
@@ -1219,6 +1253,89 @@ class Server
             }
         }
         return array_keys($caps);
+    }
+
+    /**
+     * Serve noVNC static files from /opt/noVNC/.
+     * Route: /novnc/{path} -> /opt/noVNC/{path}
+     */
+    private function serveNoVncStatic(string $path, Response $response): void
+    {
+        // Strip /novnc/ prefix
+        $relPath = substr($path, 7); // strlen('/novnc/') = 7
+        $filePath = '/opt/noVNC/' . $relPath;
+
+        // Path traversal protection
+        $realPath = realpath($filePath);
+        if ($realPath === false || !str_starts_with($realPath, '/opt/noVNC/')) {
+            $response->status(404);
+            $response->end('Not found');
+            return;
+        }
+
+        if (!is_file($realPath)) {
+            $response->status(404);
+            $response->end('Not found');
+            return;
+        }
+
+        $ext = pathinfo($realPath, PATHINFO_EXTENSION);
+        $mimeTypes = [
+            'html' => 'text/html',
+            'js' => 'application/javascript',
+            'css' => 'text/css',
+            'png' => 'image/png',
+            'jpg' => 'image/jpeg',
+            'gif' => 'image/gif',
+            'svg' => 'image/svg+xml',
+            'ico' => 'image/x-icon',
+            'woff' => 'font/woff',
+            'woff2' => 'font/woff2',
+            'ttf' => 'font/ttf',
+            'map' => 'application/json',
+        ];
+
+        $response->header('Content-Type', $mimeTypes[$ext] ?? 'application/octet-stream');
+        $response->end(file_get_contents($realPath));
+    }
+
+    /**
+     * Render a minimal HTML page that loads noVNC and connects to the VNC relay.
+     */
+    private function renderVncPage(string $queryString): string
+    {
+        // Parse the path parameter from query string (e.g., path=vnc-ws/5900)
+        parse_str($queryString, $params);
+        $wsPath = $params['path'] ?? '';
+        $wsPathJs = json_encode($wsPath);
+
+        return <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <title>VoidLux VNC Viewer</title>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; }
+        #screen { width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <div id="screen"></div>
+    <script type="module">
+        import RFB from '/novnc/core/rfb.js';
+        const wsPath = {$wsPathJs};
+        if (!wsPath) {
+            document.body.innerHTML = '<h1 style="color:#c00;font-family:monospace;padding:20px">Missing ?path= parameter</h1>';
+        } else {
+            const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/' + wsPath;
+            const rfb = new RFB(document.getElementById('screen'), url);
+            rfb.scaleViewport = true;
+            rfb.resizeSession = true;
+        }
+    </script>
+</body>
+</html>
+HTML;
     }
 
     private function log(string $message): void

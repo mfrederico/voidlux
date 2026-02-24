@@ -100,7 +100,8 @@ class Seneschal
         });
 
         $server->on('open', function (WsServer $srv, Request $request) {
-            $this->proxyWsOpen($srv, $request);
+            $path = $request->server['request_uri'] ?? '/ws';
+            $this->proxyWsOpen($srv, $request, $path);
         });
 
         $server->on('message', function (WsServer $srv, Frame $frame) {
@@ -419,7 +420,7 @@ class Seneschal
 
     // ── WebSocket Relay ─────────────────────────────────────────────────
 
-    private function proxyWsOpen(WsServer $srv, Request $request): void
+    private function proxyWsOpen(WsServer $srv, Request $request, string $path = '/ws'): void
     {
         $fd = $request->fd;
 
@@ -428,8 +429,8 @@ class Seneschal
             return;
         }
 
-        Coroutine::create(function () use ($srv, $fd) {
-            $upstream = $this->connectUpstreamWs();
+        Coroutine::create(function () use ($srv, $fd, $path) {
+            $upstream = $this->connectUpstreamWs($path);
             if ($upstream === null) {
                 if ($srv->isEstablished($fd)) {
                     $srv->disconnect($fd, 1013, 'Cannot reach emperor');
@@ -494,12 +495,12 @@ class Seneschal
         }
     }
 
-    private function connectUpstreamWs(): ?HttpClient
+    private function connectUpstreamWs(string $path = '/ws'): ?HttpClient
     {
         $client = new HttpClient($this->emperorHost, $this->emperorHttpPort);
         $client->set(['timeout' => 10]);
 
-        $upgraded = $client->upgrade('/ws');
+        $upgraded = $client->upgrade($path);
         if (!$upgraded) {
             $client->close();
             return null;

@@ -291,6 +291,14 @@ class EmperorController
                 $this->handleAgentVncInfo($m[1], $response);
                 break;
 
+            case preg_match('#^/api/swarm/agents/([^/]+)/tmux-output$#', $path, $m) === 1 && $method === 'GET':
+                $this->handleAgentTmuxOutput($m[1], $response);
+                break;
+
+            case preg_match('#^/api/swarm/agents/([^/]+)/send-keys$#', $path, $m) === 1 && $method === 'POST':
+                $this->handleAgentSendKeys($m[1], $request, $response);
+                break;
+
             case preg_match('#^/api/swarm/agents/([^/]+)$#', $path, $m) === 1 && $method === 'DELETE':
                 $this->handleDeregisterAgent($m[1], $response);
                 break;
@@ -1370,15 +1378,84 @@ INSTRUCTIONS,
             return;
         }
 
+        $vncPort = $sessionInfo['vnc_port'] ?? null;
         $this->json($response, [
             'vnc_available' => true,
             'display' => $sessionInfo['display'] ?? null,
-            'vnc_port' => $sessionInfo['vnc_port'] ?? null,
-            'web_port' => $sessionInfo['web_port'] ?? null,
-            'web_url' => isset($sessionInfo['web_port'])
-                ? "http://localhost:{$sessionInfo['web_port']}/vnc.html"
+            'vnc_port' => $vncPort,
+            'web_url' => $vncPort
+                ? "/vnc.html?path=vnc-ws/{$vncPort}"
                 : null,
         ]);
+    }
+
+    /**
+     * Get current tmux output for an agent (for viewing OAuth URLs, etc.)
+     */
+    private function handleAgentTmuxOutput(string $agentId, Response $response): void
+    {
+        $agent = $this->agentRegistry->getAgent($agentId);
+        if (!$agent) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Agent not found']);
+            return;
+        }
+
+        if (!$agent->tmuxSessionId) {
+            $response->status(400);
+            $this->json($response, ['error' => 'Agent has no tmux session']);
+            return;
+        }
+
+        try {
+            $output = $this->bridge->capturePaneByName($agent->tmuxSessionId, 100);
+            $this->json($response, [
+                'session_id' => $agent->tmuxSessionId,
+                'output' => $output,
+            ]);
+        } catch (\Exception $e) {
+            $response->status(500);
+            $this->json($response, ['error' => 'Failed to capture tmux output: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Send text/keys to an agent's tmux session
+     */
+    private function handleAgentSendKeys(string $agentId, Request $request, Response $response): void
+    {
+        $agent = $this->agentRegistry->getAgent($agentId);
+        if (!$agent) {
+            $response->status(404);
+            $this->json($response, ['error' => 'Agent not found']);
+            return;
+        }
+
+        if (!$agent->tmuxSessionId) {
+            $response->status(400);
+            $this->json($response, ['error' => 'Agent has no tmux session']);
+            return;
+        }
+
+        $body = json_decode($request->getContent(), true);
+        $text = $body['text'] ?? '';
+
+        if (empty($text)) {
+            $response->status(400);
+            $this->json($response, ['error' => 'Missing "text" parameter']);
+            return;
+        }
+
+        try {
+            // Send the text followed by Enter key
+            $this->bridge->sendText($agent->tmuxSessionId, $text);
+            $this->bridge->sendEnter($agent->tmuxSessionId);
+
+            $this->json($response, ['status' => 'sent', 'text' => $text]);
+        } catch (\Exception $e) {
+            $response->status(500);
+            $this->json($response, ['error' => 'Failed to send keys: ' . $e->getMessage()]);
+        }
     }
 
     // --- Plugin Management Handlers ---

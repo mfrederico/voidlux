@@ -23,7 +23,8 @@ use VoidLux\Swarm\Model\{AgentModel, TaskModel};
  */
 class X11Plugin extends McpToolProvider
 {
-    /** @var array<string, array{display: string, pid: int, vnc_pid?: int, vnc_port?: int}> Active X11 sessions per agent */
+    /** @var array<string, array{display: string, pid: int, vnc_pid?: int, vnc_port?: int}> Active X11 sessions per agent.
+     * Note: websockify replaced by native OpenSwoole VncWebSocketRelay in Server.php. */
     private static array $sessions = [];
 
     public function getName(): string
@@ -338,7 +339,7 @@ class X11Plugin extends McpToolProvider
             'pid' => $pid,
             'vnc_port' => $vncPort ?? null,
             'vnc_url' => $vncPid ? "vnc://localhost:{$vncPort}" : null,
-            'web_url' => $vncPid ? "http://localhost:6080/vnc.html?host=localhost&port={$vncPort}" : null,
+            'web_url' => $vncPid ? "/vnc.html?path=vnc-ws/{$vncPort}" : null,
         ]);
     }
 
@@ -543,7 +544,7 @@ class X11Plugin extends McpToolProvider
             'port' => $port,
             'display' => $display,
             'vnc_url' => "vnc://localhost:{$port}",
-            'web_url' => "http://localhost:6080/vnc.html?host=localhost&port={$port}",
+            'web_url' => "/vnc.html?path=vnc-ws/{$port}",
             'pid' => $vncPid,
         ]);
     }
@@ -625,18 +626,6 @@ class X11Plugin extends McpToolProvider
             }
         }
         return 5900; // Fallback
-    }
-
-    private function findFreeWebVncPort(): int
-    {
-        // Start from 6080 and look for free port
-        for ($port = 6080; $port < 6130; $port++) {
-            exec("netstat -tuln 2>/dev/null | grep :{$port} > /dev/null", $output, $exitCode);
-            if ($exitCode !== 0) {
-                return $port;
-            }
-        }
-        return 6080; // Fallback
     }
 
     public function getSessionInfo(string $agentId): ?array
@@ -853,24 +842,7 @@ MD;
             sleep(1); // Wait for VNC to be ready
             self::$sessions[$agentId]['vnc_pid'] = $vncPid;
             self::$sessions[$agentId]['vnc_port'] = $vncPort;
-
-            // Auto-start websockify for web-based VNC access
-            $webPort = $this->findFreeWebVncPort();
-            $websockifyCmd = sprintf(
-                'python3 -m websockify --web=/usr/share/novnc %d localhost:%d > /dev/null 2>&1 & echo $!',
-                $webPort,
-                $vncPort
-            );
-            $websockifyPid = (int) trim(shell_exec($websockifyCmd));
-
-            if ($websockifyPid) {
-                sleep(1);
-                self::$sessions[$agentId]['websockify_pid'] = $websockifyPid;
-                self::$sessions[$agentId]['web_port'] = $webPort;
-                error_log("X11Plugin: Auto-started display {$display}, VNC port {$vncPort}, web port {$webPort} for agent {$agentId}");
-            } else {
-                error_log("X11Plugin: Auto-started display {$display}, VNC port {$vncPort} (websockify failed) for agent {$agentId}");
-            }
+            error_log("X11Plugin: Auto-started display {$display}, VNC port {$vncPort} for agent {$agentId}");
         } else {
             error_log("X11Plugin: Auto-started display {$display} (VNC failed) for agent {$agentId}");
         }
@@ -881,11 +853,6 @@ MD;
         // Clean up any running X11 session
         if (isset(self::$sessions[$agentId])) {
             $session = self::$sessions[$agentId];
-
-            // Kill websockify if running
-            if (isset($session['websockify_pid'])) {
-                exec("kill {$session['websockify_pid']} 2>/dev/null");
-            }
 
             // Kill VNC if running
             if (isset($session['vnc_pid'])) {

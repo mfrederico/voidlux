@@ -8,7 +8,6 @@ services:
       - "9090:9090"
       - "9091:9091"
       - "5900-5910:5900-5910"  # VNC ports for X11 displays
-      - "6080:6080"            # noVNC web interface
     volumes:
       - ./data:/app/data
       - ./workbench:/app/workbench
