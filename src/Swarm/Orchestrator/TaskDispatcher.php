@@ -220,20 +220,17 @@ class TaskDispatcher
             return;
         }
 
+        // Check pre-implementation discussions
         $discussingTasks = $this->db->getTasksByStatus('discussing');
         foreach ($discussingTasks as $task) {
             $channelId = $task->id;
-
-            // Check votes
             $result = $this->forumOrchestrator->checkVotes($channelId);
 
             if ($result === null && !$this->forumOrchestrator->isTimedOut($channelId)) {
-                continue; // No majority yet and not timed out
+                continue;
             }
 
-            // Auto-advance on timeout or majority approve
             if ($result === 'approve' || $result === null) {
-                // null = timeout, treat as auto-advance
                 $updated = $task->withStatus(TaskStatus::Planning, $this->clock->tick());
                 $this->db->updateTask($updated);
                 $this->forumOrchestrator->resolveChannel($channelId, $result ?? 'timeout');
@@ -241,6 +238,52 @@ class TaskDispatcher
                 $updated = $task->withStatus(TaskStatus::WaitingInput, $this->clock->tick());
                 $this->db->updateTask($updated);
                 $this->forumOrchestrator->resolveChannel($channelId, 'reject');
+            }
+        }
+
+        // Check QA review discussions (review:{taskId} channels)
+        $reviewTasks = $this->db->getTasksByStatus('pending_review');
+        foreach ($reviewTasks as $task) {
+            // Only check parent tasks in review that have a review channel
+            if (!$task->parentId) {
+                // This is a parent task — check its review channel
+                $reviewChannel = "review:{$task->id}";
+                $result = $this->forumOrchestrator->checkVotes($reviewChannel);
+
+                if ($result === null && !$this->forumOrchestrator->isTimedOut($reviewChannel)) {
+                    continue;
+                }
+
+                if ($result === 'approve' || $result === null) {
+                    // QA approved — complete the parent task
+                    $ts = $this->clock->tick();
+                    $now = gmdate('Y-m-d\TH:i:s\Z');
+                    $completedResult = $task->progress ?: 'QA review approved';
+                    $updated = $task->withStatus(TaskStatus::Completed, $ts);
+                    $this->db->updateTask($updated);
+                    $this->db->setTaskResult($task->id, $completedResult, $now);
+                    $this->forumOrchestrator->resolveChannel($reviewChannel, $result ?? 'timeout');
+
+                    // Auto-merge if flagged
+                    if ($task->autoMerge && $task->prUrl) {
+                        $git = new \VoidLux\Swarm\Git\GitWorkspace();
+                        $mergeWorkDir = getcwd() . '/workbench/.merge';
+                        $git->autoMergePullRequest($mergeWorkDir, $task->prUrl);
+                    }
+                } elseif ($result === 'reject') {
+                    // QA rejected — requeue subtasks for rework
+                    $updated = $task->withStatus(TaskStatus::InProgress, $this->clock->tick());
+                    $this->db->updateTask($updated);
+                    $this->forumOrchestrator->resolveChannel($reviewChannel, 'reject');
+                    // Requeue all subtasks
+                    $subtasks = $this->db->getSubtasks($task->id);
+                    foreach ($subtasks as $sub) {
+                        if ($sub->status === TaskStatus::Completed) {
+                            $requeuedSub = $sub->withStatus(TaskStatus::Pending, $this->clock->tick());
+                            $this->db->updateTask($requeuedSub);
+                        }
+                    }
+                }
             }
         }
     }

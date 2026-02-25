@@ -9,6 +9,7 @@ use VoidLux\P2P\Protocol\LamportClock;
 use VoidLux\Swarm\Ai\TaskReviewer;
 use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Gossip\TaskGossipEngine;
+use VoidLux\Swarm\Forum\ForumOrchestrator;
 use VoidLux\Swarm\Model\TaskModel;
 use VoidLux\Swarm\Model\TaskStatus;
 use VoidLux\Swarm\Storage\SwarmDatabase;
@@ -21,6 +22,7 @@ class TaskQueue
 {
     private ?TaskReviewer $reviewer = null;
     private ?GitWorkspace $git = null;
+    private ?ForumOrchestrator $forumOrchestrator = null;
     private string $globalTestCommand = '';
     private string $mergeWorkDir = '';
     private string $baseRepoDir = '';
@@ -43,6 +45,11 @@ class TaskQueue
     public function setGitWorkspace(GitWorkspace $git): void
     {
         $this->git = $git;
+    }
+
+    public function setForumOrchestrator(ForumOrchestrator $forum): void
+    {
+        $this->forumOrchestrator = $forum;
     }
 
     public function setGlobalTestCommand(string $cmd): void
@@ -893,10 +900,38 @@ class TaskQueue
             implode("\n", array_map(fn($b) => "- `{$b}`", $branches)),
         );
 
-        $result = "All " . count($completedSubs) . " subtask(s) merged and tests passed";
+        $mergeOutput = "All " . count($completedSubs) . " subtask(s) merged and tests passed";
         if ($prUrl) {
-            $result .= "\n\nPR: {$prUrl}";
+            $mergeOutput .= "\n\nPR: {$prUrl}";
         }
+
+        // Route to QA review phase if persona agents are available
+        if ($this->forumOrchestrator) {
+            $personaAgents = $this->forumOrchestrator->getIdlePersonaAgents();
+            if (!empty($personaAgents)) {
+                $this->log("Routing parent {$parentId} to QA review phase with " . count($personaAgents) . " persona agents");
+                $ts = $this->clock->tick();
+                $reviewParent = $parent->withStatus(TaskStatus::PendingReview, $ts);
+                $transitioned = $this->db->transitionTask($reviewParent, [TaskStatus::Merging]);
+                if ($transitioned) {
+                    $testOutput = ''; // Test output already summarized in mergeOutput
+                    $this->forumOrchestrator->deliverReviewPrompts(
+                        $reviewParent, $personaAgents, $mergeOutput, $testOutput,
+                    );
+                    $this->gossip->gossipTaskUpdate($parentId, '', TaskStatus::PendingReview->value, 'QA review in progress', $ts);
+                    // Store merge result + PR URL for later completion
+                    $this->db->setTaskProgress($parentId, $mergeOutput);
+                    if ($prUrl) {
+                        $this->db->setTaskPrUrl($parentId, $prUrl);
+                    }
+                    $this->db->setTaskGitBranch($parentId, $integrationBranch);
+                }
+                return;
+            }
+        }
+
+        // No persona agents — auto-complete (original behavior)
+        $result = $mergeOutput;
 
         // Auto-merge the PR if the flag is set on the parent task
         if ($prUrl && $this->git && property_exists($parent, 'autoMerge') && $parent->autoMerge) {

@@ -720,6 +720,34 @@ class SwarmDatabase
         return $stmt->rowCount() > 0;
     }
 
+    public function setTaskProgress(string $taskId, string $progress): bool
+    {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $stmt = $this->pdo->prepare('UPDATE tasks SET progress = :progress, updated_at = :updated_at WHERE id = :id');
+        $stmt->execute([':id' => $taskId, ':progress' => $progress, ':updated_at' => $now]);
+        return $stmt->rowCount() > 0;
+    }
+
+    public function setTaskResult(string $taskId, string $result, string $completedAt): bool
+    {
+        $stmt = $this->pdo->prepare('UPDATE tasks SET result = :result, completed_at = :completed_at, updated_at = :updated_at WHERE id = :id');
+        $stmt->execute([':id' => $taskId, ':result' => $result, ':completed_at' => $completedAt, ':updated_at' => $completedAt]);
+        return $stmt->rowCount() > 0;
+    }
+
+    public function setTaskPrUrl(string $taskId, string $prUrl): bool
+    {
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $stmt = $this->pdo->prepare('UPDATE tasks SET pr_url = :pr_url, updated_at = :updated_at WHERE id = :id');
+        $stmt->execute([':id' => $taskId, ':pr_url' => $prUrl, ':updated_at' => $now]);
+        return $stmt->rowCount() > 0;
+    }
+
+    public function setTaskGitBranch(string $taskId, string $branch): bool
+    {
+        return $this->updateGitBranch($taskId, $branch);
+    }
+
     public function incrementMergeAttempts(string $taskId): int
     {
         $now = gmdate('Y-m-d\TH:i:s\Z');
@@ -1312,7 +1340,7 @@ class SwarmDatabase
      */
     public function getMessages(?string $category = null, ?string $status = null): array
     {
-        $where = [];
+        $where = ["(channel_id IS NULL OR channel_id = '')"];
         $params = [];
         if ($category !== null) {
             $where[] = 'category = :category';
@@ -1323,10 +1351,7 @@ class SwarmDatabase
             $params[':status'] = $status;
         }
 
-        $sql = 'SELECT * FROM board_messages';
-        if (!empty($where)) {
-            $sql .= ' WHERE ' . implode(' AND ', $where);
-        }
+        $sql = 'SELECT * FROM board_messages WHERE ' . implode(' AND ', $where);
         $sql .= ' ORDER BY priority DESC, created_at DESC';
 
         $stmt = $this->pdo->prepare($sql);
@@ -1455,6 +1480,23 @@ class SwarmDatabase
             ORDER BY last_message_at DESC
         ");
         return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Get recent forum/vote messages by a specific author.
+     * @return MessageModel[]
+     */
+    public function getRecentMessagesByAuthor(string $authorName, int $limit = 10): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT * FROM board_messages WHERE author_name = :name AND category IN ('forum', 'vote') ORDER BY lamport_ts DESC LIMIT :lim"
+        );
+        $stmt->bindValue(':name', $authorName);
+        $stmt->bindValue(':lim', $limit, \PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll();
+        $models = array_map(fn(array $row) => MessageModel::fromArray($row), $rows);
+        return array_reverse($models); // chronological order
     }
 
     // --- Plugin operations ---

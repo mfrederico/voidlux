@@ -730,7 +730,7 @@ body {
 
     <div class="section">
         <h2>Register Agents</h2>
-        <form class="task-form" id="bulk-agent-form" onsubmit="bulkRegister(event)" style="grid-template-columns: 80px 1fr 120px 160px auto auto;">
+        <form class="task-form" id="bulk-agent-form" onsubmit="bulkRegister(event)" style="grid-template-columns: 80px 1fr 120px 160px auto auto auto;">
             <input type="number" name="count" value="5" min="1" max="50" title="Count" />
             <input type="text" name="project_path" id="agent-project-path" placeholder="Project path" />
             <select name="tool" onchange="toggleModelField(this)" style="background:#1a1a1a;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:4px;font-family:inherit;">
@@ -741,6 +741,7 @@ body {
             <input type="text" name="model" id="model-field" placeholder="Model (optional)" style="background:#1a1a1a;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:4px;font-family:inherit;display:none;" />
             <button type="submit">Register</button>
             <button type="button" onclick="registerPlanner()" style="background:#331155;border-color:#663399;" title="Register a planner agent (uses same tool/model settings)">+ Planner</button>
+            <button type="button" onclick="registerPersonas()" style="background:#663300;border-color:#cc6600;" title="Register all persona agents from config">+ Personas</button>
         </form>
     </div>
 
@@ -1937,6 +1938,42 @@ function registerPlanner() {
         body: JSON.stringify(body)
     }).then(r=>r.json()).then(agents => {
         addLog('agent_registered', 'Registered planner agent');
+    });
+}
+
+function registerPersonas() {
+    const f = document.getElementById('bulk-agent-form');
+    const toolVal = f.tool.value;
+    const isOllama = toolVal === 'claude-ollama';
+    const projectPath = f.project_path.value;
+    if (!projectPath) { alert('Project path is required'); return; }
+
+    // Fetch persona definitions then register one agent per persona
+    fetch('/api/swarm/forum/personas').then(r=>r.json()).then(data => {
+        const personas = Array.isArray(data.personas) ? data.personas : Object.values(data.personas || {});
+        if (personas.length === 0) { addLog('error', 'No personas defined. Go to Settings to add them.'); return; }
+
+        const agents = personas.map(p => {
+            const spec = {
+                persona_slug: p.slug,
+                tool: isOllama ? 'claude' : toolVal,
+                project_path: projectPath,
+                capabilities: [],
+            };
+            if (isOllama) {
+                spec.env = {ANTHROPIC_AUTH_TOKEN: 'ollama', ANTHROPIC_BASE_URL: 'http://localhost:11434'};
+                if (f.model.value) spec.model = f.model.value;
+            }
+            return spec;
+        });
+
+        fetch('/api/swarm/agents/bulk', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({agents: agents})
+        }).then(r=>r.json()).then(result => {
+            addLog('agent_registered', 'Registered ' + result.length + ' persona agent(s): ' + result.map(a => a.name).join(', '));
+        });
     });
 }
 

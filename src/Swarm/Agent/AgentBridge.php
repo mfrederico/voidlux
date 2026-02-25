@@ -256,10 +256,10 @@ FORMAT;
     }
 
     /**
-     * Inject persona system prompt into an agent's tmux session.
+     * Inject persona system prompt and chat history into an agent's tmux session.
      * Called once after agent starts and reaches idle state.
      */
-    public function injectPersona(AgentModel $agent): bool
+    public function injectPersona(AgentModel $agent, ?SwarmDatabase $db = null): bool
     {
         if (!$agent->persona) {
             return false;
@@ -274,7 +274,48 @@ FORMAT;
         $prompt .= "You are **{$persona['display_name']}** ({$persona['title']}). ";
         $prompt .= "Stay in character during all discussions. Use the forum_post, forum_list, and forum_vote MCP tools to participate in SwarmTalk discussions.\n";
 
+        // Reload context from previous session: recent DMs and forum posts
+        if ($db) {
+            $history = $this->buildContextHistory($agent, $db);
+            if ($history) {
+                $prompt .= "\n## Session Context (from previous messages)\n\n{$history}\n";
+            }
+        }
+
         return $this->sendText($agent, $prompt);
+    }
+
+    /**
+     * Build context history from the agent's previous messages and DMs.
+     */
+    private function buildContextHistory(AgentModel $agent, SwarmDatabase $db): string
+    {
+        $sections = [];
+
+        // Recent DMs (last 20)
+        $dms = $db->getDMs($agent->name);
+        if (!empty($dms)) {
+            $dms = array_slice($dms, -20);
+            $lines = ["### Recent DMs"];
+            foreach ($dms as $dm) {
+                $dir = ($dm->authorName === $agent->name) ? 'You' : $dm->authorName;
+                $lines[] = "- [{$dir}] {$dm->content}";
+            }
+            $sections[] = implode("\n", $lines);
+        }
+
+        // Recent forum posts by this agent (last 10)
+        $allMessages = $db->getRecentMessagesByAuthor($agent->name, 10);
+        if (!empty($allMessages)) {
+            $lines = ["### Your Recent Forum Posts"];
+            foreach ($allMessages as $msg) {
+                $ch = $msg->channelId ?: 'unknown';
+                $lines[] = "- [channel:{$ch}] {$msg->content}";
+            }
+            $sections[] = implode("\n", $lines);
+        }
+
+        return implode("\n\n", $sections);
     }
 
     /**

@@ -281,6 +281,8 @@ class Server
             $this->startTime,
         );
         $this->controller->setAgentMonitor($this->agentMonitor);
+        $this->controller->setTaskGossip($this->taskGossip);
+        $this->controller->setLamportClock($this->clock);
         $this->controller->setPluginManager($pluginManager);
         $this->controller->setAuthManager($authManager);
         $this->controller->setScheduler($this->scheduler);
@@ -1111,6 +1113,7 @@ class Server
             $this->routeWsEvent($event, $data);
         });
         $this->taskDispatcher->setForumOrchestrator($forumOrchestrator);
+        $this->taskQueue->setForumOrchestrator($forumOrchestrator);
         $this->controller->setForumOrchestrator($forumOrchestrator);
 
         // Start forum notification coroutine (notifies persona agents of new messages every 15s)

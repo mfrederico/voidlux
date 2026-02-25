@@ -1301,13 +1301,32 @@ INSTRUCTIONS,
         $model = $spec['model'] ?? '';
         $env = $spec['env'] ?? [];
         $role = $spec['role'] ?? '';
+        $personaSlug = $spec['persona_slug'] ?? '';
         $persona = $spec['persona'] ?? '';
         $namePrefix = $spec['name_prefix'] ?? ($role === 'planner' ? 'planner' : 'agent');
 
-        error_log("registerOneAgent: projectPath={$projectPath}, tool={$tool}, namePrefix={$namePrefix}");
+        // Resolve persona from slug if ForumOrchestrator has it loaded
+        if ($personaSlug && !$persona && $this->forumOrchestrator) {
+            $personaDef = $this->forumOrchestrator->getPersona($personaSlug);
+            if ($personaDef) {
+                $persona = json_encode($personaDef, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            }
+        }
 
-        // Explicit name or auto-generated
-        $agentName = $spec['name'] ?? ($namePrefix . '-' . $nodeShort . '-' . $index);
+        // Use persona display_name as agent name (identity-first naming)
+        $agentName = $spec['name'] ?? null;
+        if (!$agentName && $persona) {
+            $decoded = is_string($persona) ? json_decode($persona, true) : $persona;
+            if ($decoded && !empty($decoded['display_name'])) {
+                $personaName = strtolower($decoded['display_name']);
+                $existing = $this->db->getAgentByName($personaName);
+                $agentName = $existing ? $personaName . '-' . $index : $personaName;
+                $namePrefix = $personaName;
+            }
+        }
+        $agentName ??= $namePrefix . '-' . $nodeShort . '-' . $index;
+
+        error_log("registerOneAgent: projectPath={$projectPath}, tool={$tool}, name={$agentName}");
         $suffix = substr(bin2hex(random_bytes(4)), 0, 8);
         $sessionName = 'vl-' . $namePrefix . '-' . $suffix;
 
@@ -1780,7 +1799,7 @@ INSTRUCTIONS,
             return;
         }
 
-        $body = json_decode($request->rawContent(), true) ?? [];
+        $body = json_decode($request->getContent(), true) ?? [];
         $value = $body['value'] ?? null;
         $key = $body['key'] ?? null;
         $ttl = (int) ($body['ttl'] ?? 0);
@@ -2468,7 +2487,7 @@ INSTRUCTIONS,
             return;
         }
 
-        $body = json_decode($request->rawContent(), true);
+        $body = json_decode($request->getContent(), true);
 
         $result = $this->pluginMarketplace->handleToolCall('marketplace_offer_plugin', [
             'agent_name' => $body['agent_name'] ?? '',
@@ -2493,7 +2512,7 @@ INSTRUCTIONS,
             return;
         }
 
-        $body = json_decode($request->rawContent(), true);
+        $body = json_decode($request->getContent(), true);
 
         $result = $this->pluginMarketplace->handleToolCall('marketplace_install', [
             'agent_name' => $body['agent_name'] ?? '',
@@ -2537,7 +2556,7 @@ INSTRUCTIONS,
             return;
         }
 
-        $body = json_decode($request->rawContent(), true);
+        $body = json_decode($request->getContent(), true);
 
         $result = $this->pluginMarketplace->handleToolCall('marketplace_review', [
             'agent_name' => $body['agent_name'] ?? '',
@@ -2575,7 +2594,7 @@ INSTRUCTIONS,
             return;
         }
 
-        $body = json_decode($request->rawContent(), true);
+        $body = json_decode($request->getContent(), true);
 
         $result = $this->pluginMarketplace->handleToolCall('marketplace_post_bounty', [
             'agent_name' => $body['agent_name'] ?? '',
@@ -2598,7 +2617,7 @@ INSTRUCTIONS,
             return;
         }
 
-        $body = json_decode($request->rawContent(), true);
+        $body = json_decode($request->getContent(), true);
 
         $result = $this->pluginMarketplace->handleToolCall('marketplace_claim_bounty', [
             'agent_name' => $body['agent_name'] ?? '',
@@ -2648,7 +2667,7 @@ INSTRUCTIONS,
 
     private function handleForumPost(Request $request, Response $response, string $channelId): void
     {
-        $body = json_decode($request->rawContent(), true);
+        $body = json_decode($request->getContent(), true);
         $content = $body['content'] ?? '';
         $authorName = $body['author_name'] ?? 'Human Operator';
 
@@ -2688,7 +2707,7 @@ INSTRUCTIONS,
             return;
         }
 
-        $body = json_decode($request->rawContent(), true);
+        $body = json_decode($request->getContent(), true);
         $decision = $body['decision'] ?? 'approve';
 
         if (!in_array($decision, ['approve', 'reject'], true)) {
@@ -2743,7 +2762,7 @@ INSTRUCTIONS,
 
     private function handleForumSendDM(Request $request, Response $response, string $agentName): void
     {
-        $body = json_decode($request->rawContent(), true);
+        $body = json_decode($request->getContent(), true);
         $content = $body['content'] ?? '';
 
         if (!$content) {

@@ -113,9 +113,9 @@ class AgentMonitor
                     if ($updatedAgent) {
                         $this->registry->gossipAgentNow($updatedAgent);
                     }
-                    // Inject persona system prompt if this is a persona agent
+                    // Inject persona system prompt + context history if this is a persona agent
                     if ($agent->persona) {
-                        $this->bridge->injectPersona($agent);
+                        $this->bridge->injectPersona($agent, $this->db);
                     }
                     $this->emit('', $agent->id, 'agent_ready', ['name' => $agent->name]);
                     $this->taskDispatcher?->triggerDispatch();
