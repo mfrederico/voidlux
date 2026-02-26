@@ -98,6 +98,8 @@ class LocalTmuxRpc implements AgentRpc
         if (isset($config['mcpServers']['voidlux-swarm'])
             && ($config['mcpServers']['voidlux-swarm']['url'] ?? '') === $mcpUrl
         ) {
+            // MCP config already correct — still ensure permissions file exists
+            $this->ensureClaudePermissions($projectPath);
             return;
         }
 
@@ -113,6 +115,52 @@ class LocalTmuxRpc implements AgentRpc
         file_put_contents(
             $mcpFile,
             json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"
+        );
+
+        // Pre-approve MCP tools so agents don't get trust prompts
+        $this->ensureClaudePermissions($projectPath);
+    }
+
+    /**
+     * Write .claude/settings.local.json to pre-approve MCP tools.
+     */
+    private function ensureClaudePermissions(string $projectPath): void
+    {
+        $settingsDir = rtrim($projectPath, '/') . '/.claude';
+        $settingsFile = $settingsDir . '/settings.local.json';
+
+        if (file_exists($settingsFile)) {
+            $existing = json_decode(file_get_contents($settingsFile), true);
+            if (is_array($existing)
+                && isset($existing['permissions']['allow'])
+                && in_array('mcp__voidlux-swarm__*', $existing['permissions']['allow'], true)
+            ) {
+                return; // Already configured
+            }
+        }
+
+        if (!is_dir($settingsDir)) {
+            @mkdir($settingsDir, 0755, true);
+        }
+
+        $settings = [
+            'permissions' => [
+                'allow' => [
+                    'Bash',
+                    'Read',
+                    'Write',
+                    'Edit',
+                    'Glob',
+                    'Grep',
+                    'Task',
+                    'mcp__voidlux-swarm__*',
+                ],
+            ],
+        ];
+
+        file_put_contents(
+            $settingsFile,
+            json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"
         );
     }
 

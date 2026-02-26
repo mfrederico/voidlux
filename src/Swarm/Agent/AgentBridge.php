@@ -361,7 +361,7 @@ FORMAT;
         $env = $options['env'] ?? [];
 
         $command = match ($tool) {
-            'claude' => 'claude --allowed-tools "Bash Read Write Edit Glob Grep Task voidlux-swarm:*"' . ($model ? ' --model ' . escapeshellarg($model) : ''),
+            'claude' => 'claude --allowed-tools "Bash Read Write Edit Glob Grep Task mcp__voidlux-swarm__*"' . ($model ? ' --model ' . escapeshellarg($model) : ''),
             'opencode' => 'opencode',
             default => '',
         };

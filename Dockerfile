@@ -44,8 +44,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # PHP extensions
 RUN docker-php-ext-install pdo_sqlite sockets
 
-# OpenSwoole via PECL
-RUN pecl install openswoole && docker-php-ext-enable openswoole
+# OpenSwoole via PECL (with SSL for HTTPS API calls)
+RUN apt-get update && apt-get install -y --no-install-recommends libssl-dev libcurl4-openssl-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && pecl install --configureoptions 'enable-openssl="yes" enable-hook-curl="yes" enable-http2="yes"' openswoole \
+    && docker-php-ext-enable openswoole
 
 # Composer
 COPY --from=composer /usr/bin/composer /usr/bin/composer

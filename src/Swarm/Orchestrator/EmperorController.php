@@ -1279,9 +1279,18 @@ INSTRUCTIONS,
 
         // Uniform batch mode (backward-compatible)
         $count = max(1, min(50, (int) ($body['count'] ?? 1)));
+
+        // Auto-assign personas when no explicit persona is specified
+        $availablePersonas = $this->getAvailablePersonaSlugs();
+        $autoPersona = !isset($body['persona_slug']) && !isset($body['persona']) && !empty($availablePersonas);
+
         $agents = [];
         for ($i = 0; $i < $count; $i++) {
-            $agents[] = $this->registerOneAgent($body, $nodeShort, $i + 1);
+            $spec = $body;
+            if ($autoPersona && !empty($availablePersonas)) {
+                $spec['persona_slug'] = array_shift($availablePersonas);
+            }
+            $agents[] = $this->registerOneAgent($spec, $nodeShort, $i + 1);
         }
 
         $response->status(201);
@@ -1293,6 +1302,42 @@ INSTRUCTIONS,
      * @param array{tool?: string, project_path?: string, name?: string, name_prefix?: string,
      *              capabilities?: string[], model?: string, env?: array<string,string>, role?: string} $spec
      */
+    /**
+     * Get persona slugs that aren't already assigned to a living agent.
+     * @return string[]
+     */
+    private function getAvailablePersonaSlugs(): array
+    {
+        if (!$this->forumOrchestrator) {
+            return [];
+        }
+
+        $allPersonas = $this->forumOrchestrator->getPersonaDefs();
+        if (empty($allPersonas)) {
+            return [];
+        }
+
+        // Find which persona display_names are already taken by existing agents
+        $takenNames = [];
+        foreach ($this->db->getAllAgents() as $agent) {
+            if ($agent->persona) {
+                $decoded = json_decode($agent->persona, true);
+                if ($decoded && !empty($decoded['slug'])) {
+                    $takenNames[] = $decoded['slug'];
+                }
+            }
+        }
+
+        $available = [];
+        foreach ($allPersonas as $slug => $def) {
+            if (!in_array($slug, $takenNames, true)) {
+                $available[] = $slug;
+            }
+        }
+
+        return $available;
+    }
+
     private function registerOneAgent(array $spec, string $nodeShort, int $index): array
     {
         $tool = $spec['tool'] ?? 'claude';
@@ -1324,7 +1369,20 @@ INSTRUCTIONS,
                 $namePrefix = $personaName;
             }
         }
-        $agentName ??= $namePrefix . '-' . $nodeShort . '-' . $index;
+        if (!$agentName) {
+            // Find next available index by checking existing agents with this prefix
+            $basePattern = $namePrefix . '-' . $nodeShort . '-';
+            $maxIndex = 0;
+            foreach ($this->db->getAllAgents() as $existing) {
+                if (str_starts_with($existing->name, $basePattern)) {
+                    $suffix = substr($existing->name, strlen($basePattern));
+                    if (is_numeric($suffix)) {
+                        $maxIndex = max($maxIndex, (int) $suffix);
+                    }
+                }
+            }
+            $agentName = $basePattern . ($maxIndex + $index);
+        }
 
         error_log("registerOneAgent: projectPath={$projectPath}, tool={$tool}, name={$agentName}");
         $suffix = substr(bin2hex(random_bytes(4)), 0, 8);

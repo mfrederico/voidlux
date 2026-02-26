@@ -581,6 +581,19 @@ class McpHandler
             }
         }
 
+        // Push task update to WebSocket clients (subtask + parent if applicable)
+        $updatedTask = $this->db->getTask($taskId);
+        if ($updatedTask && $this->onTaskEvent) {
+            ($this->onTaskEvent)('task_updated', $updatedTask->toArray());
+            // Also push parent task if it may have transitioned (tryCompleteParent)
+            if ($updatedTask->parentId) {
+                $parentTask = $this->db->getTask($updatedTask->parentId);
+                if ($parentTask) {
+                    ($this->onTaskEvent)('task_updated', $parentTask->toArray());
+                }
+            }
+        }
+
         // Trigger dispatch so idle agent gets next pending task immediately
         $this->taskDispatcher?->triggerDispatch();
 
@@ -652,6 +665,12 @@ class McpHandler
         $agentId = $task->assignedTo ?? '';
         $this->taskQueue->updateProgress($taskId, $agentId, $message);
 
+        // Push task update to WebSocket clients
+        $updatedTask = $this->db->getTask($taskId);
+        if ($updatedTask && $this->onTaskEvent) {
+            ($this->onTaskEvent)('task_updated', $updatedTask->toArray());
+        }
+
         return $this->toolResult(['status' => 'progress_updated', 'task_id' => $taskId]);
     }
 
@@ -691,6 +710,12 @@ class McpHandler
             if ($this->onAgentStatusChange) {
                 ($this->onAgentStatusChange)($agentId, 'idle');
             }
+        }
+
+        // Push task update to WebSocket clients
+        $updatedTask = $this->db->getTask($taskId);
+        if ($updatedTask && $this->onTaskEvent) {
+            ($this->onTaskEvent)('task_updated', $updatedTask->toArray());
         }
 
         // Trigger dispatch so idle agent gets next pending task immediately
