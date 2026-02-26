@@ -1019,6 +1019,7 @@ class Server
             'capability_profiles' => array_map(fn($p) => $p->toArray(), $this->marketplace?->getCapabilityProfiles() ?? []),
             'delegations' => array_map(fn($d) => $d->toArray(), $this->marketplace?->getDelegations() ?? []),
             'wallet' => $this->marketplace?->getWallet() ?? ['balance' => 0, 'currency' => 'VOID'],
+            'board_messages' => array_map(fn($m) => $m->toArray(), $this->db->getMessages()),
         ];
         $this->wsHandler->pushFullState($fd, $tasks, $agents, $status);
     }

@@ -1475,7 +1475,7 @@ class SwarmDatabase
         $stmt = $this->pdo->query("
             SELECT channel_id, COUNT(*) as message_count, MAX(created_at) as last_message_at
             FROM board_messages
-            WHERE channel_id != '' AND status = 'active'
+            WHERE channel_id != '' AND channel_id NOT LIKE 'dm:%' AND status = 'active'
             GROUP BY channel_id
             ORDER BY last_message_at DESC
         ");

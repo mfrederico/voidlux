@@ -473,11 +473,15 @@ body {
 /* SwarmTalk Sidebar */
 .app-layout { display: flex; min-height: calc(100vh - 90px); }
 .swarmtalk-sidebar {
-    width: 280px; min-width: 280px; background: #0d0d14; border-right: 1px solid #222;
-    display: flex; flex-direction: column; transition: width 0.2s, min-width 0.2s;
-    overflow: hidden;
+    width: 280px; min-width: 200px; max-width: 600px; background: #0d0d14; border-right: 1px solid #222;
+    display: flex; flex-direction: column; overflow: hidden; position: relative;
 }
-.swarmtalk-sidebar.collapsed { width: 40px; min-width: 40px; }
+.st-resize-handle {
+    position: absolute; top: 0; right: -5px; width: 10px; height: 100%;
+    cursor: col-resize; z-index: 20;
+}
+.st-resize-handle:hover, .st-resize-handle.active { background: rgba(204,102,0,0.4); }
+.swarmtalk-sidebar.collapsed { width: 40px !important; min-width: 40px !important; }
 .swarmtalk-sidebar.collapsed .st-body { display: none; }
 .swarmtalk-sidebar.collapsed .st-title { display: none; }
 .swarmtalk-sidebar.collapsed .st-toggle { transform: rotate(180deg); }
@@ -491,7 +495,14 @@ body {
 .st-section { border-bottom: 1px solid #1a1a22; }
 .st-section-title {
     font-size: 0.65rem; color: #555; padding: 8px 12px 4px; letter-spacing: 1px;
+    display: flex; align-items: center; justify-content: space-between;
 }
+.st-add-btn {
+    background: none; border: 1px solid #444; color: #888; width: 18px; height: 18px;
+    border-radius: 3px; cursor: pointer; font-size: 0.8rem; line-height: 1;
+    display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.st-add-btn:hover { border-color: #cc6600; color: #cc6600; }
 .st-agent {
     display: flex; align-items: center; gap: 8px; padding: 4px 12px; cursor: pointer;
     font-size: 0.8rem;
@@ -608,6 +619,7 @@ body {
 <div class="app-layout">
 <!-- SwarmTalk Sidebar -->
 <div class="swarmtalk-sidebar" id="swarmtalk-sidebar">
+    <div class="st-resize-handle" id="st-resize-handle"></div>
     <div class="st-header" onclick="toggleSwarmTalk()">
         <span class="st-title">SWARMTALK</span>
         <span class="st-toggle" id="st-toggle">&#9664;</span>
@@ -618,7 +630,7 @@ body {
             <div id="st-agents"></div>
         </div>
         <div class="st-section">
-            <div class="st-section-title">CHANNELS</div>
+            <div class="st-section-title">CHANNELS <button class="st-add-btn" onclick="promptCreateChannel()" title="Create channel">+</button></div>
             <div id="st-channels"></div>
         </div>
         <div class="st-section">
@@ -3496,6 +3508,52 @@ function handleForumChannelResolved(msg) {
     renderForumChannels();
     addLog('forum_resolved', 'Channel resolved: ' + msg.outcome);
 }
+
+// ---- Create Channel ----
+function promptCreateChannel() {
+    const name = prompt('Channel name:');
+    if (!name || !name.trim()) return;
+    const channelId = name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+    // Post an initial system message to create the channel
+    fetch('/api/swarm/forum/' + encodeURIComponent(channelId) + '/post', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({content: 'Channel created by Human Operator', author_name: 'System'})
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'posted') {
+            loadForumChannels();
+            setTimeout(() => openChannel(channelId), 500);
+        } else {
+            addLog('forum_error', 'Create channel failed: ' + (data.error || 'unknown'));
+        }
+    }).catch(err => addLog('forum_error', 'Create channel failed: ' + err.message));
+}
+
+// ---- Sidebar Resize ----
+(function() {
+    const sidebar = document.getElementById('swarmtalk-sidebar');
+    const handle = document.getElementById('st-resize-handle');
+    if (!handle || !sidebar) return;
+    let dragging = false, startX = 0, startW = 0;
+    handle.addEventListener('mousedown', function(e) {
+        dragging = true; startX = e.clientX; startW = sidebar.offsetWidth;
+        handle.classList.add('active');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', function(e) {
+        if (!dragging) return;
+        const newW = Math.max(200, Math.min(600, startW + (e.clientX - startX)));
+        sidebar.style.width = newW + 'px';
+    });
+    document.addEventListener('mouseup', function() {
+        if (!dragging) return;
+        dragging = false;
+        handle.classList.remove('active');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+    });
+})();
 
 // Load forum channels on startup
 setTimeout(() => { loadForumChannels(); renderForumAgents(); }, 1000);
