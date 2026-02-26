@@ -59,4 +59,14 @@ interface AgentRpc
      * @return int[]
      */
     public function getSessionPids(string $sessionName): array;
+
+    /**
+     * Write .mcp.json in the project directory so agents can reach the emperor's MCP endpoint.
+     */
+    public function ensureMcpConfig(string $projectPath, string $mcpUrl): void;
+
+    /**
+     * Ensure Claude auth credentials are accessible in the agent's working directory.
+     */
+    public function ensureClaudeAuth(string $workDir): void;
 }

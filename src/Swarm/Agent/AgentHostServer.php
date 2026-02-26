@@ -110,6 +110,14 @@ class AgentHostServer
                 'getSessionPids' => [
                     'pids' => $this->rpc->getSessionPids($params['session'] ?? ''),
                 ],
+                'ensureMcpConfig' => (function () use ($params) {
+                    $this->rpc->ensureMcpConfig($params['projectPath'] ?? '', $params['mcpUrl'] ?? '');
+                    return ['ok' => true];
+                })(),
+                'ensureClaudeAuth' => (function () use ($params) {
+                    $this->rpc->ensureClaudeAuth($params['workDir'] ?? '');
+                    return ['ok' => true];
+                })(),
                 default => throw new \InvalidArgumentException("Unknown method: {$method}"),
             };
 

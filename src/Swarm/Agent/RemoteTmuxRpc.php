@@ -82,6 +82,16 @@ class RemoteTmuxRpc implements AgentRpc
         return $result['pids'] ?? [];
     }
 
+    public function ensureMcpConfig(string $projectPath, string $mcpUrl): void
+    {
+        $this->call('ensureMcpConfig', ['projectPath' => $projectPath, 'mcpUrl' => $mcpUrl]);
+    }
+
+    public function ensureClaudeAuth(string $workDir): void
+    {
+        $this->call('ensureClaudeAuth', ['workDir' => $workDir]);
+    }
+
     /**
      * Make an HTTP POST to the agent RPC server.
      * @return array<string, mixed>

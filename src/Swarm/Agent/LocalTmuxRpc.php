@@ -82,4 +82,52 @@ class LocalTmuxRpc implements AgentRpc
 
         return array_unique(array_merge($pids, $grandchildren));
     }
+
+    public function ensureMcpConfig(string $projectPath, string $mcpUrl): void
+    {
+        $mcpFile = rtrim($projectPath, '/') . '/.mcp.json';
+
+        $config = [];
+        if (file_exists($mcpFile)) {
+            $existing = json_decode(file_get_contents($mcpFile), true);
+            if (is_array($existing)) {
+                $config = $existing;
+            }
+        }
+
+        if (isset($config['mcpServers']['voidlux-swarm'])
+            && ($config['mcpServers']['voidlux-swarm']['url'] ?? '') === $mcpUrl
+        ) {
+            return;
+        }
+
+        if (!isset($config['mcpServers'])) {
+            $config['mcpServers'] = [];
+        }
+
+        $config['mcpServers']['voidlux-swarm'] = [
+            'type' => 'http',
+            'url' => $mcpUrl,
+        ];
+
+        file_put_contents(
+            $mcpFile,
+            json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"
+        );
+    }
+
+    public function ensureClaudeAuth(string $workDir): void
+    {
+        $workdirClaude = rtrim($workDir, '/') . '/.claude';
+        $rootClaude = $_SERVER['HOME'] ?? '/root';
+        $rootClaude = rtrim($rootClaude, '/') . '/.claude';
+
+        if (file_exists($workdirClaude)) {
+            return;
+        }
+
+        if (is_dir($rootClaude)) {
+            @symlink($rootClaude, $workdirClaude);
+        }
+    }
 }

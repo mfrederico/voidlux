@@ -382,9 +382,9 @@ FORMAT;
             $command = $envPrefix . $command;
         }
 
-        // Ensure Claude credentials are available in the working directory
+        // Ensure Claude credentials are available in the working directory (on agent side)
         if ($tool === 'claude') {
-            $this->ensureClaudeAuth($cwd);
+            $this->rpc->ensureClaudeAuth($cwd);
         }
 
         file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " attempting to create session {$sessionName} with command: {$command}\n", FILE_APPEND);
@@ -392,7 +392,8 @@ FORMAT;
         file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " createSessionWithName returned: " . ($created ? 'TRUE' : 'FALSE') . "\n", FILE_APPEND);
 
         if ($created) {
-            $this->ensureMcpConfig($cwd);
+            $mcpUrl = "http://{$this->mcpHost}:{$this->httpPort}/mcp";
+            $this->rpc->ensureMcpConfig($cwd, $mcpUrl);
             file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " MCP config created for {$sessionName}\n", FILE_APPEND);
 
             // Auto-complete Claude Code setup wizard if needed
@@ -427,64 +428,13 @@ FORMAT;
     }
 
     /**
-     * Ensure Claude Code can find authentication credentials in the working directory.
-     * Creates a symlink from workdir/.claude to the root user's .claude if it doesn't exist.
-     */
-    private function ensureClaudeAuth(string $workDir): void
-    {
-        $workdirClaude = rtrim($workDir, '/') . '/.claude';
-        $rootClaude = $_SERVER['HOME'] ?? '/root';
-        $rootClaude = rtrim($rootClaude, '/') . '/.claude';
-
-        // Skip if already exists (symlink or directory)
-        if (file_exists($workdirClaude)) {
-            return;
-        }
-
-        // Create symlink to root's .claude if it exists
-        if (is_dir($rootClaude)) {
-            @symlink($rootClaude, $workdirClaude);
-        }
-    }
-
-    /**
      * Ensure the project directory has a .mcp.json with the voidlux-swarm MCP server entry.
-     * Merges into existing config if present, skips if entry already exists.
+     * Delegates to the RPC layer so the file is written on the agent's filesystem.
      */
     public function ensureMcpConfig(string $projectPath): void
     {
-        $mcpFile = rtrim($projectPath, '/') . '/.mcp.json';
-
-        $config = [];
-        if (file_exists($mcpFile)) {
-            $existing = json_decode(file_get_contents($mcpFile), true);
-            if (is_array($existing)) {
-                $config = $existing;
-            }
-        }
-
-        $expectedUrl = "http://{$this->mcpHost}:{$this->httpPort}/mcp";
-
-        // Skip if already configured with correct URL
-        if (isset($config['mcpServers']['voidlux-swarm'])
-            && ($config['mcpServers']['voidlux-swarm']['url'] ?? '') === $expectedUrl
-        ) {
-            return;
-        }
-
-        if (!isset($config['mcpServers'])) {
-            $config['mcpServers'] = [];
-        }
-
-        $config['mcpServers']['voidlux-swarm'] = [
-            'type' => 'http',
-            'url' => $expectedUrl,
-        ];
-
-        file_put_contents(
-            $mcpFile,
-            json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"
-        );
+        $mcpUrl = "http://{$this->mcpHost}:{$this->httpPort}/mcp";
+        $this->rpc->ensureMcpConfig($projectPath, $mcpUrl);
     }
 
     /**
