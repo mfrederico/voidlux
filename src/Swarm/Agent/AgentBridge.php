@@ -6,8 +6,9 @@ namespace VoidLux\Swarm\Agent;
 
 use Aoe\Session\Status;
 use Aoe\Tmux\StatusDetector;
-use Aoe\Tmux\TmuxService;
+use VoidLux\Swarm\Agent\AgentRpc;
 use VoidLux\Swarm\Agent\AgentSizeConfig;
+use VoidLux\Swarm\Agent\LocalTmuxRpc;
 use VoidLux\Swarm\Ai\TaskPlanner;
 use VoidLux\Swarm\Capabilities\PluginManager;
 use VoidLux\Swarm\Git\GitWorkspace;
@@ -17,11 +18,11 @@ use VoidLux\Swarm\Storage\SwarmDatabase;
 
 /**
  * Bridge between the swarm orchestrator and actual tmux-based AI agents.
- * Wraps aoe-php TmuxService for sending tasks and reading output.
+ * Uses AgentRpc interface for session I/O — local tmux or remote HTTP.
  */
 class AgentBridge
 {
-    private TmuxService $tmux;
+    private AgentRpc $rpc;
     private StatusDetector $detector;
     private GitWorkspace $git;
     private ?PluginManager $pluginManager = null;
@@ -29,11 +30,11 @@ class AgentBridge
     public function __construct(
         private readonly SwarmDatabase $db,
         private readonly int $httpPort = 9091,
-        ?TmuxService $tmux = null,
+        ?AgentRpc $rpc = null,
         ?StatusDetector $detector = null,
         ?GitWorkspace $git = null,
     ) {
-        $this->tmux = $tmux ?? new TmuxService('swarm', 'vl');
+        $this->rpc = $rpc ?? new LocalTmuxRpc();
         $this->detector = $detector ?? new StatusDetector();
         $this->git = $git ?? new GitWorkspace();
     }
@@ -87,8 +88,8 @@ class AgentBridge
         // Clear agent context before new task
         // Note: usleep (not Coroutine::sleep) to keep delivery atomic —
         // yielding here lets the monitor poll and see "idle" before the prompt arrives
-        $this->tmux->sendTextByName($sessionName, '/clear');
-        $this->tmux->sendEnterByName($sessionName);
+        $this->rpc->sendText($sessionName, '/clear');
+        $this->rpc->sendEnter($sessionName);
         usleep(1_500_000);
 
         // Build the task prompt with the resolved working directory
@@ -97,11 +98,11 @@ class AgentBridge
         // Paste into tmux using load-buffer + paste-buffer (bracketed paste mode).
         // Unlike send-keys -l, this handles newlines, emojis, and special characters
         // correctly — the entire text is treated as a single paste operation.
-        $sent = $this->tmux->pasteTextByName($sessionName, $prompt);
+        $sent = $this->rpc->pasteText($sessionName, $prompt);
         // Claude Code needs time to render pasted text — scale by line count
         $lineCount = substr_count($prompt, "\n") + 1;
         usleep(max(500_000, $lineCount * 250_000));
-        $this->tmux->sendEnterByName($sessionName);
+        $this->rpc->sendEnter($sessionName);
 
         return $sent;
     }
@@ -125,18 +126,18 @@ class AgentBridge
         }
 
         // Clear agent context before new planning task
-        $this->tmux->sendTextByName($sessionName, '/clear');
-        $this->tmux->sendEnterByName($sessionName);
+        $this->rpc->sendText($sessionName, '/clear');
+        $this->rpc->sendEnter($sessionName);
         usleep(1_500_000);
 
         // Build planning-specific prompt
         $prompt = $this->buildPlannerPrompt($task);
 
         // Paste into tmux
-        $sent = $this->tmux->pasteTextByName($sessionName, $prompt);
+        $sent = $this->rpc->pasteText($sessionName, $prompt);
         $lineCount = substr_count($prompt, "\n") + 1;
         usleep(max(500_000, $lineCount * 250_000));
-        $this->tmux->sendEnterByName($sessionName);
+        $this->rpc->sendEnter($sessionName);
 
         return $sent;
     }
@@ -217,11 +218,11 @@ FORMAT;
             return Status::Stopped;
         }
 
-        if (!$this->tmux->sessionExistsByName($sessionName)) {
+        if (!$this->rpc->sessionExists($sessionName)) {
             return Status::Stopped;
         }
 
-        $content = $this->tmux->capturePaneByName($sessionName, 30);
+        $content = $this->rpc->capturePane($sessionName, 30);
         return $this->detector->detect($content);
     }
 
@@ -235,7 +236,7 @@ FORMAT;
             return '';
         }
 
-        return $this->tmux->capturePaneByName($sessionName, $lines);
+        return $this->rpc->capturePane($sessionName, $lines);
     }
 
     /**
@@ -248,10 +249,10 @@ FORMAT;
             return false;
         }
 
-        $sent = $this->tmux->pasteTextByName($sessionName, $text);
+        $sent = $this->rpc->pasteText($sessionName, $text);
         $lineCount = substr_count($text, "\n") + 1;
         usleep(max(500_000, $lineCount * 250_000));
-        $this->tmux->sendEnterByName($sessionName);
+        $this->rpc->sendEnter($sessionName);
         return $sent;
     }
 
@@ -350,7 +351,7 @@ FORMAT;
     {
         file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " ensureSession called for {$sessionName} in {$cwd}\n", FILE_APPEND);
 
-        if ($this->tmux->sessionExistsByName($sessionName)) {
+        if ($this->rpc->sessionExists($sessionName)) {
             file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " session {$sessionName} already exists\n", FILE_APPEND);
             return true;
         }
@@ -386,7 +387,7 @@ FORMAT;
         }
 
         file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " attempting to create session {$sessionName} with command: {$command}\n", FILE_APPEND);
-        $created = $this->tmux->createSessionWithName($sessionName, $cwd, $command);
+        $created = $this->rpc->createSession($sessionName, $cwd, $command);
         file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " createSessionWithName returned: " . ($created ? 'TRUE' : 'FALSE') . "\n", FILE_APPEND);
 
         if ($created) {
@@ -415,11 +416,11 @@ FORMAT;
         sleep(4);
 
         // Press Enter to accept "Yes, I trust this folder"
-        $this->tmux->sendKeysByName($sessionName, 'Enter');
+        $this->rpc->sendKeys($sessionName, 'Enter');
         sleep(2);
 
         // One more Enter for any follow-up prompt (Grove policy, etc.)
-        $this->tmux->sendKeysByName($sessionName, 'Enter');
+        $this->rpc->sendKeys($sessionName, 'Enter');
 
         file_put_contents('/tmp/agent-debug.log', date('Y-m-d H:i:s') . " Auto-completed trust dialog for {$sessionName}\n", FILE_APPEND);
     }
@@ -492,8 +493,8 @@ FORMAT;
      */
     private function switchModel(string $sessionName, string $model): bool
     {
-        $this->tmux->sendTextByName($sessionName, '/model ' . $model);
-        $this->tmux->sendEnterByName($sessionName);
+        $this->rpc->sendText($sessionName, '/model ' . $model);
+        $this->rpc->sendEnter($sessionName);
 
         // Poll for the agent to return to idle after model switch.
         // Claude Code processes /model quickly — 5s max is generous.
@@ -503,7 +504,7 @@ FORMAT;
         while ($waited < $maxWaitUs) {
             usleep($pollIntervalUs);
             $waited += $pollIntervalUs;
-            $content = $this->tmux->capturePaneByName($sessionName, 10);
+            $content = $this->rpc->capturePane($sessionName, 10);
             $status = $this->detector->detect($content);
             if ($status === Status::Idle) {
                 return true;
@@ -625,16 +626,16 @@ FORMAT;
     public function killSession(AgentModel $agent): bool
     {
         $sessionName = $agent->tmuxSessionId;
-        if (!$sessionName || !$this->tmux->sessionExistsByName($sessionName)) {
+        if (!$sessionName || !$this->rpc->sessionExists($sessionName)) {
             return false;
         }
 
         // Capture PIDs of all processes in the session before killing it
-        $pids = $this->getSessionPids($sessionName);
+        $pids = $this->rpc->getSessionPids($sessionName);
 
-        $this->tmux->sendKeysByName($sessionName, 'C-c');
+        $this->rpc->sendKeys($sessionName, 'C-c');
         usleep(200_000);
-        $killed = $this->tmux->killSessionByName($sessionName);
+        $killed = $this->rpc->killSession($sessionName);
 
         // Kill any orphaned processes that survived the tmux SIGHUP
         usleep(500_000);
@@ -655,38 +656,13 @@ FORMAT;
         return $killed;
     }
 
-    /**
-     * Get PIDs of all processes in a tmux session (pane PID + its children).
-     * @return int[]
-     */
-    private function getSessionPids(string $sessionName): array
-    {
-        $panePid = trim(shell_exec("tmux list-panes -t " . escapeshellarg($sessionName) . " -F '#{pane_pid}' 2>/dev/null") ?: '');
-        if (!$panePid || !is_numeric($panePid)) {
-            return [];
-        }
-
-        // Get all descendants of the pane shell process
-        $tree = trim(shell_exec("pgrep -P $panePid 2>/dev/null") ?: '');
-        $pids = array_filter(array_map('intval', explode("\n", $tree)));
-
-        // Also get grandchildren (claude spawns child processes)
-        $grandchildren = [];
-        foreach ($pids as $pid) {
-            $gc = trim(shell_exec("pgrep -P $pid 2>/dev/null") ?: '');
-            $grandchildren = array_merge($grandchildren, array_filter(array_map('intval', explode("\n", $gc))));
-        }
-
-        return array_unique(array_merge($pids, $grandchildren));
-    }
-
     private function isProcessAlive(int $pid): bool
     {
         return $pid > 0 && posix_kill($pid, 0);
     }
 
-    public function getTmuxService(): TmuxService
+    public function getRpc(): AgentRpc
     {
-        return $this->tmux;
+        return $this->rpc;
     }
 }
