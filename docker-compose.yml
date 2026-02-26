@@ -1,5 +1,6 @@
 volumes:
   claude-auth:
+  agent-workbench:
 
 services:
   voidlux:
@@ -7,7 +8,6 @@ services:
     ports:
       - "9090:9090"
       - "9091:9091"
-      - "5900-5910:5900-5910"  # VNC ports for X11 displays
     volumes:
       - ./data:/app/data
       - ./workbench:/app/workbench
@@ -22,6 +22,10 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - VOIDLUX_LLM_PROVIDER=${VOIDLUX_LLM_PROVIDER:-claude}
       - VOIDLUX_LLM_MODEL=${VOIDLUX_LLM_MODEL:-claude-sonnet-4-5-20250929}
+      # Point emperor to remote agent container's RPC server
+      - VOIDLUX_AGENT_HOST=${VOIDLUX_AGENT_HOST:-}
+      # MCP host for .mcp.json in agent workdirs (agents reach emperor via this)
+      - VOIDLUX_MCP_HOST=${VOIDLUX_MCP_HOST:-}
     # # Ollama configuration (uncomment to use local Ollama instance)
     # environment:
     #   - VOIDLUX_LLM_PROVIDER=ollama
@@ -30,3 +34,26 @@ services:
     #   - VOIDLUX_LLM_PORT=11434
     # extra_hosts:
     #   - "host.docker.internal:host-gateway"
+
+  # Separate agent container — runs tmux sessions with Claude Code agents.
+  # Emperor sends RPC commands here; agents call emperor's MCP endpoint back.
+  # To enable: set VOIDLUX_AGENT_HOST=agents:9092 and VOIDLUX_MCP_HOST=voidlux
+  agents:
+    build: .
+    entrypoint: ["/app/scripts/agent-entrypoint.sh"]
+    ports:
+      - "9092:9092"            # Agent RPC port
+      - "5900-5910:5900-5910"  # VNC ports for X11 displays
+    volumes:
+      - agent-workbench:/app/workbench
+      - claude-auth:/root/.claude  # Share Claude auth with emperor
+      # Dev hot-reload
+      - ./src:/app/src
+      - ./config:/app/config
+      - ./scripts:/app/scripts
+      - ./bin:/app/bin
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - AGENT_HOST_PORT=9092
+    profiles:
+      - agents  # Only start with: docker compose --profile agents up

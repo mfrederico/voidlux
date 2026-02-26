@@ -108,6 +108,8 @@ EMPEROR_CMD=(php bin/voidlux swarm
 [ -n "${ANTHROPIC_API_KEY:-}" ]     && EMPEROR_CMD+=(--claude-api-key="$ANTHROPIC_API_KEY")
 [ -n "${VOIDLUX_AUTH_SECRET:-}" ]   && EMPEROR_CMD+=(--auth-secret="$VOIDLUX_AUTH_SECRET")
 [ -n "${VOIDLUX_TEST_COMMAND:-}" ]  && EMPEROR_CMD+=(--test-command="$VOIDLUX_TEST_COMMAND")
+[ -n "${VOIDLUX_AGENT_HOST:-}" ]   && EMPEROR_CMD+=(--agent-host="$VOIDLUX_AGENT_HOST")
+[ -n "${VOIDLUX_MCP_HOST:-}" ]     && EMPEROR_CMD+=(--mcp-host="$VOIDLUX_MCP_HOST")
 
 # ── Build seneschal command ────────────────────────────────────────
 SENESCHAL_CMD=(php bin/voidlux seneschal

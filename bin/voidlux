@@ -7,6 +7,7 @@
  *   demo          -- Run the graffiti wall demo
  *   coop          -- Run the smart chicken coop server
  *   swarm         -- Run the swarm orchestration server
+ *   agent-host    -- Run agent-side RPC server (separate container)
  *   seneschal     -- Run the stable reverse proxy for swarm dashboard
  *   compile <dir> -- Compile a PHP app into a static binary
  *   detect <dir>  -- Detect required extensions
@@ -88,6 +89,10 @@ switch ($command) {
         runSeneschal($options);
         break;
 
+    case 'agent-host':
+        runAgentHost($options);
+        break;
+
     case 'compile':
         runCompile($positional, $options);
         break;
@@ -165,6 +170,8 @@ function runSwarm(array $options): void
     $claudeApiKey = $options['claude-api-key'] ?? '';
     $testCommand = $options['test-command'] ?? '';
     $authSecret = $options['auth-secret'] ?? getenv('VOIDLUX_AUTH_SECRET') ?: '';
+    $agentHost = $options['agent-host'] ?? getenv('VOIDLUX_AGENT_HOST') ?: '';
+    $mcpHost = $options['mcp-host'] ?? getenv('VOIDLUX_MCP_HOST') ?: '';
     $swarmConfig = \VoidLux\Swarm\Config\SwarmConfig::fromCliAndEnv($options);
 
     // Apply model tier overrides from CLI flags / config file
@@ -186,9 +193,23 @@ function runSwarm(array $options): void
         testCommand: $testCommand,
         authSecret: $authSecret,
         swarmConfig: $swarmConfig,
+        agentHost: $agentHost,
+        mcpHost: $mcpHost,
     );
 
     $server->run();
+}
+
+function runAgentHost(array $options): void
+{
+    $port = (int) ($options['port'] ?? 9092);
+    $host = $options['host'] ?? '0.0.0.0';
+
+    $server = new \VoidLux\Swarm\Agent\AgentHostServer(
+        host: $host,
+        port: $port,
+    );
+    $server->start();
 }
 
 function runSeneschal(array $options): void
@@ -249,6 +270,7 @@ Commands:
   demo                    Run the graffiti wall P2P demo
   coop                    Run the smart chicken coop server
   swarm                   Run the swarm orchestration server
+  agent-host              Run agent-side RPC server (for separate containers)
   seneschal               Stable reverse proxy for swarm dashboard
   compile <app-dir>       Compile a PHP app into a static binary
   detect <app-dir>        Detect required PHP extensions
@@ -287,6 +309,13 @@ Swarm Options:
   --model-large=MODEL     Override model for large complexity tasks
   --model-xl=MODEL        Override model for xl complexity tasks
   --model-config=PATH     JSON file with per-provider model mappings
+  --agent-host=HOST:PORT  Remote agent RPC server (or VOIDLUX_AGENT_HOST env)
+  --mcp-host=HOST         Emperor hostname for MCP URL in agent .mcp.json
+                          (or VOIDLUX_MCP_HOST env, default: localhost)
+
+Agent-Host Options:
+  --host=HOST             Listen address (default: 0.0.0.0)
+  --port=PORT             RPC listen port (default: 9092)
 
 Seneschal Options:
   --http-port=PORT        Proxy listen port (default: 9090)

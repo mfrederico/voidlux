@@ -33,6 +33,7 @@ class AgentBridge
         ?AgentRpc $rpc = null,
         ?StatusDetector $detector = null,
         ?GitWorkspace $git = null,
+        private readonly string $mcpHost = 'localhost',
     ) {
         $this->rpc = $rpc ?? new LocalTmuxRpc();
         $this->detector = $detector ?? new StatusDetector();
@@ -462,7 +463,7 @@ FORMAT;
             }
         }
 
-        $expectedUrl = "http://localhost:{$this->httpPort}/mcp";
+        $expectedUrl = "http://{$this->mcpHost}:{$this->httpPort}/mcp";
 
         // Skip if already configured with correct URL
         if (isset($config['mcpServers']['voidlux-swarm'])
@@ -477,7 +478,7 @@ FORMAT;
 
         $config['mcpServers']['voidlux-swarm'] = [
             'type' => 'http',
-            'url' => "http://localhost:{$this->httpPort}/mcp",
+            'url' => $expectedUrl,
         ];
 
         file_put_contents(

@@ -102,6 +102,8 @@ class Server
         private readonly string $testCommand = '',
         private readonly string $authSecret = '',
         private readonly ?SwarmConfig $swarmConfig = null,
+        private readonly string $agentHost = '',
+        private readonly string $mcpHost = '',
     ) {
         $this->startTime = microtime(true);
     }
@@ -251,7 +253,13 @@ class Server
         $marketplaceDb = new \VoidLux\Swarm\Marketplace\MarketplaceDatabase(__DIR__ . '/../../data/marketplace.db');
         $marketplace = new \VoidLux\Swarm\Marketplace\MarketplaceMcp($marketplaceDb);
 
-        $this->agentBridge = new AgentBridge($this->db, $this->httpPort);
+        $agentRpc = null;
+        if ($this->agentHost !== '') {
+            $agentRpc = new Agent\RemoteTmuxRpc($this->agentHost);
+            $this->log("Using remote agent RPC: {$this->agentHost}");
+        }
+        $effectiveMcpHost = $this->mcpHost ?: 'localhost';
+        $this->agentBridge = new AgentBridge($this->db, $this->httpPort, rpc: $agentRpc, mcpHost: $effectiveMcpHost);
         $this->agentBridge->setPluginManager($pluginManager);
         $this->agentRegistry = new AgentRegistry($this->db, $this->taskGossip, $this->clock, $this->nodeId);
         $this->agentRegistry->setTaskQueue($this->taskQueue);
