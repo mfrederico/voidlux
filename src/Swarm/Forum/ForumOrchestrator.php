@@ -158,6 +158,7 @@ class ForumOrchestrator
             return;
         }
 
+        $this->log("general: " . count($messages) . " new message(s) since ts={$sinceTs}, " . count($agents) . " agents");
         $lastTs = end($messages)->lamportTs;
         $now = microtime(true);
         $delivered = false;
@@ -199,6 +200,7 @@ class ForumOrchestrator
             }
 
             $notification = "[SwarmTalk General] {$latest->authorName} posted: \"{$preview}\" — Read and respond with forum_list/forum_post (channel_id=\"general\").";
+            $this->log("general: notifying {$agent->name} (count={$count}, latest by {$latest->authorName})");
             $this->bridge->sendText($agent, $notification);
 
             $this->generalNotifyCooldown[$agent->id] = $now;
@@ -211,6 +213,9 @@ class ForumOrchestrator
         // Otherwise, undelivered messages will be retried on the next cycle.
         if ($delivered) {
             $this->lastNotifiedTs[self::GENERAL_CHANNEL_ID] = $lastTs;
+            $this->log("general: ts advanced to {$lastTs}");
+        } else {
+            $this->log("general: no agents notified (all busy/cooldown/rate-limited)");
         }
     }
 

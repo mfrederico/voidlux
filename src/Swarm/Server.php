@@ -1129,15 +1129,20 @@ class Server
         // Seed the general channel with a welcome message (idempotent)
         $forumOrchestrator->seedGeneralChannel();
 
-        // Start forum notification coroutine (notifies persona agents of new messages every 15s)
-        Coroutine::create(function () use ($forumOrchestrator) {
-            $generalChannelId = $forumOrchestrator->getGeneralChannelId();
-            while ($this->running) {
-                Coroutine::sleep(15);
+        // Start forum notification timer (notifies persona agents of new messages every 15s)
+        // Uses Swoole\Timer instead of a coroutine loop to avoid deadlock detection issues.
+        $this->log("forum notification timer starting");
+        \Swoole\Timer::tick(15_000, function () use ($forumOrchestrator) {
+            if (!$this->running) {
+                return;
+            }
+            try {
                 $personaAgents = $forumOrchestrator->getPersonaAgents();
                 if (empty($personaAgents)) {
-                    continue;
+                    return;
                 }
+
+                $generalChannelId = $forumOrchestrator->getGeneralChannelId();
 
                 // General channel: enriched notifications with anti-loop protection
                 $forumOrchestrator->notifyGeneralChannel($personaAgents);
@@ -1150,6 +1155,8 @@ class Server
                     }
                     $forumOrchestrator->notifyNewMessages($channelId, $personaAgents);
                 }
+            } catch (\Throwable $e) {
+                $this->log("forum notification error: {$e->getMessage()}");
             }
         });
 
