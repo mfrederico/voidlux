@@ -159,9 +159,8 @@ class ForumOrchestrator
         }
 
         $lastTs = end($messages)->lamportTs;
-        $this->lastNotifiedTs[self::GENERAL_CHANNEL_ID] = $lastTs;
-
         $now = microtime(true);
+        $delivered = false;
 
         foreach ($agents as $agent) {
             if ($agent->status !== 'idle') {
@@ -204,7 +203,14 @@ class ForumOrchestrator
 
             $this->generalNotifyCooldown[$agent->id] = $now;
             $this->generalNotifyCount[$agent->id] = $count + 1;
+            $delivered = true;
             usleep(200_000);
+        }
+
+        // Only advance the ts pointer if at least one agent was notified.
+        // Otherwise, undelivered messages will be retried on the next cycle.
+        if ($delivered) {
+            $this->lastNotifiedTs[self::GENERAL_CHANNEL_ID] = $lastTs;
         }
     }
 
@@ -450,12 +456,12 @@ class ForumOrchestrator
 
         $count = count($messages);
         $lastTs = end($messages)->lamportTs;
-        $this->lastNotifiedTs[$channelId] = $lastTs;
 
         // Get channel label from first message or task
         $task = $this->db->getTask($channelId) ?? $this->db->getTask(str_replace('review:', '', $channelId));
         $channelLabel = $task ? $task->title : $channelId;
 
+        $delivered = false;
         foreach ($agents as $agent) {
             if ($agent->status !== 'idle') {
                 continue; // Don't interrupt busy agents
@@ -475,7 +481,14 @@ class ForumOrchestrator
 
             $notification = "[SwarmTalk] {$count} new message(s) in channel '{$channelLabel}'. Use forum_list with channel_id=\"{$channelId}\" to read and respond.";
             $this->bridge->sendText($agent, $notification);
+            $delivered = true;
             usleep(200_000);
+        }
+
+        // Only advance ts if at least one agent was notified.
+        // Otherwise, undelivered messages will be retried next cycle.
+        if ($delivered) {
+            $this->lastNotifiedTs[$channelId] = $lastTs;
         }
     }
 
