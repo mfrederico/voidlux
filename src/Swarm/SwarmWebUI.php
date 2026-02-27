@@ -703,6 +703,42 @@ body {
         <div id="contributions-list"></div>
     </div>
 
+    <div class="section board-section">
+        <h2>Message Board
+            <button class="toggle-btn" onclick="showPostForm()" style="border-color:#446644;color:#66aa66;">Post Message</button>
+            <select id="board-filter" onchange="renderBoard()" style="background:#1a1a1a;border:1px solid #333;color:#888;padding:2px 8px;border-radius:3px;font-size:0.75rem;font-family:inherit;margin-left:4px;">
+                <option value="">All</option>
+                <option value="task">Tasks</option>
+                <option value="idea">Ideas</option>
+                <option value="bounty">Bounties</option>
+                <option value="announcement">Announcements</option>
+                <option value="discussion">Discussion</option>
+            </select>
+        </h2>
+        <div id="board-post-form" style="display:none;margin-bottom:14px;">
+            <form onsubmit="postBoardMessage(event)" class="task-form expanded">
+                <input name="title" placeholder="Message title..." required style="background:#0d1a0d;border-color:#1a3a1a;">
+                <textarea name="content" placeholder="Content..." rows="3" style="background:#0d1a0d;border-color:#1a3a1a;"></textarea>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select name="category" style="background:#0d1a0d;border:1px solid #1a3a1a;color:#fff;padding:8px;border-radius:4px;font-family:inherit;">
+                        <option value="discussion">Discussion</option>
+                        <option value="task">Task</option>
+                        <option value="idea">Idea</option>
+                        <option value="bounty">Bounty</option>
+                        <option value="announcement">Announcement</option>
+                    </select>
+                    <input name="tags" placeholder="Tags (comma-separated)" style="flex:1;background:#0d1a0d;border-color:#1a3a1a;">
+                    <input name="priority" type="number" min="0" max="10" value="0" placeholder="Priority" style="width:60px;background:#0d1a0d;border-color:#1a3a1a;">
+                    <button type="submit" style="background:#336633;">Post</button>
+                    <button type="button" onclick="document.getElementById('board-post-form').style.display='none'" style="background:#333;">Cancel</button>
+                </div>
+            </form>
+        </div>
+        <div class="card-grid" id="board-list">
+            <div class="empty" style="color:#446644;">No messages posted yet</div>
+        </div>
+    </div>
+
     <div class="section">
         <h2>Create Task <button class="toggle-btn" onclick="toggleForm()">expand</button></h2>
         <form class="task-form" id="task-form" onsubmit="createTask(event)">
@@ -937,42 +973,6 @@ body {
             <div id="swarm-history-list">
                 <div class="empty" style="color:#332244;">No completion history yet</div>
             </div>
-        </div>
-    </div>
-
-    <div class="section board-section">
-        <h2>Message Board
-            <button class="toggle-btn" onclick="showPostForm()" style="border-color:#446644;color:#66aa66;">Post Message</button>
-            <select id="board-filter" onchange="renderBoard()" style="background:#1a1a1a;border:1px solid #333;color:#888;padding:2px 8px;border-radius:3px;font-size:0.75rem;font-family:inherit;margin-left:4px;">
-                <option value="">All</option>
-                <option value="task">Tasks</option>
-                <option value="idea">Ideas</option>
-                <option value="bounty">Bounties</option>
-                <option value="announcement">Announcements</option>
-                <option value="discussion">Discussion</option>
-            </select>
-        </h2>
-        <div id="board-post-form" style="display:none;margin-bottom:14px;">
-            <form onsubmit="postBoardMessage(event)" class="task-form expanded">
-                <input name="title" placeholder="Message title..." required style="background:#0d1a0d;border-color:#1a3a1a;">
-                <textarea name="content" placeholder="Content..." rows="3" style="background:#0d1a0d;border-color:#1a3a1a;"></textarea>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <select name="category" style="background:#0d1a0d;border:1px solid #1a3a1a;color:#fff;padding:8px;border-radius:4px;font-family:inherit;">
-                        <option value="discussion">Discussion</option>
-                        <option value="task">Task</option>
-                        <option value="idea">Idea</option>
-                        <option value="bounty">Bounty</option>
-                        <option value="announcement">Announcement</option>
-                    </select>
-                    <input name="tags" placeholder="Tags (comma-separated)" style="flex:1;background:#0d1a0d;border-color:#1a3a1a;">
-                    <input name="priority" type="number" min="0" max="10" value="0" placeholder="Priority" style="width:60px;background:#0d1a0d;border-color:#1a3a1a;">
-                    <button type="submit" style="background:#336633;">Post</button>
-                    <button type="button" onclick="document.getElementById('board-post-form').style.display='none'" style="background:#333;">Cancel</button>
-                </div>
-            </form>
-        </div>
-        <div class="card-grid" id="board-list">
-            <div class="empty" style="color:#446644;">No messages posted yet</div>
         </div>
     </div>
 
