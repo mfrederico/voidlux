@@ -1126,19 +1126,28 @@ class Server
         $this->controller->setForumOrchestrator($forumOrchestrator);
         $this->agentMonitor->setForumOrchestrator($forumOrchestrator);
 
+        // Seed the general channel with a welcome message (idempotent)
+        $forumOrchestrator->seedGeneralChannel();
+
         // Start forum notification coroutine (notifies persona agents of new messages every 15s)
         Coroutine::create(function () use ($forumOrchestrator) {
+            $generalChannelId = $forumOrchestrator->getGeneralChannelId();
             while ($this->running) {
                 Coroutine::sleep(15);
-                $channels = $forumOrchestrator->getActiveChannels();
-                if (empty($channels)) {
-                    continue;
-                }
                 $personaAgents = $forumOrchestrator->getPersonaAgents();
                 if (empty($personaAgents)) {
                     continue;
                 }
+
+                // General channel: enriched notifications with anti-loop protection
+                $forumOrchestrator->notifyGeneralChannel($personaAgents);
+
+                // Other channels: standard notifications (skip general)
+                $channels = $forumOrchestrator->getActiveChannels();
                 foreach ($channels as $channelId) {
+                    if ($channelId === $generalChannelId) {
+                        continue;
+                    }
                     $forumOrchestrator->notifyNewMessages($channelId, $personaAgents);
                 }
             }

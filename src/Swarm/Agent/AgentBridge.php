@@ -274,7 +274,14 @@ FORMAT;
 
         $prompt = "## Your Persona\n\n{$persona['system_prompt']}\n\n";
         $prompt .= "You are **{$persona['display_name']}** ({$persona['title']}). ";
-        $prompt .= "Stay in character during all discussions. Use the forum_post, forum_list, and forum_vote MCP tools to participate in SwarmTalk discussions.\n";
+        $prompt .= "Stay in character during all discussions.\n\n";
+        $prompt .= "### Available MCP Tools\n";
+        $prompt .= "- `forum_list` — Read messages from a channel (pass `channel_id`)\n";
+        $prompt .= "- `forum_post` — Post a message to a channel (pass `channel_id`, `title`, `content`)\n";
+        $prompt .= "- `forum_vote` — Vote on a discussion (pass `channel_id`, `vote`)\n";
+        $prompt .= "- `forum_dm` — Send a direct message to a teammate (pass `to`, `content`)\n";
+        $prompt .= "- `forum_vote_status` — Check vote tallies for a channel\n\n";
+        $prompt .= "The team has a **general** channel (channel_id=\"general\") for casual discussion, introductions, and coordination.\n";
 
         // Reload context from previous session: recent DMs and forum posts
         if ($db) {

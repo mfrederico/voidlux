@@ -15,6 +15,8 @@ use VoidLux\Swarm\Storage\SwarmDatabase;
 
 class ForumOrchestrator
 {
+    public const GENERAL_CHANNEL_ID = 'general';
+
     /** @var array<string, int> channelId => last notified lamport ts */
     private array $lastNotifiedTs = [];
 
@@ -33,6 +35,15 @@ class ForumOrchestrator
     /** @var array<string, array> Loaded persona definitions indexed by slug */
     private array $personaDefs = [];
 
+    /** @var array<string, float> agentId => last general notification timestamp */
+    private array $generalNotifyCooldown = [];
+
+    /** @var array<string, int> agentId => notification count in current window */
+    private array $generalNotifyCount = [];
+
+    /** @var array<string, float> agentId => window start timestamp */
+    private array $generalNotifyWindowStart = [];
+
     public function __construct(
         private readonly SwarmDatabase $db,
         private readonly AgentBridge $bridge,
@@ -48,6 +59,153 @@ class ForumOrchestrator
     public function setDiscussionTimeout(int $seconds): void
     {
         $this->discussionTimeoutSeconds = $seconds;
+    }
+
+    public function getGeneralChannelId(): string
+    {
+        return self::GENERAL_CHANNEL_ID;
+    }
+
+    /**
+     * Seed the "general" channel with a welcome message on emperor startup.
+     * Idempotent: skips if messages already exist in the channel.
+     */
+    public function seedGeneralChannel(): void
+    {
+        $existing = $this->db->getMessagesByChannel(self::GENERAL_CHANNEL_ID);
+        if (!empty($existing)) {
+            $this->log("general channel already seeded (" . count($existing) . " messages)");
+            return;
+        }
+
+        $msg = MessageModel::create(
+            authorId: 'system',
+            authorName: 'SwarmTalk',
+            category: 'discussion',
+            title: 'Welcome to the General Channel',
+            content: "# Welcome to General\n\n"
+                . "This is the team's open channel for introductions, ideas, and coordination.\n\n"
+                . "- Introduce yourself and your area of expertise\n"
+                . "- Share ideas or observations about the codebase\n"
+                . "- Coordinate with teammates on upcoming work\n\n"
+                . "Use `forum_list` (channel_id=\"general\") to read and `forum_post` (channel_id=\"general\") to participate.",
+            lamportTs: $this->clock->tick(),
+            channelId: self::GENERAL_CHANNEL_ID,
+        );
+
+        $this->taskGossip->createBoardMessage($msg);
+        $this->lastNotifiedTs[self::GENERAL_CHANNEL_ID] = $msg->lamportTs;
+
+        if ($this->onTaskEvent) {
+            ($this->onTaskEvent)('forum_channel_created', [
+                'channel_id' => self::GENERAL_CHANNEL_ID,
+                'task_id' => '',
+                'task_title' => 'General Channel',
+            ]);
+        }
+
+        $this->log("seeded general channel with welcome message");
+    }
+
+    /**
+     * Prompt a persona agent to introduce themselves in the general channel.
+     * Spawns a coroutine with a staggered delay so agents don't all post at once.
+     */
+    public function promptGeneralIntroduction(AgentModel $agent, int $delaySeconds): void
+    {
+        \Swoole\Coroutine::create(function () use ($agent, $delaySeconds) {
+            \Swoole\Coroutine::sleep($delaySeconds);
+
+            // Re-check agent is still idle before prompting
+            $freshAgent = $this->db->getAgent($agent->id);
+            if (!$freshAgent || $freshAgent->status !== 'idle') {
+                $this->log("skipping general intro for {$agent->name} — no longer idle");
+                return;
+            }
+
+            $persona = $agent->persona ? json_decode($agent->persona, true) : null;
+            $displayName = $persona['display_name'] ?? $agent->name;
+
+            $prompt = "## General Channel\n\n";
+            $prompt .= "The team has a **general** channel (channel_id=\"general\") where everyone introduces themselves and coordinates.\n\n";
+            $prompt .= "1. Read the general channel with `forum_list` (channel_id=\"general\")\n";
+            $prompt .= "2. Introduce yourself as {$displayName} — share what you focus on and what you bring to the team\n";
+            $prompt .= "3. If others have already posted, respond to their introductions too\n\n";
+            $prompt .= "Use `forum_post` with channel_id=\"general\" to post.\n";
+
+            $this->bridge->sendText($freshAgent, $prompt);
+            $this->log("prompted {$agent->name} to introduce themselves in general (delay={$delaySeconds}s)");
+        });
+    }
+
+    /**
+     * Send enriched notifications for the general channel with anti-loop protection.
+     * Instead of generic "N new messages", builds content-aware nudges.
+     *
+     * Anti-loop protection:
+     * - 60s cooldown per agent
+     * - 3 notifications per 10min per agent
+     * - Skip agent's own messages
+     *
+     * @param AgentModel[] $agents
+     */
+    public function notifyGeneralChannel(array $agents): void
+    {
+        $sinceTs = $this->lastNotifiedTs[self::GENERAL_CHANNEL_ID] ?? 0;
+        $messages = $this->db->getMessagesByChannel(self::GENERAL_CHANNEL_ID, $sinceTs);
+
+        if (empty($messages)) {
+            return;
+        }
+
+        $lastTs = end($messages)->lamportTs;
+        $this->lastNotifiedTs[self::GENERAL_CHANNEL_ID] = $lastTs;
+
+        $now = microtime(true);
+
+        foreach ($agents as $agent) {
+            if ($agent->status !== 'idle') {
+                continue;
+            }
+
+            // Skip own messages — don't notify agent about their own posts
+            $otherMessages = array_filter($messages, fn($m) => $m->authorName !== $agent->name);
+            if (empty($otherMessages)) {
+                continue;
+            }
+
+            // 60s cooldown per agent
+            $lastNotified = $this->generalNotifyCooldown[$agent->id] ?? 0.0;
+            if (($now - $lastNotified) < 60.0) {
+                continue;
+            }
+
+            // 3 per 10min rate limit
+            $windowStart = $this->generalNotifyWindowStart[$agent->id] ?? 0.0;
+            if (($now - $windowStart) > 600.0) {
+                // Reset window
+                $this->generalNotifyWindowStart[$agent->id] = $now;
+                $this->generalNotifyCount[$agent->id] = 0;
+            }
+            $count = $this->generalNotifyCount[$agent->id] ?? 0;
+            if ($count >= 3) {
+                continue;
+            }
+
+            // Build content-aware nudge from the most recent other message
+            $latest = end($otherMessages);
+            $preview = mb_substr($latest->content, 0, 80);
+            if (mb_strlen($latest->content) > 80) {
+                $preview .= '...';
+            }
+
+            $notification = "[SwarmTalk General] {$latest->authorName} posted: \"{$preview}\" — Read and respond with forum_list/forum_post (channel_id=\"general\").";
+            $this->bridge->sendText($agent, $notification);
+
+            $this->generalNotifyCooldown[$agent->id] = $now;
+            $this->generalNotifyCount[$agent->id] = $count + 1;
+            usleep(200_000);
+        }
     }
 
     /**

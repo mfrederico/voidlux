@@ -123,6 +123,11 @@ class AgentMonitor
                     // Inject persona system prompt + context history if this is a persona agent
                     if ($agent->persona) {
                         $this->bridge->injectPersona($agent, $this->db);
+                        // Prompt persona to introduce themselves in general channel with staggered delay
+                        if ($this->forumOrchestrator) {
+                            $delay = 5 + ($this->getPersonaIndex($agent) * 10);
+                            $this->forumOrchestrator->promptGeneralIntroduction($agent, $delay);
+                        }
                     }
                     $this->emit('', $agent->id, 'agent_ready', ['name' => $agent->name]);
                     $this->taskDispatcher?->triggerDispatch();
@@ -262,6 +267,21 @@ class AgentMonitor
             return null;
         }
         return trim(end($lines));
+    }
+
+    /**
+     * Get a stable index for a persona agent based on its slug.
+     * Used for staggering introduction delays (0=marcus, 1=elena, 2=alex, etc.)
+     */
+    private function getPersonaIndex(AgentModel $agent): int
+    {
+        static $slugOrder = ['marcus', 'elena', 'alex', 'quinn', 'kai'];
+
+        $persona = $agent->persona ? json_decode($agent->persona, true) : null;
+        $slug = $persona['slug'] ?? '';
+
+        $index = array_search($slug, $slugOrder, true);
+        return $index !== false ? $index : crc32($slug) % 5;
     }
 
     private function emit(string $taskId, string $agentId, string $event, array $data): void
