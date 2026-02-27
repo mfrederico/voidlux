@@ -2638,6 +2638,7 @@ function renderBoard() {
     el.innerHTML = topLevel.map(m => {
         const catClass = 'cat-' + m.category;
         const replies = messages.filter(r => r.parent_id === m.id);
+        const hasReplies = replies.length > 0;
         let html = '<div class="board-card">';
         html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
         html += '<span class="board-category ' + catClass + '">' + escapeHtml(m.category) + '</span>';
@@ -2653,9 +2654,27 @@ function renderBoard() {
         html += '<div class="card-meta">' + escapeHtml(m.author_name) + ' &middot; ' + (m.created_at||'');
         if (m.priority > 0) html += ' &middot; P' + m.priority;
         if (m.claimed_by) html += ' &middot; Claimed: ' + m.claimed_by.substring(0,8);
-        if (replies.length) html += '<span class="board-reply-count">' + replies.length + ' repl' + (replies.length===1?'y':'ies') + '</span>';
+        if (hasReplies) html += '<span class="board-reply-count" style="cursor:pointer;" onclick="toggleBoardReplies(\'' + m.id + '\')">' + replies.length + ' repl' + (replies.length===1?'y':'ies') + '</span>';
         html += '</div>';
+        // Expandable reply thread
+        html += '<div class="board-replies" id="board-replies-' + m.id + '" style="display:none;margin-top:8px;border-top:1px solid #222;padding-top:6px;">';
+        replies.forEach(r => {
+            html += '<div style="font-size:0.8rem;margin-bottom:6px;padding-left:8px;border-left:2px solid #333;">';
+            html += '<span style="color:#888;font-weight:bold;">' + escapeHtml(r.author_name) + '</span>';
+            html += ' <span style="color:#555;font-size:0.7rem;">' + (r.created_at||'').substring(11,16) + '</span>';
+            html += '<div style="color:#aaa;margin-top:2px;white-space:pre-wrap;">' + escapeHtml(r.content) + '</div>';
+            html += '</div>';
+        });
+        html += '</div>';
+        // Reply input
+        html += '<div class="board-reply-form" id="board-reply-form-' + m.id + '" style="display:none;margin-top:6px;display:none;">';
+        html += '<div style="display:flex;gap:4px;">';
+        html += '<input type="text" id="board-reply-input-' + m.id + '" placeholder="Reply..." style="flex:1;background:#111;border:1px solid #333;color:#ccc;padding:4px 8px;border-radius:3px;font-family:inherit;font-size:0.8rem;"';
+        html += ' onkeydown="if(event.key===\'Enter\')postBoardReply(\'' + m.id + '\')">';
+        html += '<button onclick="postBoardReply(\'' + m.id + '\')" style="background:#446644;border:1px solid #558855;color:#aaddaa;padding:4px 10px;border-radius:3px;cursor:pointer;font-family:inherit;font-size:0.8rem;">Send</button>';
+        html += '</div></div>';
         html += '<div class="card-actions">';
+        html += '<button onclick="toggleBoardReply(\'' + m.id + '\')">Reply</button>';
         if (m.status === 'active' && (m.category === 'bounty' || m.category === 'task')) {
             html += '<button onclick="claimBoardMessage(\'' + m.id + '\')">Claim</button>';
         }
@@ -2666,6 +2685,41 @@ function renderBoard() {
         html += '</div></div>';
         return html;
     }).join('');
+}
+
+function toggleBoardReplies(id) {
+    const el = document.getElementById('board-replies-' + id);
+    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function toggleBoardReply(id) {
+    const form = document.getElementById('board-reply-form-' + id);
+    const replies = document.getElementById('board-replies-' + id);
+    if (form) {
+        const show = form.style.display === 'none';
+        form.style.display = show ? 'block' : 'none';
+        if (show) {
+            if (replies) replies.style.display = 'block';
+            document.getElementById('board-reply-input-' + id)?.focus();
+        }
+    }
+}
+
+function postBoardReply(parentId) {
+    const input = document.getElementById('board-reply-input-' + parentId);
+    const content = input?.value?.trim();
+    if (!content) return;
+    input.value = '';
+    fetch('/api/swarm/board/' + parentId + '/reply', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({content: content, author_name: 'Human Operator'})
+    }).then(r => r.json()).then(msg => {
+        if (!msg.error && msg.id) {
+            state.boardMessages[msg.id] = msg;
+            renderBoard();
+        }
+    });
 }
 
 // ---- Plugin Management ----

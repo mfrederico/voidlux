@@ -139,12 +139,20 @@ class AgentMonitor
             }
 
             if (!$agent->currentTaskId) {
-                // Check if the agent's session is still alive before trying to assign
                 $bridgeStatus = $this->bridge->detectStatus($agent);
                 if ($bridgeStatus === Status::Stopped) {
                     $this->registry->deregister($agent->id);
                     $this->emit('', $agent->id, 'agent_stopped', ['name' => $agent->name]);
                     continue;
+                }
+                // Agent is actively working (e.g. forum chat) but has no task assigned
+                if ($bridgeStatus === Status::Running && $agent->status === 'idle') {
+                    $this->db->updateAgentStatus($agent->id, 'busy', null);
+                    continue;
+                }
+                // Agent pane went idle again after forum activity
+                if ($bridgeStatus === Status::Idle && $agent->status === 'busy') {
+                    $this->db->updateAgentStatus($agent->id, 'idle', null);
                 }
                 $this->tryAutoAssign($agent);
                 continue;

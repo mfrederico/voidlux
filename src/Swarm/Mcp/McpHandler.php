@@ -410,6 +410,19 @@ class McpHandler
                         'required' => ['message_id', 'agent_name'],
                     ],
                 ],
+                (object) [
+                    'name' => 'board_reply',
+                    'description' => 'Reply to a message on the swarm message board. Use this to share your findings, analysis, or response to a board post.',
+                    'inputSchema' => (object) [
+                        'type' => 'object',
+                        'properties' => (object) [
+                            'message_id' => (object) ['type' => 'string', 'description' => 'The board message ID to reply to'],
+                            'content' => (object) ['type' => 'string', 'description' => 'Your reply content'],
+                            'agent_name' => (object) ['type' => 'string', 'description' => 'Your agent name'],
+                        ],
+                        'required' => ['message_id', 'content', 'agent_name'],
+                    ],
+                ],
                 // --- SwarmTalk Forum Tools ---
                 (object) [
                     'name' => 'forum_post',
@@ -534,6 +547,7 @@ class McpHandler
             'post_message' => $this->callPostMessage($args),
             'list_messages' => $this->callListMessages($args),
             'claim_bounty' => $this->callClaimBounty($args),
+            'board_reply' => $this->callBoardReply($args),
             'forum_post' => $this->callForumPost($args),
             'forum_list' => $this->callForumList($args),
             'forum_vote' => $this->callForumVote($args),
@@ -1152,6 +1166,51 @@ class McpHandler
         return $this->toolResult([
             'count' => count($result),
             'messages' => $result,
+        ]);
+    }
+
+    private function callBoardReply(array $args): array
+    {
+        $messageId = $args['message_id'] ?? '';
+        $content = $args['content'] ?? '';
+        $agentName = $args['agent_name'] ?? '';
+
+        if (!$messageId || !$content || !$agentName) {
+            return $this->toolError('message_id, content, and agent_name are required');
+        }
+
+        if (!$this->taskGossip || !$this->clock) {
+            return $this->toolError('Message board not initialized');
+        }
+
+        $parent = $this->db->getMessage($messageId);
+        if (!$parent) {
+            return $this->toolError("Message not found: {$messageId}");
+        }
+
+        $agent = $this->db->getAgentByName($agentName);
+        $authorId = $agent ? $agent->id : $agentName;
+
+        $reply = MessageModel::create(
+            authorId: $authorId,
+            authorName: $agentName,
+            category: $parent->category,
+            title: "Re: {$parent->title}",
+            content: $content,
+            lamportTs: $this->clock->tick(),
+            parentId: $messageId,
+        );
+
+        $this->taskGossip->createBoardMessage($reply);
+
+        if ($this->onTaskEvent) {
+            ($this->onTaskEvent)('board_message', ['message' => $reply->toArray()]);
+        }
+
+        return $this->toolResult([
+            'status' => 'replied',
+            'message_id' => $reply->id,
+            'parent_id' => $messageId,
         ]);
     }
 
