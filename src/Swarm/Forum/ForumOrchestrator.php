@@ -140,7 +140,8 @@ class ForumOrchestrator
 
     /**
      * Send enriched notifications for the general channel with anti-loop protection.
-     * Instead of generic "N new messages", builds content-aware nudges.
+     * Uses per-agent read pointers from the DB so each agent only gets notified
+     * about messages they haven't personally read via forum_list.
      *
      * Anti-loop protection:
      * - 60s cooldown per agent
@@ -151,20 +152,19 @@ class ForumOrchestrator
      */
     public function notifyGeneralChannel(array $agents): void
     {
-        $sinceTs = $this->lastNotifiedTs[self::GENERAL_CHANNEL_ID] ?? 0;
-        $messages = $this->db->getMessagesByChannel(self::GENERAL_CHANNEL_ID, $sinceTs);
-
-        if (empty($messages)) {
-            return;
-        }
-
-        $this->log("general: " . count($messages) . " new message(s) since ts={$sinceTs}, " . count($agents) . " agents");
-        $lastTs = end($messages)->lamportTs;
         $now = microtime(true);
-        $delivered = false;
+        $anyDelivered = false;
 
         foreach ($agents as $agent) {
             if ($agent->status !== 'idle') {
+                continue;
+            }
+
+            // Per-agent read pointer from DB
+            $agentReadTs = $this->db->getLastReadTs($agent->id, self::GENERAL_CHANNEL_ID);
+            $messages = $this->db->getMessagesByChannel(self::GENERAL_CHANNEL_ID, $agentReadTs);
+
+            if (empty($messages)) {
                 continue;
             }
 
@@ -183,7 +183,6 @@ class ForumOrchestrator
             // 3 per 10min rate limit
             $windowStart = $this->generalNotifyWindowStart[$agent->id] ?? 0.0;
             if (($now - $windowStart) > 600.0) {
-                // Reset window
                 $this->generalNotifyWindowStart[$agent->id] = $now;
                 $this->generalNotifyCount[$agent->id] = 0;
             }
@@ -200,22 +199,17 @@ class ForumOrchestrator
             }
 
             $notification = "[SwarmTalk General] {$latest->authorName} posted: \"{$preview}\" — Read and respond with forum_list/forum_post (channel_id=\"general\").";
-            $this->log("general: notifying {$agent->name} (count={$count}, latest by {$latest->authorName})");
+            $this->log("general: notifying {$agent->name} (readTs={$agentReadTs}, latest by {$latest->authorName})");
             $this->bridge->sendText($agent, $notification);
 
             $this->generalNotifyCooldown[$agent->id] = $now;
             $this->generalNotifyCount[$agent->id] = $count + 1;
-            $delivered = true;
+            $anyDelivered = true;
             usleep(200_000);
         }
 
-        // Only advance the ts pointer if at least one agent was notified.
-        // Otherwise, undelivered messages will be retried on the next cycle.
-        if ($delivered) {
-            $this->lastNotifiedTs[self::GENERAL_CHANNEL_ID] = $lastTs;
-            $this->log("general: ts advanced to {$lastTs}");
-        } else {
-            $this->log("general: no agents notified (all busy/cooldown/rate-limited)");
+        if (!$anyDelivered) {
+            $this->log("general: no agents notified (all busy/cooldown/rate-limited/caught-up)");
         }
     }
 
@@ -446,54 +440,41 @@ class ForumOrchestrator
 
     /**
      * Send new-message notifications to agents that haven't seen recent messages.
+     * Uses per-agent read pointers from the DB so each agent only gets notified
+     * about messages above their personal high-water mark.
      * Called periodically (every 15s) by the notification coroutine.
      *
      * @param AgentModel[] $agents
      */
     public function notifyNewMessages(string $channelId, array $agents): void
     {
-        $sinceTs = $this->lastNotifiedTs[$channelId] ?? 0;
-        $messages = $this->db->getMessagesByChannel($channelId, $sinceTs);
-
-        if (empty($messages)) {
-            return;
-        }
-
-        $count = count($messages);
-        $lastTs = end($messages)->lamportTs;
-
         // Get channel label from first message or task
         $task = $this->db->getTask($channelId) ?? $this->db->getTask(str_replace('review:', '', $channelId));
         $channelLabel = $task ? $task->title : $channelId;
 
-        $delivered = false;
         foreach ($agents as $agent) {
             if ($agent->status !== 'idle') {
                 continue; // Don't interrupt busy agents
             }
 
-            // Check if this agent already posted one of the new messages
-            $agentPosted = false;
-            foreach ($messages as $m) {
-                if ($m->authorName === $agent->name) {
-                    $agentPosted = true;
-                    break;
-                }
-            }
-            if ($agentPosted) {
-                continue; // They already know about their own messages
+            // Per-agent read pointer from DB
+            $agentReadTs = $this->db->getLastReadTs($agent->id, $channelId);
+            $messages = $this->db->getMessagesByChannel($channelId, $agentReadTs);
+
+            if (empty($messages)) {
+                continue;
             }
 
+            // Skip agent's own messages
+            $otherMessages = array_filter($messages, fn($m) => $m->authorName !== $agent->name);
+            if (empty($otherMessages)) {
+                continue;
+            }
+
+            $count = count($otherMessages);
             $notification = "[SwarmTalk] {$count} new message(s) in channel '{$channelLabel}'. Use forum_list with channel_id=\"{$channelId}\" to read and respond.";
             $this->bridge->sendText($agent, $notification);
-            $delivered = true;
             usleep(200_000);
-        }
-
-        // Only advance ts if at least one agent was notified.
-        // Otherwise, undelivered messages will be retried next cycle.
-        if ($delivered) {
-            $this->lastNotifiedTs[$channelId] = $lastTs;
         }
     }
 

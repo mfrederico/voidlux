@@ -527,7 +527,11 @@ class EmperorController
 
             // --- SwarmTalk Forum API ---
             case $path === '/api/swarm/forum/channels' && $method === 'GET':
-                $this->handleForumListChannels($response);
+                $this->handleForumListChannels($request, $response);
+                break;
+
+            case preg_match('#^/api/swarm/forum/([^/]+)/read-status$#', $path, $m) === 1 && $method === 'GET':
+                $this->handleForumReadStatus($response, $m[1]);
                 break;
 
             case preg_match('#^/api/swarm/forum/([^/]+)/messages$#', $path, $m) === 1 && $method === 'GET':
@@ -2707,18 +2711,39 @@ INSTRUCTIONS,
 
     // --- SwarmTalk Forum Handlers ---
 
-    private function handleForumListChannels(Response $response): void
+    private function handleForumListChannels(Request $request, Response $response): void
     {
         $channels = $this->db->getActiveChannels();
-        // Enrich with task titles
+        $agentId = $request->get['agent_id'] ?? '';
+
+        // Get per-agent unread counts if agent_id provided
+        $unreadCounts = [];
+        if ($agentId) {
+            $unreadCounts = $this->db->getUnreadCountsForAgent($agentId);
+        }
+
+        // Enrich with task titles and unread counts
         foreach ($channels as &$ch) {
             $channelId = $ch['channel_id'];
             $taskId = str_starts_with($channelId, 'review:') ? substr($channelId, 7) : $channelId;
             $task = $this->db->getTask($taskId);
             $ch['task_title'] = $task ? $task->title : '';
             $ch['type'] = str_starts_with($channelId, 'review:') ? 'review' : 'discussion';
+            if ($agentId) {
+                $ch['unread_count'] = $unreadCounts[$channelId] ?? 0;
+            }
         }
         $this->json($response, ['channels' => $channels]);
+    }
+
+    private function handleForumReadStatus(Response $response, string $channelId): void
+    {
+        $decodedChannelId = urldecode($channelId);
+        $readStatus = $this->db->getChannelReadStatus($decodedChannelId);
+        $this->json($response, [
+            'channel_id' => $decodedChannelId,
+            'readers' => $readStatus,
+        ]);
     }
 
     private function handleForumListMessages(Request $request, Response $response, string $channelId): void

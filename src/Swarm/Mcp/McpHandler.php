@@ -432,9 +432,10 @@ class McpHandler
                         'type' => 'object',
                         'properties' => (object) [
                             'channel_id' => (object) ['type' => 'string', 'description' => 'The channel ID to read messages from'],
+                            'agent_name' => (object) ['type' => 'string', 'description' => 'Your agent name'],
                             'since_ts' => (object) ['type' => 'integer', 'description' => 'Optional: only return messages after this lamport timestamp'],
                         ],
-                        'required' => ['channel_id'],
+                        'required' => ['channel_id', 'agent_name'],
                     ],
                 ],
                 (object) [
@@ -1235,8 +1236,9 @@ class McpHandler
     private function callForumList(array $args): array
     {
         $channelId = $args['channel_id'] ?? '';
-        if (!$channelId) {
-            return $this->toolError('channel_id is required');
+        $agentName = $args['agent_name'] ?? '';
+        if (!$channelId || !$agentName) {
+            return $this->toolError('channel_id and agent_name are required');
         }
 
         $sinceTs = isset($args['since_ts']) ? (int) $args['since_ts'] : null;
@@ -1244,7 +1246,6 @@ class McpHandler
 
         $result = array_map(function (MessageModel $m) {
             $arr = $m->toArray();
-            // Include persona display info if available
             $agent = $this->db->getAgentByName($m->authorName);
             if ($agent && $agent->persona) {
                 $persona = json_decode($agent->persona, true);
@@ -1255,6 +1256,15 @@ class McpHandler
             }
             return $arr;
         }, $messages);
+
+        // Mark channel as read for the calling agent
+        if (!empty($messages)) {
+            $agent = $this->db->getAgentByName($agentName);
+            if ($agent) {
+                $maxTs = end($messages)->lamportTs;
+                $this->db->markChannelRead($agent->id, $channelId, $maxTs);
+            }
+        }
 
         return $this->toolResult([
             'channel_id' => $channelId,

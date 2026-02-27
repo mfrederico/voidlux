@@ -291,6 +291,17 @@ class SwarmDatabase
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_scheduled_enabled ON scheduled_tasks(enabled)');
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_scheduled_next_run ON scheduled_tasks(next_run_at)');
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_scheduled_event ON scheduled_tasks(event_trigger)');
+
+        // Per-agent read tracking for forum messages
+        $this->pdo->exec('
+            CREATE TABLE IF NOT EXISTS message_reads (
+                agent_id TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                last_read_ts INTEGER NOT NULL DEFAULT 0,
+                read_at TEXT NOT NULL,
+                PRIMARY KEY (agent_id, channel_id)
+            )
+        ');
     }
 
     // --- Task operations ---
@@ -1497,6 +1508,84 @@ class SwarmDatabase
         $rows = $stmt->fetchAll();
         $models = array_map(fn(array $row) => MessageModel::fromArray($row), $rows);
         return array_reverse($models); // chronological order
+    }
+
+    // --- Message read tracking ---
+
+    /**
+     * Upsert the per-agent read pointer for a channel.
+     */
+    public function markChannelRead(string $agentId, string $channelId, int $lamportTs): void
+    {
+        $stmt = $this->pdo->prepare('
+            INSERT INTO message_reads (agent_id, channel_id, last_read_ts, read_at)
+            VALUES (:agent_id, :channel_id, :ts, :read_at)
+            ON CONFLICT(agent_id, channel_id) DO UPDATE SET
+                last_read_ts = MAX(message_reads.last_read_ts, :ts2),
+                read_at = :read_at2
+        ');
+        $now = date('c');
+        $stmt->execute([
+            ':agent_id' => $agentId,
+            ':channel_id' => $channelId,
+            ':ts' => $lamportTs,
+            ':read_at' => $now,
+            ':ts2' => $lamportTs,
+            ':read_at2' => $now,
+        ]);
+    }
+
+    /**
+     * Get the agent's high-water mark for a channel (0 if never read).
+     */
+    public function getLastReadTs(string $agentId, string $channelId): int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT last_read_ts FROM message_reads WHERE agent_id = :agent_id AND channel_id = :channel_id'
+        );
+        $stmt->execute([':agent_id' => $agentId, ':channel_id' => $channelId]);
+        $val = $stmt->fetchColumn();
+        return $val !== false ? (int) $val : 0;
+    }
+
+    /**
+     * Get unread counts for all channels for a given agent.
+     * @return array<string, int> channelId => unreadCount
+     */
+    public function getUnreadCountsForAgent(string $agentId): array
+    {
+        $stmt = $this->pdo->prepare("
+            SELECT bm.channel_id, COUNT(*) as unread_count
+            FROM board_messages bm
+            LEFT JOIN message_reads mr ON mr.agent_id = :agent_id AND mr.channel_id = bm.channel_id
+            WHERE bm.channel_id != '' AND bm.channel_id NOT LIKE 'dm:%'
+                AND bm.status = 'active'
+                AND bm.lamport_ts > COALESCE(mr.last_read_ts, 0)
+            GROUP BY bm.channel_id
+        ");
+        $stmt->execute([':agent_id' => $agentId]);
+        $result = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $result[$row['channel_id']] = (int) $row['unread_count'];
+        }
+        return $result;
+    }
+
+    /**
+     * Get read status for a channel — which agents have read it and their read pointers.
+     * @return array<array{agent_id: string, agent_name: string, last_read_ts: int, read_at: string}>
+     */
+    public function getChannelReadStatus(string $channelId): array
+    {
+        $stmt = $this->pdo->prepare("
+            SELECT mr.agent_id, a.name as agent_name, mr.last_read_ts, mr.read_at
+            FROM message_reads mr
+            LEFT JOIN agents a ON a.id = mr.agent_id
+            WHERE mr.channel_id = :channel_id
+            ORDER BY mr.last_read_ts DESC
+        ");
+        $stmt->execute([':channel_id' => $channelId]);
+        return $stmt->fetchAll();
     }
 
     // --- Plugin operations ---

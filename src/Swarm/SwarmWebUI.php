@@ -591,6 +591,15 @@ body {
     border-radius: 3px; cursor: pointer; font-family: inherit; font-size: 0.75rem;
 }
 .st-reject-btn:hover { background: #4a0a0a; }
+.st-read-receipts {
+    display: flex; gap: 2px; padding: 0 8px 4px 40px; flex-wrap: wrap;
+}
+.st-read-dot {
+    width: 16px; height: 16px; border-radius: 50%; font-size: 0.5rem; font-weight: bold;
+    display: flex; align-items: center; justify-content: center; color: #fff;
+    border: 1px solid #222; cursor: default; opacity: 0.7;
+}
+.st-read-dot:hover { opacity: 1; }
 </style>
 </head>
 <body>
@@ -3264,6 +3273,7 @@ const forumState = {
     messages: {},       // channelId => [msg, ...]
     unread: {},         // channelId => count
     lastSeenTs: {},     // channelId => lamport ts
+    readStatus: {},     // channelId => [{agent_id, agent_name, last_read_ts, read_at}]
     collapsed: false,
 };
 
@@ -3355,6 +3365,20 @@ function loadChannelMessages(channelId) {
             loadVoteTally(channelId);
         })
         .catch(() => {});
+    // Fetch read status for read receipt dots
+    if (!channelId.startsWith('dm:')) {
+        loadReadStatus(channelId);
+    }
+}
+
+function loadReadStatus(channelId) {
+    fetch('/api/swarm/forum/' + encodeURIComponent(channelId) + '/read-status')
+        .then(r => r.json())
+        .then(data => {
+            forumState.readStatus[channelId] = data.readers || [];
+            renderChatMessages();
+        })
+        .catch(() => {});
 }
 
 function renderChatMessages() {
@@ -3365,7 +3389,25 @@ function renderChatMessages() {
         el.innerHTML = '<div style="color:#444;font-size:0.75rem;padding:8px;">No messages yet</div>';
         return;
     }
-    el.innerHTML = msgs.map(m => {
+
+    // Build read receipt map: for each reader, find the last message they've read
+    const readers = forumState.readStatus[forumState.currentChannel] || [];
+    // Map: msgIndex => [readers who read up to exactly this message]
+    const receiptMap = {};
+    readers.forEach(r => {
+        if (!r.last_read_ts || !r.agent_name) return;
+        // Find the last message with lamport_ts <= reader's last_read_ts
+        let lastIdx = -1;
+        for (let i = msgs.length - 1; i >= 0; i--) {
+            if ((msgs[i].lamport_ts || 0) <= r.last_read_ts) { lastIdx = i; break; }
+        }
+        if (lastIdx >= 0) {
+            if (!receiptMap[lastIdx]) receiptMap[lastIdx] = [];
+            receiptMap[lastIdx].push(r);
+        }
+    });
+
+    el.innerHTML = msgs.map((m, idx) => {
         const p = m.persona || {};
         const color = p.avatar_color || '#666';
         const initial = (p.display_name || m.author_name || '?')[0].toUpperCase();
@@ -3375,12 +3417,25 @@ function renderChatMessages() {
         if (m.category === 'vote' && m.vote) {
             voteTag = ' <span class="st-msg-vote ' + m.vote + '">' + m.vote.toUpperCase() + '</span>';
         }
-        return '<div class="st-msg">' +
+        let html = '<div class="st-msg">' +
             '<div class="st-avatar" style="background:' + color + '">' + initial + '</div>' +
             '<div class="st-msg-body">' +
             '<div class="st-msg-header"><span class="st-msg-name" style="color:' + color + '">' + escHtml(name) + '</span><span class="st-msg-time">' + time + '</span></div>' +
             '<div class="st-msg-content">' + escHtml(m.content) + voteTag + '</div>' +
             '</div></div>';
+        // Append read receipt dots after this message
+        const rr = receiptMap[idx];
+        if (rr && rr.length > 0) {
+            html += '<div class="st-read-receipts">' + rr.map(r => {
+                const a = Object.values(state.agents || {}).find(a => a.id === r.agent_id);
+                const ap = a && a.persona ? (typeof a.persona === 'string' ? JSON.parse(a.persona || '{}') : a.persona) : {};
+                const ac = ap.avatar_color || '#555';
+                const ai = (ap.display_name || r.agent_name || '?')[0].toUpperCase();
+                const dn = ap.display_name || r.agent_name;
+                return '<div class="st-read-dot" style="background:' + ac + '" title="' + escHtml(dn) + ' read">' + ai + '</div>';
+            }).join('') + '</div>';
+        }
+        return html;
     }).join('');
     el.scrollTop = el.scrollHeight;
 }
