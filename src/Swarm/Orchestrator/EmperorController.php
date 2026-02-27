@@ -2246,6 +2246,23 @@ INSTRUCTIONS,
 
         $this->taskGossip->createBoardMessage($msg);
 
+        // Cross-post board announcements to the general channel so persona agents
+        // can discover them via forum_list (agents have no MCP tool for the board).
+        if ($this->forumOrchestrator && $this->clock) {
+            $crossAuthor = str_starts_with($msg->authorName, 'Node-') ? 'Human Operator' : $msg->authorName;
+            $channelMsg = MessageModel::create(
+                authorId: $msg->authorId,
+                authorName: $crossAuthor,
+                category: 'forum',
+                title: "[Board] {$msg->title}",
+                content: "**[Board: {$msg->title}]** " . ($msg->content ?: $msg->title),
+                lamportTs: $this->clock->tick(),
+                channelId: ForumOrchestrator::GENERAL_CHANNEL_ID,
+            );
+            $this->taskGossip->createBoardMessage($channelMsg);
+            $this->fireTaskEvent('forum_message', $channelMsg->toArray());
+        }
+
         $response->status(201);
         $this->json($response, $msg->toArray());
     }
