@@ -7,6 +7,7 @@ namespace VoidLux\Swarm\Mcp;
 use Swoole\Http\Request;
 use Swoole\Http\Response;
 use VoidLux\P2P\Protocol\LamportClock;
+use VoidLux\Swarm\Agent\AgentBridge;
 use VoidLux\Swarm\Capabilities\PluginManager;
 use VoidLux\Swarm\Git\GitWorkspace;
 use VoidLux\Swarm\Gossip\TaskGossipEngine;
@@ -36,6 +37,7 @@ class McpHandler
     private ?PluginManager $pluginManager = null;
     private ?\VoidLux\Swarm\Scheduler\TaskScheduler $scheduler = null;
     private ?MarketplaceMcp $marketplace = null;
+    private ?AgentBridge $bridge = null;
     private GitWorkspace $git;
 
     /** @var callable|null fn(string $agentId, string $status): void */
@@ -85,6 +87,11 @@ class McpHandler
     public function setMarketplace(MarketplaceMcp $marketplace): void
     {
         $this->marketplace = $marketplace;
+    }
+
+    public function setBridge(AgentBridge $bridge): void
+    {
+        $this->bridge = $bridge;
     }
 
     public function onAgentStatusChange(callable $callback): void
@@ -1353,6 +1360,15 @@ class McpHandler
 
         if ($this->onTaskEvent) {
             ($this->onTaskEvent)('forum_dm', $msg->toArray());
+        }
+
+        // Push DM notification to target agent if idle
+        if ($this->bridge) {
+            $targetAgent = $this->db->getAgentByName($toAgent);
+            if ($targetAgent && $targetAgent->status === 'idle' && $targetAgent->persona) {
+                $notification = "[DM from {$agentName}] {$content}\n\nReply with forum_dm to_agent=\"{$agentName}\".";
+                $this->bridge->sendText($targetAgent, $notification);
+            }
         }
 
         return $this->toolResult([

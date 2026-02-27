@@ -1843,6 +1843,7 @@ INSTRUCTIONS,
             if ($this->pluginMarketplace !== null) {
                 $this->mcpHandler->setMarketplace($this->pluginMarketplace);
             }
+            $this->mcpHandler->setBridge($this->bridge);
         }
         return $this->mcpHandler;
     }

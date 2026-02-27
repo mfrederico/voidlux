@@ -1124,6 +1124,7 @@ class Server
         $this->taskDispatcher->setForumOrchestrator($forumOrchestrator);
         $this->taskQueue->setForumOrchestrator($forumOrchestrator);
         $this->controller->setForumOrchestrator($forumOrchestrator);
+        $this->agentMonitor->setForumOrchestrator($forumOrchestrator);
 
         // Start forum notification coroutine (notifies persona agents of new messages every 15s)
         Coroutine::create(function () use ($forumOrchestrator) {

@@ -369,6 +369,69 @@ class ForumOrchestrator
         );
     }
 
+    /**
+     * Prompt a persona agent to check forum activity after finishing a task.
+     * Gathers all channels with unread messages and sends a consolidated prompt.
+     * Skips if no unread activity exists.
+     */
+    public function promptForumCheck(AgentModel $agent): void
+    {
+        // Get all active channels (non-DM)
+        $channels = $this->db->getActiveChannels();
+
+        // Get DMs addressed to this agent
+        $allMessages = $this->db->getMessages();
+        $dmChannels = [];
+        foreach ($allMessages as $msg) {
+            if (str_starts_with($msg->channelId, 'dm:') && str_contains($msg->channelId, $agent->name)) {
+                // Skip DMs sent by this agent
+                if ($msg->authorName === $agent->name) {
+                    continue;
+                }
+                $key = $msg->channelId;
+                if (!isset($dmChannels[$key])) {
+                    $dmChannels[$key] = ['count' => 0, 'last_author' => ''];
+                }
+                $dmChannels[$key]['count']++;
+                $dmChannels[$key]['last_author'] = $msg->authorName;
+            }
+        }
+
+        $lines = [];
+
+        foreach ($channels as $ch) {
+            $channelId = $ch['channel_id'] ?? '';
+            $count = (int) ($ch['message_count'] ?? 0);
+            if (!$channelId || $count === 0) {
+                continue;
+            }
+            // Get recent messages to find last author
+            $msgs = $this->db->getMessagesByChannel($channelId);
+            $lastAuthor = !empty($msgs) ? end($msgs)->authorName : 'unknown';
+            // Skip channels where this agent posted last (they already saw it)
+            if ($lastAuthor === $agent->name) {
+                continue;
+            }
+            $lines[] = "- **{$channelId}**: {$count} messages (last from {$lastAuthor})";
+        }
+
+        foreach ($dmChannels as $channelId => $info) {
+            $lines[] = "- **{$channelId}**: {$info['count']} DM(s) from {$info['last_author']}";
+        }
+
+        if (empty($lines)) {
+            return; // No unread activity — don't spam the agent
+        }
+
+        $prompt = "## Forum Activity\n\n";
+        $prompt .= "You've finished your task. Here's what's happening in SwarmTalk:\n\n";
+        $prompt .= implode("\n", $lines) . "\n\n";
+        $prompt .= "Use `forum_list` to read and `forum_post` to respond. Use `forum_dm` for private replies.\n";
+
+        $this->bridge->sendText($agent, $prompt);
+        $this->log("sent forum check prompt to {$agent->name} (" . count($lines) . " active channels)");
+    }
+
     // --- Prompt Builders ---
 
     private function buildRootMessage(TaskModel $task): string

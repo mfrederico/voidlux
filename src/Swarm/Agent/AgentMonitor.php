@@ -6,6 +6,7 @@ namespace VoidLux\Swarm\Agent;
 
 use Aoe\Session\Status;
 use Swoole\Coroutine;
+use VoidLux\Swarm\Forum\ForumOrchestrator;
 use VoidLux\Swarm\Leadership\LeaderElection;
 use VoidLux\Swarm\Model\AgentModel;
 use VoidLux\Swarm\Model\TaskStatus;
@@ -34,6 +35,7 @@ class AgentMonitor
     private bool $running = false;
     private ?LeaderElection $leaderElection = null;
     private ?TaskDispatcher $taskDispatcher = null;
+    private ?ForumOrchestrator $forumOrchestrator = null;
 
     /** @var callable|null fn(string $taskId, string $agentId, string $event, array $data): void */
     private $onEvent = null;
@@ -54,6 +56,11 @@ class AgentMonitor
     public function setTaskDispatcher(TaskDispatcher $dispatcher): void
     {
         $this->taskDispatcher = $dispatcher;
+    }
+
+    public function setForumOrchestrator(ForumOrchestrator $forum): void
+    {
+        $this->forumOrchestrator = $forum;
     }
 
     /**
@@ -143,6 +150,10 @@ class AgentMonitor
                 // Task gone or finished — mark agent idle
                 $this->db->updateAgentStatus($agent->id, 'idle', null);
                 $this->emit($agent->currentTaskId ?? '', $agent->id, 'agent_idle', []);
+                // Prompt persona agents to check forum activity after completing a task
+                if ($agent->persona && $this->forumOrchestrator) {
+                    $this->forumOrchestrator->promptForumCheck($agent);
+                }
                 $this->tryAutoAssign($agent);
                 continue;
             }
