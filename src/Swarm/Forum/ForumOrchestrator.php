@@ -339,12 +339,24 @@ class ForumOrchestrator
     }
 
     /**
-     * Get active discussion channel IDs being tracked.
+     * Get active channel IDs — combines in-memory tracked discussions
+     * with any channels that have messages in the DB.
      * @return string[]
      */
     public function getActiveChannels(): array
     {
-        return array_keys($this->discussionStartTimes);
+        $channels = array_keys($this->discussionStartTimes);
+
+        // Also include channels from the DB that have active messages
+        $dbChannels = $this->db->getActiveChannels();
+        foreach ($dbChannels as $ch) {
+            $id = $ch['channel_id'] ?? '';
+            if ($id && !in_array($id, $channels, true)) {
+                $channels[] = $id;
+            }
+        }
+
+        return $channels;
     }
 
     /**
