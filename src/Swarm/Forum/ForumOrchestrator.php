@@ -495,6 +495,139 @@ class ForumOrchestrator
         $this->log("channel resolved: {$channelId} outcome={$outcome}");
     }
 
+    // --- Board Post Discussion & Vote Workflow ---
+
+    /** @var array<string, string> boardChannelId => boardMessageId */
+    private array $activeBoardDiscussions = [];
+
+    /**
+     * Start a discussion for a board post. Creates a channel, prompts persona agents.
+     */
+    public function startBoardDiscussion(MessageModel $boardMsg): void
+    {
+        $channelId = "board:{$boardMsg->id}";
+
+        // Don't start duplicate discussions
+        if (isset($this->activeBoardDiscussions[$channelId])) {
+            return;
+        }
+
+        $rootContent = "# Board Discussion\n\n";
+        $rootContent .= "**{$boardMsg->title}**\n\n";
+        if ($boardMsg->content) {
+            $rootContent .= $boardMsg->content . "\n\n";
+        }
+        $rootContent .= "---\n";
+        $rootContent .= "Discuss this board post with the team. Share your analysis, ask questions, and post your findings.\n\n";
+        $rootContent .= "- Use `board_reply` (message_id=\"{$boardMsg->id}\") to reply directly on the board\n";
+        $rootContent .= "- Use `forum_post` (channel_id=\"{$channelId}\") to discuss here\n";
+        $rootContent .= "- Use `forum_vote` (channel_id=\"{$channelId}\", vote=\"approve\"/\"reject\") when you've reached a conclusion\n";
+
+        $msg = MessageModel::create(
+            authorId: 'system',
+            authorName: 'SwarmTalk',
+            category: 'forum',
+            title: "Board: {$boardMsg->title}",
+            content: $rootContent,
+            lamportTs: $this->clock->tick(),
+            channelId: $channelId,
+        );
+
+        $this->taskGossip->createBoardMessage($msg);
+        $this->activeBoardDiscussions[$channelId] = $boardMsg->id;
+        $this->discussionStartTimes[$channelId] = microtime(true);
+
+        if ($this->onTaskEvent) {
+            ($this->onTaskEvent)('forum_channel_created', [
+                'channel_id' => $channelId,
+                'task_id' => '',
+                'task_title' => "Board: {$boardMsg->title}",
+            ]);
+        }
+
+        // Prompt idle persona agents
+        $agents = $this->getIdlePersonaAgents();
+        foreach ($agents as $i => $agent) {
+            \Swoole\Coroutine::create(function () use ($agent, $boardMsg, $channelId, $i) {
+                \Swoole\Coroutine::sleep(2 + $i * 3); // stagger
+
+                $freshAgent = $this->db->getAgent($agent->id);
+                if (!$freshAgent || $freshAgent->status !== 'idle') {
+                    return;
+                }
+
+                $persona = $freshAgent->persona ? json_decode($freshAgent->persona, true) : null;
+                $displayName = $persona['display_name'] ?? $freshAgent->name;
+                $systemPrompt = $persona['system_prompt'] ?? '';
+
+                $prompt = "## Board Post Discussion\n\n";
+                if ($systemPrompt) {
+                    $prompt .= "{$systemPrompt}\n\n";
+                }
+                $prompt .= "A new post has been made to the Message Board:\n\n";
+                $prompt .= "**{$boardMsg->title}**\n";
+                if ($boardMsg->content) {
+                    $prompt .= $boardMsg->content . "\n";
+                }
+                $prompt .= "\n### Instructions\n";
+                $prompt .= "1. Read the discussion channel with `forum_list` (channel_id=\"{$channelId}\")\n";
+                $prompt .= "2. Analyze the post from your perspective as {$displayName}\n";
+                $prompt .= "3. Post your findings with `board_reply` (message_id=\"{$boardMsg->id}\")\n";
+                $prompt .= "4. Discuss with teammates via `forum_post` (channel_id=\"{$channelId}\")\n";
+                $prompt .= "5. When you've formed a conclusion, vote with `forum_vote` (channel_id=\"{$channelId}\", vote=\"approve\"/\"reject\")\n";
+
+                $this->bridge->sendText($freshAgent, $prompt);
+                $this->log("board discussion: prompted {$freshAgent->name} for board:{$boardMsg->id}");
+            });
+        }
+
+        $this->log("board discussion started: channel={$channelId} title='{$boardMsg->title}' agents=" . count($agents));
+    }
+
+    /**
+     * Check board discussion votes. Returns the board message ID if majority approved, null otherwise.
+     * Resolves the channel on approval or timeout.
+     *
+     * @return array{action: string, board_message_id: string, title: string}|null
+     */
+    public function checkBoardDiscussionVotes(): ?array
+    {
+        foreach ($this->activeBoardDiscussions as $channelId => $boardMessageId) {
+            $outcome = $this->checkVotes($channelId);
+            $timedOut = $this->isTimedOut($channelId);
+
+            if ($outcome === 'approve') {
+                $boardMsg = $this->db->getMessage($boardMessageId);
+                $this->resolveChannel($channelId, 'approved');
+                unset($this->activeBoardDiscussions[$channelId]);
+                $this->log("board discussion approved: {$channelId}");
+                return [
+                    'action' => 'create_task',
+                    'board_message_id' => $boardMessageId,
+                    'title' => $boardMsg ? $boardMsg->title : 'Board Post',
+                    'description' => $boardMsg ? $boardMsg->content : '',
+                ];
+            }
+
+            if ($outcome === 'reject') {
+                $this->resolveChannel($channelId, 'rejected');
+                unset($this->activeBoardDiscussions[$channelId]);
+                $this->log("board discussion rejected: {$channelId}");
+                continue;
+            }
+
+            if ($timedOut) {
+                // Timeout without majority — auto-reject
+                $this->resolveChannel($channelId, 'timeout');
+                unset($this->activeBoardDiscussions[$channelId]);
+                $this->log("board discussion timed out: {$channelId}");
+                continue;
+            }
+        }
+
+        return null;
+    }
+
     /**
      * Get active channel IDs — combines in-memory tracked discussions
      * with any channels that have messages in the DB.

@@ -1155,6 +1155,19 @@ class Server
                     }
                     $forumOrchestrator->notifyNewMessages($channelId, $personaAgents);
                 }
+
+                // Check board discussion votes — auto-create task on majority approval
+                $voteResult = $forumOrchestrator->checkBoardDiscussionVotes();
+                if ($voteResult && $voteResult['action'] === 'create_task') {
+                    $task = $this->taskQueue->createTask(
+                        title: $voteResult['title'],
+                        description: $voteResult['description'],
+                        createdBy: 'board-vote',
+                    );
+                    $this->routeWsEvent('task_created', $task->toArray());
+                    $this->taskDispatcher->triggerDispatch();
+                    $this->log("board vote approved — auto-created task: {$task->title}");
+                }
             } catch (\Throwable $e) {
                 $this->log("forum notification error: {$e->getMessage()}");
             }

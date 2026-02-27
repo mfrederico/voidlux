@@ -2269,6 +2269,11 @@ INSTRUCTIONS,
             $this->fireTaskEvent('forum_message', $channelMsg->toArray());
         }
 
+        // Start board discussion + vote workflow so persona agents convene
+        if ($this->forumOrchestrator) {
+            $this->forumOrchestrator->startBoardDiscussion($msg);
+        }
+
         $response->status(201);
         $this->json($response, $msg->toArray());
     }
