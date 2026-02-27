@@ -267,14 +267,16 @@ body {
 .pr-card .pr-summary { color: #88cc88; font-size: 0.85rem; margin-top: 8px; }
 .pr-card .pr-subtask { font-size: 0.8rem; color: #668866; padding: 2px 0; }
 
-/* Message board */
+/* Message board — forum layout */
 .board-section h2 { color: #66aa66 !important; border-bottom-color: #224422 !important; }
-.board-card {
+.board-list { display: flex; flex-direction: column; gap: 0; width: 100%; }
+.board-post {
     background: linear-gradient(135deg, #0d1a0d, #101a10);
-    border: 1px solid #1a3a1a; border-radius: 6px; padding: 14px;
+    border-bottom: 1px solid #1a3a1a; padding: 14px 16px; width: 100%;
 }
-.board-card:hover { border-color: #338833; }
-.board-card .board-category {
+.board-post:last-child { border-bottom: none; }
+.board-post:hover { background: #0f1f0f; }
+.board-post .board-category {
     display: inline-block; padding: 2px 8px; border-radius: 3px;
     font-size: 0.7rem; font-weight: bold; text-transform: uppercase;
 }
@@ -283,15 +285,22 @@ body {
 .cat-bounty { background: #2a1a1a; color: #ff8866; }
 .cat-announcement { background: #2a1a3a; color: #aa88ff; }
 .cat-discussion { background: #1a2a1a; color: #88cc88; }
-.board-card .board-tags { font-size: 0.7rem; color: #556655; margin-top: 4px; }
-.board-card .board-tags span {
+.board-post .board-tags { font-size: 0.7rem; color: #556655; margin-top: 4px; }
+.board-post .board-tags span {
     background: #0a150a; border: 1px solid #223322; border-radius: 2px;
     padding: 1px 6px; margin-right: 4px; display: inline-block;
 }
 .board-status-active { color: #88cc88; }
 .board-status-claimed { color: #66aaff; }
 .board-status-resolved { color: #888; }
-.board-reply-count { font-size: 0.7rem; color: #557755; margin-left: 8px; }
+.board-reply {
+    border-left: 2px solid #2a4a2a; padding: 10px 14px; margin-top: 2px;
+    background: #0a140a;
+}
+.board-reply:hover { background: #0d180d; }
+.board-reply-meta { font-size: 0.8rem; color: #888; }
+.board-reply-meta .reply-author { color: #88cc88; font-weight: bold; }
+.board-reply-meta .reply-time { color: #555; font-size: 0.7rem; margin-left: 6px; }
 
 /* Galactic marketplace */
 .galactic-section h2 { color: #8866cc !important; border-bottom-color: #442266 !important; }
@@ -734,7 +743,7 @@ body {
                 </div>
             </form>
         </div>
-        <div class="card-grid" id="board-list">
+        <div class="board-list" id="board-list">
             <div class="empty" style="color:#446644;">No messages posted yet</div>
         </div>
     </div>
@@ -2618,16 +2627,24 @@ function renderBoard() {
     let messages = Object.values(state.boardMessages);
     if (filter) messages = messages.filter(m => m.category === filter);
 
-    // Sort: active first, then by priority desc, then by date desc
-    messages.sort((a,b) => {
-        if (a.status === 'active' && b.status !== 'active') return -1;
-        if (b.status === 'active' && a.status !== 'active') return 1;
-        if (b.priority !== a.priority) return b.priority - a.priority;
-        return (b.created_at||'').localeCompare(a.created_at||'');
+    // Build children lookup: parent_id -> [child messages]
+    const childrenOf = {};
+    messages.forEach(m => {
+        const pid = m.parent_id || null;
+        if (!childrenOf[pid]) childrenOf[pid] = [];
+        childrenOf[pid].push(m);
     });
 
-    // Only show top-level (no parent_id)
-    const topLevel = messages.filter(m => !m.parent_id);
+    // Sort each group: active first, priority desc, date desc
+    const sortFn = (a,b) => {
+        if (a.status === 'active' && b.status !== 'active') return -1;
+        if (b.status === 'active' && a.status !== 'active') return 1;
+        if (b.priority !== a.priority) return (b.priority||0) - (a.priority||0);
+        return (b.created_at||'').localeCompare(a.created_at||'');
+    };
+    Object.values(childrenOf).forEach(arr => arr.sort(sortFn));
+
+    const topLevel = childrenOf[null] || [];
     const el = document.getElementById('board-list');
 
     if (!topLevel.length) {
@@ -2635,73 +2652,88 @@ function renderBoard() {
         return;
     }
 
-    el.innerHTML = topLevel.map(m => {
-        const catClass = 'cat-' + m.category;
-        const replies = messages.filter(r => r.parent_id === m.id);
-        const hasReplies = replies.length > 0;
-        let html = '<div class="board-card">';
-        html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
-        html += '<span class="board-category ' + catClass + '">' + escapeHtml(m.category) + '</span>';
-        html += '<span class="board-status-' + m.status + '" style="font-size:0.75rem;">' + m.status + '</span>';
-        html += '</div>';
-        html += '<div class="card-title" style="margin-top:6px;">' + escapeHtml(m.title) + '</div>';
-        if (m.content) html += '<div style="font-size:0.85rem;color:#999;margin-top:4px;max-height:60px;overflow:hidden;white-space:pre-wrap;">' + escapeHtml(m.content).substring(0,200) + '</div>';
-        if (m.tags && m.tags.length) {
-            html += '<div class="board-tags">';
-            m.tags.forEach(t => { html += '<span>' + escapeHtml(t) + '</span>'; });
-            html += '</div>';
-        }
-        html += '<div class="card-meta">' + escapeHtml(m.author_name) + ' &middot; ' + (m.created_at||'');
-        if (m.priority > 0) html += ' &middot; P' + m.priority;
-        if (m.claimed_by) html += ' &middot; Claimed: ' + m.claimed_by.substring(0,8);
-        if (hasReplies) html += '<span class="board-reply-count" style="cursor:pointer;" onclick="toggleBoardReplies(\'' + m.id + '\')">' + replies.length + ' repl' + (replies.length===1?'y':'ies') + '</span>';
-        html += '</div>';
-        // Expandable reply thread
-        html += '<div class="board-replies" id="board-replies-' + m.id + '" style="display:none;margin-top:8px;border-top:1px solid #222;padding-top:6px;">';
-        replies.forEach(r => {
-            html += '<div style="font-size:0.8rem;margin-bottom:6px;padding-left:8px;border-left:2px solid #333;">';
-            html += '<span style="color:#888;font-weight:bold;">' + escapeHtml(r.author_name) + '</span>';
-            html += ' <span style="color:#555;font-size:0.7rem;">' + (r.created_at||'').substring(11,16) + '</span>';
-            html += '<div style="color:#aaa;margin-top:2px;white-space:pre-wrap;">' + escapeHtml(r.content) + '</div>';
-            html += '</div>';
-        });
-        html += '</div>';
-        // Reply input
-        html += '<div class="board-reply-form" id="board-reply-form-' + m.id + '" style="display:none;margin-top:6px;display:none;">';
-        html += '<div style="display:flex;gap:4px;">';
-        html += '<input type="text" id="board-reply-input-' + m.id + '" placeholder="Reply..." style="flex:1;background:#111;border:1px solid #333;color:#ccc;padding:4px 8px;border-radius:3px;font-family:inherit;font-size:0.8rem;"';
-        html += ' onkeydown="if(event.key===\'Enter\')postBoardReply(\'' + m.id + '\')">';
-        html += '<button onclick="postBoardReply(\'' + m.id + '\')" style="background:#446644;border:1px solid #558855;color:#aaddaa;padding:4px 10px;border-radius:3px;cursor:pointer;font-family:inherit;font-size:0.8rem;">Send</button>';
-        html += '</div></div>';
-        html += '<div class="card-actions">';
-        html += '<button onclick="toggleBoardReply(\'' + m.id + '\')">Reply</button>';
-        if (m.status === 'active' && (m.category === 'bounty' || m.category === 'task')) {
-            html += '<button onclick="claimBoardMessage(\'' + m.id + '\')">Claim</button>';
-        }
-        if (m.status === 'active' || m.status === 'claimed') {
-            html += '<button onclick="resolveBoardMessage(\'' + m.id + '\')">Resolve</button>';
-        }
-        html += '<button onclick="deleteBoardMessage(\'' + m.id + '\')" style="color:#884444;">Delete</button>';
-        html += '</div></div>';
-        return html;
-    }).join('');
-}
+    function renderThread(m, depth) {
+        const maxDepth = 4;
+        const d = Math.min(depth, maxDepth);
+        const children = childrenOf[m.id] || [];
 
-function toggleBoardReplies(id) {
-    const el = document.getElementById('board-replies-' + id);
-    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        let html = '';
+        if (depth === 0) {
+            // Top-level post — full-width forum row
+            const catClass = 'cat-' + m.category;
+            html += '<div class="board-post">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<span class="board-category ' + catClass + '">' + escapeHtml(m.category) + '</span>';
+            html += '<span class="board-status-' + m.status + '" style="font-size:0.75rem;">' + m.status + '</span>';
+            html += '</div>';
+            html += '<div class="card-title" style="margin-top:6px;">' + escapeHtml(m.title) + '</div>';
+            if (m.content) html += '<div style="font-size:0.85rem;color:#999;margin-top:4px;white-space:pre-wrap;">' + escapeHtml(m.content) + '</div>';
+            if (m.tags && m.tags.length) {
+                html += '<div class="board-tags">';
+                m.tags.forEach(t => { html += '<span>' + escapeHtml(t) + '</span>'; });
+                html += '</div>';
+            }
+            html += '<div class="card-meta">' + escapeHtml(m.author_name) + ' &middot; ' + (m.created_at||'');
+            if (m.priority > 0) html += ' &middot; P' + m.priority;
+            if (m.claimed_by) html += ' &middot; Claimed: ' + m.claimed_by.substring(0,8);
+            if (children.length) html += '<span style="font-size:0.7rem;color:#557755;margin-left:8px;">' + children.length + ' repl' + (children.length===1?'y':'ies') + '</span>';
+            html += '</div>';
+            // Reply input (toggled)
+            html += '<div class="board-reply-form" id="board-reply-form-' + m.id + '" style="display:none;margin-top:6px;">';
+            html += '<div style="display:flex;gap:4px;">';
+            html += '<input type="text" id="board-reply-input-' + m.id + '" placeholder="Reply..." style="flex:1;background:#111;border:1px solid #333;color:#ccc;padding:4px 8px;border-radius:3px;font-family:inherit;font-size:0.8rem;"';
+            html += ' onkeydown="if(event.key===\'Enter\')postBoardReply(\'' + m.id + '\')">';
+            html += '<button onclick="postBoardReply(\'' + m.id + '\')" style="background:#446644;border:1px solid #558855;color:#aaddaa;padding:4px 10px;border-radius:3px;cursor:pointer;font-family:inherit;font-size:0.8rem;">Send</button>';
+            html += '</div></div>';
+            // Actions
+            html += '<div class="card-actions">';
+            html += '<button onclick="toggleBoardReply(\'' + m.id + '\')">Reply</button>';
+            if (m.status === 'active' && (m.category === 'bounty' || m.category === 'task')) {
+                html += '<button onclick="claimBoardMessage(\'' + m.id + '\')">Claim</button>';
+            }
+            if (m.status === 'active' || m.status === 'claimed') {
+                html += '<button onclick="resolveBoardMessage(\'' + m.id + '\')">Resolve</button>';
+            }
+            html += '<button onclick="deleteBoardMessage(\'' + m.id + '\')" style="color:#884444;">Delete</button>';
+            html += '</div>';
+            // Render child replies inline
+            children.forEach(c => { html += renderThread(c, depth + 1); });
+            html += '</div>';
+        } else {
+            // Nested reply — indented with left border
+            const ml = d * 24;
+            html += '<div class="board-reply" style="margin-left:' + ml + 'px;">';
+            html += '<div class="board-reply-meta">';
+            html += '<span class="reply-author">' + escapeHtml(m.author_name) + '</span>';
+            html += '<span class="reply-time">' + (m.created_at||'') + '</span>';
+            html += '</div>';
+            if (m.content) html += '<div style="font-size:0.85rem;color:#aaa;margin-top:4px;white-space:pre-wrap;">' + escapeHtml(m.content) + '</div>';
+            // Reply button + inline form
+            html += '<div style="margin-top:4px;">';
+            html += '<button onclick="toggleBoardReply(\'' + m.id + '\')" style="font-size:0.7rem;padding:2px 8px;background:transparent;border:1px solid #2a4a2a;color:#558855;border-radius:3px;cursor:pointer;font-family:inherit;">Reply</button>';
+            html += '</div>';
+            html += '<div class="board-reply-form" id="board-reply-form-' + m.id + '" style="display:none;margin-top:4px;">';
+            html += '<div style="display:flex;gap:4px;">';
+            html += '<input type="text" id="board-reply-input-' + m.id + '" placeholder="Reply..." style="flex:1;background:#111;border:1px solid #333;color:#ccc;padding:4px 8px;border-radius:3px;font-family:inherit;font-size:0.8rem;"';
+            html += ' onkeydown="if(event.key===\'Enter\')postBoardReply(\'' + m.id + '\')">';
+            html += '<button onclick="postBoardReply(\'' + m.id + '\')" style="background:#446644;border:1px solid #558855;color:#aaddaa;padding:4px 10px;border-radius:3px;cursor:pointer;font-family:inherit;font-size:0.8rem;">Send</button>';
+            html += '</div></div>';
+            // Render nested children
+            children.forEach(c => { html += renderThread(c, depth + 1); });
+            html += '</div>';
+        }
+        return html;
+    }
+
+    el.innerHTML = topLevel.map(m => renderThread(m, 0)).join('');
 }
 
 function toggleBoardReply(id) {
     const form = document.getElementById('board-reply-form-' + id);
-    const replies = document.getElementById('board-replies-' + id);
     if (form) {
         const show = form.style.display === 'none';
         form.style.display = show ? 'block' : 'none';
-        if (show) {
-            if (replies) replies.style.display = 'block';
-            document.getElementById('board-reply-input-' + id)?.focus();
-        }
+        if (show) document.getElementById('board-reply-input-' + id)?.focus();
     }
 }
 
