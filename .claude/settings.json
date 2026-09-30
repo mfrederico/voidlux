@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/php \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/validate-tiknix-php.php",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
