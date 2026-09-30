@@ -18,3 +18,7 @@ vendor/
 # Local tooling.
 .mcp.json
 .DS_Store
+# The builder: task worktrees, the agent's own home and credentials.
+.aibuilder/
+# The app's own agent binary (a link, machine-local).
+/bin/claude
