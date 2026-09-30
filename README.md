@@ -7,6 +7,7 @@ installed at `vendor/tiknix/runtime/`, pinned in `composer.lock`.
 ## Start
 
 ```bash
+git remote rename origin template                # the template is where you came from, not where builds arrive
 composer install
 cp conf/config.example.ini conf/config.ini      # then set [app] name and baseurl, [security] app_key
 php scripts/clitool.php --build                  # create the database and seed it
