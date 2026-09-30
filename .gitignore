@@ -1,6 +1,9 @@
 # Credentials and per-install config: only the example is tracked.
 conf/*.ini
 !conf/*.example.ini
+# Other domains this app serves: each one's own config (secrets) and data (clitool --host-add).
+conf/hosts/
+/hosts/
 # Data this app writes at runtime.
 database/*.db
 database/*.sqlite
