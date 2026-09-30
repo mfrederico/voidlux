@@ -2114,11 +2114,11 @@
         },
         {
             "name": "tiknix/runtime",
-            "version": "v2.0.0-alpha.15",
+            "version": "v2.0.0-alpha.16",
             "source": {
                 "type": "git",
                 "url": "/var/www/html/default/tiknix-runtime",
-                "reference": "846c8d12deeaaee9aa2422014efb6d082e617a08"
+                "reference": "e121722f4c97582a06e125506828bf8a2c805085"
             },
             "require": {
                 "bacon/bacon-qr-code": "^3.0",
@@ -2156,7 +2156,7 @@
                 "MIT"
             ],
             "description": "The tiknix runtime: what every tiknix app runs on — routing, the Bean ORM wrapper, members and auth, the admin, connections and connectors, pipelines, the MCP server, plugins (concepts), and the agent runner. An app requires it and overrides a file by putting its own at the same path (see Paths, Overrides).",
-            "time": "2026-09-30T16:15:02+00:00"
+            "time": "2026-09-30T16:38:00+00:00"
         },
         {
             "name": "translatify/translatify",
