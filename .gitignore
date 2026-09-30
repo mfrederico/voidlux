@@ -12,6 +12,7 @@ log/*
 cache/*
 !cache/.gitkeep
 public/uploads/
+/uploads/
 /.release
 # Dependencies (composer.lock IS tracked: an app pins the exact runtime release it runs).
 vendor/

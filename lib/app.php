@@ -11,6 +11,8 @@
  *   \app\Contact::$categories['quote'] = ['label' => 'Quote requests', 'icon' => 'receipt',
  *       'statuses' => ['quoted' => 'success'], 'summary' => 'quote/_summary', 'details' => 'quote/_details'];
  *
- * Your home page is views/index/index.php — add it and / shows it (the runtime's coming-soon
- * page until then).
+ * Your home page is views/index/index.php — add it and / shows it in the layout (the runtime's
+ * coming-soon page until then). A home page that is more than that (standalone, its own form):
+ *
+ *   \app\Index::$home = [\app\Home::class, 'index'];   // your controller renders it
  */
