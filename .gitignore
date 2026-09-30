@@ -26,3 +26,13 @@ vendor/
 .aibuilder/
 # The app's own agent binary (a link, machine-local).
 /bin/claude
+
+# Claude Code's own state, never the app's (runtime-managed)
+/.claude.json
+/.claude/projects/
+/.claude/sessions/
+/.claude/backups/
+/.claude/shell-snapshots/
+/.claude/todos/
+/.claude/statsig/
+/.claude/.last-cleanup
