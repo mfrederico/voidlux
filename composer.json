@@ -12,12 +12,20 @@
     },
     "autoload": {
         "psr-4": {
-            "app\\": ["controls/", "lib/"],
+            "app\\": [
+                "controls/",
+                "lib/"
+            ],
             "app\\BaseControls\\": "controls/BaseControls/",
             "app\\mcptools\\": "mcptools/",
             "app\\services\\": "services/"
         },
-        "classmap": ["models/"]
+        "classmap": [
+            "models/"
+        ],
+        "files": [
+            "lib/app.php"
+        ]
     },
     "repositories": {
         "tiknix-runtime": {

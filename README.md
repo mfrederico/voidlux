@@ -29,6 +29,8 @@ Point the web server's document root at `public/`. Everything the runtime serves
 | seed data and permission rows | `services/Schema/Seeds/NN_Name.php` |
 | your own MCP tools | `mcptools/` |
 | extra agent guidance | `agent/guidelines/NNN-name.md` |
+| your home page | `views/index/index.php` |
+| wiring into the runtime (menu items, footer links, level names, support categories) | `lib/app.php` |
 
 **Never edit `vendor/tiknix/runtime/`** — the code-standards hook refuses it, and the next
 update would overwrite it. Extend the runtime (slots, settings, your own classes) or override
