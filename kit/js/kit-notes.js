@@ -23,9 +23,12 @@ const Notes = {
       if (!(this.open && this.picking && this._tp)) return; e.preventDefault();
       const p = this.logical(this._tp.x, this._tp.y); this._tp = null; const what = this.describe(p.x, p.y), at = what ? what.at : p;
       if (this._armed && Math.hypot(this._armed.x - at.x, this._armed.y - at.y) < 50) { this._armed = null; this.hover = what; this.pick(p); return; }
-      this._armed = at; this.hover = what; this.ring(at, !!what); this.toast((what ? what.label.replace(/^\w+\./, '') : 'the spot') + ' · tap again to pick');
+      this._armed = at; this.hover = what; this.ring(at, !!what); this.confirmAt(at, what, p);
     }, { passive: false });
     this.style(); this.flushQueue();
+    // the on-screen way in, for touch and for anyone who does not know Alt+P: only when the forge is around (the Play tab's
+    // frame, or the tab it opened), never in a game opened on its own and never in a published build (publish drops this file)
+    if (this.forge() || new URLSearchParams(location.search).get('notes') === '1') { const b = this.btn = document.createElement('button'); b.className = 'vl-notes-btn'; b.type = 'button'; b.innerHTML = '✎ note'; b.title = 'pause and point at something (Alt+P)'; b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); this.toggle(); }); b.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); this.toggle(); }, { passive: false }); document.body.appendChild(b); }
   },
   // ---- pause: a kit game has Game.paused; a Centipede-style game gets its G.update wrapped ----
   pause(on) {
@@ -39,13 +42,13 @@ const Notes = {
   toggle() { if (this.open) this.close(); else this.start(); },
   start() {
     if (this.open) return; this.open = true; this.picking = true; this.pause(true);
-    const el = this.el = document.createElement('div'); el.className = 'vl-notes'; el.innerHTML = '<div class="vl-notes-bar"><b>NOTE MODE</b> paused · ' + ('ontouchstart' in window ? 'tap a thing, tap it again to pick · three-finger tap resumes' : 'click anything on the screen · <kbd>Esc</kbd> resumes') + '</div><svg class="vl-notes-wire" width="100%" height="100%"><line x1="0" y1="0" x2="0" y2="0"></line><circle cx="0" cy="0" r="4"></circle></svg><div class="vl-notes-ring"></div>';
+    const el = this.el = document.createElement('div'); el.className = 'vl-notes'; el.innerHTML = '<div class="vl-notes-bar"><b>NOTE MODE</b> paused · ' + ('ontouchstart' in window ? 'tap a thing, then Pick this · three-finger tap resumes' : 'click anything on the screen · <kbd>Esc</kbd> resumes') + '</div><svg class="vl-notes-wire" width="100%" height="100%"><line x1="0" y1="0" x2="0" y2="0"></line><circle cx="0" cy="0" r="4"></circle></svg><div class="vl-notes-ring"></div>';
     try { const f = this.forge(); if (f) f.postMessage({ type: 'forge:notes-open' }, '*'); } catch (e) {} // the forge scrolls the game into view, sends the notes so far
     document.body.appendChild(el);
     this._move = e => { if (!this.picking) return; const p = this.logical(e.clientX, e.clientY); this.hover = this.describe(p.x, p.y); this.ring(this.hover ? this.hover.at : p, !!this.hover); };
-    this._click = e => { if (!this.picking) return; const t = e.target; if (this.dlg && this.dlg.contains(t)) return; if (!this.canvas.contains(t) && t !== this.el && !t.classList.contains('vl-notes-ring') && !t.closest('.vl-notes-pin')) return; /* a pin is a pick too: it sits on the thing it is about */ e.preventDefault(); e.stopPropagation(); const p = this.logical(e.clientX, e.clientY); this.pick(p); };
+    this._click = e => { if (!this.picking) return; const t = e.target; if (this.dlg && this.dlg.contains(t)) return; if (t.closest('.vl-notes-confirm') || t.closest('.vl-notes-btn')) return; if (!this.canvas.contains(t) && t !== this.el && !t.classList.contains('vl-notes-ring') && !t.closest('.vl-notes-pin')) return; /* a pin is a pick too: it sits on the thing it is about */ e.preventDefault(); e.stopPropagation(); const p = this.logical(e.clientX, e.clientY); this.pick(p); };
     window.addEventListener('mousemove', this._move, true); window.addEventListener('click', this._click, true);
-    document.body.classList.add('vl-notes-on'); this.pins();
+    document.body.classList.add('vl-notes-on'); this.pins(); if (this.btn) this.btn.style.display = 'none';
   },
   // the notes already on this scene, as pins where they were made: a teammate sees what is spoken for before adding to it
   pins() {
@@ -64,7 +67,7 @@ const Notes = {
     if (!this.open) return; this.open = false; this.picking = false; this.pause(false);
     window.removeEventListener('mousemove', this._move, true); window.removeEventListener('click', this._click, true);
     if (this.dlg) { this.dlg.remove(); this.dlg = null; } if (this._place) window.removeEventListener('resize', this._place); if (this.el) { this.el.remove(); this.el = null; }
-    document.body.classList.remove('vl-notes-on'); this.picked = null; this.hover = null; this._armed = null;
+    document.body.classList.remove('vl-notes-on'); this.picked = null; this.hover = null; this._armed = null; this.confirmOff(); if (this.btn) this.btn.style.display = '';
     try { const f = this.forge(); if (f) f.postMessage({ type: 'forge:notes-closed' }, '*'); } catch (e) {}
   },
   ring(p, hit) { const r = this.el && this.el.querySelector('.vl-notes-ring'); if (!r) return; const c = this.css(p.x, p.y), s = this.canvas.getBoundingClientRect().width / this.canvas.width; const rad = (hit && this.hover && this.hover.r ? this.hover.r + 10 : 22) * s; r.style.cssText = `left:${c.x - rad}px;top:${c.y - rad}px;width:${rad * 2}px;height:${rad * 2}px;opacity:1;border-color:${hit ? '#ffcc00' : 'rgba(255,255,255,0.5)'}`; },
@@ -103,7 +106,7 @@ const Notes = {
   },
   crop(p) { try { const w = 240, h = 160, c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, w, h); g.drawImage(this.canvas, Math.max(0, p.x - w / 2), Math.max(0, p.y - h / 2), w, h, 0, 0, w, h); g.strokeStyle = '#ffcc00'; g.lineWidth = 2; g.beginPath(); g.arc(Math.min(w / 2, p.x), Math.min(h / 2, p.y), 14, 0, Math.PI * 2); g.stroke(); return c.toDataURL('image/jpeg', 0.7); } catch (e) { return ''; } },
   pick(p) {
-    const what = this.describe(p.x, p.y); this.picked = { x: Math.round(p.x), y: Math.round(p.y), scene: this.scene(), what, shot: this.crop(what ? what.at : p), t: Date.now() };
+    this.confirmOff(); const what = this.describe(p.x, p.y); this.picked = { x: Math.round(p.x), y: Math.round(p.y), scene: this.scene(), what, shot: this.crop(what ? what.at : p), t: Date.now() };
     this.picking = false; this.ring(what ? what.at : p, !!what);
     if (this.dlg) this.dlg.remove();
     const d = this.dlg = document.createElement('div'); d.className = 'vl-notes-dlg';
@@ -135,6 +138,15 @@ const Notes = {
     this.toast(delivered ? (build ? 'sent to the build' : 'note saved') : 'note queued: open the game from the forge to deliver it');
     this.dlg.remove(); this.dlg = null; this.picking = true; this.picked = null; this.wireOff();
   },
+  // the confirm button beside an aimed ring on touch screens
+  confirmAt(at, what, p) {
+    this.confirmOff(); const c = this.css(at.x, at.y), b = this.cfm = document.createElement('div'); b.className = 'vl-notes-confirm';
+    b.innerHTML = `<span>${this.esc(what ? what.label.replace(/^\w+\./, '') : 'this spot')}</span><button type="button" data-act="pick">Pick this</button><button type="button" data-act="cancel">✕</button>`;
+    const vw = window.innerWidth, vh = window.innerHeight; b.style.left = Math.max(8, Math.min(vw - 230, c.x - 110)) + 'px'; b.style.top = (c.y + 36 > vh - 50 ? c.y - 60 : c.y + 36) + 'px';
+    const act = e => { e.preventDefault(); e.stopPropagation(); const k = e.target.closest('button'); if (!k) return; if (k.dataset.act === 'pick') { this._armed = null; this.confirmOff(); this.hover = what; this.pick(p); } else { this._armed = null; this.confirmOff(); this.ring(p, false); } };
+    b.addEventListener('click', act); b.addEventListener('touchend', act, { passive: false }); document.body.appendChild(b);
+  },
+  confirmOff() { if (this.cfm) { this.cfm.remove(); this.cfm = null; } },
   wireOff() { const svg = this.el && this.el.querySelector('.vl-notes-wire'); if (svg) svg.style.opacity = 0; },
   flushQueue() { try { const q = JSON.parse(localStorage.getItem(this.KEY) || '[]'), f = this.forge(); if (q.length && f) { for (const n of q) f.postMessage({ type: 'forge:note', note: n }, '*'); localStorage.removeItem(this.KEY); } } catch (e) {} },
   toast(s) { const t = document.createElement('div'); t.className = 'vl-notes-toast'; t.textContent = s; document.body.appendChild(t); setTimeout(() => t.remove(), 2200); },
@@ -155,6 +167,8 @@ const Notes = {
       .vl-notes-prior button { font: inherit; font-size: 10px; background: #1a1a1a; color: #bbb; border: 1px solid #444; border-radius: 3px; padding: 0 5px; margin-left: 4px; cursor: pointer; } .vl-notes-prior button:hover { border-color: #ff4d6d; color: #fff; }
       .vl-notes-prior { margin-top: 8px; padding: 6px 8px; background: #17171a; border: 1px solid #333; border-radius: 4px; font-size: 11.5px; color: #ccc; max-height: 7em; overflow: auto; } .vl-notes-prior b { color: #ffcc00; display: block; margin-bottom: 2px; } .vl-notes-prior i { color: #7df9ff; font-style: normal; }
       @media (max-width: 640px) { .vl-notes-dlg.sheet { left: 6px !important; right: 6px; width: auto !important; top: auto !important; bottom: 6px; max-height: 70vh; overflow: auto; } .vl-notes-dlg.sheet .vl-notes-shot { height: 90px; } .vl-notes-bar { font-size: 11px; padding: 5px 10px; white-space: nowrap; max-width: 96vw; overflow: hidden; text-overflow: ellipsis; } }
+      .vl-notes-btn { position: fixed; left: 12px; bottom: 12px; z-index: 8999; background: rgba(6,6,8,0.85); color: #ffcc00; border: 1px solid #ff6600; border-radius: 999px; padding: 8px 14px; font: 13px "IBM Plex Mono", "Courier New", monospace; letter-spacing: 1px; cursor: pointer; touch-action: manipulation; } .vl-notes-btn:hover { background: #ff6600; color: #111; }
+      .vl-notes-confirm { position: fixed; z-index: 9001; display: flex; align-items: center; gap: 6px; background: #0d0d10; border: 1px solid #ffcc00; border-radius: 999px; padding: 4px 6px 4px 12px; font: 12px "IBM Plex Mono", "Courier New", monospace; color: #ddd; box-shadow: 0 10px 30px rgba(0,0,0,0.6); max-width: 92vw; } .vl-notes-confirm span { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ffcc00; } .vl-notes-confirm button { font: inherit; border-radius: 999px; border: 1px solid #444; background: #1a1a1a; color: #ddd; padding: 5px 10px; } .vl-notes-confirm button[data-act=pick] { background: #ff6600; color: #111; border-color: #ff6600; font-weight: bold; }
       .vl-notes-toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 9002; background: #111; color: #ffcc00; border: 1px solid #333; border-radius: 999px; padding: 6px 14px; font: 13px "IBM Plex Mono", monospace; }`;
     document.head.appendChild(s);
   },

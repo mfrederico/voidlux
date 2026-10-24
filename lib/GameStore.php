@@ -402,11 +402,12 @@ class GameStore {
         if (is_dir($dist)) exec('rm -rf ' . escapeshellarg($dist));
         mkdir($dist . '/js', 0775, true);
         foreach (glob($d . '/js/*.js') as $f) copy($f, $dist . '/js/' . basename($f));
-        foreach (glob(self::root() . '/kit/js/*.js') as $f) copy($f, $dist . '/js/' . basename($f));
+        foreach (glob(self::root() . '/kit/js/*.js') as $f) if (basename($f) !== 'kit-notes.js') copy($f, $dist . '/js/' . basename($f));
         if (is_dir($d . '/icons')) self::copyTree($d . '/icons', $dist . '/icons');
         if (is_file($d . '/manifest.webmanifest')) copy($d . '/manifest.webmanifest', $dist . '/manifest.webmanifest');
         self::writeAtomic($dist . '/js/version.js', 'const BUILD = ' . json_encode(['id' => $bid, 'date' => date('Y-m-d'), 'channel' => 'stable']) . ";\n");
         $html = str_replace('../../kit/js/', 'js/', (string) file_get_contents($d . '/index.html'));
+        $html = preg_replace('/^.*<script src="[^"]*kit-notes\.js"><\/script>.*\n?/m', '', $html); // note mode is the forge\'s tool, not the player\'s
         $html = preg_replace_callback('/<script src="js\/([a-z0-9-]+)\.js"><\/script>/', fn($m) => "<script src=\"js/{$m[1]}.js?v={$bid}\"></script>", $html);
         $html = preg_replace('/<script src="js\/kit-util\.js/', "<script src=\"js/version.js?v={$bid}\"></script>\n<script src=\"js/kit-util.js", $html, 1);
         self::writeAtomic($dist . '/index.html', $html);
