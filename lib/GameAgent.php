@@ -56,7 +56,7 @@ class GameAgent {
     }
 
     /** One claude run, blocking. */
-    public function run(string $prompt, bool $resume = true, bool $fresh = false, int $maxTurns = 0, string $label = ''): array {
+    public function run(string $prompt, bool $resume = true, bool $fresh = false, int $maxTurns = 0, string $label = '', bool $retried = false): array {
         $result = ['ok' => false, 'text' => '', 'cost' => 0.0, 'turns' => 0];
         try { [$env, $bin, $note] = self::environment(GameStore::root()); } catch (\Throwable $e) { $this->emit('error', ['text' => $e->getMessage()]); return $result; }
         $sid = $fresh ? null : ($this->state['session'] ?? null);
@@ -109,6 +109,13 @@ class GameAgent {
         $err .= (string) stream_get_contents($pipes[2]); fclose($pipes[1]); fclose($pipes[2]);
         $rc = proc_close($proc);
         if ($this->stop) { $this->emit('note', ['text' => 'run stopped']); $result['stopped'] = true; }
+        elseif ($rc !== 0 && !$result['ok'] && $resume && $sid && !$retried && stripos($err, 'No conversation found') !== false) {
+            // the stored session lives in another login's state (the agent moved from the host login to the app's own, or
+            // the jail's own HOME): forget it and run again, fresh, once
+            $this->emit('note', ['text' => 'the saved session is not in this login\'s store; starting a fresh one']);
+            $this->state['session'] = null; $this->save();
+            return $this->run($prompt, false, true, $maxTurns, $label, true);
+        }
         elseif ($rc !== 0 && !$result['ok']) $this->emit('error', ['text' => "the agent exited {$rc}: " . (trim(substr($err, -800)) ?: 'no message')]);
         $this->state['runs'] = ($this->state['runs'] ?? 0) + 1; $this->state['cost'] = ($this->state['cost'] ?? 0) + $result['cost']; $this->save();
         $this->emit('done', ['ok' => $result['ok'], 'cost' => round($result['cost'], 4), 'turns' => $result['turns'], 'text' => mb_substr((string) $result['text'], 0, 2000), 'label' => $label]);
