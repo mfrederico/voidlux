@@ -396,6 +396,10 @@ class GameStore {
         $style = trim(mb_substr((string) ($b['style'] ?? 'pixel art'), 0, 120)); $pixel = !empty($b['pixel']);
         $pal = array_values(array_filter(array_map('strval', (array) ($b['palette'] ?? [])), fn($c) => preg_match('/^#[0-9a-f]{6}$/i', $c)));
         $id = date('Ymd-His') . '-' . bin2hex(random_bytes(3)); $dir = self::sketchDir($slug, $id); mkdir($dir, 0775, true);
+        try { return self::startSketchIn($slug, $b, $memberId, $id, $dir, $note, $png, $size, $key, $style, $pixel, $pal); }
+        catch (\Throwable $e) { foreach (glob("$dir/*") ?: [] as $f) @unlink($f); @rmdir($dir); throw $e; }
+    }
+    private static function startSketchIn(string $slug, array $b, int $memberId, string $id, string $dir, string $note, string $png, int $size, string $key, string $style, bool $pixel, array $pal): array {
         $gi = self::dir($slug) . '/.gitignore'; $have = is_file($gi) ? (string) file_get_contents($gi) : '';
         if (!preg_match('#^/?sketches/?$#m', $have)) file_put_contents($gi, rtrim($have) . ($have === '' ? '' : "\n") . "sketches/\n"); // scratch, never in the game's history
         $has = false;
@@ -410,7 +414,7 @@ class GameStore {
             $paths = ''; foreach ($strokes as $s) { $d = ''; foreach ($s['pts'] as $i => $p) $d .= ($i ? ' L' : 'M') . $p[0] . ' ' . $p[1]; if (count($s['pts']) === 1) $d .= ' L' . ($s['pts'][0][0] + 1) . ' ' . $s['pts'][0][1]; $paths .= '  <path d="' . $d . '" stroke="' . ($s['pen'] === 'erase' ? '#ffffff' : $s['pen']) . '" stroke-width="' . $s['w'] . "\"/>\n"; }
             self::writeAtomic($dir . '/sketch.svg', "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 512 512\" width=\"512\" height=\"512\" fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n" . $paths . "</svg>\n");
         }
-        $maker = in_array($b['maker'] ?? 'svg', ['svg', 'code', 'spritecook'], true) ? (string) $b['maker'] : 'svg';
+        $mk = (string) ($b['maker'] ?? 'svg'); $maker = in_array($mk, ['svg', 'code', 'spritecook'], true) ? $mk : 'svg';
         // a refinement: the producer points at one earlier take and says what to change; the take comes along as base.<ext>
         $refine = null;
         if (!empty($b['refine']) && is_array($b['refine'])) {
