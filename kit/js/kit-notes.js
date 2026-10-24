@@ -18,7 +18,13 @@ const Notes = {
     window.addEventListener('keydown', e => { if (e.altKey && e.code === 'KeyP') { e.preventDefault(); this.toggle(); } else if (e.code === 'Escape' && this.open) { e.preventDefault(); this.close(); } }, true);
     window.addEventListener('message', e => { const m = e.data || {}; if (m.type === 'forge:notes') { if (m.on) this.start(); else this.close(); } else if (m.type === 'forge:notes-list') { this.known = Array.isArray(m.notes) ? m.notes : []; if (this.open) this.pins(); } });
     this.canvas.addEventListener('touchstart', e => { if (e.touches.length === 3) { e.preventDefault(); this.toggle(); } else if (this.open && this.picking && e.touches.length === 1) { e.preventDefault(); const t = e.touches[0]; this._tp = { x: t.clientX, y: t.clientY }; } }, { passive: false });
-    this.canvas.addEventListener('touchend', e => { if (this.open && this.picking && this._tp) { e.preventDefault(); const p = this.logical(this._tp.x, this._tp.y); this._tp = null; this.hover = this.describe(p.x, p.y); this.pick(p); } }, { passive: false });
+    // on touch there is no hover: the first tap shows the ring on what it would pick (with its name), a second tap near it confirms
+    this.canvas.addEventListener('touchend', e => {
+      if (!(this.open && this.picking && this._tp)) return; e.preventDefault();
+      const p = this.logical(this._tp.x, this._tp.y); this._tp = null; const what = this.describe(p.x, p.y), at = what ? what.at : p;
+      if (this._armed && Math.hypot(this._armed.x - at.x, this._armed.y - at.y) < 50) { this._armed = null; this.hover = what; this.pick(p); return; }
+      this._armed = at; this.hover = what; this.ring(at, !!what); this.toast((what ? what.label.replace(/^\w+\./, '') : 'the spot') + ' · tap again to pick');
+    }, { passive: false });
     this.style(); this.flushQueue();
   },
   // ---- pause: a kit game has Game.paused; a Centipede-style game gets its G.update wrapped ----
@@ -33,7 +39,7 @@ const Notes = {
   toggle() { if (this.open) this.close(); else this.start(); },
   start() {
     if (this.open) return; this.open = true; this.picking = true; this.pause(true);
-    const el = this.el = document.createElement('div'); el.className = 'vl-notes'; el.innerHTML = '<div class="vl-notes-bar"><b>NOTE MODE</b> paused · ' + ('ontouchstart' in window ? 'tap anything on the screen · three-finger tap resumes' : 'click anything on the screen · <kbd>Esc</kbd> resumes') + '</div><svg class="vl-notes-wire" width="100%" height="100%"><line x1="0" y1="0" x2="0" y2="0"></line><circle cx="0" cy="0" r="4"></circle></svg><div class="vl-notes-ring"></div>';
+    const el = this.el = document.createElement('div'); el.className = 'vl-notes'; el.innerHTML = '<div class="vl-notes-bar"><b>NOTE MODE</b> paused · ' + ('ontouchstart' in window ? 'tap a thing, tap it again to pick · three-finger tap resumes' : 'click anything on the screen · <kbd>Esc</kbd> resumes') + '</div><svg class="vl-notes-wire" width="100%" height="100%"><line x1="0" y1="0" x2="0" y2="0"></line><circle cx="0" cy="0" r="4"></circle></svg><div class="vl-notes-ring"></div>';
     try { const f = this.forge(); if (f) f.postMessage({ type: 'forge:notes-open' }, '*'); } catch (e) {} // the forge scrolls the game into view, sends the notes so far
     document.body.appendChild(el);
     this._move = e => { if (!this.picking) return; const p = this.logical(e.clientX, e.clientY); this.hover = this.describe(p.x, p.y); this.ring(this.hover ? this.hover.at : p, !!this.hover); };
@@ -58,7 +64,7 @@ const Notes = {
     if (!this.open) return; this.open = false; this.picking = false; this.pause(false);
     window.removeEventListener('mousemove', this._move, true); window.removeEventListener('click', this._click, true);
     if (this.dlg) { this.dlg.remove(); this.dlg = null; } if (this._place) window.removeEventListener('resize', this._place); if (this.el) { this.el.remove(); this.el = null; }
-    document.body.classList.remove('vl-notes-on'); this.picked = null; this.hover = null;
+    document.body.classList.remove('vl-notes-on'); this.picked = null; this.hover = null; this._armed = null;
     try { const f = this.forge(); if (f) f.postMessage({ type: 'forge:notes-closed' }, '*'); } catch (e) {}
   },
   ring(p, hit) { const r = this.el && this.el.querySelector('.vl-notes-ring'); if (!r) return; const c = this.css(p.x, p.y), s = this.canvas.getBoundingClientRect().width / this.canvas.width; const rad = (hit && this.hover && this.hover.r ? this.hover.r + 10 : 22) * s; r.style.cssText = `left:${c.x - rad}px;top:${c.y - rad}px;width:${rad * 2}px;height:${rad * 2}px;opacity:1;border-color:${hit ? '#ffcc00' : 'rgba(255,255,255,0.5)'}`; },
@@ -106,7 +112,7 @@ const Notes = {
     d.innerHTML = `<div class="vl-notes-what">${where}<div class="vl-notes-meta">scene ${this.esc(this.picked.scene)} · (${this.picked.x}, ${this.picked.y})</div></div>${priorHtml}<img class="vl-notes-shot" src="${this.picked.shot}" alt=""><textarea placeholder="What about it? 'too fast', 'make this gold and bigger', 'this should drop a shield'…"></textarea><div class="vl-notes-btns"><button data-act="note">Save note</button><button data-act="build" class="hot">Send to build</button><button data-act="again">Pick again</button><button data-act="close">Resume</button></div>`;
     document.body.appendChild(d); this.place(what ? what.at : p); this._place = () => { if (this.picked) this.place(what ? what.at : p); }; window.addEventListener('resize', this._place); const ta = d.querySelector('textarea'); setTimeout(() => ta.focus(), 50);
     d.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; e.stopPropagation(); const act = b.dataset.act;
-      if (act === 'scrap' || act === 'delete') { if (act === 'delete' && !confirm('Delete this note for good?')) return; try { const f = this.forge(); if (f) f.postMessage({ type: 'forge:note-action', id: +b.dataset.note, action: act }, '*'); } catch (err) {} const row = b.closest('[data-note]'); if (row) row.remove(); this.known = this.known.filter(n => n.id !== +b.dataset.note); this.pins(); this.toast(act === 'delete' ? 'note deleted' : 'note scrapped'); return; } if (act === 'close') this.close(); else if (act === 'again') { d.remove(); this.dlg = null; this.picking = true; this.wireOff(); } else this.send(act === 'build', ta.value.trim()); });
+      if (act === 'scrap' || act === 'delete') { if (act === 'delete' && !confirm('Delete this note for good?')) return; try { const f = this.forge(); if (f) f.postMessage({ type: 'forge:note-action', id: +b.dataset.note, action: act }, '*'); } catch (err) {} const row = b.closest('[data-note]'); if (row) row.remove(); this.known = this.known.filter(n => n.id !== +b.dataset.note); this.pins(); this.toast(act === 'delete' ? 'note deleted' : 'note scrapped'); return; } if (act === 'close') this.close(); else if (act === 'again') { d.remove(); this.dlg = null; this.picking = true; this._armed = null; this.wireOff(); } else this.send(act === 'build', ta.value.trim()); });
     ta.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); this.send(true, ta.value.trim()); } e.stopPropagation(); });
   },
   // the dialog sits in the middle of whichever half of the screen the pick is NOT in (never over it), vertically centred,
