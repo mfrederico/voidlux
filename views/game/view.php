@@ -20,17 +20,16 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 </section>
 
 <section class="vl-pane" id="pane-media">
-  <div class="vl-toolbar"><span>The game's sound, music and pictures. Each opens its own workshop; the editors write straight into the game's files.</span></div>
   <div class="vl-media-grid">
-    <a class="vl-media-card" href="#sfx" onclick="showTab('sfx'); return false;"><div class="vl-media-icon">♪</div><div class="vl-media-title">SFX</div><div class="vl-media-sub">Sound effects for the elements of the game: every <code>SFX.play</code> key, designed as layers.</div></a>
-    <a class="vl-media-card" href="#tracker" onclick="showTab('tracker'); return false;"><div class="vl-media-icon">▦</div><div class="vl-media-title">Tracker</div><div class="vl-media-sub">Make chiptune music: the 8-track tracker with the kit's own synth and drums.</div></a>
-    <a class="vl-media-card" href="#assets" onclick="showTab('assets'); return false;"><div class="vl-media-icon">◈</div><div class="vl-media-title">Media</div><div class="vl-media-sub">Download and upload SVG and image files into the game's <code>assets/</code> folder for the builder to use.</div></a>
-    <div class="vl-media-card soon"><div class="vl-media-icon">✦</div><div class="vl-media-title">Sprites</div><div class="vl-media-sub">A sprite editor on the kit's atlas. Not built yet.</div></div>
+    <a class="vl-media-card" href="#sfx" onclick="showTab('sfx'); return false;"><div class="vl-media-icon">♪</div><div class="vl-media-title">SFX</div><div class="vl-media-sub">Sound effects for the elements of the game. Every sound the code plays is a slot; design it as layers of swept tones and noise, hear it, save it into the game.</div></a>
+    <a class="vl-media-card" href="#tracker" onclick="showTab('tracker'); return false;"><div class="vl-media-icon">▦</div><div class="vl-media-title">Tracker</div><div class="vl-media-sub">Make chiptune music on an 8-track tracker with the game's own synth and drums. Songs save by name (title, play, boss) straight into the game.</div></a>
+    <a class="vl-media-card" href="#assets" onclick="showTab('assets'); return false;"><div class="vl-media-icon">◈</div><div class="vl-media-title">Media</div><div class="vl-media-sub">Upload and download SVG and image files for the builder to use. Tell it which, in a note or a message.</div></a>
+    <div class="vl-media-card soon"><div class="vl-media-icon">✦</div><div class="vl-media-title">Sprites</div><div class="vl-media-sub">Draw sprites on the game's atlas. Coming.</div></div>
   </div>
 </section>
 
 <section class="vl-pane" id="pane-assets">
-  <div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>Files in the game's <code>assets/</code> folder. The builder can load them with <code>new Image()</code> or inline an SVG; tell it which in a note or a chat message.</span></div>
+  <div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>The game's picture files. Tell the builder which to use, in a note or a message.</span></div>
   <form class="vl-toolbar" method="post" action="/game/assetupload/<?= $e($slug) ?>" enctype="multipart/form-data"><?= csrf_field() ?><input type="file" name="file" accept=".svg,.png,.jpg,.jpeg,.gif,.webp" required><button class="btn btn-sm btn-primary" type="submit">Upload</button><span>SVG, PNG, JPG, GIF or WebP, up to 5 MB.</span></form>
   <div class="vl-assets" id="assets"></div>
 </section>
@@ -84,9 +83,9 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
   <div class="vl-notes-big" id="notesBig"></div>
 </section>
 <div class="vl-lightbox" id="lightbox" onclick="this.classList.remove('on')"><img alt=""><div class="vl-lightbox-cap"></div></div>
-<section class="vl-pane" id="pane-sfx"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a>Every <code>SFX.play('key')</code> in the game's code is a slot here. Design it as layers; Save writes js/sfx.js. <a href="/editor/sfx/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="sfxFrame"></iframe></section>
-<section class="vl-pane" id="pane-tracker"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a>The 8-track chip tracker. Press / to load or save a song into js/music-themes.js; name songs after where they play (title, play, boss). <a href="/editor/tracker/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="trackerFrame"></iframe></section>
-<section class="vl-pane" id="pane-config"><div class="vl-toolbar">Every number in js/config.js with its comment. Changes save to js/tuning.js and apply on reload. <a href="/editor/config/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="configFrame"></iframe></section>
+<section class="vl-pane" id="pane-sfx"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>Sound effects. Save writes them into the game; reload the game to hear them.</span><a href="/editor/sfx/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="sfxFrame"></iframe></section>
+<section class="vl-pane" id="pane-tracker"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>The chip tracker. Press / to load or save a song into the game; name songs after where they play (title, play, boss).</span><a href="/editor/tracker/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="trackerFrame"></iframe></section>
+<section class="vl-pane" id="pane-config"><div class="vl-toolbar"><span>Every tuning number in the game, with its comment. Changes apply when the game reloads.</span><a href="/editor/config/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="configFrame"></iframe></section>
 
 <section class="vl-pane" id="pane-design">
   <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="toggleDocEdit()" id="docEditBtn">Edit</button><button class="btn btn-sm btn-primary" onclick="saveDoc()" id="docSaveBtn" style="display:none">Save GAME.md</button><button class="btn btn-sm btn-outline-secondary" onclick="loadDoc()">Reload</button><span id="docMsg">The game's concept: brief, design, acceptance criteria, tasks and log, as the planner and the builders keep it in GAME.md.</span></div>
