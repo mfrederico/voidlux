@@ -7,10 +7,13 @@
 //                                 kinds stamped cost a fraction of drawing each one stroke by stroke: use it for anything that
 //                                 repeats. Anything upright or changing every frame (shadows, bars) is drawn live around it.
 //   Draw.textStamp(s, x, y, size, color, align)  the same for text that repeats (damage numbers, scores)
-//   Draw.load(key, 'assets/x.png')  a picture from a file (uploaded media, AI-made sprites) fetched once at boot;
-//   Draw.pic(key, x, y, w, h, angle) draws it centred every frame (nothing, and false, until it has arrived; a file that will
-//                                 not load is a console error, which the soak reports). Draw.loaded(key) says when it is there;
-//                                 something stamped hundreds of times goes into the atlas then: Draw.sprite(key, half, g => g.drawImage(Draw.images.get(key), -half, -half, half * 2, half * 2)).
+//   Draw.loadManifest()           assets/sprites.json, written by the sprite editor and the builder: key → { file, w, h, frames,
+//                                 fps }. Game.boot calls it; no file means no sprites. Draw.load(key, url) fetches one picture by hand.
+//   Draw.pic(key, x, y, w, h, angle, frame)  draws a sprite centred, crisp (nothing, and false, until its file has arrived; a file
+//                                 that will not load is a console error, which the soak reports). A strip of frames: frame picks one;
+//                                 Draw.anim(key, Game.time, x, y, w) runs through them at the manifest's fps. Draw.loaded(key) says
+//                                 when it is there; something stamped hundreds of times goes into the atlas then:
+//                                 Draw.sprite(key, half, g => g.drawImage(Draw.images.get(key), -half, -half, half * 2, half * 2)).
 // The atlas is one 2048 px canvas per page (one for sprites, one for text) packed in shelves; a full page is wiped and refills.
 const Draw = {
   ctx: null, px: 1, sprites: new Map(), pages: {}, ATLAS: 2048, camM: null, FONT: '"Trebuchet MS", "Segoe UI", sans-serif',
@@ -33,15 +36,23 @@ const Draw = {
     g.save(); g.beginPath(); g.rect(S.x, S.y, S.w, S.h); g.clip(); g.translate(S.x + ox, S.y + oy); g.scale(k, k); g.lineCap = 'round';
     this.ctx = g; try { paint(g); } finally { this.ctx = was; g.restore(); }
   },
-  images: new Map(),
-  load(key, url) { const im = new Image(); im.onerror = () => console.error(`Draw.load: ${url} did not load (key ${key})`); im.src = url; this.images.set(key, im); return im; },
+  images: new Map(), meta: new Map(),
+  load(key, url, m) { const im = new Image(); im.onerror = () => console.error(`Draw.load: ${url} did not load (key ${key})`); im.src = url; this.images.set(key, im); if (m) this.meta.set(key, m); return im; },
   loaded(key) { const im = this.images.get(key); return !!(im && im.complete && im.naturalWidth); },
-  pic(key, x, y, w, h, a) {
-    const im = this.images.get(key); if (!im || !im.complete || !im.naturalWidth) return false;
-    const c = this.ctx; h = h || w * im.naturalHeight / im.naturalWidth;
-    if (!a) { c.drawImage(im, x - w / 2, y - h / 2, w, h); return true; }
-    const m = c.getTransform(); c.translate(x, y); c.rotate(a); c.drawImage(im, -w / 2, -h / 2, w, h); c.setTransform(m.a, m.b, m.c, m.d, m.e, m.f); return true;
+  loadManifest(url) {
+    url = url || 'assets/sprites.json'; const dir = url.slice(0, url.lastIndexOf('/') + 1);
+    return fetch(url, { cache: 'no-store' }).then(r => { if (r.status === 404) return null; if (!r.ok) throw new Error(url + ': HTTP ' + r.status); return r.json(); })
+      .then(j => { let n = 0; for (const [k, m] of Object.entries((j && j.sprites) || {})) { this.load(k, dir + m.file, m); n++; } return n; })
+      .catch(e => { console.error('Draw.loadManifest: ' + e.message); return 0; });
   },
+  pic(key, x, y, w, h, a, frame) {
+    const im = this.images.get(key); if (!im || !im.complete || !im.naturalWidth) return false;
+    const m = this.meta.get(key), n = m && m.frames > 1 ? m.frames : 1, fw = im.naturalWidth / n, fh = im.naturalHeight, f = n > 1 ? ((frame | 0) % n + n) % n : 0;
+    const c = this.ctx, sm = c.imageSmoothingEnabled; h = h || w * fh / fw; c.imageSmoothingEnabled = !!(m && m.smooth);
+    if (!a) { c.drawImage(im, f * fw, 0, fw, fh, x - w / 2, y - h / 2, w, h); c.imageSmoothingEnabled = sm; return true; }
+    const t = c.getTransform(); c.translate(x, y); c.rotate(a); c.drawImage(im, f * fw, 0, fw, fh, -w / 2, -h / 2, w, h); c.setTransform(t.a, t.b, t.c, t.d, t.e, t.f); c.imageSmoothingEnabled = sm; return true;
+  },
+  anim(key, t, x, y, w, h, a) { const m = this.meta.get(key); return this.pic(key, x, y, w, h, a, m ? Math.floor(t * (m.fps || 8)) : 0); },
   textSprite(s, size, color, align) {
     const k = this.px, id = 'T' + s + '|' + size + '|' + color + '|' + (align || 'left') + '@' + k; let S = this.sprites.get(id); if (S) return S;
     const c = this.ctx; c.font = `bold ${size}px ${this.FONT}`; const tw = c.measureText(s).width, pad = Math.max(3, size * 0.18) + 2;

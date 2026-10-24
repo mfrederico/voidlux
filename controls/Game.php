@@ -103,12 +103,10 @@ class Game extends BaseControls\Control {
         $b = $this->body(); $mode = (string) ($b['mode'] ?? 'chat'); $prompt = trim((string) ($b['prompt'] ?? ''));
         if (!in_array($mode, ['chat', 'pipeline', 'review', 'fix', 'soak'], true)) { $this->jsonError('mode is chat, pipeline, review, fix or soak'); return; }
         if ($mode === 'chat' && $prompt === '') { $this->jsonError('Say what to do.'); return; }
-        if ($mode === 'chat' && GameStore::agentState($g->slug)['busy']) { // a message during a run waits in the inbox for the next run
-            file_put_contents(GameStore::studioDir($g->slug) . '/inbox.txt', $prompt . "\n", FILE_APPEND);
-            GameStore::emit($g->slug, 'note', ['text' => 'queued for the next run: ' . mb_substr($prompt, 0, 200)]);
-            $this->jsonSuccess(GameStore::agentState($g->slug) + ['queued' => true], 'Queued for the next run.'); return;
+        try {
+            if ($mode === 'chat') { $r = GameStore::askBuilder($g->slug, $prompt, (int) $this->member->id); $this->jsonSuccess($r, $r['queued'] ? 'Queued for the next run.' : 'Started.'); return; } // during a run the message waits in the inbox
+            $this->jsonSuccess(GameStore::startRunner($g->slug, $mode, $prompt, (int) $this->member->id), 'Started.');
         }
-        try { $this->jsonSuccess(GameStore::startRunner($g->slug, $mode, $prompt, (int) $this->member->id), 'Started.'); }
         catch (\RuntimeException $e) { $this->jsonError($e->getMessage(), 409); }
     }
     public function stop($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $this->jsonSuccess(GameStore::stopRunner($g->slug), 'Stopped.'); }

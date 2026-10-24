@@ -63,6 +63,22 @@ lists which scenes were visited: a screen the bot never reached is untested. Run
 what you changed (gameplay, scene flow, load order); skip it, and say what you checked instead, when it would not (a screen
 the bot never reaches, docs, tuning, copy). It takes the producer a minute each time.
 
+## Sprites and pictures
+
+`assets/sprites.json` is the game's sprite manifest: `{ "sprites": { "<key>": { "file": "cow.png", "w": 32, "h": 32, "frames": 1,
+"fps": 8, "source": "editor" } } }`. The sprite editor (Media → Sprites) and the builder both write it; `Game.boot` loads it
+(`Draw.loadManifest`), so a key is drawable from the first frame: `Draw.pic('cow', x, y, 48)` (centred, crisp, height from the
+picture's shape), `Draw.pic(key, x, y, w, h, angle, frame)` for one frame of a strip, `Draw.anim(key, Game.time, x, y, w)` to
+run through the strip at its fps. A strip is one PNG of `frames` equal frames side by side. Until a file has arrived `pic`
+draws nothing and returns false: keep the coded fallback (`Draw.sprite`) for anything that must show at once. A file that
+will not load is a console error, which the soak reports.
+
+- A sprite the producer drew is theirs: never redraw or "improve" `assets/` files or manifest entries you did not make;
+  draw them where the game needs them. A sprite you make (by code, or through a plugin) you register in the manifest
+  yourself (key, file, w, h, frames, fps, `"source": "spritecook"` / `"cellcog"` / `"builder"`) and commit with the file.
+- An SVG in the manifest draws like any picture (scaled smoothly, set `"smooth": true`); pixel art stays crisp by default.
+- Publishing copies `assets/` with the game.
+
 ## Plugins the builder has
 
 The forge's agents share the plugins installed on /agents (Skills & plugins). A plugin's skills load when a task matches them
@@ -71,8 +87,8 @@ that service (`php scripts/agent-shell.php`, then `/mcp`). A tool that answers "
 in one line and stop; never work around it with an API key or a web form.
 
 - **spritecook** — pixel-art sprites, character animations, tilesets, UI kits. Read `spritecook-workflow-essentials` before
-  the first call. Download each result's `sprite_url` into `assets/` (`curl -s -o assets/<name>.png <url>`), commit the file,
-  and draw it with `Draw.load` / `Draw.pic` (into the atlas with `Draw.sprite` once `Draw.loaded`). Generation costs the
+  the first call. Download each result's `sprite_url` into `assets/` (`curl -s -o assets/<key>.png <url>`), register it in
+  `assets/sprites.json` (see Sprites above), commit both, and draw it with `Draw.pic`. Generation costs the
   producer credits: one variation first, more only when asked.
 - **cellcog** — art, music, sound, video and documents from a remote agent on the producer's own CellCog account. For a whole
   asset family in one style, or music beyond the tracker. Results are links good for 30 days: download what the game uses

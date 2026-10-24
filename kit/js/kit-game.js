@@ -28,7 +28,7 @@ const Game = {
     Object.assign(this, { id: o.id || 'game', title: o.title || 'Game', W: o.W || 1280, H: o.H || 720, WMIN: o.WMIN || 960, WMAX: o.WMAX || 1600, scenes: o.scenes || {} });
     this.params = Object.fromEntries(new URLSearchParams(location.search));
     const canvas = this.canvas = document.getElementById('game'); canvas.width = this.W; canvas.height = this.H;
-    Draw.init(canvas); this.ctx = Draw.ctx;
+    Draw.init(canvas); this.ctx = Draw.ctx; Draw.loadManifest('assets/sprites.json'); // the game's sprites, if it has any
     Settings.load(); try { this.best = parseInt(localStorage.getItem(this.id + '.best') || '0', 10) || 0; } catch (e) {}
     SFX.muted = !Settings.data.sound; SFX.volume(Settings.data.volume);
     const toLogical = (cx, cy) => { const r = canvas.getBoundingClientRect(); return { x: (cx - r.left) / r.width * this.W, y: (cy - r.top) / r.height * this.H }; };

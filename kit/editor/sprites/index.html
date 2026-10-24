@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sprites · VoidLux Studio</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: the game's sprites on the left (what assets/sprites.json names, then picture files not in it yet), the sprite being
+   made in the middle (a pixel canvas with tools, frames and a palette, or an SVG's source beside its preview), and on the
+   right the AI helpers, which ask the game's builder to make sprites through its SpriteCook and CellCog plugins. Everything
+   saves into the game's assets/ folder and its manifest; the kit's Draw.pic draws a saved key in the game. */
+:root {
+  --bg: #f5f2fa; --surface: #ffffff; --ink: #1d1530; --muted: #6b6080; --line: #e2dbee; --accent: #9a6400; --focus: #7a3cff;
+  --set: #c2410c; --ok: #2f7d32; --plot: #faf7ff; --check1: #d9d3e6; --check2: #f3eff9;
+  --display: "Baloo 2", "Trebuchet MS", system-ui, sans-serif; --body: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #120a1e; --surface: #1b1428; --ink: #f1ecfa; --muted: #a59bb8; --line: #2e2440; --accent: #ffd166; --focus: #b48cff;
+  --set: #ff9b5c; --ok: #9bf06a; --plot: #0e0918; --check1: #2a2238; --check2: #1e1730; color-scheme: dark;
+} }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 14px; line-height: 1.45; padding: 20px max(16px, env(safe-area-inset-left, 0px)) 40px; }
+.wrap { max-width: 1400px; margin: 0 auto; display: grid; gap: 14px; }
+.crumbs { font-size: 13px; color: var(--muted); } .crumbs a { color: var(--accent); }
+h1 { font-family: var(--display); font-weight: 800; font-size: 36px; line-height: 1.05; margin: 0; }
+.lede { color: var(--muted); max-width: 90ch; margin: 4px 0 0; }
+code, .mono { font-family: var(--mono); font-size: 12.5px; }
+button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+button:hover { border-color: var(--accent); } button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+button.primary { background: var(--accent); color: #1d1530; border-color: var(--accent); font-weight: 600; }
+button.danger { color: var(--set); } button.on { outline: 2px solid var(--accent); } button:disabled { opacity: .5; cursor: default; }
+input, select, textarea { font: inherit; font-size: 13px; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+input[type=number] { width: 64px; } textarea { width: 100%; resize: vertical; }
+label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.main { display: grid; grid-template-columns: 250px 1fr 300px; gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .main { grid-template-columns: 250px 1fr; } .ai { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .main { grid-template-columns: 1fr; } .list { position: static; max-height: none; } }
+.list { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px; position: sticky; top: 10px; max-height: calc(100vh - 30px); overflow: auto; display: grid; gap: 6px; align-content: start; }
+.list input[type=search] { width: 100%; border-radius: 999px; }
+.list h3 { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--muted); margin: 10px 4px 2px; letter-spacing: 0.06em; text-transform: uppercase; }
+.slot { display: flex; gap: 8px; align-items: center; width: 100%; text-align: left; border: 0; border-radius: 8px; padding: 4px 6px; background: none; }
+.slot:hover { background: var(--bg); } .slot.on { background: var(--bg); outline: 2px solid var(--accent); }
+.slot .th { width: 36px; height: 36px; flex: none; image-rendering: pixelated; background: repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 12px 12px; border-radius: 4px; object-fit: contain; }
+.slot .k { font-family: var(--mono); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .slot .d { color: var(--muted); font-size: 11.5px; }
+.newform { display: none; gap: 6px; padding: 8px; border: 1px dashed var(--line); border-radius: 10px; } .newform.open { display: grid; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 12px; align-content: start; }
+.head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.head h2 { font-family: var(--mono); font-size: 18px; font-weight: 500; margin: 0; } .head .meta { color: var(--muted); font-size: 12.5px; }
+.tools button { padding: 5px 10px; } .tools .sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+.stage { overflow: auto; max-height: 70vh; display: grid; place-items: center; background: var(--plot); border: 1px solid var(--line); border-radius: 10px; padding: 12px; touch-action: none; }
+#cv { image-rendering: pixelated; background: repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 16px 16px; cursor: crosshair; max-width: 100%; }
+.frames { display: grid; gap: 8px; } #frameList { display: flex; gap: 6px; flex-wrap: wrap; }
+#frameList canvas { width: 44px; height: 44px; image-rendering: pixelated; border: 2px solid var(--line); border-radius: 6px; cursor: pointer; background: repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 11px 11px; }
+#frameList canvas.on { border-color: var(--accent); }
+.palette { display: grid; gap: 8px; } #swatches { display: flex; flex-wrap: wrap; gap: 4px; }
+.sw { width: 22px; height: 22px; border-radius: 5px; border: 1px solid rgba(0,0,0,.25); cursor: pointer; padding: 0; }
+.sw.on { outline: 2px solid var(--focus); outline-offset: 1px; } .sw.none { background: repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 8px 8px; }
+.svgwrap { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } @media (max-width: 900px) { .svgwrap { grid-template-columns: 1fr; } }
+#svgSrc { min-height: 320px; font-family: var(--mono); font-size: 12.5px; white-space: pre; }
+#svgPrev { display: grid; place-items: center; background: repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 16px 16px; border: 1px solid var(--line); border-radius: 10px; min-height: 320px; padding: 10px; }
+#svgPrev img { max-width: 100%; max-height: 60vh; }
+.ai h2 { font-family: var(--display); font-size: 20px; margin: 0; } .ai h3 { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--muted); margin: 8px 0 0; letter-spacing: 0.06em; text-transform: uppercase; }
+.ai label { display: grid; gap: 4px; } .ai .row label { display: inline-flex; }
+.muted { color: var(--muted); } .small { font-size: 12.5px; }
+.msg { min-height: 1.2em; font-size: 13px; } .msg.ok { color: var(--ok); } .msg.err { color: var(--set); }
+.hidden { display: none !important; }
+/* the sketch card: the pad, the >> button, the AI's output; on a phone the pad on top, the output under it */
+.sketch { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: stretch; }
+@media (max-width: 900px) { .sketch { grid-template-columns: 1fr; } .sketch .go { writing-mode: horizontal-tb; width: 100%; } .sketch .go button { transform: rotate(90deg); } }
+.pad, .out { display: grid; gap: 8px; align-content: start; }
+.pad h3, .out h3 { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--muted); margin: 0; letter-spacing: 0.06em; text-transform: uppercase; }
+#pad { width: 100%; aspect-ratio: 1; max-height: 420px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); touch-action: none; cursor: crosshair; display: block; }
+.go { display: grid; place-items: center; } .go button { font-family: var(--display); font-size: 28px; font-weight: 800; padding: 14px 20px; border-radius: 16px; line-height: 1; }
+.outbox { min-height: 200px; border: 1px dashed var(--line); border-radius: 10px; padding: 10px; display: grid; gap: 10px; align-content: start; background: var(--plot); }
+.cand { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: center; } .cand img { width: 96px; height: 96px; object-fit: contain; image-rendering: pixelated; background: repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 16px 16px; border-radius: 8px; }
+.cand.on img { outline: 3px solid var(--accent); }
+.note { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; } .note textarea { min-height: 42px; } @media (max-width: 900px) { .note { grid-template-columns: 1fr; } }
+.pad .brushes { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } .pad .brushes .sw { width: 24px; height: 24px; }
+</style></head><body>
+<div class="wrap">
+  <div class="crumbs"><a href="/forge">Forge</a> / <a id="crumbGame" href="#">game</a> / Sprites</div>
+  <div><h1>Sprites</h1><p class="lede">Pixel art and SVG for the game. A sprite saved here lands in <code>assets/</code> and in <code>assets/sprites.json</code>, and the game draws it with <code>Draw.pic('key', x, y, size)</code>. The builder can make sprites too, through its AI plugins, from the panel on the right; they show up in the list when its run ends.</p></div>
+  <div id="msg" class="msg"></div>
+  <section class="panel">
+    <div class="sketch">
+      <div class="pad">
+        <h3>Drawing pad — roughly what you mean</h3>
+        <canvas id="pad" width="512" height="512"></canvas>
+        <div class="brushes"><span class="muted small">pen</span><button class="sw on" data-pen="#1d1530" style="background:#1d1530" title="dark"></button><button class="sw" data-pen="#e43b44" style="background:#e43b44" title="red"></button><button class="sw" data-pen="#0099db" style="background:#0099db" title="blue"></button><button class="sw" data-pen="#feae34" style="background:#feae34" title="yellow"></button><button class="sw" data-pen="#63c74d" style="background:#63c74d" title="green"></button><button class="sw none" data-pen="erase" title="eraser"></button><label>width <input type="range" id="padW" min="2" max="40" value="10"></label><button id="padUndo">↶</button><button id="padClear">clear</button></div>
+      </div>
+      <div class="go"><button id="goBtn" title="make a sprite from the drawing and the note">&gt;&gt;</button></div>
+      <div class="out">
+        <h3>What the AI makes of it</h3>
+        <div class="outbox" id="outbox"><span class="muted small">Draw something on the left, say what it is below, and press &gt;&gt;. The builder sends your drawing to SpriteCook as the reference and brings back two takes. Keep one into the game, or edit its pixels first.</span></div>
+        <div class="row"><label>key <input id="aiKey" placeholder="bee" pattern="[a-z][a-z0-9_-]{0,40}" style="width:120px"></label><button id="keepBtn" disabled>Keep as a sprite</button><button id="editBtn" disabled>Edit its pixels</button></div>
+      </div>
+    </div>
+    <div class="note"><textarea id="aiSubject" rows="2" placeholder="what it is, e.g. “a honey bee, side view, flying right”"></textarea>
+      <div class="row"><label>style <select id="aiStyle"><option value="pixel">pixel art</option><option value="16bit">16-bit SNES</option><option value="gameboy">4-colour Game Boy</option><option value="hd">painted HD</option></select></label><label>size <select id="aiSize"><option>16</option><option>24</option><option selected>32</option><option>48</option><option>64</option><option>128</option></select></label><label><input type="checkbox" id="aiPal"> this sprite's palette</label></div></div>
+    <div id="aiStatus" class="muted small"></div>
+  </section>
+  <div class="main">
+    <aside class="list">
+      <div class="row"><button class="primary" id="newBtn">+ New</button><button id="importBtn">Import…</button><input type="file" id="importFile" accept=".png,.svg,.gif,.webp,.jpg,.jpeg" hidden></div>
+      <form class="newform" id="newForm"><input id="newKey" placeholder="key, e.g. cow" pattern="[a-z][a-z0-9_-]{0,40}" required><div class="row"><label>size <select id="newSize"><option>8</option><option>16</option><option>24</option><option selected>32</option><option>48</option><option>64</option><option>96</option><option>128</option></select></label><button class="primary">Create</button></div></form>
+      <input type="search" id="q" placeholder="find a sprite">
+      <h3>In the game</h3><div id="listIn" class="muted small">loading…</div>
+      <h3>Files not in the game</h3><div id="listLoose" class="muted small"></div>
+    </aside>
+    <section class="panel" id="editor">
+      <div class="head"><div><h2 id="title">no sprite</h2><div class="meta" id="meta"></div></div><div class="row"><button id="useBtn">Use in game</button><button id="dlBtn">Download</button><button class="danger" id="delBtn">Delete</button><button class="primary" id="saveBtn">Save</button></div></div>
+      <div id="empty" class="muted">Pick a sprite on the left, make a new one, or ask the builder for one.</div>
+      <div id="pix" class="hidden" style="display: grid; gap: 12px;">
+        <div class="row tools" id="tools">
+          <button data-tool="pen" class="on" title="pencil (B)">✎ pen</button><button data-tool="eraser" title="eraser (E)">◻ erase</button><button data-tool="fill" title="fill (G)">◉ fill</button><button data-tool="line" title="line (L)">／ line</button><button data-tool="rect" title="rectangle (R)">▭ rect</button><button data-tool="pick" title="pick a colour (I)">⌖ pick</button>
+          <span class="sep"></span><button id="mirrorBtn" title="draw both halves at once">⇔ mirror</button><button id="gridBtn" class="on">▦ grid</button>
+          <span class="sep"></span><button id="undoBtn" title="undo (Ctrl+Z)">↶</button><button id="redoBtn" title="redo (Ctrl+Y)">↷</button>
+          <span class="sep"></span><button id="zoomOut">−</button><span class="mono" id="zoomLbl">12×</span><button id="zoomIn">+</button>
+          <span class="sep"></span><button id="flipBtn" title="flip the frame left-right">⇋ flip</button><button id="shiftBtn" title="move the frame one pixel: then press an arrow key">✥ move</button><button class="danger" id="clearBtn">clear frame</button>
+        </div>
+        <div class="stage"><canvas id="cv"></canvas></div>
+        <div class="frames"><div id="frameList"></div><div class="row"><span class="muted small">frames:</span><button id="fAdd">+ add</button><button id="fDup">duplicate</button><button id="fDel">remove</button><button id="fPlay">▶ play</button><label>fps <input type="number" id="fps" min="1" max="30" value="8"></label><label><input type="checkbox" id="onion"> onion skin</label><label>cut a strip into frames of <input type="number" id="splitW" min="1" max="512" value="32"> px <button id="splitBtn">cut</button></label></div></div>
+        <div class="palette"><div id="swatches"></div><div class="row"><label>colour <input type="color" id="colorIn" value="#ffffff"></label><span class="muted small">click a swatch to pick it; the pick tool takes a colour from the picture</span></div></div>
+      </div>
+      <div id="svgMode" class="hidden" style="display: grid; gap: 10px;">
+        <div class="svgwrap"><textarea id="svgSrc" spellcheck="false" placeholder="<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>…</svg>"></textarea><div id="svgPrev"></div></div>
+        <div class="row"><label>draw size <input type="number" id="svgW" min="1" max="1024" value="64"> × <input type="number" id="svgH" min="1" max="1024" value="64"></label><label><input type="checkbox" id="svgSmooth" checked> smooth (off = crisp pixels)</label><span class="sep"></span><label>rasterize at <input type="number" id="rasW" value="32" min="4" max="256"> × <input type="number" id="rasH" value="32" min="4" max="256"></label><button id="rasBtn">make a pixel sprite from it</button></div>
+      </div>
+    </section>
+    <aside class="panel ai">
+      <h2>More from the builder's AI</h2>
+      <p class="muted small" style="margin:0">Messages to the game's builder, which uses its SpriteCook plugin (pixel art) and CellCog plugin (sets in one style). Generation spends the account's credits. Results land in the list when the run ends; the style and size above apply.</p>
+      <label>A set in one style<textarea id="setSubject" rows="3" placeholder="a honey bee, a wasp, a hornet and a ladybird, all side view"></textarea></label>
+      <div class="row"><button id="aiSet">Make the set (CellCog)</button></div>
+      <h3>From the current sprite</h3>
+      <div class="row"><button id="aiVar">Variations</button><button id="aiBg">Remove background</button></div>
+      <div class="row"><select id="aiAnim"><option value="idle">idle</option><option value="walk">walk</option><option value="run">run</option><option value="jump">jump</option><option value="attack">attack</option><option value="hurt">hurt</option><option value="death">death</option></select><button id="aiAnimBtn">Animate it</button></div>
+      <div id="setStatus" class="muted small"></div>
+    </aside>
+  </div>
+</div>
+<script>
+const el = id => document.getElementById(id);
+const API = '/gameapi', GAME = new URLSearchParams(location.search).get('game') || ''; let CSRF = ''; // the forge's API for this game: /gameapi/<verb>/<slug>, writes with X-CSRF-TOKEN
+const apiUrl = verb => `${API}/${verb}/${GAME}`; const apiHeaders = () => ({ 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest' });
+async function apiToken() { try { const r = await fetch(apiUrl('token'), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); if (r.ok) { CSRF = (await r.json()).token || ''; return true; } } catch (e) {} return false; }
+document.title = `Sprites · ${GAME} · VoidLux Studio`; el('crumbGame').textContent = GAME; el('crumbGame').href = `/game/view/${GAME}`;
+const ASSET = f => `/games/${GAME}/assets/${f}`, KEY_RE = /^[a-z][a-z0-9_-]{0,40}$/;
+// Endesga 32: a palette that reads well at any size, plus the game's own colours as they are picked
+const PALETTE = ['#be4a2f', '#d77643', '#ead4aa', '#e4a672', '#b86f50', '#733e39', '#3e2731', '#a22633', '#e43b44', '#f77622', '#feae34', '#fee761', '#63c74d', '#3e8948', '#265c42', '#193c3e', '#124e89', '#0099db', '#2ce8f5', '#ffffff', '#c0cbdc', '#8b9bb4', '#5a6988', '#3a4466', '#262b44', '#181425', '#ff0044', '#68386c', '#b55088', '#f6757a', '#e8b796', '#c28569'];
+
+let M = { sprites: {}, files: [] }, cur = null, entry = null, doc = null, fi = 0, tool = 'pen', color = '#ffffff', mirror = false, grid = true, zoom = 12;
+let undo = [], redo = [], playing = null, onion = false, dirty = false, recent = [], mode = 'none', shifting = false;
+const say = (t, cls) => { const m = el('msg'); m.textContent = t; m.className = 'msg ' + (cls || ''); };
+
+// ---- the document: frames of w×h RGBA pixels ----
+const blank = (w, h) => new Uint8ClampedArray(w * h * 4);
+function newDoc(w, h) { return { w, h, frames: [blank(w, h)], fps: 8 }; }
+function hexToRgb(hx) { const n = parseInt(hx.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function rgbToHex(r, g, b) { return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join(''); }
+function px(f, x, y) { const i = (y * doc.w + x) * 4; return [f[i], f[i + 1], f[i + 2], f[i + 3]]; }
+function put(f, x, y, rgba) { if (x < 0 || y < 0 || x >= doc.w || y >= doc.h) return; const i = (y * doc.w + x) * 4; f[i] = rgba[0]; f[i + 1] = rgba[1]; f[i + 2] = rgba[2]; f[i + 3] = rgba[3]; }
+function dot(f, x, y, rgba) { put(f, x, y, rgba); if (mirror) put(f, doc.w - 1 - x, y, rgba); }
+function line(f, x0, y0, x1, y1, rgba) { let dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, err = dx + dy; for (;;) { dot(f, x0, y0, rgba); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 >= dy) { err += dy; x0 += sx; } if (e2 <= dx) { err += dx; y0 += sy; } } }
+function rect(f, x0, y0, x1, y1, rgba) { const [a, b] = [Math.min(x0, x1), Math.max(x0, x1)], [c, d] = [Math.min(y0, y1), Math.max(y0, y1)]; for (let x = a; x <= b; x++) { dot(f, x, c, rgba); dot(f, x, d, rgba); } for (let y = c; y <= d; y++) { dot(f, a, y, rgba); dot(f, b, y, rgba); } }
+function fill(f, x, y, rgba) {
+  if (x < 0 || y < 0 || x >= doc.w || y >= doc.h) return; const t = px(f, x, y); if (t.every((v, i) => v === rgba[i])) return;
+  const same = (i) => f[i] === t[0] && f[i + 1] === t[1] && f[i + 2] === t[2] && f[i + 3] === t[3]; const st = [[x, y]];
+  while (st.length) { const [cx, cy] = st.pop(); if (cx < 0 || cy < 0 || cx >= doc.w || cy >= doc.h) continue; const i = (cy * doc.w + cx) * 4; if (!same(i)) continue; f[i] = rgba[0]; f[i + 1] = rgba[1]; f[i + 2] = rgba[2]; f[i + 3] = rgba[3]; st.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]); }
+}
+const paint = () => tool === 'eraser' ? [0, 0, 0, 0] : [...hexToRgb(color), 255];
+function snapshot() { undo.push({ fi, frames: doc.frames.map(f => f.slice()) }); if (undo.length > 80) undo.shift(); redo.length = 0; dirty = true; }
+function restore(s) { doc.frames = s.frames.map(f => f.slice()); fi = Math.min(s.fi, doc.frames.length - 1); dirty = true; render(); }
+
+// ---- the canvas ----
+const cv = el('cv'), cx = cv.getContext('2d'); let off = document.createElement('canvas'), offc = off.getContext('2d');
+function frameCanvas(f, c) { c = c || document.createElement('canvas'); c.width = doc.w; c.height = doc.h; const g = c.getContext('2d'); g.putImageData(new ImageData(f, doc.w, doc.h), 0, 0); return c; }
+function fitZoom() { const stage = el('cv').parentElement, avail = Math.max(160, Math.min(stage.clientWidth - 30, 640)); zoom = Math.max(2, Math.min(32, Math.floor(avail / doc.w))); el('zoomLbl').textContent = zoom + '×'; }
+function render() {
+  if (!doc) return; cv.width = doc.w * zoom; cv.height = doc.h * zoom; cx.imageSmoothingEnabled = false; cx.clearRect(0, 0, cv.width, cv.height);
+  if (onion && doc.frames.length > 1) { const p = doc.frames[(fi + doc.frames.length - 1) % doc.frames.length]; cx.globalAlpha = 0.3; cx.drawImage(frameCanvas(p, off), 0, 0, cv.width, cv.height); cx.globalAlpha = 1; }
+  cx.drawImage(frameCanvas(doc.frames[fi], off), 0, 0, cv.width, cv.height);
+  if (grid && zoom >= 6) { cx.strokeStyle = 'rgba(128,128,128,.25)'; cx.lineWidth = 1; cx.beginPath(); for (let x = 0; x <= doc.w; x++) { cx.moveTo(x * zoom + .5, 0); cx.lineTo(x * zoom + .5, cv.height); } for (let y = 0; y <= doc.h; y++) { cx.moveTo(0, y * zoom + .5); cx.lineTo(cv.width, y * zoom + .5); } cx.stroke(); if (mirror) { cx.strokeStyle = 'rgba(255,100,0,.6)'; cx.beginPath(); cx.moveTo(doc.w * zoom / 2, 0); cx.lineTo(doc.w * zoom / 2, cv.height); cx.stroke(); } }
+  renderFrames(); el('meta').textContent = `${doc.w}×${doc.h} · ${doc.frames.length} frame${doc.frames.length > 1 ? 's' : ''}${doc.frames.length > 1 ? ' · ' + doc.fps + ' fps' : ''}${dirty ? ' · unsaved' : ''}`;
+}
+function renderFrames() { const L = el('frameList'); L.innerHTML = ''; doc.frames.forEach((f, i) => { const c = frameCanvas(f); c.className = i === fi ? 'on' : ''; c.title = 'frame ' + (i + 1); c.onclick = () => { fi = i; render(); }; L.appendChild(c); }); el('fps').value = doc.fps; }
+
+// pointer tools; line and rect preview on a copy of the frame, pen and eraser draw straight in
+let down = false, last = null, base = null, start = null;
+const pos = e => { const r = cv.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / r.width * doc.w), Math.floor((e.clientY - r.top) / r.height * doc.h)]; };
+cv.addEventListener('pointerdown', e => {
+  if (!doc || e.button === 2) return; cv.setPointerCapture(e.pointerId); const [x, y] = pos(e), f = doc.frames[fi];
+  if (tool === 'pick') { const p = px(f, x, y); if (p[3]) { setColor(rgbToHex(p[0], p[1], p[2])); } setTool('pen'); return; }
+  snapshot(); down = true; last = [x, y]; start = [x, y]; base = f.slice();
+  if (tool === 'fill') { fill(f, x, y, paint()); if (mirror) fill(f, doc.w - 1 - x, y, paint()); down = false; }
+  else if (tool === 'pen' || tool === 'eraser') dot(f, x, y, paint());
+  else if (tool === 'line') line(f, x, y, x, y, paint()); else if (tool === 'rect') rect(f, x, y, x, y, paint());
+  render();
+});
+cv.addEventListener('pointermove', e => {
+  if (!down || !doc) return; const [x, y] = pos(e), f = doc.frames[fi];
+  if (tool === 'pen' || tool === 'eraser') { line(f, last[0], last[1], x, y, paint()); last = [x, y]; }
+  else if (tool === 'line') { f.set(base); line(f, start[0], start[1], x, y, paint()); }
+  else if (tool === 'rect') { f.set(base); rect(f, start[0], start[1], x, y, paint()); }
+  render();
+});
+const up = () => { down = false; base = null; }; cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+cv.addEventListener('contextmenu', e => { e.preventDefault(); if (!doc) return; const [x, y] = pos(e), p = px(doc.frames[fi], x, y); if (p[3]) setColor(rgbToHex(p[0], p[1], p[2])); }); // right-click picks a colour
+
+function setTool(t) { tool = t; for (const b of el('tools').querySelectorAll('[data-tool]')) b.classList.toggle('on', b.dataset.tool === t); shifting = false; el('shiftBtn').classList.remove('on'); }
+for (const b of el('tools').querySelectorAll('[data-tool]')) b.onclick = () => setTool(b.dataset.tool);
+el('mirrorBtn').onclick = () => { mirror = !mirror; el('mirrorBtn').classList.toggle('on', mirror); render(); };
+el('gridBtn').onclick = () => { grid = !grid; el('gridBtn').classList.toggle('on', grid); render(); };
+el('zoomIn').onclick = () => { zoom = Math.min(48, zoom + 2); el('zoomLbl').textContent = zoom + '×'; render(); };
+el('zoomOut').onclick = () => { zoom = Math.max(1, zoom - 2); el('zoomLbl').textContent = zoom + '×'; render(); };
+el('undoBtn').onclick = () => { if (!undo.length) return; redo.push({ fi, frames: doc.frames.map(f => f.slice()) }); restore(undo.pop()); };
+el('redoBtn').onclick = () => { if (!redo.length) return; undo.push({ fi, frames: doc.frames.map(f => f.slice()) }); restore(redo.pop()); };
+el('flipBtn').onclick = () => { snapshot(); const f = doc.frames[fi], g = f.slice(); for (let y = 0; y < doc.h; y++) for (let x = 0; x < doc.w; x++) put(f, x, y, px(g, doc.w - 1 - x, y)); render(); };
+el('clearBtn').onclick = () => { snapshot(); doc.frames[fi].fill(0); render(); };
+el('shiftBtn').onclick = () => { shifting = !shifting; el('shiftBtn').classList.toggle('on', shifting); say(shifting ? 'arrow keys move the frame one pixel; click move again to stop' : ''); };
+function shift(dx, dy) { snapshot(); const f = doc.frames[fi], g = f.slice(); f.fill(0); for (let y = 0; y < doc.h; y++) for (let x = 0; x < doc.w; x++) { const p = px(g, x, y); if (p[3]) put(f, x + dx, y + dy, p); } render(); }
+document.addEventListener('keydown', e => {
+  if (!doc || mode !== 'pix' || e.target.matches('input, textarea, select')) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); (e.shiftKey ? el('redoBtn') : el('undoBtn')).click(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); el('redoBtn').click(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); el('saveBtn').click(); return; }
+  const k = e.key.toLowerCase(), T = { b: 'pen', e: 'eraser', g: 'fill', l: 'line', r: 'rect', i: 'pick' }; if (T[k]) { setTool(T[k]); return; }
+  if (shifting && e.key.startsWith('Arrow')) { e.preventDefault(); shift(e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0, e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0); return; }
+  if (e.key === ',' || e.key === '.') { fi = (fi + (e.key === '.' ? 1 : doc.frames.length - 1)) % doc.frames.length; render(); }
+});
+
+// frames
+el('fAdd').onclick = () => { snapshot(); doc.frames.splice(fi + 1, 0, blank(doc.w, doc.h)); fi++; render(); };
+el('fDup').onclick = () => { snapshot(); doc.frames.splice(fi + 1, 0, doc.frames[fi].slice()); fi++; render(); };
+el('fDel').onclick = () => { if (doc.frames.length < 2) { say('a sprite keeps at least one frame', 'err'); return; } snapshot(); doc.frames.splice(fi, 1); fi = Math.min(fi, doc.frames.length - 1); render(); };
+el('fPlay').onclick = () => { if (playing) { clearInterval(playing); playing = null; el('fPlay').textContent = '▶ play'; return; } el('fPlay').textContent = '■ stop'; playing = setInterval(() => { fi = (fi + 1) % doc.frames.length; render(); }, 1000 / Math.max(1, doc.fps)); };
+el('fps').onchange = () => { doc.fps = Math.max(1, Math.min(30, parseInt(el('fps').value, 10) || 8)); dirty = true; if (playing) { el('fPlay').click(); el('fPlay').click(); } render(); };
+el('onion').onchange = () => { onion = el('onion').checked; render(); };
+el('splitBtn').onclick = () => { // one wide frame into a strip of equal frames
+  const fw = parseInt(el('splitW').value, 10) || 0; if (fw < 1 || fw >= doc.w || doc.w % fw) { say(`the frame is ${doc.w} wide: it cuts into frames of a width that divides it`, 'err'); return; }
+  snapshot(); const n = doc.w / fw, src = doc.frames[fi], W = doc.w; doc.w = fw; const out = [];
+  for (let k = 0; k < n; k++) { const f = blank(fw, doc.h); for (let y = 0; y < doc.h; y++) for (let x = 0; x < fw; x++) { const i = (y * W + k * fw + x) * 4; f.set(src.subarray(i, i + 4), (y * fw + x) * 4); } out.push(f); }
+  doc.frames = out; fi = 0; fitZoom(); render();
+};
+
+// palette
+function setColor(c) { color = c; el('colorIn').value = c; if (!PALETTE.includes(c)) { recent = [c, ...recent.filter(x => x !== c)].slice(0, 12); } if (tool === 'eraser') setTool('pen'); drawSwatches(); }
+function drawSwatches() { const S = el('swatches'); S.innerHTML = ''; const all = [...recent, ...PALETTE]; for (const c of all) { const b = document.createElement('button'); b.className = 'sw' + (c === color && tool !== 'eraser' ? ' on' : ''); b.style.background = c; b.title = c; b.onclick = () => setColor(c); S.appendChild(b); } const e = document.createElement('button'); e.className = 'sw none' + (tool === 'eraser' ? ' on' : ''); e.title = 'eraser'; e.onclick = () => setTool('eraser'); S.appendChild(e); }
+el('colorIn').oninput = () => setColor(el('colorIn').value);
+function docPalette() { const seen = new Map(); for (const f of doc.frames) for (let i = 0; i < f.length; i += 4) if (f[i + 3] > 0) { const h = rgbToHex(f[i], f[i + 1], f[i + 2]); seen.set(h, (seen.get(h) || 0) + 1); } return [...seen.entries()].sort((a, b) => b[1] - a[1]).slice(0, 16).map(e => e[0]); }
+
+// ---- the list ----
+async function load() {
+  try { const r = await fetch(apiUrl('sprites'), { cache: 'no-store' }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); M = { sprites: j.sprites || {}, files: j.files || [] }; }
+  catch (e) { say('could not read the sprites: ' + e.message, 'err'); return; }
+  drawList();
+}
+function drawList() {
+  const q = el('q').value.trim().toLowerCase(), I = el('listIn'), L = el('listLoose'); I.innerHTML = ''; L.innerHTML = '';
+  const keys = Object.keys(M.sprites).filter(k => !q || k.includes(q)).sort();
+  if (!keys.length) I.innerHTML = '<div class="muted small">none yet</div>';
+  for (const k of keys) { const s = M.sprites[k], b = document.createElement('button'); b.className = 'slot' + (k === cur ? ' on' : ''); b.innerHTML = `<img class="th" src="${ASSET(s.file)}?t=${Date.now()}" alt=""><span><div class="k">${esc(k)}</div><div class="d">${s.w}×${s.h}${s.frames > 1 ? ' · ' + s.frames + ' fr' : ''}${s.source && s.source !== 'editor' ? ' · ' + esc(s.source) : ''}</div></span>`; b.onclick = () => open(k); I.appendChild(b); }
+  const files = M.files.filter(f => !q || f.toLowerCase().includes(q));
+  if (!files.length) L.innerHTML = '<div class="muted small">every picture in assets/ is in the game</div>';
+  for (const f of files) { const b = document.createElement('button'); b.className = 'slot'; b.innerHTML = `<img class="th" src="${ASSET(f)}" alt=""><span><div class="k">${esc(f)}</div><div class="d">click to add it as a sprite</div></span>`; b.onclick = () => adopt(f); L.appendChild(b); }
+}
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+el('q').oninput = drawList;
+
+function leaveOk() { return !dirty || confirm('This sprite has unsaved changes. Leave them behind?'); }
+function show(m) { mode = m; el('empty').classList.toggle('hidden', m !== 'none'); el('pix').classList.toggle('hidden', m !== 'pix'); el('svgMode').classList.toggle('hidden', m !== 'svg'); for (const id of ['useBtn', 'dlBtn', 'delBtn', 'saveBtn']) el(id).disabled = m === 'none'; if (playing) el('fPlay').click(); }
+function loadImage(url) { return new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error('could not load ' + url)); im.src = url; }); }
+function docFromImage(im, fw) { const w = im.naturalWidth, h = im.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.drawImage(im, 0, 0); const all = g.getImageData(0, 0, w, h).data; fw = fw && w % fw === 0 ? fw : w; const n = w / fw, d = { w: fw, h, frames: [], fps: 8 }; for (let k = 0; k < n; k++) { const f = blank(fw, h); for (let y = 0; y < h; y++) f.set(all.subarray((y * w + k * fw) * 4, (y * w + k * fw + fw) * 4), y * fw * 4); d.frames.push(f); } return d; }
+async function open(k) {
+  if (!leaveOk()) return; const s = M.sprites[k]; cur = k; entry = s; undo = []; redo = []; dirty = false; fi = 0; el('title').textContent = k; drawList();
+  if (/\.svg$/i.test(s.file)) { try { svgSet(await (await fetch(ASSET(s.file) + '?t=' + Date.now(), { cache: 'no-store' })).text(), s); } catch (e) { say(e.message, 'err'); } return; }
+  try { const im = await loadImage(ASSET(s.file) + '?t=' + Date.now()); doc = docFromImage(im, s.frames > 1 ? s.w : im.naturalWidth); doc.fps = s.fps || 8; el('splitW').value = doc.w; show('pix'); fitZoom(); render(); drawSwatches(); el('aiKey').value = ''; say(''); }
+  catch (e) { say(e.message, 'err'); }
+}
+async function adopt(f) { // a file in assets/ that the manifest does not name yet
+  if (!leaveOk()) return; const k = f.replace(/\.[a-z0-9]+$/i, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[^a-z]+/, '') || 'sprite';
+  const key = prompt('Key for this sprite (what the code will call it):', k); if (!key) return; if (!KEY_RE.test(key)) { say('a key is lowercase letters, digits, - and _, starting with a letter', 'err'); return; }
+  try { const r = await fetch(apiUrl('spritesave'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key, file: f, source: 'upload' }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); M = { sprites: j.sprites, files: j.files }; drawList(); say(`${f} is the sprite ${key}`, 'ok'); open(key); }
+  catch (e) { say(e.message, 'err'); }
+}
+el('newBtn').onclick = () => el('newForm').classList.toggle('open');
+el('newForm').onsubmit = e => {
+  e.preventDefault(); const key = el('newKey').value.trim(), n = parseInt(el('newSize').value, 10); if (!KEY_RE.test(key)) { say('a key is lowercase letters, digits, - and _, starting with a letter', 'err'); return; }
+  if (M.sprites[key] && !confirm(`${key} exists. Start it over blank?`)) return; if (!leaveOk()) return;
+  cur = key; entry = null; doc = newDoc(n, n); undo = []; redo = []; dirty = true; fi = 0; el('title').textContent = key; el('splitW').value = n; el('newForm').classList.remove('open'); el('newKey').value = ''; show('pix'); fitZoom(); render(); drawSwatches(); drawList(); say(`new ${n}×${n} sprite ${key}: draw, then Save`);
+};
+el('importBtn').onclick = () => el('importFile').click();
+el('importFile').onchange = async () => {
+  const f = el('importFile').files[0]; el('importFile').value = ''; if (!f || !leaveOk()) return;
+  const key = f.name.replace(/\.[a-z0-9]+$/i, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[^a-z]+/, '') || 'sprite'; cur = key; entry = null; undo = []; redo = []; dirty = true; fi = 0; el('title').textContent = key;
+  if (/\.svg$/i.test(f.name)) { svgSet(await f.text(), null); say(`${f.name} as SVG: edit, then Save`); return; }
+  try { const url = URL.createObjectURL(f), im = await loadImage(url); URL.revokeObjectURL(url); doc = docFromImage(im, 0); el('splitW').value = Math.min(doc.w, 32); show('pix'); fitZoom(); render(); drawSwatches(); drawList(); say(`${f.name} is in: ${doc.w}×${doc.h}. A strip? cut it into frames below. Then Save.`); }
+  catch (e) { say(e.message, 'err'); }
+};
+
+// ---- SVG mode ----
+function svgSet(text, s) { el('svgSrc').value = text; if (s) { el('svgW').value = s.w; el('svgH').value = s.h; el('svgSmooth').checked = s.smooth !== false; } else { const vb = /viewBox="[\d.\s-]*?\s([\d.]+)\s([\d.]+)"/.exec(text); el('svgW').value = vb ? Math.round(+vb[1]) : 64; el('svgH').value = vb ? Math.round(+vb[2]) : 64; el('svgSmooth').checked = true; } show('svg'); svgPreview(); el('meta').textContent = 'SVG'; }
+function svgPreview() { const t = el('svgSrc').value; el('svgPrev').innerHTML = /<svg[\s>]/i.test(t) ? `<img alt="" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(t)}">` : '<span class="muted">not an &lt;svg&gt; yet</span>'; }
+el('svgSrc').oninput = () => { dirty = true; svgPreview(); };
+el('rasBtn').onclick = async () => { // the SVG drawn small, as pixels, into a new sprite beside it
+  const w = parseInt(el('rasW').value, 10) || 32, h = parseInt(el('rasH').value, 10) || 32; try { const im = await loadImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(el('svgSrc').value)); const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.imageSmoothingEnabled = false; g.drawImage(im, 0, 0, w, h); const key = cur + '-px'; cur = key; entry = null; el('title').textContent = key; doc = docFromImage(c, 0); undo = []; redo = []; dirty = true; fi = 0; show('pix'); fitZoom(); render(); drawSwatches(); say(`${key}: the SVG as ${w}×${h} pixels. Tidy it, then Save.`); } catch (e) { say(e.message, 'err'); }
+};
+
+// ---- save, delete, download, use ----
+function stripDataUrl() { const c = document.createElement('canvas'); c.width = doc.w * doc.frames.length; c.height = doc.h; const g = c.getContext('2d'); doc.frames.forEach((f, i) => g.putImageData(new ImageData(f, doc.w, doc.h), i * doc.w, 0)); return c.toDataURL('image/png'); }
+el('saveBtn').onclick = async () => {
+  if (!cur) return; let body;
+  if (mode === 'svg') { const t = el('svgSrc').value; if (!/<svg[\s>]/i.test(t)) { say('that is not an <svg> document', 'err'); return; } body = { key: cur, svg: t, w: parseInt(el('svgW').value, 10) || 64, h: parseInt(el('svgH').value, 10) || 64, smooth: el('svgSmooth').checked, source: entry ? entry.source : 'svg' }; }
+  else body = { key: cur, png: stripDataUrl(), w: doc.w, h: doc.h, frames: doc.frames.length, fps: doc.fps, source: entry ? entry.source : 'editor' };
+  el('saveBtn').disabled = true;
+  try { const r = await fetch(apiUrl('spritesave'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); M = { sprites: j.sprites, files: j.files }; entry = j.sprite; dirty = false; drawList(); if (mode === 'pix') render(); say(`saved assets/${j.sprite.file} · the game draws it with Draw.pic('${cur}', x, y, ${j.sprite.w})`, 'ok'); }
+  catch (e) { say('not saved: ' + e.message, 'err'); } finally { el('saveBtn').disabled = false; }
+};
+el('delBtn').onclick = async () => {
+  if (!cur) return; if (!M.sprites[cur]) { cur = null; doc = null; dirty = false; show('none'); el('title').textContent = 'no sprite'; el('meta').textContent = ''; drawList(); return; }
+  const withFile = confirm(`Delete the sprite ${cur} from the game?\n\nOK deletes its file too; Cancel keeps nothing and does nothing.`); if (!withFile) return;
+  try { const r = await fetch(apiUrl('spritedelete'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: cur, file: true }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); M = { sprites: j.sprites, files: j.files }; say(`${cur} is gone`, 'ok'); cur = null; doc = null; dirty = false; show('none'); el('title').textContent = 'no sprite'; el('meta').textContent = ''; drawList(); }
+  catch (e) { say(e.message, 'err'); }
+};
+el('dlBtn').onclick = () => { const a = document.createElement('a'); if (mode === 'svg') { a.href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(el('svgSrc').value); a.download = cur + '.svg'; } else { a.href = stripDataUrl(); a.download = cur + '.png'; } a.click(); };
+el('useBtn').onclick = async () => { const w = mode === 'svg' ? (parseInt(el('svgW').value, 10) || 64) : doc.w, code = (mode === 'pix' && doc.frames.length > 1) ? `Draw.anim('${cur}', Game.time, x, y, ${w})` : `Draw.pic('${cur}', x, y, ${w})`; try { await navigator.clipboard.writeText(code); say(`copied: ${code}  — paste it into a draw(), or tell the builder "draw the ${cur} sprite for the …"`, 'ok'); } catch (e) { say(code); } };
+
+// ---- the AI panel: messages to the builder, which runs its plugins ----
+async function ask(prompt) {
+  if (!CSRF) { say('this page cannot write: sign in to the forge first', 'err'); return; }
+  const st = el('setStatus'); st.textContent = 'sending to the builder…';
+  try { const r = await fetch(`/game/agent/${GAME}`, { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ mode: 'chat', prompt }) }); const j = await r.json(); if (!r.ok || j.success === false) throw new Error(j.message || j.error || r.status); st.innerHTML = (j.data && j.data.queued ? 'the builder is busy: your request waits for its next run. ' : 'the builder is on it. ') + `Watch it on the game page's Build tab; the list here refreshes when the run ends.`; poll(); }
+  catch (e) { st.textContent = 'not sent: ' + e.message; }
+}
+let pollT = null;
+function poll() { clearInterval(pollT); let wasBusy = false; pollT = setInterval(async () => { try { const j = await (await fetch(`/game/events/${GAME}?since=999999999`, { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } })).json(); const busy = !!(j.data && j.data.agent && j.data.agent.busy); if (busy) wasBusy = true; if (wasBusy && !busy) { clearInterval(pollT); el('setStatus').textContent = 'the builder finished: new sprites are in the list; the Build tab on the game page has what it said.'; load(); } } catch (e) {} }, 5000); }
+const STYLE = { pixel: 'clean pixel art, readable silhouette, 1 px dark outline', '16bit': '16-bit SNES era pixel art, shaded, 1 px outline', gameboy: 'pixel art in a 4-colour Game Boy palette', hd: 'detailed painted HD game art, not pixel art' };
+const paletteLine = () => el('aiPal').checked && doc ? ` Use only these colours: ${docPalette().join(', ')}.` : '';
+const rules = (key, extra) => ` Save the result as assets/${key}.png (download its sprite_url with curl -s -o), register "${key}" in assets/sprites.json with its w, h, frames and fps and "source": "spritecook", commit the files, and reply with one line saying what you made.${extra || ''} If the SpriteCook tools answer that they need authentication, stop and say so in one line. Do not run a soak for this.`;
+// ---- the drawing pad: a rough freehand sketch the AI takes as its reference ----
+const pad = el('pad'), pc = pad.getContext('2d'); let padPen = '#1d1530', padDown = false, padLast = null, padStrokes = [], padHist = [];
+function padClear() { pc.fillStyle = '#ffffff'; pc.fillRect(0, 0, pad.width, pad.height); }
+function padRedraw() { padClear(); for (const s of padStrokes) { pc.strokeStyle = s.pen === 'erase' ? '#ffffff' : s.pen; pc.lineWidth = s.w; pc.lineCap = pc.lineJoin = 'round'; pc.beginPath(); s.pts.forEach(([x, y], i) => i ? pc.lineTo(x, y) : pc.moveTo(x, y)); if (s.pts.length === 1) pc.lineTo(s.pts[0][0] + .1, s.pts[0][1]); pc.stroke(); } }
+const padPos = e => { const r = pad.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * pad.width, (e.clientY - r.top) / r.height * pad.height]; };
+pad.addEventListener('pointerdown', e => { pad.setPointerCapture(e.pointerId); padDown = true; padStrokes.push({ pen: padPen, w: +el('padW').value * (padPen === 'erase' ? 3 : 1), pts: [padPos(e)] }); padRedraw(); });
+pad.addEventListener('pointermove', e => { if (!padDown) return; padStrokes[padStrokes.length - 1].pts.push(padPos(e)); padRedraw(); });
+const padUp = () => { padDown = false; }; pad.addEventListener('pointerup', padUp); pad.addEventListener('pointercancel', padUp);
+for (const b of document.querySelectorAll('[data-pen]')) b.onclick = () => { padPen = b.dataset.pen; for (const o of document.querySelectorAll('[data-pen]')) o.classList.toggle('on', o === b); };
+el('padUndo').onclick = () => { padStrokes.pop(); padRedraw(); };
+el('padClear').onclick = () => { padStrokes = []; padRedraw(); };
+padClear();
+
+// ---- >> : the sketch and the note go to the builder; its takes come back here ----
+let SK = null, cand = null, skT = null; // the sketch request in flight, the chosen candidate, the poll timer
+function showOut(j) {
+  const box = el('outbox'); box.innerHTML = ''; cand = null; el('keepBtn').disabled = el('editBtn').disabled = true;
+  if (!j) { box.innerHTML = '<span class="muted small">waiting for the builder…</span>'; return; }
+  if (j.result && j.result.ok === false) { box.innerHTML = `<div class="msg err">${esc(j.result.error || 'it did not work')}</div>`; return; }
+  const files = (j.result && j.result.files) || [];
+  if (!files.length) { box.innerHTML = `<span class="muted small">${esc(j.status || 'the builder is working…')}</span>`; return; }
+  files.forEach((f, i) => { const d = document.createElement('div'); d.className = 'cand' + (i === 0 ? ' on' : ''); d.innerHTML = `<img alt="" src="${esc(j.base + f)}?t=${Date.now()}"><div><div class="mono">${esc(f)}</div><div class="muted small">${i === 0 && j.result.note ? esc(j.result.note) : 'click to choose'}</div></div>`; d.onclick = () => { for (const o of box.querySelectorAll('.cand')) o.classList.toggle('on', o === d); cand = j.base + f; }; box.appendChild(d); });
+  cand = j.base + files[0]; el('keepBtn').disabled = el('editBtn').disabled = false; if (!el('aiKey').value) el('aiKey').value = j.key || '';
+}
+el('goBtn').onclick = async () => {
+  const subj = el('aiSubject').value.trim(), n = parseInt(el('aiSize').value, 10), st = el('aiStyle').value;
+  if (!subj && !padStrokes.length) { el('aiSubject').focus(); say('draw something, or say what you want, or both', 'err'); return; }
+  const key = el('aiKey').value.trim() || subj.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24).replace(/^[^a-z]+/, '') || 'sprite'; if (!KEY_RE.test(key)) { say('the key is lowercase letters, digits, - and _, starting with a letter', 'err'); return; }
+  el('goBtn').disabled = true; showOut(null); el('aiStatus').textContent = 'sending the drawing and the note to the builder…';
+  try {
+    const body = { note: subj, style: STYLE[st], pixel: st !== 'hd', size: n, key, palette: el('aiPal').checked && doc ? docPalette() : [], png: padStrokes.length ? pad.toDataURL('image/png') : '' };
+    const r = await fetch(apiUrl('sketch'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+    SK = j; el('aiStatus').textContent = (j.queued ? 'the builder is busy: your drawing waits for its next run. ' : 'the builder is on it. ') + 'Its takes appear on the right when it is done (a minute or two); the Build tab on the game page shows it working.';
+    clearInterval(skT); skT = setInterval(pollSketch, 4000);
+  } catch (e) { el('aiStatus').textContent = 'not sent: ' + e.message; } finally { el('goBtn').disabled = false; }
+};
+async function pollSketch() {
+  if (!SK) return; try { const j = await (await fetch(apiUrl('sketch') + '?id=' + encodeURIComponent(SK.id), { cache: 'no-store' })).json(); if (j.result) { clearInterval(skT); el('aiStatus').textContent = j.result.ok === false ? 'the builder could not do it: ' + (j.result.error || '') : 'done: pick a take, then Keep it (or edit its pixels first).'; } else if (!j.busy && Date.now() - SK.at * 1000 > 20 * 60 * 1000) { clearInterval(skT); el('aiStatus').textContent = 'the builder stopped without writing a result; the Build tab on the game page says what happened.'; } showOut(j); } catch (e) {}
+}
+async function candidateDoc() { const im = await loadImage(cand + '?t=' + Date.now()); return docFromImage(im, 0); }
+el('editBtn').onclick = async () => { if (!cand || !leaveOk()) return; const key = el('aiKey').value.trim(); if (!KEY_RE.test(key)) { say('give the sprite a key first', 'err'); return; } try { cur = key; entry = null; doc = await candidateDoc(); undo = []; redo = []; dirty = true; fi = 0; el('title').textContent = key; el('splitW').value = doc.w; show('pix'); fitZoom(); render(); drawSwatches(); drawList(); say(`${key}: the AI's take as pixels. Tidy it, then Save.`); el('editor').scrollIntoView({ behavior: 'smooth' }); } catch (e) { say(e.message, 'err'); } };
+el('keepBtn').onclick = async () => {
+  if (!cand) return; const key = el('aiKey').value.trim(); if (!KEY_RE.test(key)) { say('give the sprite a key first', 'err'); return; }
+  if (M.sprites[key] && !confirm(`${key} exists. Replace it with this take?`)) return;
+  try { const d = await candidateDoc(); const c = document.createElement('canvas'); c.width = d.w; c.height = d.h; c.getContext('2d').putImageData(new ImageData(d.frames[0], d.w, d.h), 0, 0);
+    const r = await fetch(apiUrl('spritesave'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key, png: c.toDataURL('image/png'), w: d.w, h: d.h, frames: 1, fps: 8, source: 'spritecook' }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+    M = { sprites: j.sprites, files: j.files }; drawList(); say(`kept: assets/${j.sprite.file} is the sprite ${key} · Draw.pic('${key}', x, y, ${j.sprite.w})`, 'ok'); open(key); }
+  catch (e) { say('not kept: ' + e.message, 'err'); }
+};
+
+el('aiSet').onclick = () => {
+  const subj = el('setSubject').value.trim(); if (!subj) { el('setSubject').focus(); return; } const n = parseInt(el('aiSize').value, 10), st = el('aiStyle').value;
+  ask(`Using the cellcog game-asset-generation skill, make a matched set of game sprites in one style: ${subj}. Each about ${n}×${n} px on a transparent background, ${STYLE[st]}.${paletteLine()} Download each result into assets/<key>.png with a short lowercase key, register every one in assets/sprites.json (w, h, frames 1, "source": "cellcog"), commit, and reply with one line per sprite. If CellCog answers that it needs authentication, stop and say so in one line. Do not run a soak for this.`);
+};
+el('aiVar').onclick = () => { if (!cur || !entry) { say('save a sprite first, then ask for variations of it', 'err'); return; } ask(`Using the spritecook skills: upload assets/${entry.file} with spritecook-upload-assets, then generate 2 variations of it with generate_game_art (edit_asset_id = the uploaded asset), same size (${entry.w}×${entry.h}), transparent background, keeping its style and palette.${rules(cur + '-v1', ` Save the second as assets/${cur}-v2.png and register "${cur}-v2" the same way.`)}`); };
+el('aiBg').onclick = () => { if (!cur || !entry) { say('save the sprite first', 'err'); return; } ask(`Using the spritecook skills: upload assets/${entry.file} with spritecook-upload-assets and run remove_background on it. Download the cutout over assets/${entry.file} (same file name, so the manifest entry "${cur}" still points at it), commit, and reply with one line. If SpriteCook answers that it needs authentication, stop and say so. Do not run a soak for this.`); };
+el('aiAnimBtn').onclick = () => { if (!cur || !entry) { say('save the sprite first, then animate it', 'err'); return; } const an = el('aiAnim').value, key = `${cur}-${an}`; ask(`Using the spritecook skills (spritecook-animate-assets): upload assets/${entry.file} with spritecook-upload-assets and make a "${an}" animation of it, platformer perspective, keeping its size (${entry.w}×${entry.h} per frame) and palette. The game needs ONE horizontal strip PNG of equal frames side by side: if the result is a grid sheet or separate frames, re-cut it into a strip with python3 (Pillow) or node.${rules(key, ` Register "${key}" with "frames": <the frame count> and "fps": 8.`)}`); };
+
+// ---- boot ----
+window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('resize', () => { if (doc && mode === 'pix') { fitZoom(); render(); } });
+(async () => { drawSwatches(); show('none'); await apiToken(); await load(); })();
+</script>
+</body></html>

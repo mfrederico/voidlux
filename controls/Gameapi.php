@@ -5,6 +5,8 @@
  * fetch /gameapi/token/<slug> first and send it back as X-CSRF-TOKEN on writes (they are static pages: no form token).
  *
  *   GET  token      GET/POST sfx      GET sounds      GET/POST tuning      POST musicsave { name, snippet }     POST musicdelete { name }
+ *   GET  sprites    POST spritesave { key, png|svg|file, w, h, frames, fps, source }    POST spritedelete { key, file }
+ *   POST sketch { png, note, style, pixel, size, key, palette } → { id }      GET sketch?id= → { result, base, busy }
  */
 namespace app;
 
@@ -43,6 +45,29 @@ class Gameapi extends BaseControls\Control {
         $b = $this->getJsonInput() ?? [];
         try { $this->raw(['ok' => true, 'action' => GameStore::saveSong($g->slug, (string) ($b['name'] ?? ''), (string) ($b['snippet'] ?? '')), 'file' => 'js/music-themes.js']); }
         catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
+    }
+    public function sprites($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
+        try { $this->raw(GameStore::readSprites($g->slug)); } catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 500); }
+    }
+    public function spritesave($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; if (!$this->post()) { $this->raw(['error' => 'POST'], 405); }
+        try { $e = GameStore::saveSprite($g->slug, $this->getJsonInput() ?? []); GameStore::emit($g->slug, 'note', ['text' => 'sprite saved by ' . ($this->member->username ?: $this->member->email) . ': assets/' . $e['file']]); $this->raw(['ok' => true, 'sprite' => $e] + GameStore::readSprites($g->slug)); }
+        catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
+    }
+    public function spritedelete($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; if (!$this->post()) { $this->raw(['error' => 'POST'], 405); }
+        $b = $this->getJsonInput() ?? [];
+        try { GameStore::deleteSprite($g->slug, (string) ($b['key'] ?? ''), !empty($b['file'])); $this->raw(['ok' => true] + GameStore::readSprites($g->slug)); }
+        catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
+    }
+    public function sketch($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
+        try {
+            if ($this->post()) { $this->raw(GameStore::startSketch($g->slug, $this->getJsonInput() ?? [], (int) $this->member->id)); }
+            $this->raw(GameStore::sketchStatus($g->slug, (string) $this->getParam('id', '')));
+        } catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
+        catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 409); }
     }
     public function musicdelete($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; if (!$this->post()) { $this->raw(['error' => 'POST'], 405); }

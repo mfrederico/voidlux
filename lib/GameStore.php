@@ -309,6 +309,107 @@ class GameStore {
         $src = (string) file_get_contents($p); $i = strpos($src, 'const SFX_DATA = '); if ($i === false) return [];
         return json_decode(rtrim(rtrim(substr($src, $i + 17)), ';'), true) ?: [];
     }
+    // ---- sprites: assets/sprites.json (key → { file, w, h, frames, fps, source }) and the picture files it names ----
+    public const SPRITE_KEY = '/^[a-z][a-z0-9_-]{0,40}$/D';
+    public static function readSprites(string $slug): array {
+        $dir = self::dir($slug) . '/assets'; $mf = $dir . '/sprites.json'; $m = ['version' => 1, 'sprites' => (object) []];
+        if (is_file($mf)) { $j = json_decode((string) file_get_contents($mf), true); if (!is_array($j) || !isset($j['sprites']) || !is_array($j['sprites'])) throw new \RuntimeException("assets/sprites.json is not a sprite manifest; fix or remove it"); $m = $j; $m['sprites'] = (object) $j['sprites']; }
+        $named = array_column(array_map(fn($s) => (array) $s, array_values((array) $m['sprites'])), 'file'); $loose = [];
+        foreach (is_dir($dir) ? scandir($dir) : [] as $f) if ($f[0] !== '.' && is_file("$dir/$f") && preg_match('/\.(png|svg|gif|webp|jpe?g)$/i', $f) && !in_array($f, $named, true)) $loose[] = $f;
+        return ['sprites' => $m['sprites'], 'files' => $loose];
+    }
+    /** @param array{key:string,png?:string,svg?:string,file?:string,w?:int,h?:int,frames?:int,fps?:int,source?:string,smooth?:bool} $b */
+    public static function saveSprite(string $slug, array $b): array {
+        $key = (string) ($b['key'] ?? ''); if (!preg_match(self::SPRITE_KEY, $key)) throw new \InvalidArgumentException('a sprite key is lowercase letters, digits, - and _, starting with a letter');
+        $dir = self::dir($slug) . '/assets'; if (!is_dir($dir)) mkdir($dir, 0775, true);
+        $w = (int) ($b['w'] ?? 0); $h = (int) ($b['h'] ?? 0); $frames = max(1, (int) ($b['frames'] ?? 1)); $fps = min(60, max(1, (int) ($b['fps'] ?? 8)));
+        if (!empty($b['png'])) {
+            if (!preg_match('#^data:image/png;base64,([A-Za-z0-9+/=]+)$#', (string) $b['png'], $mm)) throw new \InvalidArgumentException('png must be a data: URL');
+            $bin = base64_decode($mm[1], true); if ($bin === false || strlen($bin) > 4 * 1024 * 1024 || substr($bin, 0, 8) !== "\x89PNG\r\n\x1a\n") throw new \InvalidArgumentException('not a PNG, or over 4 MB');
+            $file = "$key.png"; $sz = getimagesizefromstring($bin); if (!$sz) throw new \InvalidArgumentException('the PNG cannot be read');
+            if ($w < 1 || $h < 1) { $w = (int) ($sz[0] / $frames); $h = (int) $sz[1]; }
+            self::writeAtomic("$dir/$file", $bin);
+        } elseif (isset($b['svg'])) {
+            $svg = (string) $b['svg']; if (strlen($svg) > 1024 * 1024 || stripos($svg, '<svg') === false) throw new \InvalidArgumentException('svg must be an <svg> document under 1 MB');
+            if (preg_match('/<script|\son[a-z]+\s*=|javascript:|<foreignObject/i', $svg)) throw new \InvalidArgumentException('that SVG carries script or event handlers; the game serves it from its own origin, so it is refused');
+            $file = "$key.svg"; if ($w < 1 || $h < 1) { $w = $w ?: 64; $h = $h ?: 64; } $frames = 1;
+            self::writeAtomic("$dir/$file", $svg);
+        } elseif (!empty($b['file'])) {
+            $file = basename((string) $b['file']); if ($file[0] === '.' || !is_file("$dir/$file")) throw new \InvalidArgumentException("assets/$file does not exist");
+            if ($w < 1 || $h < 1) { $sz = @getimagesize("$dir/$file"); $w = $sz ? (int) ($sz[0] / $frames) : 64; $h = $sz ? (int) $sz[1] : 64; }
+        } else throw new \InvalidArgumentException('a sprite needs png, svg or file');
+        $all = self::readSprites($slug); $sprites = (array) $all['sprites'];
+        $entry = ['file' => $file, 'w' => $w, 'h' => $h, 'frames' => $frames, 'fps' => $fps, 'source' => preg_replace('/[^a-z-]/', '', (string) ($b['source'] ?? 'editor')) ?: 'editor'];
+        if (!empty($b['smooth'])) $entry['smooth'] = true;
+        $sprites[$key] = $entry; ksort($sprites);
+        self::writeAtomic("$dir/sprites.json", json_encode(['version' => 1, 'sprites' => (object) $sprites], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        self::git(self::dir($slug), ['add', 'assets/sprites.json', "assets/$file"]);
+        return $entry;
+    }
+    public static function deleteSprite(string $slug, string $key, bool $withFile): void {
+        if (!preg_match(self::SPRITE_KEY, $key)) throw new \InvalidArgumentException('not a sprite key');
+        $dir = self::dir($slug) . '/assets'; $all = self::readSprites($slug); $sprites = (array) $all['sprites'];
+        if (!isset($sprites[$key])) throw new \InvalidArgumentException("no sprite named $key");
+        $file = basename((string) ((array) $sprites[$key])['file']); unset($sprites[$key]);
+        $stillUsed = in_array($file, array_column(array_map(fn($s) => (array) $s, array_values($sprites)), 'file'), true);
+        self::writeAtomic("$dir/sprites.json", json_encode(['version' => 1, 'sprites' => (object) $sprites], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        if ($withFile && !$stillUsed && is_file("$dir/$file")) { unlink("$dir/$file"); self::git(self::dir($slug), ['rm', '-q', '--cached', '--ignore-unmatch', "assets/$file"]); }
+        self::git(self::dir($slug), ['add', 'assets/sprites.json']);
+    }
+
+    /** A message for the builder: a run now, or a line in the inbox for the next run when one is going. */
+    public static function askBuilder(string $slug, string $prompt, int $memberId): array {
+        if (self::agentState($slug)['busy']) {
+            file_put_contents(self::studioDir($slug) . '/inbox.txt', $prompt . "\n", FILE_APPEND);
+            self::emit($slug, 'note', ['text' => 'queued for the next run: ' . mb_substr($prompt, 0, 200)]);
+            return self::agentState($slug) + ['queued' => true];
+        }
+        return self::startRunner($slug, 'chat', $prompt, $memberId) + ['queued' => false];
+    }
+
+    // ---- sketches: a producer's rough drawing plus a note, which the builder turns into sprite candidates through its plugins.
+    //      games/<slug>/sketches/<id>/{sketch.png, request.json, out-N.png, result.json}; not committed, not published. ----
+    public const SKETCH_ID = '/^[0-9]{8}-[0-9]{6}-[a-f0-9]{6}$/D';
+    public static function sketchDir(string $slug, string $id): string { return self::dir($slug) . '/sketches/' . $id; }
+    /** @param array{note?:string,style?:string,pixel?:bool,size?:int,key?:string,palette?:array,png?:string} $b */
+    public static function startSketch(string $slug, array $b, int $memberId): array {
+        $note = trim(mb_substr((string) ($b['note'] ?? ''), 0, 600)); $png = (string) ($b['png'] ?? '');
+        if ($note === '' && $png === '') throw new \InvalidArgumentException('a sketch needs a drawing, a note, or both');
+        $size = max(8, min(256, (int) ($b['size'] ?? 32))); $key = (string) ($b['key'] ?? 'sprite'); if (!preg_match(self::SPRITE_KEY, $key)) $key = 'sprite';
+        $style = trim(mb_substr((string) ($b['style'] ?? 'pixel art'), 0, 120)); $pixel = !empty($b['pixel']);
+        $pal = array_values(array_filter(array_map('strval', (array) ($b['palette'] ?? [])), fn($c) => preg_match('/^#[0-9a-f]{6}$/i', $c)));
+        $id = date('Ymd-His') . '-' . bin2hex(random_bytes(3)); $dir = self::sketchDir($slug, $id); mkdir($dir, 0775, true);
+        $gi = self::dir($slug) . '/.gitignore'; $have = is_file($gi) ? (string) file_get_contents($gi) : '';
+        if (!preg_match('#^/?sketches/?$#m', $have)) file_put_contents($gi, rtrim($have) . ($have === '' ? '' : "\n") . "sketches/\n"); // scratch, never in the game's history
+        $has = false;
+        if ($png !== '') {
+            if (!preg_match('#^data:image/png;base64,([A-Za-z0-9+/=]+)$#', $png, $m)) throw new \InvalidArgumentException('the drawing must be a PNG data: URL');
+            $bin = base64_decode($m[1], true); if ($bin === false || strlen($bin) > 4 * 1024 * 1024 || substr($bin, 0, 8) !== "\x89PNG\r\n\x1a\n") throw new \InvalidArgumentException('the drawing is not a PNG under 4 MB');
+            self::writeAtomic($dir . '/sketch.png', $bin); $has = true;
+        }
+        $req = ['id' => $id, 'note' => $note, 'style' => $style, 'pixel' => $pixel, 'size' => $size, 'key' => $key, 'palette' => $pal, 'sketch' => $has, 'by' => $memberId, 'at' => time()];
+        self::writeAtomic($dir . '/request.json', json_encode($req, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        $what = $note !== '' ? "\"{$note}\"" : 'nothing written: go by the drawing';
+        $target = "{$size}×{$size} px, {$style}, transparent background" . ($pal ? ', using only these colours: ' . implode(', ', $pal) : '');
+        $p = "The producer wants a sprite made" . ($has ? " from a rough freehand drawing they made: sketches/{$id}/sketch.png (512×512, black lines on white, a rough shape and pose, not finished art)" : '') . ". Their note: {$what}. Target: a game sprite, {$target}.\n"
+           . "Using the spritecook skills (read spritecook-workflow-essentials first): " . ($has ? "upload the drawing with spritecook-upload-assets and call generate_game_art with reference_asset_id = that asset, so the drawing sets the subject's pose, shape and layout; " : 'call generate_game_art; ')
+           . "a prompt built from the note" . ($has ? ' and what the drawing shows' : '') . ", width and height {$size}, pixel=" . ($pixel ? 'true' : 'false') . ", bg_mode transparent, variations=2. "
+           . "Download each result's sprite_url to sketches/{$id}/out-1.png and sketches/{$id}/out-2.png. Then write sketches/{$id}/result.json as {\"ok\": true, \"files\": [\"out-1.png\", \"out-2.png\"], \"note\": \"<one line on what you made>\"}.\n"
+           . "Do not add anything to assets/ or assets/sprites.json and do not commit: the producer chooses what to keep on the sprite page. If anything stops you (SpriteCook needs authentication, no credits, an error), write sketches/{$id}/result.json as {\"ok\": false, \"error\": \"<why, in one line>\"} and stop. Do not run a soak. Reply with one line.";
+        $r = self::askBuilder($slug, $p, $memberId);
+        return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'queued' => !empty($r['queued'])];
+    }
+    public static function sketchStatus(string $slug, string $id): array {
+        if (!preg_match(self::SKETCH_ID, $id)) throw new \InvalidArgumentException('not a sketch id');
+        $dir = self::sketchDir($slug, $id); if (!is_file($dir . '/request.json')) throw new \InvalidArgumentException('no such sketch');
+        $req = json_decode((string) file_get_contents($dir . '/request.json'), true) ?: [];
+        $res = is_file($dir . '/result.json') ? json_decode((string) file_get_contents($dir . '/result.json'), true) : null;
+        if (is_file($dir . '/result.json') && !is_array($res)) $res = ['ok' => false, 'error' => 'the builder wrote a result.json that is not JSON'];
+        if (is_array($res) && !empty($res['ok'])) $res['files'] = array_values(array_filter((array) ($res['files'] ?? []), fn($f) => preg_match('/^out-[0-9]+\.png$/', (string) $f) && is_file($dir . '/' . $f)));
+        $busy = self::agentState($slug)['busy'];
+        return ['id' => $id, 'key' => (string) ($req['key'] ?? 'sprite'), 'base' => "/games/{$slug}/sketches/{$id}/", 'busy' => $busy, 'status' => $busy ? 'the builder is working…' : 'waiting for the builder to start', 'result' => $res];
+    }
+
     public static function saveSfx(string $slug, array $data): int {
         $clean = [];
         foreach ($data as $key => $s) {
@@ -406,6 +507,7 @@ class GameStore {
         foreach (glob($d . '/js/*.js') as $f) copy($f, $dist . '/js/' . basename($f));
         foreach (glob(self::root() . '/kit/js/*.js') as $f) if (basename($f) !== 'kit-notes.js') copy($f, $dist . '/js/' . basename($f));
         if (is_dir($d . '/icons')) self::copyTree($d . '/icons', $dist . '/icons');
+        if (is_dir($d . '/assets')) self::copyTree($d . '/assets', $dist . '/assets'); // sprites and pictures the game draws
         if (is_file($d . '/manifest.webmanifest')) copy($d . '/manifest.webmanifest', $dist . '/manifest.webmanifest');
         self::writeAtomic($dist . '/js/version.js', 'const BUILD = ' . json_encode(['id' => $bid, 'date' => date('Y-m-d'), 'channel' => 'stable']) . ";\n");
         $html = str_replace('../../kit/js/', 'js/', (string) file_get_contents($d . '/index.html'));

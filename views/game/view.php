@@ -24,7 +24,7 @@ $slug = $game['slug'];
     <a class="vl-media-card" href="#sfx" onclick="showTab('sfx'); return false;"><div class="vl-media-icon">♪</div><div class="vl-media-title">SFX</div><div class="vl-media-sub">Sound effects for the elements of the game. Every sound the code plays is a slot; design it as layers of swept tones and noise, hear it, save it into the game.</div></a>
     <a class="vl-media-card" href="#tracker" onclick="showTab('tracker'); return false;"><div class="vl-media-icon">▦</div><div class="vl-media-title">Tracker</div><div class="vl-media-sub">Make chiptune music on an 8-track tracker with the game's own synth and drums. Songs save by name (title, play, boss) straight into the game.</div></a>
     <a class="vl-media-card" href="#assets" onclick="showTab('assets'); return false;"><div class="vl-media-icon">◈</div><div class="vl-media-title">Media</div><div class="vl-media-sub">Upload and download SVG and image files for the builder to use. Tell it which, in a note or a message.</div></a>
-    <a class="vl-media-card" href="#build" onclick="askBuilder('Using the spritecook skills, generate pixel-art sprites for: … (one variation each). Save the PNGs in assets/, commit them, and draw them in the game with Draw.load and Draw.pic.'); return false;"><div class="vl-media-icon">✦</div><div class="vl-media-title">Sprites</div><div class="vl-media-sub">AI pixel art through the builder's SpriteCook plugin: say what you need, it makes the PNGs, saves them in Media and draws them.</div></a>
+    <a class="vl-media-card" href="#sprites" onclick="showTab('sprites'); return false;"><div class="vl-media-icon">✦</div><div class="vl-media-title">Sprites</div><div class="vl-media-sub">Draw pixel art and SVG sprites, frame by frame, or have the builder make them with its AI plugins. Saved sprites land in the game's assets and the builder draws them.</div></a>
   </div>
 </section>
 
@@ -91,6 +91,7 @@ $slug = $game['slug'];
 </section>
 <div class="vl-lightbox" id="lightbox" onclick="this.classList.remove('on')"><img alt=""><div class="vl-lightbox-cap"></div></div>
 <section class="vl-pane" id="pane-sfx"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>Sound effects. Save writes them into the game; reload the game to hear them.</span><a href="/editor/sfx/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="sfxFrame"></iframe></section>
+<section class="vl-pane" id="pane-sprites"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>Sprites. Save writes the picture into the game's assets and its manifest; the game draws it with Draw.pic. The AI panel asks the builder.</span><a href="/editor/sprites/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="spritesFrame"></iframe></section>
 <section class="vl-pane" id="pane-tracker"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>The chip tracker. Press / to load or save a song into the game; name songs after where they play (title, play, boss).</span><a href="/editor/tracker/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="trackerFrame"></iframe></section>
 <section class="vl-pane" id="pane-config"><div class="vl-toolbar"><span>Every tuning number in the game, with its comment. Changes apply when the game reloads.</span><a href="/editor/config/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="configFrame"></iframe></section>
 
@@ -126,7 +127,7 @@ $slug = $game['slug'];
 <script>
 const slug = <?= json_encode($slug) ?>, $ = id => document.getElementById(id);
 let G = <?= json_encode($game, JSON_UNESCAPED_SLASHES) ?>, lastId = 0, loaded = {}, pollT = null;
-const GROUP = { sfx: 'media', tracker: 'media', assets: 'media', design: 'advanced', status: 'advanced', config: 'advanced', history: 'advanced' };
+const GROUP = { sfx: 'media', tracker: 'media', sprites: 'media', assets: 'media', design: 'advanced', status: 'advanced', config: 'advanced', history: 'advanced' };
 function askBuilder(text) { showTab('build'); const ta = $('chatForm').querySelector('textarea'); ta.value = text; ta.focus(); const i = text.indexOf('…'); if (i >= 0) ta.setSelectionRange(i, i + 1); }
 function showTab(name) {
   if (name === 'advanced') { document.querySelector('.vl-tab-menu').classList.toggle('open'); return; }
@@ -135,7 +136,7 @@ function showTab(name) {
   for (const p of document.querySelectorAll('.vl-pane')) p.classList.toggle('on', p.id === 'pane-' + name);
   location.hash = name;
   if (name === 'play' && !loaded.play) { loaded.play = 1; $('playFrame').src = `/games/${slug}/`; }
-  if (['sfx', 'tracker', 'config'].includes(name) && !loaded[name]) { loaded[name] = 1; $(name + 'Frame').src = `/editor/${name}/?game=${slug}`; }
+  if (['sfx', 'tracker', 'sprites', 'config'].includes(name) && !loaded[name]) { loaded[name] = 1; $(name + 'Frame').src = `/editor/${name}/?game=${slug}`; }
   if (name === 'design') loadDoc();
   if (name === 'build') { const b = $('stream'); b.scrollTop = b.scrollHeight; }
   if (name === 'notes') loadNotes();
