@@ -163,4 +163,5 @@ async function loadNotes() { try { NOTES = (await Forge.api(`/game/notes/${slug}
 loadNotes();
 render({ game: G, checkpoints: <?= json_encode($checkpoints) ?>, soaks: <?= json_encode($soaks) ?> });
 showTab(location.hash.slice(1) || 'play'); poll();
+window.addEventListener('hashchange', () => showTab(location.hash.slice(1) || 'play')); // a link to #config or #build switches the tab without a reload
 </script>
