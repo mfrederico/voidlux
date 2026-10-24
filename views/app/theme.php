@@ -34,7 +34,24 @@ a.ui-nav-link.active, .ui-sidebar .active { color:#111 !important; }
 .list-group-item-action:hover, .list-group-item-action:focus { color:#fff; } .list-group-item-action:hover small, .list-group-item-action:hover .text-muted, .list-group-item-action:hover .text-secondary { color:#ccc !important; }
 .text-muted, .text-secondary { color:#9a9a9a !important; } .bg-light, .table-light { background-color:#17171a !important; color:#e8e8e8 !important; }
 .btn-light, .btn-outline-light { --bs-btn-bg:#1a1a1a; --bs-btn-color:#e8e8e8; --bs-btn-border-color:#333; --bs-btn-hover-bg:#222; --bs-btn-hover-color:#fff; --bs-btn-hover-border-color:#ff6600; }
-.alert { --bs-alert-bg:#17171a; --bs-alert-color:#e8e8e8; --bs-alert-border-color:#333; }
+/* Bootstrap's alerts, subtle badges and table rows read the *-bg-subtle / *-text-emphasis / *-border-subtle tokens, which the
+   design system leaves at their light-theme values: in the void they were white boxes with white text. Dark tints, bright text. */
+:root, [data-bs-theme="light"], [data-bs-theme="dark"] {
+  --bs-primary-bg-subtle:#2a1400; --bs-primary-border-subtle:#7a3a00; --bs-primary-text-emphasis:#ffb366;
+  --bs-secondary-bg-subtle:#17171a; --bs-secondary-border-subtle:#333; --bs-secondary-text-emphasis:#d0d0d0;
+  --bs-success-bg-subtle:#06220f; --bs-success-border-subtle:#0f5a2a; --bs-success-text-emphasis:#66ff99;
+  --bs-danger-bg-subtle:#2a0a12; --bs-danger-border-subtle:#7a1c33; --bs-danger-text-emphasis:#ff8fa3;
+  --bs-warning-bg-subtle:#2a2000; --bs-warning-border-subtle:#7a5c00; --bs-warning-text-emphasis:#ffdb66;
+  --bs-info-bg-subtle:#06232a; --bs-info-border-subtle:#0f5a66; --bs-info-text-emphasis:#9df5ff;
+  --bs-light-bg-subtle:#17171a; --bs-light-border-subtle:#333; --bs-light-text-emphasis:#e8e8e8;
+  --bs-dark-bg-subtle:#0a0a0c; --bs-dark-border-subtle:#222; --bs-dark-text-emphasis:#e8e8e8;
+}
+.alert { --bs-alert-color: var(--bs-body-color); } .alert a, .alert .alert-link { color: inherit; text-decoration: underline; }
+.alert-light { --bs-alert-bg:#17171a; --bs-alert-color:#e8e8e8; --bs-alert-border-color:#333; }
+.ui-notice { background: var(--ui-surface); color: var(--bs-body-color); }
+.badge.text-bg-light, .badge.bg-light { background-color:#2a2a2e !important; color:#e8e8e8 !important; }
+.toast { --bs-toast-bg:#111113; --bs-toast-color:#e8e8e8; --bs-toast-border-color:#333; --bs-toast-header-bg:#17171a; --bs-toast-header-color:#e8e8e8; }
+.form-text { color:#9a9a9a; } .text-body-secondary { color:#9a9a9a !important; } .text-dark { color:#e8e8e8 !important; }
 .modal-content { background:#111113; color:#e8e8e8; border-color:#333; }
 </style>
 <link rel="stylesheet" href="/forge.css">
