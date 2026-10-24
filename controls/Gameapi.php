@@ -7,6 +7,7 @@
  *   GET  token      GET/POST sfx      GET sounds      GET/POST tuning      POST musicsave { name, snippet }     POST musicdelete { name }
  *   GET  sprites    POST spritesave { key, png|svg|file, w, h, frames, fps, source }    POST spritedelete { key, file }
  *   POST sketch { png, note, style, pixel, size, key, palette } → { id }      GET sketch?id= → { result, base, busy }
+ *   GET  sketches → { jobs }      POST sketchdelete { id }
  */
 namespace app;
 
@@ -68,6 +69,12 @@ class Gameapi extends BaseControls\Control {
             $this->raw(GameStore::sketchStatus($g->slug, (string) $this->getParam('id', '')));
         } catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
         catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 409); }
+    }
+    public function sketches($params = []): void { if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $this->raw(GameStore::listSketches($g->slug)); }
+    public function sketchdelete($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; if (!$this->post()) { $this->raw(['error' => 'POST'], 405); }
+        try { GameStore::deleteSketch($g->slug, (string) (($this->getJsonInput() ?? [])['id'] ?? '')); $this->raw(['ok' => true] + GameStore::listSketches($g->slug)); }
+        catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
     }
     public function musicdelete($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; if (!$this->post()) { $this->raw(['error' => 'POST'], 405); }

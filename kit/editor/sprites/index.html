@@ -74,6 +74,10 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
 .cand { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: center; } .cand img { width: 96px; height: 96px; object-fit: contain; image-rendering: pixelated; background: repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 16px 16px; border-radius: 8px; }
 .cand.on img { outline: 3px solid var(--accent); }
 .note { display: grid; gap: 8px; } .note textarea { min-height: 64px; width: 100%; } .note .lbl { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.jobs { display: grid; gap: 10px; } .job { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: start; padding: 8px; border: 1px solid var(--line); border-radius: 10px; }
+.job .sk { width: 64px; height: 64px; object-fit: contain; background: #fff; border-radius: 6px; border: 1px solid var(--line); } .job .takes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.job .takes img { width: 72px; height: 72px; object-fit: contain; image-rendering: pixelated; background: repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 12px 12px; border-radius: 8px; cursor: pointer; border: 3px solid transparent; } .job .takes img.on { border-color: var(--accent); }
+.lbl { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
 .pad .brushes { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } .pad .brushes .sw { width: 24px; height: 24px; }
 </style></head><body>
 <div class="wrap">
@@ -97,6 +101,9 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
     <div class="note"><div class="lbl">Describe it — what it is, and anything else the builder should know (colours, mood, what it does in the game)</div><textarea id="aiSubject" rows="3" placeholder="e.g. “an anteater looking left, sleepy, brown with a cream stripe; it wanders the farm and sniffs at hay bales”"></textarea>
       <div class="row"><label>maker <select id="maker"><option value="svg">the builder draws SVG from your sketch</option><option value="spritecook">SpriteCook (pixel art, credits)</option></select></label><label>style <select id="aiStyle"><option value="pixel">pixel art</option><option value="16bit">16-bit SNES</option><option value="gameboy">4-colour Game Boy</option><option value="hd">painted HD</option></select></label><label>size <select id="aiSize"><option>16</option><option>24</option><option selected>32</option><option>48</option><option>64</option><option>128</option></select></label><label><input type="checkbox" id="aiPal"> this sprite's palette</label></div></div>
     <div id="aiStatus" class="muted small"></div>
+    <details id="jobsBox"><summary class="lbl" style="cursor:pointer">Everything the builder has made from your sketches <span id="jobsN" class="muted"></span></summary>
+      <p class="muted small">Every job, newest first, with its takes. Click a take to choose it, set the key, then Keep or Edit above. A job is scratch: nothing here is in the game until you keep it.</p>
+      <div id="jobs" class="jobs"></div></details>
   </section>
   <div class="main">
     <aside class="list">
@@ -382,7 +389,19 @@ el('goBtn').onclick = async () => {
   } catch (e) { el('aiStatus').textContent = 'not sent: ' + e.message; } finally { el('goBtn').disabled = false; }
 };
 async function pollSketch() {
-  if (!SK) return; try { const j = await (await fetch(apiUrl('sketch') + '?id=' + encodeURIComponent(SK.id), { cache: 'no-store' })).json(); if (j.result) { clearInterval(skT); el('aiStatus').textContent = j.result.ok === false ? 'the builder could not do it: ' + (j.result.error || '') : 'done: pick a take, then Keep it (or edit its pixels first).'; } else if (!j.busy && Date.now() - SK.at * 1000 > 20 * 60 * 1000) { clearInterval(skT); el('aiStatus').textContent = 'the builder stopped without writing a result; the Build tab on the game page says what happened.'; } showOut(j); } catch (e) {}
+  if (!SK) return; try { const j = await (await fetch(apiUrl('sketch') + '?id=' + encodeURIComponent(SK.id), { cache: 'no-store' })).json(); if (j.result) { clearInterval(skT); loadJobs(); el('aiStatus').textContent = j.result.ok === false ? 'the builder could not do it: ' + (j.result.error || '') : 'done: pick a take, then Keep it (or edit its pixels first).'; } else if (!j.busy && Date.now() - SK.at * 1000 > 20 * 60 * 1000) { clearInterval(skT); el('aiStatus').textContent = 'the builder stopped without writing a result; the Build tab on the game page says what happened.'; } showOut(j); } catch (e) {}
+}
+async function loadJobs() {
+  try { const j = await (await fetch(apiUrl('sketches'), { cache: 'no-store' })).json(); const box = el('jobs'); box.innerHTML = ''; el('jobsN').textContent = j.jobs.length ? `(${j.jobs.length})` : '(none yet)';
+    for (const job of j.jobs) {
+      const d = document.createElement('div'); d.className = 'job'; const when = new Date(job.at * 1000).toLocaleString(), files = (job.result && job.result.files) || [];
+      d.innerHTML = `${job.sketch ? `<img class="sk" alt="" src="${esc(job.base)}sketch.png">` : '<div class="sk muted small" style="display:grid;place-items:center">no drawing</div>'}<div><div><b>${esc(job.note || '(no description)')}</b> <span class="muted small">· ${esc(when)} · ${esc(job.maker === 'svg' ? 'drawn by the builder' : 'SpriteCook')} · key ${esc(job.key)}</span> <button class="small" data-job-rm="${esc(job.id)}" style="float:right">remove</button></div>
+        ${job.result ? (job.result.ok === false ? `<div class="msg err">${esc(job.result.error || 'failed')}</div>` : `<div class="muted small">${esc(job.result.note || '')}</div><div class="takes">${files.map(f => `<img alt="" title="${esc(f)}" data-take="${esc(job.base + f)}" data-key="${esc(job.key)}" data-size="${job.size}" src="${esc(job.base + f)}">`).join('')}</div>`) : `<div class="muted small">${j.busy ? 'the builder is working on it…' : 'no result yet'}</div>`}</div>`;
+      box.appendChild(d);
+    }
+    box.querySelectorAll('[data-take]').forEach(im => im.onclick = () => { box.querySelectorAll('[data-take]').forEach(o => o.classList.toggle('on', o === im)); cand = im.dataset.take; if (!el('aiKey').value) el('aiKey').value = im.dataset.key; if (im.dataset.size > 0) el('aiSize').value = im.dataset.size; pickCand(); el('aiStatus').textContent = `chosen: ${im.title} — set the key, then Keep or Edit above`; el('keepBtn').scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+    box.querySelectorAll('[data-job-rm]').forEach(b => b.onclick = async () => { if (!confirm('Remove this job and its takes? Sprites you kept stay in the game.')) return; try { const r = await fetch(apiUrl('sketchdelete'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ id: b.dataset.jobRm }) }); const x = await r.json(); if (!r.ok) throw new Error(x.error || r.status); loadJobs(); } catch (e) { say(e.message, 'err'); } });
+  } catch (e) { el('jobs').innerHTML = `<div class="msg err">${esc(e.message)}</div>`; }
 }
 async function candidateDoc() { // an svg take is drawn at the target size; a png take comes as it is
   if (candIsSvg()) { const n = parseInt(el('aiSize').value, 10), im = await loadImage(cand + '?t=' + Date.now()), c = document.createElement('canvas'); c.width = c.height = n; const g = c.getContext('2d'); g.drawImage(im, 0, 0, n, n); return docFromImage(c, 0); }
@@ -413,6 +432,6 @@ el('aiAnimBtn').onclick = () => { if (!cur || !entry) { say('save the sprite fir
 // ---- boot ----
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 window.addEventListener('resize', () => { if (doc && mode === 'pix') { fitZoom(); render(); } });
-(async () => { drawSwatches(); show('none'); recall(); await apiToken(); await load(); })();
+(async () => { drawSwatches(); show('none'); recall(); await apiToken(); await load(); await loadJobs(); if (el('jobs').children.length) el('jobsBox').open = true; })();
 </script>
 </body></html>

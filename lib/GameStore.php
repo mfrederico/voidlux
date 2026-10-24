@@ -417,6 +417,22 @@ class GameStore {
         $r = self::askBuilder($slug, $p, $memberId);
         return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'queued' => !empty($r['queued'])];
     }
+    /** Every sketch job of a game, newest first, with its takes. */
+    public static function listSketches(string $slug): array {
+        $root = self::dir($slug) . '/sketches'; $out = [];
+        foreach (is_dir($root) ? scandir($root, SCANDIR_SORT_DESCENDING) : [] as $id) {
+            if (!preg_match(self::SKETCH_ID, $id) || !is_file("$root/$id/request.json")) continue;
+            $s = self::sketchStatus($slug, $id); $req = json_decode((string) file_get_contents("$root/$id/request.json"), true) ?: [];
+            $out[] = ['id' => $id, 'at' => (int) ($req['at'] ?? 0), 'note' => (string) ($req['note'] ?? ''), 'key' => $s['key'], 'maker' => (string) ($req['maker'] ?? 'spritecook'), 'size' => (int) ($req['size'] ?? 0), 'sketch' => is_file("$root/$id/sketch.png"), 'base' => $s['base'], 'result' => $s['result']];
+        }
+        return ['jobs' => $out, 'busy' => self::agentState($slug)['busy']];
+    }
+    public static function deleteSketch(string $slug, string $id): void {
+        if (!preg_match(self::SKETCH_ID, $id)) throw new \InvalidArgumentException('not a sketch id');
+        $dir = self::sketchDir($slug, $id); if (!is_dir($dir)) throw new \InvalidArgumentException('no such sketch');
+        foreach (scandir($dir) as $f) if ($f[0] !== '.' && is_file("$dir/$f")) unlink("$dir/$f");
+        rmdir($dir);
+    }
     public static function sketchStatus(string $slug, string $id): array {
         if (!preg_match(self::SKETCH_ID, $id)) throw new \InvalidArgumentException('not a sketch id');
         $dir = self::sketchDir($slug, $id); if (!is_file($dir . '/request.json')) throw new \InvalidArgumentException('no such sketch');
