@@ -73,7 +73,7 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
 .outbox { min-height: 200px; border: 1px dashed var(--line); border-radius: 10px; padding: 10px; display: grid; gap: 10px; align-content: start; background: var(--plot); }
 .cand { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: center; } .cand img { width: 96px; height: 96px; object-fit: contain; image-rendering: pixelated; background: repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 16px 16px; border-radius: 8px; }
 .cand.on img { outline: 3px solid var(--accent); }
-.note { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; } .note textarea { min-height: 42px; } @media (max-width: 900px) { .note { grid-template-columns: 1fr; } }
+.note { display: grid; gap: 8px; } .note textarea { min-height: 64px; width: 100%; } .note .lbl { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
 .pad .brushes { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } .pad .brushes .sw { width: 24px; height: 24px; }
 </style></head><body>
 <div class="wrap">
@@ -94,7 +94,7 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
         <div class="row"><label>key <input id="aiKey" placeholder="bee" pattern="[a-z][a-z0-9_-]{0,40}" style="width:120px"></label><button id="keepBtn" disabled>Keep as a sprite</button><button id="keepPxBtn" disabled class="hidden">Keep as pixels</button><button id="editBtn" disabled>Edit</button></div>
       </div>
     </div>
-    <div class="note"><textarea id="aiSubject" rows="2" placeholder="what it is, e.g. “a honey bee, side view, flying right”"></textarea>
+    <div class="note"><div class="lbl">Describe it — what it is, and anything else the builder should know (colours, mood, what it does in the game)</div><textarea id="aiSubject" rows="3" placeholder="e.g. “an anteater looking left, sleepy, brown with a cream stripe; it wanders the farm and sniffs at hay bales”"></textarea>
       <div class="row"><label>maker <select id="maker"><option value="svg">the builder draws SVG from your sketch</option><option value="spritecook">SpriteCook (pixel art, credits)</option></select></label><label>style <select id="aiStyle"><option value="pixel">pixel art</option><option value="16bit">16-bit SNES</option><option value="gameboy">4-colour Game Boy</option><option value="hd">painted HD</option></select></label><label>size <select id="aiSize"><option>16</option><option>24</option><option selected>32</option><option>48</option><option>64</option><option>128</option></select></label><label><input type="checkbox" id="aiPal"> this sprite's palette</label></div></div>
     <div id="aiStatus" class="muted small"></div>
   </section>
@@ -348,6 +348,12 @@ for (const b of document.querySelectorAll('[data-pen]')) b.onclick = () => { pad
 el('padUndo').onclick = () => { padStrokes.pop(); padRedraw(); };
 el('padClear').onclick = () => { padStrokes = []; padRedraw(); };
 padClear();
+const STORE = 'vl.sprites.' + GAME; // this browser remembers the drawing, the note, the settings and the last job per game
+function remember() { try { localStorage.setItem(STORE, JSON.stringify({ strokes: padStrokes, note: el('aiSubject').value, key: el('aiKey').value, maker: el('maker').value, style: el('aiStyle').value, size: el('aiSize').value, sk: SK })); } catch (e) {} }
+function recall() { try { const s = JSON.parse(localStorage.getItem(STORE) || 'null'); if (!s) return; if (Array.isArray(s.strokes)) { padStrokes = s.strokes; padRedraw(); } el('aiSubject').value = s.note || ''; el('aiKey').value = s.key || ''; for (const id of ['maker', 'aiStyle', 'aiSize']) if (s[id === 'maker' ? 'maker' : id === 'aiStyle' ? 'style' : 'size']) el(id).value = s[id === 'maker' ? 'maker' : id === 'aiStyle' ? 'style' : 'size']; if (s.sk && s.sk.id) { SK = s.sk; showOut(null); pollSketch(); skT = setInterval(pollSketch, 4000); } } catch (e) {} }
+pad.addEventListener('pointerup', remember); el('padUndo').addEventListener('click', remember); el('padClear').addEventListener('click', remember);
+for (const id of ['aiSubject', 'aiKey', 'maker', 'aiStyle', 'aiSize']) el(id).addEventListener('change', remember);
+el('aiSubject').addEventListener('input', remember);
 
 // ---- >> : the sketch and the note go to the builder; its takes come back here ----
 let SK = null, cand = null, skT = null; // the sketch request in flight, the chosen candidate, the poll timer
@@ -371,7 +377,7 @@ el('goBtn').onclick = async () => {
     const thin = pts => pts.filter((p, i, a) => i === 0 || i === a.length - 1 || Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) >= 3).map(p => [Math.round(p[0]), Math.round(p[1])]);
     const body = { note: subj, style: STYLE[st], pixel: st !== 'hd', size: n, key, maker: el('maker').value, palette: el('aiPal').checked && doc ? docPalette() : [], png: padStrokes.length ? pad.toDataURL('image/png') : '', strokes: padStrokes.map(s => ({ pen: s.pen, w: s.w, pts: thin(s.pts) })) };
     const r = await fetch(apiUrl('sketch'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
-    SK = j; el('aiStatus').textContent = (j.queued ? 'the builder is busy: your drawing waits for its next run. ' : 'the builder is on it. ') + 'Its takes appear on the right when it is done (a minute or so); the Build tab on the game page shows it working.';
+    SK = j; remember(); el('aiStatus').textContent = (j.queued ? 'the builder is busy: your drawing waits for its next run. ' : 'the builder is on it. ') + 'Its takes appear on the right when it is done (a minute or so); the Build tab on the game page shows it working.';
     clearInterval(skT); skT = setInterval(pollSketch, 4000);
   } catch (e) { el('aiStatus').textContent = 'not sent: ' + e.message; } finally { el('goBtn').disabled = false; }
 };
@@ -407,6 +413,6 @@ el('aiAnimBtn').onclick = () => { if (!cur || !entry) { say('save the sprite fir
 // ---- boot ----
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 window.addEventListener('resize', () => { if (doc && mode === 'pix') { fitZoom(); render(); } });
-(async () => { drawSwatches(); show('none'); await apiToken(); await load(); })();
+(async () => { drawSwatches(); show('none'); recall(); await apiToken(); await load(); })();
 </script>
 </body></html>
