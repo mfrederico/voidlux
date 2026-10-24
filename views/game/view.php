@@ -54,7 +54,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 
 <section class="vl-pane" id="pane-notes">
   <div class="vl-toolbar"><span>Producer's notes: everything anyone pointed at in note mode (Play → Note mode, or Alt+P in the game). Check the ones to hand to the builder in one batch.</span></div>
-  <div class="vl-toolbar"><label class="vl-check"><input type="checkbox" id="notesAll" onchange="notesAll(this.checked)"> all open</label><input id="notesIntroBig" placeholder="a word for the builder (optional)" style="flex:1;min-width:160px"><button class="btn btn-sm btn-primary" onclick="sendNotes('big')" id="sendNotesBig">Send checked to build</button><select id="notesFilter" onchange="renderNotes()"><option value="open">open</option><option value="sent">sent</option><option value="done">done</option><option value="all">all</option></select></div>
+  <div class="vl-toolbar"><label class="vl-check"><input type="checkbox" id="notesAll" onchange="notesAll(this.checked)"> all open</label><input id="notesIntroBig" placeholder="a word for the builder (optional)" style="flex:1;min-width:160px"><button class="btn btn-sm btn-primary" onclick="sendNotes('big')" id="sendNotesBig">Send checked to build</button><select id="notesFilter" onchange="renderNotes()" title="which notes to show"><option value="all">all notes</option><option value="open">open only</option><option value="sent">sent to a build</option><option value="done">done</option></select></div>
   <div class="vl-notes-big" id="notesBig"></div>
 </section>
 <div class="vl-lightbox" id="lightbox" onclick="this.classList.remove('on')"><img alt=""><div class="vl-lightbox-cap"></div></div>
@@ -166,7 +166,7 @@ window.addEventListener('message', async e => {
 function sendNotesToGame() { const f = $('playFrame'); if (f.contentWindow) f.contentWindow.postMessage({ type: 'forge:notes-list', notes: NOTES.filter(n => n.state !== 'done').map(n => ({ id: n.id, scene: n.scene, x: n.x, y: n.y, what: n.what, text: n.text, state: n.state, by: n.byName })) }, '*'); }
 function renderNotes() {
   sendNotesToGame();
-  const filt = $('notesFilter').value, big = NOTES.filter(n => filt === 'all' || n.state === filt);
+  const filt = $('notesFilter').value, order = { open: 0, sent: 1, done: 2 }, big = NOTES.filter(n => filt === 'all' || n.state === filt).sort((a, b) => (order[a.state] - order[b.state]) || (b.id - a.id));
   $('notesTab').textContent = NOTES.some(n => n.state === 'open') ? '(' + NOTES.filter(n => n.state === 'open').length + ')' : '';
   $('notesBig').innerHTML = big.length ? big.map(n => `<div class="vl-note-card ${n.state}">
       ${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="" onclick="lightbox(${n.id}, this.src)">` : '<div class="vl-note-noshot">no picture</div>'}

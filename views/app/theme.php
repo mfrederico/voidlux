@@ -19,7 +19,7 @@ body { background: var(--bs-body-bg); }
 .ui-topbar { background: linear-gradient(135deg, #0d0015, #060008) !important; backdrop-filter: blur(10px); }
 .ui-brand, .navbar-brand, .ui-sidebar .ui-brand { letter-spacing: 3px; text-transform: uppercase; background: linear-gradient(90deg, #ff6600, #ffcc00, #ff6600); background-size: 200% auto; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: vl-shimmer 3s linear infinite; }
 @keyframes vl-shimmer { to { background-position: 200% center; } }
-.btn-primary { --bs-btn-bg:#ff6600; --bs-btn-border-color:#ff6600; --bs-btn-hover-bg:#dd7700; --bs-btn-hover-border-color:#dd7700; --bs-btn-color:#fff; --bs-btn-active-bg:#cc6600; font-weight: 700; letter-spacing: 1px; }
+.btn-primary { --bs-btn-bg:#ff6600; --bs-btn-border-color:#ff6600; --bs-btn-hover-bg:#dd7700; --bs-btn-hover-border-color:#dd7700; --bs-btn-color:#fff; --bs-btn-active-bg:#cc6600; --bs-btn-disabled-bg:#5a2a00; --bs-btn-disabled-border-color:#5a2a00; --bs-btn-disabled-color:#b08a70; font-weight: 700; letter-spacing: 1px; }
 .btn-outline-primary { --bs-btn-color:#ffcc00; --bs-btn-border-color:#444; --bs-btn-hover-bg:transparent; --bs-btn-hover-border-color:#ff6600; --bs-btn-hover-color:#fff; }
 .btn-outline-secondary { --bs-btn-color:#ccc; --bs-btn-border-color:#444; --bs-btn-hover-bg:transparent; --bs-btn-hover-border-color:#ff6600; --bs-btn-hover-color:#fff; }
 .form-control, .form-select { background:#1a1a1a; border-color:#333; color:#fff; } .form-control:focus, .form-select:focus { border-color:#ff6600; box-shadow: 0 0 0 .2rem rgba(255,102,0,.2); background:#1a1a1a; color:#fff; }
