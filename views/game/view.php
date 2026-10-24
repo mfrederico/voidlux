@@ -6,7 +6,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 <div class="vl-gamebar"><b><?= $e($game['title']) ?></b><span id="metaLine"><?= $e($game['template']) ?> · <?= (int) $game['checkpoints'] ?> checkpoints · <?= $e($game['lastCommit']) ?></span><span class="vl-pill" id="statusPill"><?= $e($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span>
   <a class="btn btn-sm btn-outline-secondary ms-auto" href="/games/<?= $e($slug) ?>/" target="_blank">Play in a tab</a><?php if ($game['publishedUrl']): ?><a class="btn btn-sm btn-outline-primary" href="<?= $e($game['publishedUrl']) ?>" target="_blank">Live</a><?php endif; ?></div>
 <div class="vl-tabs" id="tabs">
-  <button data-tab="play" class="on">Play</button><button data-tab="build">Build</button><button data-tab="test">Test</button><button data-tab="sfx">SFX</button><button data-tab="tracker">Tracker</button><button data-tab="config">Config</button><button data-tab="design">Concept</button><button data-tab="history">History</button><button data-tab="ship">Ship</button>
+  <button data-tab="play" class="on">Play</button><button data-tab="build">Build</button><button data-tab="test">Test</button><button data-tab="notes">Notes <span id="notesTab"></span></button><button data-tab="sfx">SFX</button><button data-tab="tracker">Tracker</button><button data-tab="config">Config</button><button data-tab="design">Concept</button><button data-tab="history">History</button><button data-tab="ship">Ship</button>
 </div>
 
 <section class="vl-pane on" id="pane-play">
@@ -19,11 +19,11 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
   <div class="vl-build">
     <div>
       <div class="vl-toolbar">
-        <button class="btn btn-sm btn-primary" onclick="startAgent('pipeline')" id="btnPipeline" title="plan what is missing, build every open task, soak, review, checkpoint">Build the game</button>
-        <button class="btn btn-sm btn-outline-secondary" onclick="startAgent('review')">Review only</button>
-        <button class="btn btn-sm btn-outline-secondary" onclick="startAgent('fix')">Soak &amp; fix</button>
-        <button class="btn btn-sm btn-danger" onclick="stopAgent()">Stop</button>
-        <button class="btn btn-sm btn-outline-secondary" onclick="resetSession()" title="the next run starts a fresh Claude session">Fresh session</button>
+        <button class="btn btn-sm btn-primary" onclick="startAgent('pipeline')" id="btnPipeline" title="The whole loop: plan what the Concept still lacks, build every open task, playtest, review against the acceptance criteria, rework what fails, checkpoint along the way.">Build the game</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="startAgent('review')" title="An independent reviewer (a fresh agent that never saw the build) checks every acceptance criterion in the Concept, with evidence, and reports pass or fail. Builds nothing.">Review</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="startAgent('fix')" title="A headless playtest: the game's own bots play it for 90 game-seconds while every error is caught. If anything breaks, the builder is asked to fix it and test again.">Playtest &amp; fix</button>
+        <button class="btn btn-sm btn-danger" onclick="stopAgent()" title="Stops the agent that is running now. Whatever it had committed stays; a checkpoint marks where it stopped.">Stop</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="resetSession()" title="Forget the conversation so far: the next run starts with a clean memory and reads the game fresh. Use it when the builder seems stuck on an old idea.">Forget context</button>
         <span id="streamNote"><?= $e($agentNote) ?></span>
       </div>
       <div class="vl-stream" id="stream"></div>
@@ -34,7 +34,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
     </div>
     <aside class="vl-side">
       <div class="vl-card"><h3>Pipeline</h3><div id="stage" class="vl-kv">idle</div></div>
-      <div class="vl-card"><h3>Producer's notes <span id="notesCount"></span></h3><div id="notesBox" class="vl-notes-list"></div><div class="vl-toolbar mt-2"><input id="notesIntro" placeholder="a word for the builder (optional)" style="flex:1;min-width:120px"><button class="btn btn-sm btn-primary" onclick="sendNotes()" id="sendNotesBtn">Send checked to build</button></div></div>
+      <div class="vl-card"><h3>Producer's notes <span id="notesCount"></span> <a href="#notes" onclick="showTab('notes')" style="float:right;font-weight:normal;text-transform:none;letter-spacing:0">open all →</a></h3><div id="notesBox" class="vl-notes-list"></div><div class="vl-toolbar mt-2"><input id="notesIntro" placeholder="a word for the builder (optional)" style="flex:1;min-width:120px"><button class="btn btn-sm btn-primary" onclick="sendNotes()" id="sendNotesBtn">Send checked to build</button></div></div>
       <div class="vl-card"><h3>Tasks</h3><ul class="vl-tasks" id="tasks"></ul></div>
       <div class="vl-card"><h3>Session</h3><div class="vl-kv" id="session"></div><div class="vl-kv mt-2 small">Agents sign in on <a href="/agents">AI agents</a> when [forge] agent_login is app; today: <?= $e($agentNote) ?>.</div></div>
     </aside>
@@ -45,13 +45,19 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
   <div class="vl-toolbar">
     <label>game-seconds <input type="number" id="soakSecs" value="60" min="5" max="1800" style="width:80px"></label>
     <label>speed <input type="number" id="soakFast" value="4" min="1" max="30" style="width:60px"></label>
-    <button class="btn btn-sm btn-primary" onclick="runSoak()" id="soakBtn">Run a headless soak</button>
-    <span>Playwright opens the game with <code>?soak=N&amp;fast=K</code>; the scenes' bots play; every exception, console error and failed check is reported.</span>
+    <button class="btn btn-sm btn-primary" onclick="runSoak()" id="soakBtn" title="The game's own bots play it headless for this many game-seconds at this speed; every exception, console error and failed check is reported.">Run a playtest</button>
+    <span>A playtest (the agents call it a soak): a headless browser opens the game, its bots play, and every exception, console error and failed check comes back as a report.</span>
   </div>
   <table class="vl-table"><thead><tr><th>when</th><th>result</th><th>played</th><th>fps</th><th>errors</th><th>scenes</th><th>score</th><th></th></tr></thead><tbody id="soaks"></tbody></table>
   <div id="soakDetail"></div>
 </section>
 
+<section class="vl-pane" id="pane-notes">
+  <div class="vl-toolbar"><span>Producer's notes: everything anyone pointed at in note mode (Play → Note mode, or Alt+P in the game). Check the ones to hand to the builder in one batch.</span></div>
+  <div class="vl-toolbar"><label class="vl-check"><input type="checkbox" id="notesAll" onchange="notesAll(this.checked)"> all open</label><input id="notesIntroBig" placeholder="a word for the builder (optional)" style="flex:1;min-width:160px"><button class="btn btn-sm btn-primary" onclick="sendNotes('big')" id="sendNotesBig">Send checked to build</button><select id="notesFilter" onchange="renderNotes()"><option value="open">open</option><option value="sent">sent</option><option value="done">done</option><option value="all">all</option></select></div>
+  <div class="vl-notes-big" id="notesBig"></div>
+</section>
+<div class="vl-lightbox" id="lightbox" onclick="this.classList.remove('on')"><img alt=""><div class="vl-lightbox-cap"></div></div>
 <section class="vl-pane" id="pane-sfx"><div class="vl-toolbar">Every <code>SFX.play('key')</code> in the game's code is a slot here. Design it as layers; Save writes js/sfx.js. <a href="/editor/sfx/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="sfxFrame"></iframe></section>
 <section class="vl-pane" id="pane-tracker"><div class="vl-toolbar">The 8-track chip tracker. Press / to load or save a song into js/music-themes.js; name songs after where they play (title, play, boss). <a href="/editor/tracker/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="trackerFrame"></iframe></section>
 <section class="vl-pane" id="pane-config"><div class="vl-toolbar">Every number in js/config.js with its comment. Changes save to js/tuning.js and apply on reload. <a href="/editor/config/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="configFrame"></iframe></section>
@@ -95,7 +101,8 @@ function showTab(name) {
   if (name === 'play' && !loaded.play) { loaded.play = 1; $('playFrame').src = `/games/${slug}/`; }
   if (['sfx', 'tracker', 'config'].includes(name) && !loaded[name]) { loaded[name] = 1; $(name + 'Frame').src = `/editor/${name}/?game=${slug}`; }
   if (name === 'design') loadDoc();
-  if (name === 'build') { const b = $('stream'); b.scrollTop = b.scrollHeight; } // the timeline opens on the newest event
+  if (name === 'build') { const b = $('stream'); b.scrollTop = b.scrollHeight; }
+  if (name === 'notes') loadNotes(); // the timeline opens on the newest event
 }
 $('tabs').onclick = e => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); };
 function reloadPlay() { $('playFrame').src = `/games/${slug}/?r=${Date.now()}`; }
@@ -159,6 +166,17 @@ window.addEventListener('message', async e => {
 function sendNotesToGame() { const f = $('playFrame'); if (f.contentWindow) f.contentWindow.postMessage({ type: 'forge:notes-list', notes: NOTES.filter(n => n.state !== 'done').map(n => ({ id: n.id, scene: n.scene, x: n.x, y: n.y, what: n.what, text: n.text, state: n.state, by: n.byName })) }, '*'); }
 function renderNotes() {
   sendNotesToGame();
+  const filt = $('notesFilter').value, big = NOTES.filter(n => filt === 'all' || n.state === filt);
+  $('notesTab').textContent = NOTES.some(n => n.state === 'open') ? '(' + NOTES.filter(n => n.state === 'open').length + ')' : '';
+  $('notesBig').innerHTML = big.length ? big.map(n => `<div class="vl-note-card ${n.state}">
+      ${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="" onclick="lightbox(${n.id}, this.src)">` : '<div class="vl-note-noshot">no picture</div>'}
+      <div class="vl-note-body"><div class="vl-note-head"><label><input type="checkbox" data-id="${n.id}" ${n.state === 'open' ? '' : 'disabled'}> <b>${Forge.esc(n.byName || 'someone')}</b></label><span class="vl-pill">${Forge.esc(n.state)}</span></div>
+        <div class="vl-note-big-text">${Forge.esc(n.text)}</div>
+        <div class="vl-note-meta">scene ${Forge.esc(n.scene)} · at (${n.x}, ${n.y})${n.what && n.what.label ? ' · ' + Forge.esc(n.what.label) : ''} · ${Forge.esc((n.createdAt || '').slice(0, 16).replace('T', ' '))}</div>
+        ${n.what && n.what.fields ? `<div class="vl-note-fields">${Forge.esc(JSON.stringify(n.what.fields))}</div>` : ''}
+        <div class="vl-note-actions">${n.state !== 'done' ? `<button class="btn btn-sm btn-outline-secondary" onclick="noteState(${n.id}, 'done')">Done</button>` : ''}${n.state !== 'open' ? `<button class="btn btn-sm btn-outline-secondary" onclick="noteState(${n.id}, 'open')">Reopen</button>` : ''}<button class="btn btn-sm btn-outline-secondary" onclick="noteState(${n.id}, 'delete')">Delete</button></div></div></div>`).join('')
+    : `<div class="vl-kv">No ${filt === 'all' ? '' : filt + ' '}notes. In Play, press Note mode (or Alt+P in the game), click a thing, say what should change.</div>`;
+  $('sendNotesBig').disabled = !NOTES.some(n => n.state === 'open');
   const open = NOTES.filter(n => n.state === 'open'), rest = NOTES.filter(n => n.state !== 'open').slice(0, 6);
   $('notesCount').textContent = open.length ? `(${open.length} open)` : '';
   const row = n => `<div class="vl-note ${n.state}"><label><input type="checkbox" data-id="${n.id}" ${n.state === 'open' ? 'checked' : 'disabled'}>${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="">` : ''}<div><div class="vl-note-text">${Forge.esc(n.text)}</div><div class="vl-note-meta">${Forge.esc(n.scene)} · (${n.x}, ${n.y})${n.what && n.what.label ? ' · ' + Forge.esc(n.what.label) : ''} · ${n.state}</div></div></label><div class="vl-note-btns">${n.state !== 'done' ? `<button title="done" onclick="noteState(${n.id}, 'done')">✓</button>` : ''}${n.state !== 'open' ? `<button title="reopen" onclick="noteState(${n.id}, 'open')">↺</button>` : ''}<button title="delete" onclick="noteState(${n.id}, 'delete')">✕</button></div></div>`;
@@ -167,7 +185,9 @@ function renderNotes() {
   $('notesStrip').innerHTML = open.length ? open.slice(0, 8).map(n => `<span class="vl-chip" title="${Forge.esc(n.text)}">${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="">` : ''}${Forge.esc(n.text.slice(0, 40))}</span>`).join('') + ` <a href="#build" onclick="showTab('build')">${open.length} open note${open.length === 1 ? '' : 's'} → Build</a>` : '';
 }
 async function noteState(id, state) { if (state === 'delete' && !confirm('Delete this note?')) return; try { NOTES = (await Forge.api(`/game/notestate/${slug}`, { id, state })).notes; renderNotes(); } catch (e) { alert(e.message); } }
-async function sendNotes() { const ids = [...document.querySelectorAll('#notesBox input[type=checkbox]:checked')].map(c => +c.dataset.id); if (!ids.length) return; try { const r = await Forge.api(`/game/sendnotes/${slug}`, { ids, text: $('notesIntro').value.trim() }); NOTES = r.notes; renderNotes(); $('notesIntro').value = ''; refreshDue = true; } catch (e) { alert(e.message); } }
+async function sendNotes(where) { const box = where === 'big' ? '#notesBig' : '#notesBox', intro = where === 'big' ? $('notesIntroBig') : $('notesIntro'); const ids = [...document.querySelectorAll(box + ' input[type=checkbox]:checked')].map(c => +c.dataset.id); if (!ids.length) { alert('Check the notes to send first.'); return; } try { const r = await Forge.api(`/game/sendnotes/${slug}`, { ids, text: intro.value.trim() }); NOTES = r.notes; renderNotes(); intro.value = ''; refreshDue = true; showTab('build'); } catch (e) { alert(e.message); } }
+function notesAll(on) { for (const c of document.querySelectorAll('#notesBig input[type=checkbox]:not([disabled])')) c.checked = on; }
+function lightbox(id, src) { const n = NOTES.find(x => x.id === id), L = $('lightbox'); L.querySelector('img').src = src; L.querySelector('.vl-lightbox-cap').textContent = n ? (n.byName || '') + ': ' + n.text : ''; L.classList.add('on'); }
 async function loadNotes() { try { NOTES = (await Forge.api(`/game/notes/${slug}`)).notes; renderNotes(); } catch (e) {} }
 loadNotes();
 render({ game: G, checkpoints: <?= json_encode($checkpoints) ?>, soaks: <?= json_encode($soaks) ?> });

@@ -61,3 +61,14 @@ a.vl-card:hover { border-color: #ff6600; color: #ddd; }
 .vl-md ul, .vl-md ol { padding-left: 22px; margin: 0 0 10px; } .vl-md li { margin: 3px 0; } .vl-md li.todo, .vl-md li.done { list-style: none; margin-left: -22px; padding-left: 0; } .vl-md li.done { color: #7a7a7a; text-decoration: line-through; }
 .vl-md .box { display: inline-block; width: 14px; height: 14px; border: 1px solid #555; border-radius: 3px; vertical-align: -2px; margin-right: 6px; font-size: 11px; line-height: 13px; text-align: center; color: #111; } .vl-md .box.on { background: #00ff66; border-color: #00ff66; }
 .vl-md table { font-size: .8rem; } .vl-md a { color: #ffcc00; } .vl-md hr { border-color: #333; }
+/* the Notes tab */
+.vl-notes-big { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 14px; }
+.vl-note-card { display: grid; grid-template-columns: 240px 1fr; gap: 12px; background: #0a0a0c; border: 1px solid #222; border-radius: 8px; padding: 12px; } .vl-note-card.sent { opacity: .75; } .vl-note-card.done { opacity: .5; }
+.vl-note-card img { width: 240px; height: 160px; object-fit: cover; border-radius: 4px; border: 1px solid #333; cursor: zoom-in; } .vl-note-noshot { width: 240px; height: 160px; border: 1px dashed #333; border-radius: 4px; color: #555; display: grid; place-items: center; font-size: .75rem; }
+.vl-note-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; } .vl-note-head b { color: #7df9ff; }
+.vl-note-big-text { font-size: 1rem; color: #fff; line-height: 1.5; margin-bottom: 6px; } .vl-note-fields { font-size: .7rem; color: #666; word-break: break-all; margin-top: 4px; }
+.vl-note-actions { display: flex; gap: 6px; margin-top: 10px; }
+.vl-check { display: inline-flex; gap: 6px; align-items: center; color: #aaa; font-size: .8rem; }
+.vl-lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.92); z-index: 2000; place-items: center; cursor: zoom-out; } .vl-lightbox.on { display: grid; }
+.vl-lightbox img { max-width: 92vw; max-height: 80vh; image-rendering: auto; border: 1px solid #333; border-radius: 6px; box-shadow: 0 30px 80px rgba(0,0,0,.8); } .vl-lightbox-cap { color: #e8e8e8; margin-top: 12px; font-size: .95rem; max-width: 80vw; text-align: center; }
+@media (max-width: 700px) { .vl-note-card { grid-template-columns: 1fr; } .vl-note-card img, .vl-note-noshot { width: 100%; height: auto; } }
