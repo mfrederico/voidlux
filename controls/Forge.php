@@ -19,6 +19,18 @@ class Forge extends BaseControls\Control {
         $this->render('forge/index', ['title' => 'The forge', 'games' => $games]);
     }
 
+    /** POST /forge/revokeinvite { id }: withdraw a pending team invitation (the team's owner or an admin of it). JSON. */
+    public function revokeinvite($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF();
+        $b = $this->getJsonInput() ?? []; $inv = Bean::load('teaminvitation', (int) ($b['id'] ?? 0));
+        if (!$inv->id || !empty($inv->acceptedAt)) { $this->jsonError('No such pending invitation.', 404); return; }
+        $team = Bean::load('team', (int) $inv->teamId);
+        if (!$team->id || !$team->box()->canManage((int) $this->member->id)) { $this->jsonError('Only the team\'s owner or an admin can revoke an invitation.', 403); return; }
+        $email = (string) $inv->email; $role = (string) $inv->role; Bean::trash($inv);
+        $this->logger->info('Team invitation revoked', ['team_id' => (int) $team->id, 'email' => $email, 'by' => (int) $this->member->id]);
+        $this->jsonSuccess(['email' => $email, 'role' => $role, 'team_id' => (int) $team->id], 'Invitation revoked.');
+    }
+
     public function summon($params = []): void {
         if (!$this->requireLogin()) return;
         $templates = array_values(array_filter(scandir(GameStore::root() . '/templates'), fn($t) => $t[0] !== '.' && is_dir(GameStore::root() . '/templates/' . $t)));

@@ -10,8 +10,26 @@ $__base = rtrim((string) \Flight::get('app.baseurl'), '/');
         <p class="text-secondary small">Each invite is a link. If this install sends no email, pass the link along yourself (a text, a chat message): opening it, signed in or not, puts them on the team.</p>
         <?php foreach ($__pending as $__i): $__link = $__base . '/teams/join?token=' . urlencode((string) $__i->token); ?>
         <div class="d-flex flex-wrap align-items-center gap-2 mb-2"><b><?= htmlspecialchars((string) $__i->email) ?></b><span class="text-secondary small">· <?= htmlspecialchars((string) $__i->role) ?> · until <?= htmlspecialchars(substr((string) $__i->expiresAt, 0, 10)) ?></span>
-            <input class="form-control form-control-sm" style="max-width:520px" readonly value="<?= htmlspecialchars($__link) ?>" onclick="this.select()"><button class="btn btn-sm btn-outline-secondary" type="button" onclick="var i = this.previousElementSibling, b = this; i.select(); (navigator.clipboard ? navigator.clipboard.writeText(i.value) : Promise.reject()).then(function () { b.textContent = 'copied'; }, function () { document.execCommand('copy'); b.textContent = 'copied'; })">copy link</button></div>
+            <input class="form-control form-control-sm" style="max-width:520px" readonly value="<?= htmlspecialchars($__link) ?>" onclick="this.select()"><button class="btn btn-sm btn-outline-secondary" type="button" onclick="var i = this.previousElementSibling, b = this; i.select(); (navigator.clipboard ? navigator.clipboard.writeText(i.value) : Promise.reject()).then(function () { b.textContent = 'copied'; }, function () { document.execCommand('copy'); b.textContent = 'copied'; })">copy link</button>
+            <button class="btn btn-sm btn-outline-primary" type="button" onclick="vlInvite(this, 'resend', <?= (int) $__i->id ?>, <?= (int) $team->id ?>, <?= json_encode((string) $__i->email) ?>, <?= json_encode((string) $__i->role) ?>)" title="send the same link again by email">Resend email</button>
+            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="vlInvite(this, 'renew', <?= (int) $__i->id ?>, <?= (int) $team->id ?>, <?= json_encode((string) $__i->email) ?>, <?= json_encode((string) $__i->role) ?>)" title="withdraw this link and send a fresh one by email">Revoke &amp; re-send</button>
+            <button class="btn btn-sm btn-outline-danger" type="button" onclick="vlInvite(this, 'revoke', <?= (int) $__i->id ?>, <?= (int) $team->id ?>, <?= json_encode((string) $__i->email) ?>, <?= json_encode((string) $__i->role) ?>)" title="withdraw this link; nothing is sent">Revoke</button></div>
         <?php endforeach; ?>
+        <script>
+        // the three invite actions: resend (the runtime's route, same link), revoke (the forge's route), renew (revoke, then invite afresh through the runtime)
+        async function vlInvite(btn, what, id, teamId, email, role) {
+            const csrf = <?= json_encode(csrf_token()) ?>; btn.disabled = true;
+            const form = o => { const f = new FormData(); f.append('_csrf_token', csrf); for (const k in o) f.append(k, o[k]); return f; };
+            try {
+                if (what === 'resend') { const r = await (await fetch('/teams/resendinvite', { method: 'POST', body: form({ team_id: teamId, invitation_id: id }) })).json(); if (!r.success) throw new Error(r.message || 'could not resend'); btn.textContent = 'sent'; return; }
+                if (what === 'revoke' && !confirm('Withdraw the invitation for ' + email + '?')) { btn.disabled = false; return; }
+                const rv = await (await fetch('/forge/revokeinvite', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest' }, body: JSON.stringify({ id }) })).json();
+                if (!rv.success) throw new Error(rv.message || rv.error || 'could not revoke');
+                if (what === 'renew') { await fetch('/teams/invite', { method: 'POST', body: form({ id: teamId, email, role }) }); }
+                location.reload();
+            } catch (e) { alert(e.message); btn.disabled = false; }
+        }
+        </script>
     </div>
 </div>
 <?php endif; ?>
