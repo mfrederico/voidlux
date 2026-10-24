@@ -33,7 +33,7 @@ const Notes = {
   toggle() { if (this.open) this.close(); else this.start(); },
   start() {
     if (this.open) return; this.open = true; this.picking = true; this.pause(true);
-    const el = this.el = document.createElement('div'); el.className = 'vl-notes'; el.innerHTML = '<div class="vl-notes-bar"><b>NOTE MODE</b> paused · ' + ('ontouchstart' in window ? 'tap anything on the screen · three-finger tap resumes' : 'click anything on the screen · <kbd>Esc</kbd> resumes') + '</div>'<svg class="vl-notes-wire" width="100%" height="100%"><line x1="0" y1="0" x2="0" y2="0"></line><circle cx="0" cy="0" r="4"></circle></svg><div class="vl-notes-ring"></div>';
+    const el = this.el = document.createElement('div'); el.className = 'vl-notes'; el.innerHTML = '<div class="vl-notes-bar"><b>NOTE MODE</b> paused · ' + ('ontouchstart' in window ? 'tap anything on the screen · three-finger tap resumes' : 'click anything on the screen · <kbd>Esc</kbd> resumes') + '</div><svg class="vl-notes-wire" width="100%" height="100%"><line x1="0" y1="0" x2="0" y2="0"></line><circle cx="0" cy="0" r="4"></circle></svg><div class="vl-notes-ring"></div>';
     try { const f = this.forge(); if (f) f.postMessage({ type: 'forge:notes-open' }, '*'); } catch (e) {} // the forge scrolls the game into view, sends the notes so far
     document.body.appendChild(el);
     this._move = e => { if (!this.picking) return; const p = this.logical(e.clientX, e.clientY); this.hover = this.describe(p.x, p.y); this.ring(this.hover ? this.hover.at : p, !!this.hover); };
