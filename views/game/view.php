@@ -3,7 +3,7 @@
 $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 ?>
 <meta name="csrf-token" content="<?= $e(csrf_token()) ?>">
-<div class="vl-gamebar"><b><?= $e($game['title']) ?></b><span id="metaLine"><?= $e($game['template']) ?> · <?= (int) $game['checkpoints'] ?> checkpoints · <?= $e($game['lastCommit']) ?></span><span class="vl-pill" id="statusPill"><?= $e($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span>
+<div class="vl-gamebar"><b><?= $e($game['title']) ?></b><span id="metaLine" class="vl-desktop-only"><?= $e($game['template']) ?> · <?= (int) $game['checkpoints'] ?> checkpoints · <?= $e($game['lastCommit']) ?></span><span class="vl-pill" id="statusPill"><?= $e($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span>
   <a class="btn btn-sm btn-outline-secondary ms-auto" href="/games/<?= $e($slug) ?>/" target="_blank">Play in a tab</a><?php if ($game['publishedUrl']): ?><a class="btn btn-sm btn-outline-primary" href="<?= $e($game['publishedUrl']) ?>" target="_blank">Live</a><?php endif; ?></div>
 <div class="vl-tabs" id="tabs">
   <button data-tab="play" class="on">Play</button><button data-tab="build">Build</button><button data-tab="notes">Notes <span id="notesTab"></span></button><button data-tab="test">Test</button><button data-tab="media">Media</button><button data-tab="ship">Ship</button>
@@ -15,7 +15,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
   <div class="vl-cols">
     <div class="vl-card"><h3 class="vl-h2 mt-0">Pipeline</h3><div id="stage" class="vl-kv">idle</div></div>
     <div class="vl-card"><h3 class="vl-h2 mt-0">Tasks</h3><ul class="vl-tasks" id="tasks"></ul></div>
-    <div class="vl-card"><h3 class="vl-h2 mt-0">Session</h3><div class="vl-kv" id="session"></div><div class="vl-kv mt-2 small">Agents sign in on <a href="/agents">AI agents</a>; today: <?= $e($agentNote) ?>.</div></div>
+    <div class="vl-card"><h3 class="vl-h2 mt-0">Session</h3><div class="vl-kv" id="session"></div><div class="vl-toolbar mt-2"><button class="btn btn-sm btn-outline-secondary" onclick="resetSession()" title="The next run starts with a clean memory and reads the game fresh. Use it when the builder seems stuck on an old idea.">Clear the builder's memory</button></div><div class="vl-kv mt-2 small">Agents sign in on <a href="/agents">AI agents</a>; today: <?= $e($agentNote) ?>.</div></div>
   </div>
 </section>
 
@@ -36,9 +36,10 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 </section>
 
 <section class="vl-pane on" id="pane-play">
-  <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="reloadPlay()">Reload</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('fps=1')">Profiler</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('bot=1')">Autopilot</button><button class="btn btn-sm btn-primary" onclick="noteMode()" id="noteBtn">Note mode<span class="vl-note-alt"> (Alt+P)</span></button><span>The game as a player sees it, straight from its folder. Note mode pauses it: click anything, say what should change. <span class="vl-mobile-only">On a phone: Play in a tab for full screen; a three-finger tap there opens note mode, and the notes still land here.</span></span></div>
+  <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="reloadPlay()">Reload</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('fps=1')">Profiler</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('bot=1')">Autopilot</button><button class="btn btn-sm btn-primary" onclick="noteMode()" id="noteBtn">Note mode<span class="vl-note-alt"> (Alt+P)</span></button></div>
   <iframe class="vl-frame" id="playFrame" allow="autoplay; fullscreen"></iframe>
   <div class="vl-notes-strip" id="notesStrip"></div>
+  <form class="vl-compose vl-compose-play" data-chat><textarea placeholder="Tell the builder what to do…"></textarea><div class="btns"><button type="submit" class="btn btn-primary">Send</button></div></form>
 </section>
 
 <section class="vl-pane" id="pane-build">
@@ -47,16 +48,14 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
       <div class="vl-toolbar">
         <button class="btn btn-sm btn-primary" onclick="startAgent('pipeline')" id="btnPipeline" title="The whole loop: plan what the Concept still lacks, build every open task, playtest, review against the acceptance criteria, rework what fails, checkpoint along the way.">Build the game</button>
         <button class="btn btn-sm btn-outline-secondary" onclick="startAgent('review')" title="An independent reviewer (a fresh agent that never saw the build) checks every acceptance criterion in the Concept, with evidence, and reports pass or fail. Builds nothing.">Review</button>
-        <button class="btn btn-sm btn-outline-secondary" onclick="startAgent('fix')" title="A headless playtest: the game's own bots play it for 90 game-seconds while every error is caught. If anything breaks, the builder is asked to fix it and test again.">Playtest &amp; fix</button>
         <button class="btn btn-sm btn-danger" onclick="stopAgent()" title="Stops the agent that is running now. Whatever it had committed stays; a checkpoint marks where it stopped.">Stop</button>
-        <button class="btn btn-sm btn-outline-secondary" onclick="resetSession()" title="Forget the conversation so far: the next run starts with a clean memory and reads the game fresh. Use it when the builder seems stuck on an old idea.">Forget context</button>
         <span id="streamNote"><?= $e($agentNote) ?></span>
       </div>
       <div class="vl-stageline" id="stageline"></div>
       <div class="vl-stream" id="stream"></div>
-      <form class="vl-compose" id="chatForm">
+      <form class="vl-compose" id="chatForm" data-chat>
         <textarea id="chatText" data-ph="Tell the builder what to do: 'make the enemies spawn in rings', 'add a boss every fifth wave', 'the ship feels sluggish, tighten it'. Each message is one agent turn in the game's folder, checkpointed after." placeholder="Tell the builder what to do: 'make the enemies spawn in rings', 'add a boss every fifth wave', 'the ship feels sluggish, tighten it'. Each message is one agent turn in the game's folder, checkpointed after."></textarea>
-        <div class="btns"><button type="submit" class="btn btn-primary" id="chatBtn">Send</button><button type="button" class="btn btn-outline-secondary" onclick="document.getElementById('chatText').value=''">Clear</button></div>
+        <div class="btns"><button type="submit" class="btn btn-primary" id="chatBtn">Send</button></div>
       </form>
     </div>
   </div>
@@ -74,6 +73,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
   <div class="vl-toolbar">
     <label>game-seconds <input type="number" id="soakSecs" value="60" min="5" max="1800" style="width:80px"></label>
     <label>speed <input type="number" id="soakFast" value="4" min="1" max="30" style="width:60px"></label>
+    <button class="btn btn-sm btn-outline-primary" onclick="startAgent('fix')" title="A playtest, and if anything breaks the builder is asked to fix it and test again.">Playtest &amp; fix</button>
     <button class="btn btn-sm btn-primary" onclick="runSoak()" id="soakBtn" title="The game's own bots play it headless for this many game-seconds at this speed; every exception, console error and failed check is reported.">Run a playtest</button>
     <span>A playtest (the agents call it a soak): the game plays itself with its bots while every exception and failed check is caught. It runs in <b>this browser</b> while you have this page open, so the server stays light; with nobody watching, the server's own headless Chrome runs it.</span>
   </div>
@@ -151,7 +151,7 @@ function render(d) {
   $('shipInfo').innerHTML = `<b>last commit</b> ${Forge.esc(G.lastCommit || 'none')}<br><b>published</b> ${G.publishedAt ? Forge.esc(G.publishedAt) + (G.publishedUrl ? ' · <a href="' + Forge.esc(G.publishedUrl) + '" target="_blank">' + Forge.esc(G.publishedUrl) + '</a>' : ' · dist/ only') : 'never'}<br><b>last soak</b> ${G.lastSoak ? (G.lastSoak.ok ? '<span class="ok">ok</span>' : '<span class="bad">failing</span>') : 'none'}`;
 }
 function renderTasks(list) { $('tasks').innerHTML = list.length ? list.map(t => `<li class="${t.done ? 'done' : ''}">${t.done ? '✓' : '○'} ${Forge.esc(t.id)}: ${Forge.esc(t.text)}</li>`).join('') : '<li>no plan yet: run the pipeline</li>'; }
-function renderSession(a) { a = a || {}; $('session').innerHTML = `<b>${a.busy ? 'running ' + Forge.esc(a.mode) : 'idle'}</b><br>runs ${a.runs || 0} · spent $${(+a.cost || 0).toFixed(2)}<br>session ${a.session ? Forge.esc(String(a.session).slice(0, 8)) : 'none yet'}`; $('agentStatus').textContent = a.busy ? 'agent: ' + a.mode : 'agent idle'; $('agentStatus').className = 'vl-pill' + (a.busy ? ' live' : ''); $('btnPipeline').disabled = !!a.busy; $('chatBtn').textContent = a.busy ? 'Queue' : 'Send'; $('chatText').placeholder = a.busy ? 'The agent is busy: a message now waits in its inbox and goes with the next run (the next task, fix or rework).' : $('chatText').dataset.ph; }
+function renderSession(a) { a = a || {}; $('session').innerHTML = `<b>${a.busy ? 'running ' + Forge.esc(a.mode) : 'idle'}</b><br>runs ${a.runs || 0} · spent $${(+a.cost || 0).toFixed(2)}<br>session ${a.session ? Forge.esc(String(a.session).slice(0, 8)) : 'none yet'}`; $('agentStatus').textContent = a.busy ? 'agent: ' + a.mode : 'agent idle'; $('agentStatus').className = 'vl-pill' + (a.busy ? ' live' : ''); $('btnPipeline').disabled = !!a.busy; for (const f of document.querySelectorAll('form[data-chat]')) f.querySelector('button[type=submit]').textContent = a.busy ? 'Queue' : 'Send'; $('chatText').placeholder = a.busy ? 'The agent is busy: a message now waits in its inbox and goes with the next run (the next task, fix or rework).' : $('chatText').dataset.ph; }
 function renderCps(list) { $('cps').innerHTML = (list || []).map(c => `<tr><td>${Forge.esc(c.tag)}</td><td>${Forge.esc(c.at.slice(0, 16))}</td><td>${Forge.esc(c.label)}</td><td><button class="btn btn-sm btn-outline-secondary" onclick="rollback('${Forge.esc(c.tag)}')">roll back</button></td></tr>`).join('') || '<tr><td colspan="4">no checkpoints</td></tr>'; }
 function renderSoaks(list) { $('soaks').innerHTML = (list || []).map(s => `<tr><td>${Forge.esc(s.id)} <span class="vl-note-meta">${s.runner === 'browser' ? 'in a browser' : 'server'}</span></td><td>${s.ok ? '<b class="ok">ok</b>' : '<b class="bad">' + Forge.esc(s.status || 'fail') + '</b>'}</td><td>${s.seconds || ''} s</td><td>${s.fps || ''}</td><td>${s.errors || 0}</td><td>${Forge.esc(Object.entries(s.scenes || {}).map(([k, v]) => k + ' ' + v + 's').join(', '))}</td><td>${s.score == null ? '' : s.score}</td><td><button class="btn btn-sm btn-outline-secondary" onclick="soakDetail('${Forge.esc(s.id)}')">detail</button></td></tr>`).join('') || '<tr><td colspan="8">no soaks yet</td></tr>'; }
 async function soakDetail(id) { const r = await Forge.api(`/game/soakreport/${slug}?id=${id}`); $('soakDetail').innerHTML = `<pre class="vl-json">${Forge.esc(JSON.stringify(r, null, 1))}</pre><img class="vl-shot" src="/game/soakshot/${slug}?id=${id}" onerror="this.remove()">`; }
@@ -209,8 +209,8 @@ async function runBrowserSoak(req) {
 }
 async function startAgent(mode, prompt) { try { renderSession(await Forge.api(`/game/agent/${slug}`, { mode, prompt: prompt || '' })); showTab('build'); } catch (e) { alert(e.message); } }
 async function stopAgent() { try { await Forge.api(`/game/stop/${slug}`, {}); } catch (e) { alert(e.message); } }
-async function resetSession() { renderSession(await Forge.api(`/game/reset/${slug}`, {})); }
-$('chatForm').onsubmit = async e => { e.preventDefault(); const t = $('chatText').value.trim(); if (!t) return; try { const r = await Forge.api(`/game/agent/${slug}`, { mode: 'chat', prompt: t }); renderSession(r); $('chatText').value = ''; showTab('build'); } catch (err) { alert(err.message); } };
+async function resetSession() { if (!confirm('Clear the builder\'s memory? Nothing in the game changes; the next run just starts without the conversation so far.')) return; renderSession(await Forge.api(`/game/reset/${slug}`, {})); }
+for (const f of document.querySelectorAll('form[data-chat]')) f.onsubmit = async e => { e.preventDefault(); const ta = f.querySelector('textarea'), t = ta.value.trim(); if (!t) return; try { const r = await Forge.api(`/game/agent/${slug}`, { mode: 'chat', prompt: t }); renderSession(r); ta.value = ''; showTab('build'); } catch (err) { alert(err.message); } };
 async function runSoak() { $('soakBtn').disabled = true; try { await Forge.api(`/game/agent/${slug}`, { mode: 'soak', prompt: `${+$('soakSecs').value} ${+$('soakFast').value}` }); showTab('build'); } catch (e) { alert(e.message); } $('soakBtn').disabled = false; }
 async function makeCheckpoint() { const r = await Forge.api(`/game/checkpoint/${slug}`, { label: $('cpLabel').value }); $('cpLabel').value = ''; renderCps(r.checkpoints); }
 async function rollback(tag) { if (!confirm(`Roll ${slug} back to ${tag}? The current state is checkpointed first.`)) return; try { const r = await Forge.api(`/game/rollback/${slug}`, { ref: tag }); renderCps(r.checkpoints); reloadPlay(); refreshDue = true; } catch (e) { alert(e.message); } }
