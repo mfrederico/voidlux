@@ -3,7 +3,7 @@
 $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 ?>
 <meta name="csrf-token" content="<?= $e(csrf_token()) ?>">
-<div class="vl-gamebar"><b><?= $e($game['title']) ?></b><span id="metaLine" class="vl-desktop-only"><?= $e($game['template']) ?> · <?= (int) $game['checkpoints'] ?> checkpoints · <?= $e($game['lastCommit']) ?></span><span class="vl-pill" id="statusPill"><?= $e($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span>
+<div class="vl-gamebar"><span class="vl-pill" id="statusPill"><?= $e($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span>
   <?php if ($game['publishedUrl']): ?><a class="btn btn-sm btn-outline-primary ms-auto" href="<?= $e($game['publishedUrl']) ?>" target="_blank">Live</a><?php endif; ?></div>
 <div class="vl-tabs" id="tabs">
   <button data-tab="play" class="on">Play</button><button data-tab="build">Build</button><button data-tab="notes">Notes <span id="notesTab"></span></button><button data-tab="test">Test</button><button data-tab="media">Media</button><button data-tab="ship">Ship</button>
@@ -13,7 +13,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 <section class="vl-pane" id="pane-status">
   <div class="vl-toolbar"><span>What the builder is doing: the pipeline stage, the task list from the Concept, and the agent session's running cost.</span></div>
   <div class="vl-cols">
-    <div class="vl-card"><h3 class="vl-h2 mt-0">Pipeline</h3><div id="stage" class="vl-kv">idle</div></div>
+    <div class="vl-card"><h3 class="vl-h2 mt-0">Pipeline</h3><div id="stage" class="vl-kv">idle</div><div class="vl-kv mt-2" id="metaLine"></div></div>
     <div class="vl-card"><h3 class="vl-h2 mt-0">Tasks</h3><ul class="vl-tasks" id="tasks"></ul></div>
     <div class="vl-card"><h3 class="vl-h2 mt-0">Session</h3><div class="vl-kv" id="session"></div><div class="vl-toolbar mt-2"><button class="btn btn-sm btn-outline-secondary" onclick="resetSession()" title="The next run starts with a clean memory and reads the game fresh. Use it when the builder seems stuck on an old idea.">Clear the builder's memory</button></div><div class="vl-kv mt-2 small">Agents sign in on <a href="/agents">AI agents</a>; today: <?= $e($agentNote) ?>.</div></div>
   </div>
@@ -139,7 +139,7 @@ async function deleteAsset(name) { if (!confirm('Delete ' + name + '?')) return;
 function reloadPlay() { $('playFrame').src = `/games/${slug}/?r=${Date.now()}`; }
 function playWith(q) { $('playFrame').src = `/games/${slug}/?${q}&r=${Date.now()}`; }
 function render(d) {
-  G = d.game; $('statusPill').textContent = G.status; $('metaLine').textContent = `${G.template} · ${G.checkpoints} checkpoints · ${G.lastCommit || ''}`;
+  G = d.game; $('statusPill').textContent = G.status; $('metaLine').textContent = `${G.template} template · ${G.checkpoints} checkpoints · last commit ${G.lastCommit || 'none'}`;
   renderTasks(G.taskList || []); renderSession(G.agent); renderCps(d.checkpoints); renderSoaks(d.soaks);
   const f = $('cardForm'); if (document.activeElement && f.contains(document.activeElement)) {} else { f.title.value = G.title || ''; f.status.value = G.status || 'new'; f.price.value = G.price == null ? '' : G.price; f.tags.value = (G.tags || []).join(', '); f.notes.value = G.notes || ''; f.team_id.value = String(G.teamId || 0); }
   $('shipInfo').innerHTML = `<b>last commit</b> ${Forge.esc(G.lastCommit || 'none')}<br><b>published</b> ${G.publishedAt ? Forge.esc(G.publishedAt) + (G.publishedUrl ? ' · <a href="' + Forge.esc(G.publishedUrl) + '" target="_blank">' + Forge.esc(G.publishedUrl) + '</a>' : ' · dist/ only') : 'never'}<br><b>last soak</b> ${G.lastSoak ? (G.lastSoak.ok ? '<span class="ok">ok</span>' : '<span class="bad">failing</span>') : 'none'}`;
