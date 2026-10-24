@@ -13,7 +13,7 @@ a.vl-card:hover { border-color: #ff6600; color: #ddd; }
 /* the game page */
 .vl-gamebar { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem; color: #888; margin-bottom: 8px; }
 .vl-gamebar b { color: #fff; font-size: 1.1rem; }
-.vl-tabs { display: flex; gap: 2px; border-bottom: 1px solid #222; overflow-x: auto; margin-bottom: 14px; }
+.vl-tabs { display: flex; gap: 2px; border-bottom: 1px solid #222; overflow: visible; flex-wrap: wrap; margin-bottom: 14px; position: relative; }
 .vl-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: #999; padding: 10px 14px; letter-spacing: 2px; text-transform: uppercase; font-size: 0.72rem; font-family: inherit; cursor: pointer; }
 .vl-tabs button:hover { color: #fff; } .vl-tabs button.on { color: #ffcc00; border-bottom-color: #ff6600; }
 .vl-pane { display: none; } .vl-pane.on { display: block; }
@@ -147,3 +147,6 @@ a.vl-cover:hover .vl-play-badge, a.vl-cover:focus .vl-play-badge { opacity: 1; t
 .vl-tabs button.on::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; background: #ff6600; border-radius: 2px; }
 .vl-tabs button span { font-size: .65rem; color: #ffcc00; }
 @media (max-width: 700px) { .vl-tabs { gap: 0; border-bottom: 0; } .vl-tabs button { padding: 10px 9px; border-bottom: 1px solid #222; } .vl-tabs button.on::after { bottom: -1px; } .vl-tab-menu > button { border-bottom: 1px solid #222; } }
+/* the Advanced menu: clipped by nothing, closed by a click anywhere else */
+.vl-tab-menu-list { box-shadow: 0 16px 40px rgba(0,0,0,.7); } .vl-tab-menu-list button { width: 100%; padding: 10px 14px; } .vl-tab-menu-list button:hover { background: #1c1c1e; color: #fff; }
+.vl-tab-menu > button::after { content: ""; }

@@ -133,7 +133,8 @@ function showTab(name) {
   if (name === 'notes') loadNotes();
   if (name === 'assets') loadAssets(); // the timeline opens on the newest event
 }
-$('tabs').onclick = e => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); };
+$('tabs').onclick = e => { const b = e.target.closest('button'); if (b) { e.stopPropagation(); showTab(b.dataset.tab); } };
+document.addEventListener('click', () => document.querySelector('.vl-tab-menu').classList.remove('open')); // a click anywhere else closes the Advanced menu
 async function loadAssets() { try { const r = await Forge.api(`/game/assets/${slug}`); $('assets').innerHTML = r.files.length ? r.files.map(f => `<div class="vl-asset"><a href="/games/${slug}/assets/${encodeURIComponent(f.name)}" target="_blank">${/\.(svg|png|jpe?g|gif|webp)$/i.test(f.name) ? `<img src="/games/${slug}/assets/${encodeURIComponent(f.name)}" alt="">` : ''}</a><div class="vl-asset-name">${Forge.esc(f.name)}</div><div class="vl-note-meta">${Math.round(f.size / 1024)} KB</div><div class="vl-note-actions"><a class="btn btn-sm btn-outline-secondary" href="/games/${slug}/assets/${encodeURIComponent(f.name)}" download>Download</a><button class="btn btn-sm btn-outline-secondary" onclick="deleteAsset('${Forge.esc(f.name)}')">Delete</button></div></div>`).join('') : '<div class="vl-kv">No files yet. Upload an SVG or an image above.</div>'; } catch (e) { $('assets').innerHTML = '<div class="vl-kv">' + Forge.esc(e.message) + '</div>'; } }
 async function deleteAsset(name) { if (!confirm('Delete ' + name + '?')) return; try { await Forge.api(`/game/assetdelete/${slug}`, { name }); loadAssets(); } catch (e) { alert(e.message); } }
 function reloadPlay() { $('playFrame').src = `/games/${slug}/?r=${Date.now()}`; }
