@@ -387,10 +387,28 @@ class GameStore {
             $bin = base64_decode($m[1], true); if ($bin === false || strlen($bin) > 4 * 1024 * 1024 || substr($bin, 0, 8) !== "\x89PNG\r\n\x1a\n") throw new \InvalidArgumentException('the drawing is not a PNG under 4 MB');
             self::writeAtomic($dir . '/sketch.png', $bin); $has = true;
         }
-        $req = ['id' => $id, 'note' => $note, 'style' => $style, 'pixel' => $pixel, 'size' => $size, 'key' => $key, 'palette' => $pal, 'sketch' => $has, 'by' => $memberId, 'at' => time()];
+        // the pad's strokes as exact vector paths: the geometry the builder draws on when it makes the SVG itself
+        $strokes = []; foreach ((array) ($b['strokes'] ?? []) as $s) { if (!is_array($s) || empty($s['pts']) || !is_array($s['pts'])) continue; $pts = []; foreach (array_slice($s['pts'], 0, 4000) as $p) if (is_array($p) && count($p) >= 2) $pts[] = [max(0, min(512, (int) $p[0])), max(0, min(512, (int) $p[1]))]; if ($pts) $strokes[] = ['pen' => preg_match('/^#[0-9a-f]{6}$/i', (string) ($s['pen'] ?? '')) ? (string) $s['pen'] : 'erase', 'w' => max(1, min(120, (int) ($s['w'] ?? 10))), 'pts' => $pts]; if (count($strokes) >= 400) break; }
+        if ($strokes) {
+            $paths = ''; foreach ($strokes as $s) { $d = ''; foreach ($s['pts'] as $i => $p) $d .= ($i ? ' L' : 'M') . $p[0] . ' ' . $p[1]; if (count($s['pts']) === 1) $d .= ' L' . ($s['pts'][0][0] + 1) . ' ' . $s['pts'][0][1]; $paths .= '  <path d="' . $d . '" stroke="' . ($s['pen'] === 'erase' ? '#ffffff' : $s['pen']) . '" stroke-width="' . $s['w'] . "\"/>\n"; }
+            self::writeAtomic($dir . '/sketch.svg', "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 512 512\" width=\"512\" height=\"512\" fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n" . $paths . "</svg>\n");
+        }
+        $maker = ($b['maker'] ?? 'svg') === 'spritecook' ? 'spritecook' : 'svg';
+        $req = ['id' => $id, 'note' => $note, 'style' => $style, 'pixel' => $pixel, 'size' => $size, 'key' => $key, 'palette' => $pal, 'sketch' => $has, 'strokes' => count($strokes), 'maker' => $maker, 'by' => $memberId, 'at' => time()];
         self::writeAtomic($dir . '/request.json', json_encode($req, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
         $what = $note !== '' ? "\"{$note}\"" : 'nothing written: go by the drawing';
         $target = "{$size}×{$size} px, {$style}, transparent background" . ($pal ? ', using only these colours: ' . implode(', ', $pal) : '');
+        if ($maker === 'svg') {
+            $p = "The producer wants a game sprite drawn from a rough sketch, and you are the artist: you draw it as SVG. First read GAME.md's Design so the sprite belongs in this game's world, and look at assets/sprites.json and the files it names (if any) so it matches the look and palette of the sprites the game already has. "
+               . ($has ? "Their drawing: sketches/{$id}/sketch.png (512×512, coloured lines on white; look at it with Read)" . ($strokes ? ", and sketches/{$id}/sketch.svg: the very same strokes as vector paths in a 512×512 viewBox, the geometry to build on" : '') . ". " : 'They drew nothing: go by the note alone. ')
+               . "Their note: {$what}. Target: {$target}.\n"
+               . "Draw two takes, each a complete SVG file:\n"
+               . "- sketches/{$id}/out-1.svg, faithful: keep the drawing's shapes, proportions and placement (scale the 512 grid to the viewBox), smooth the wobbly strokes into clean closed shapes, fill them with a readable palette, add the details the note implies (eyes, wings, stripes, a tool) where the drawing hints at them.\n"
+               . "- sketches/{$id}/out-2.svg, bolder: the same pose and layout with more character, shading and a stronger outline.\n"
+               . "Rules for both: viewBox=\"0 0 {$size} {$size}\" with width and height {$size}, the xmlns attribute, a transparent background, only shapes, paths, groups and gradients (no <script>, no on* attributes, no <image>, no <text>, no external references, no <foreignObject>), under 30 KB, and a silhouette that reads at {$size} px in a game: bold shapes, outlines about " . max(1, round($size / 32, 1)) . " wide, few tiny details" . ($pixel ? ', flat fills in the manner of pixel art rather than soft gradients' : '') . ". Check each with `node -e` or `python3 -c` that it parses as XML before you finish.\n"
+               . "Then write sketches/{$id}/result.json as {\"ok\": true, \"files\": [\"out-1.svg\", \"out-2.svg\"], \"note\": \"<one line on what you drew>\"}.\n"
+               . "Do not add anything to assets/ or assets/sprites.json and do not commit: the producer chooses what to keep on the sprite page. If something stops you, write sketches/{$id}/result.json as {\"ok\": false, \"error\": \"<why, in one line>\"} and stop. Do not run a soak. Reply with one line.";
+        } else
         $p = "The producer wants a sprite made" . ($has ? " from a rough freehand drawing they made: sketches/{$id}/sketch.png (512×512, black lines on white, a rough shape and pose, not finished art)" : '') . ". Their note: {$what}. Target: a game sprite, {$target}.\n"
            . "Using the spritecook skills (read spritecook-workflow-essentials first): " . ($has ? "upload the drawing with spritecook-upload-assets and call generate_game_art with reference_asset_id = that asset, so the drawing sets the subject's pose, shape and layout; " : 'call generate_game_art; ')
            . "a prompt built from the note" . ($has ? ' and what the drawing shows' : '') . ", width and height {$size}, pixel=" . ($pixel ? 'true' : 'false') . ", bg_mode transparent, variations=2. "
@@ -405,7 +423,7 @@ class GameStore {
         $req = json_decode((string) file_get_contents($dir . '/request.json'), true) ?: [];
         $res = is_file($dir . '/result.json') ? json_decode((string) file_get_contents($dir . '/result.json'), true) : null;
         if (is_file($dir . '/result.json') && !is_array($res)) $res = ['ok' => false, 'error' => 'the builder wrote a result.json that is not JSON'];
-        if (is_array($res) && !empty($res['ok'])) $res['files'] = array_values(array_filter((array) ($res['files'] ?? []), fn($f) => preg_match('/^out-[0-9]+\.png$/', (string) $f) && is_file($dir . '/' . $f)));
+        if (is_array($res) && !empty($res['ok'])) $res['files'] = array_values(array_filter((array) ($res['files'] ?? []), fn($f) => preg_match('/^out-[0-9]+\.(png|svg)$/', (string) $f) && is_file($dir . '/' . $f) && (!str_ends_with((string) $f, '.svg') || !preg_match('/<script|\son[a-z]+\s*=|javascript:|<foreignObject|<image/i', (string) file_get_contents($dir . '/' . $f)))));
         $busy = self::agentState($slug)['busy'];
         return ['id' => $id, 'key' => (string) ($req['key'] ?? 'sprite'), 'base' => "/games/{$slug}/sketches/{$id}/", 'busy' => $busy, 'status' => $busy ? 'the builder is working…' : 'waiting for the builder to start', 'result' => $res];
     }

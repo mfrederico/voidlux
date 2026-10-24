@@ -78,6 +78,9 @@ will not load is a console error, which the soak reports.
   yourself (key, file, w, h, frames, fps, `"source": "spritecook"` / `"cellcog"` / `"builder"`) and commit with the file.
 - An SVG in the manifest draws like any picture (scaled smoothly, set `"smooth": true`); pixel art stays crisp by default.
 - Publishing copies `assets/` with the game.
+- The sprite page's `>>` sends the producer's sketch to you with a message that says exactly what to draw and where
+  (`sketches/<id>/out-N.svg` or `.png`, then `result.json`). Follow it to the letter: nothing goes into `assets/` or the
+  manifest until the producer keeps a take.
 
 ## Plugins the builder has
 

@@ -90,12 +90,12 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
       <div class="go"><button id="goBtn" title="make a sprite from the drawing and the note">&gt;&gt;</button></div>
       <div class="out">
         <h3>What the AI makes of it</h3>
-        <div class="outbox" id="outbox"><span class="muted small">Draw something on the left, say what it is below, and press &gt;&gt;. The builder sends your drawing to SpriteCook as the reference and brings back two takes. Keep one into the game, or edit its pixels first.</span></div>
-        <div class="row"><label>key <input id="aiKey" placeholder="bee" pattern="[a-z][a-z0-9_-]{0,40}" style="width:120px"></label><button id="keepBtn" disabled>Keep as a sprite</button><button id="editBtn" disabled>Edit its pixels</button></div>
+        <div class="outbox" id="outbox"><span class="muted small">Draw something on the left, say what it is below, and press &gt;&gt;. The builder takes your strokes as the shape and draws a clean sprite from them, two takes, as SVG. Keep one into the game as SVG or as pixels, or edit it first.</span></div>
+        <div class="row"><label>key <input id="aiKey" placeholder="bee" pattern="[a-z][a-z0-9_-]{0,40}" style="width:120px"></label><button id="keepBtn" disabled>Keep as a sprite</button><button id="keepPxBtn" disabled class="hidden">Keep as pixels</button><button id="editBtn" disabled>Edit</button></div>
       </div>
     </div>
     <div class="note"><textarea id="aiSubject" rows="2" placeholder="what it is, e.g. “a honey bee, side view, flying right”"></textarea>
-      <div class="row"><label>style <select id="aiStyle"><option value="pixel">pixel art</option><option value="16bit">16-bit SNES</option><option value="gameboy">4-colour Game Boy</option><option value="hd">painted HD</option></select></label><label>size <select id="aiSize"><option>16</option><option>24</option><option selected>32</option><option>48</option><option>64</option><option>128</option></select></label><label><input type="checkbox" id="aiPal"> this sprite's palette</label></div></div>
+      <div class="row"><label>maker <select id="maker"><option value="svg">the builder draws SVG from your sketch</option><option value="spritecook">SpriteCook (pixel art, credits)</option></select></label><label>style <select id="aiStyle"><option value="pixel">pixel art</option><option value="16bit">16-bit SNES</option><option value="gameboy">4-colour Game Boy</option><option value="hd">painted HD</option></select></label><label>size <select id="aiSize"><option>16</option><option>24</option><option selected>32</option><option>48</option><option>64</option><option>128</option></select></label><label><input type="checkbox" id="aiPal"> this sprite's palette</label></div></div>
     <div id="aiStatus" class="muted small"></div>
   </section>
   <div class="main">
@@ -357,34 +357,44 @@ function showOut(j) {
   if (j.result && j.result.ok === false) { box.innerHTML = `<div class="msg err">${esc(j.result.error || 'it did not work')}</div>`; return; }
   const files = (j.result && j.result.files) || [];
   if (!files.length) { box.innerHTML = `<span class="muted small">${esc(j.status || 'the builder is working…')}</span>`; return; }
-  files.forEach((f, i) => { const d = document.createElement('div'); d.className = 'cand' + (i === 0 ? ' on' : ''); d.innerHTML = `<img alt="" src="${esc(j.base + f)}?t=${Date.now()}"><div><div class="mono">${esc(f)}</div><div class="muted small">${i === 0 && j.result.note ? esc(j.result.note) : 'click to choose'}</div></div>`; d.onclick = () => { for (const o of box.querySelectorAll('.cand')) o.classList.toggle('on', o === d); cand = j.base + f; }; box.appendChild(d); });
-  cand = j.base + files[0]; el('keepBtn').disabled = el('editBtn').disabled = false; if (!el('aiKey').value) el('aiKey').value = j.key || '';
+  files.forEach((f, i) => { const d = document.createElement('div'); d.className = 'cand' + (i === 0 ? ' on' : ''); d.innerHTML = `<img alt="" src="${esc(j.base + f)}?t=${Date.now()}"><div><div class="mono">${esc(f)}</div><div class="muted small">${i === 0 && j.result.note ? esc(j.result.note) : 'click to choose'}</div></div>`; d.onclick = () => { for (const o of box.querySelectorAll('.cand')) o.classList.toggle('on', o === d); cand = j.base + f; pickCand(); }; box.appendChild(d); });
+  cand = j.base + files[0]; pickCand(); if (!el('aiKey').value) el('aiKey').value = j.key || '';
 }
+const candIsSvg = () => /\.svg$/i.test(cand || '');
+function pickCand() { const svg = candIsSvg(); el('keepBtn').disabled = el('editBtn').disabled = el('keepPxBtn').disabled = !cand; el('keepBtn').textContent = svg ? 'Keep as SVG' : 'Keep as a sprite'; el('keepPxBtn').classList.toggle('hidden', !svg); el('editBtn').textContent = svg ? 'Edit the SVG' : 'Edit its pixels'; }
 el('goBtn').onclick = async () => {
   const subj = el('aiSubject').value.trim(), n = parseInt(el('aiSize').value, 10), st = el('aiStyle').value;
   if (!subj && !padStrokes.length) { el('aiSubject').focus(); say('draw something, or say what you want, or both', 'err'); return; }
   const key = el('aiKey').value.trim() || subj.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24).replace(/^[^a-z]+/, '') || 'sprite'; if (!KEY_RE.test(key)) { say('the key is lowercase letters, digits, - and _, starting with a letter', 'err'); return; }
   el('goBtn').disabled = true; showOut(null); el('aiStatus').textContent = 'sending the drawing and the note to the builder…';
   try {
-    const body = { note: subj, style: STYLE[st], pixel: st !== 'hd', size: n, key, palette: el('aiPal').checked && doc ? docPalette() : [], png: padStrokes.length ? pad.toDataURL('image/png') : '' };
+    const thin = pts => pts.filter((p, i, a) => i === 0 || i === a.length - 1 || Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) >= 3).map(p => [Math.round(p[0]), Math.round(p[1])]);
+    const body = { note: subj, style: STYLE[st], pixel: st !== 'hd', size: n, key, maker: el('maker').value, palette: el('aiPal').checked && doc ? docPalette() : [], png: padStrokes.length ? pad.toDataURL('image/png') : '', strokes: padStrokes.map(s => ({ pen: s.pen, w: s.w, pts: thin(s.pts) })) };
     const r = await fetch(apiUrl('sketch'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
-    SK = j; el('aiStatus').textContent = (j.queued ? 'the builder is busy: your drawing waits for its next run. ' : 'the builder is on it. ') + 'Its takes appear on the right when it is done (a minute or two); the Build tab on the game page shows it working.';
+    SK = j; el('aiStatus').textContent = (j.queued ? 'the builder is busy: your drawing waits for its next run. ' : 'the builder is on it. ') + 'Its takes appear on the right when it is done (a minute or so); the Build tab on the game page shows it working.';
     clearInterval(skT); skT = setInterval(pollSketch, 4000);
   } catch (e) { el('aiStatus').textContent = 'not sent: ' + e.message; } finally { el('goBtn').disabled = false; }
 };
 async function pollSketch() {
   if (!SK) return; try { const j = await (await fetch(apiUrl('sketch') + '?id=' + encodeURIComponent(SK.id), { cache: 'no-store' })).json(); if (j.result) { clearInterval(skT); el('aiStatus').textContent = j.result.ok === false ? 'the builder could not do it: ' + (j.result.error || '') : 'done: pick a take, then Keep it (or edit its pixels first).'; } else if (!j.busy && Date.now() - SK.at * 1000 > 20 * 60 * 1000) { clearInterval(skT); el('aiStatus').textContent = 'the builder stopped without writing a result; the Build tab on the game page says what happened.'; } showOut(j); } catch (e) {}
 }
-async function candidateDoc() { const im = await loadImage(cand + '?t=' + Date.now()); return docFromImage(im, 0); }
-el('editBtn').onclick = async () => { if (!cand || !leaveOk()) return; const key = el('aiKey').value.trim(); if (!KEY_RE.test(key)) { say('give the sprite a key first', 'err'); return; } try { cur = key; entry = null; doc = await candidateDoc(); undo = []; redo = []; dirty = true; fi = 0; el('title').textContent = key; el('splitW').value = doc.w; show('pix'); fitZoom(); render(); drawSwatches(); drawList(); say(`${key}: the AI's take as pixels. Tidy it, then Save.`); el('editor').scrollIntoView({ behavior: 'smooth' }); } catch (e) { say(e.message, 'err'); } };
-el('keepBtn').onclick = async () => {
+async function candidateDoc() { // an svg take is drawn at the target size; a png take comes as it is
+  if (candIsSvg()) { const n = parseInt(el('aiSize').value, 10), im = await loadImage(cand + '?t=' + Date.now()), c = document.createElement('canvas'); c.width = c.height = n; const g = c.getContext('2d'); g.drawImage(im, 0, 0, n, n); return docFromImage(c, 0); }
+  const im = await loadImage(cand + '?t=' + Date.now()); return docFromImage(im, 0); }
+async function candidateSvg() { const r = await fetch(cand + '?t=' + Date.now(), { cache: 'no-store' }); if (!r.ok) throw new Error('could not read the take'); return r.text(); }
+el('editBtn').onclick = async () => { if (!cand || !leaveOk()) return; const key = el('aiKey').value.trim(); if (!KEY_RE.test(key)) { say('give the sprite a key first', 'err'); return; }
+  if (candIsSvg()) { try { cur = key; entry = null; undo = []; redo = []; dirty = true; el('title').textContent = key; svgSet(await candidateSvg(), null); el('svgW').value = el('svgH').value = parseInt(el('aiSize').value, 10); drawList(); say(`${key}: the builder's SVG. Edit the source, then Save (or make a pixel sprite from it).`); el('editor').scrollIntoView({ behavior: 'smooth' }); } catch (e) { say(e.message, 'err'); } return; }
+  try { cur = key; entry = null; doc = await candidateDoc(); undo = []; redo = []; dirty = true; fi = 0; el('title').textContent = key; el('splitW').value = doc.w; show('pix'); fitZoom(); render(); drawSwatches(); drawList(); say(`${key}: the AI's take as pixels. Tidy it, then Save.`); el('editor').scrollIntoView({ behavior: 'smooth' }); } catch (e) { say(e.message, 'err'); } };
+async function keep(asPixels) {
   if (!cand) return; const key = el('aiKey').value.trim(); if (!KEY_RE.test(key)) { say('give the sprite a key first', 'err'); return; }
   if (M.sprites[key] && !confirm(`${key} exists. Replace it with this take?`)) return;
+  if (candIsSvg() && !asPixels) { try { const n = parseInt(el('aiSize').value, 10), r = await fetch(apiUrl('spritesave'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key, svg: await candidateSvg(), w: n, h: n, smooth: true, source: 'builder' }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); M = { sprites: j.sprites, files: j.files }; drawList(); say(`kept: assets/${j.sprite.file} is the sprite ${key} · Draw.pic('${key}', x, y, ${n})`, 'ok'); open(key); } catch (e) { say('not kept: ' + e.message, 'err'); } return; }
   try { const d = await candidateDoc(); const c = document.createElement('canvas'); c.width = d.w; c.height = d.h; c.getContext('2d').putImageData(new ImageData(d.frames[0], d.w, d.h), 0, 0);
-    const r = await fetch(apiUrl('spritesave'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key, png: c.toDataURL('image/png'), w: d.w, h: d.h, frames: 1, fps: 8, source: 'spritecook' }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+    const r = await fetch(apiUrl('spritesave'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key, png: c.toDataURL('image/png'), w: d.w, h: d.h, frames: 1, fps: 8, source: candIsSvg() ? 'builder' : 'spritecook' }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
     M = { sprites: j.sprites, files: j.files }; drawList(); say(`kept: assets/${j.sprite.file} is the sprite ${key} · Draw.pic('${key}', x, y, ${j.sprite.w})`, 'ok'); open(key); }
   catch (e) { say('not kept: ' + e.message, 'err'); }
-};
+}
+el('keepBtn').onclick = () => keep(false); el('keepPxBtn').onclick = () => keep(true);
 
 el('aiSet').onclick = () => {
   const subj = el('setSubject').value.trim(); if (!subj) { el('setSubject').focus(); return; } const n = parseInt(el('aiSize').value, 10), st = el('aiStyle').value;
