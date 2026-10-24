@@ -45,4 +45,4 @@ studio/studio.log
 studio/__pycache__/
 .playwright-mcp/
 games/
-centipede/
+/centipede/

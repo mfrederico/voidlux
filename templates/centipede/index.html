@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>__TITLE__</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1a1430">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+  html, body { margin:0; height:100%; background:#1a1430; overflow:hidden; font-family: "Trebuchet MS", "Segoe UI", sans-serif; overscroll-behavior:none; touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  #wrap { display:flex; align-items:center; justify-content:center; width:100%; height:100%; }
+  canvas { display:block; background:#7cc26a; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.5); touch-action:none; }
+  body.mobile canvas, body.desktop canvas { border-radius:0; box-shadow:none; } /* phones and the desktop build: edge to edge */
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game" width="1280" height="720"></canvas></div>
+<script src="js/util.js"></script>
+<script src="js/music.js"></script>
+<script src="js/music-themes.js"></script>
+<script src="js/config.js"></script>
+<script src="js/tuning.js"></script>
+<script src="js/bestiary.js"></script>
+<script src="js/sfx.js"></script>
+<script src="js/input.js"></script>
+<script src="js/combat.js"></script>
+<script src="js/world.js"></script>
+<script src="js/world-loot.js"></script>
+<script src="js/world-terrain.js"></script>
+<script src="js/world-summons.js"></script>
+<script src="js/world-discover.js"></script>
+<script src="js/world-swarm.js"></script>
+<script src="js/player.js"></script>
+<script src="js/player-build.js"></script>
+<script src="js/player-loadout.js"></script>
+<script src="js/player-hurt.js"></script>
+<script src="js/player-fire.js"></script>
+<script src="js/player-gear.js"></script>
+<script src="js/workbench.js"></script>
+<script src="js/enemies.js"></script>
+<script src="js/enemies-snakes.js"></script>
+<script src="js/enemies-bugs.js"></script>
+<script src="js/enemies-uniques.js"></script>
+<script src="js/enemies-parasites.js"></script>
+<script src="js/enemies-spells.js"></script>
+<script src="js/enemies-bosses.js"></script>
+<script src="js/enemies-crab.js"></script>
+<script src="js/enemies-skull.js"></script>
+<script src="js/enemies-serpent.js"></script>
+<script src="js/enemies-overlord.js"></script>
+<script src="js/enemies-clowncar.js"></script>
+<script src="js/minions.js"></script>
+<script src="js/dungeon.js"></script>
+<script src="js/deck.js"></script>
+<script src="js/perks.js"></script>
+<script src="js/gallery.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/save.js"></script>
+<script src="js/bot.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/render.js"></script>
+<script src="js/render-world.js"></script>
+<script src="js/render-circus.js"></script>
+<script src="js/render-farm.js"></script>
+<script src="js/render-jungle.js"></script>
+<script src="js/render-graveyard.js"></script>
+<script src="js/render-dungeon.js"></script>
+<script src="js/render-player.js"></script>
+<script src="js/render-enemies.js"></script>
+<script src="js/render-bosses.js"></script>
+<script src="js/render-fx.js"></script>
+<script src="js/render-hud.js"></script>
+<script src="js/render-cards.js"></script>
+<script src="js/render-perkshop.js"></script>
+<script src="js/render-screens.js"></script>
+<script src="js/render-bench.js"></script>
+<script src="js/render-bench-body.js"></script>
+<script src="js/render-bench-perks.js"></script>
+<script src="js/render-bench-forge.js"></script>
+<script src="js/render-bench-lab.js"></script>
+<script src="js/benchfx.js"></script>
+<script src="js/title.js"></script>
+<script src="js/main.js"></script>
+<script src="js/forge-soak.js"></script>
+<script src="../../kit/js/kit-notes.js"></script><!-- the producer's notes: Alt+P pauses and lets you point at things --><!-- the forge's headless soak (?soak=N); inert otherwise -->
+</body>
+</html>
