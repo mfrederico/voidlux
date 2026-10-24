@@ -58,6 +58,7 @@ class GameAgent {
         $sid = $fresh ? null : ($this->state['session'] ?? null);
         $cmd = [$bin, '-p', $prompt, '--output-format', 'stream-json', '--verbose', '--max-turns', (string) ($maxTurns ?: (int) GameStore::cfg('max_turns', 60)), '--permission-mode', 'acceptEdits', '--allowedTools'];
         $cmd = array_merge($cmd, self::ALLOWED);
+        foreach (['kit', 'studio', 'centipede', 'templates'] as $extra) if (is_dir(GameStore::root() . '/' . $extra)) array_push($cmd, '--add-dir', GameStore::root() . '/' . $extra); // the shared engine, the soak tools and the reference game are readable beyond the game's folder
         $model = (string) GameStore::cfg('model', ''); if ($model !== '') array_push($cmd, '--model', $model);
         if ($resume && $sid) array_push($cmd, '--resume', $sid);
         $env['GAME_URL'] = GameStore::soakUrl($this->slug); $env['STUDIO'] = GameStore::root() . '/studio'; $env['VOIDLUX_GAME'] = $this->slug;
