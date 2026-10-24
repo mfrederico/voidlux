@@ -77,4 +77,9 @@ a.vl-card:hover { border-color: #ff6600; color: #ddd; }
 .vl-comments { margin-top: 8px; border-top: 1px dashed #222; padding-top: 6px; } .vl-comment { font-size: .8rem; color: #ccc; padding: 2px 0; } .vl-comment b { color: #7df9ff; font-weight: normal; } .vl-comment a { color: #666; text-decoration: none; margin-left: 6px; }
 .vl-comment-form { display: flex; gap: 6px; margin-top: 6px; } .vl-comment-form input { flex: 1; background: #141416; border: 1px solid #2a2a2a; color: #fff; border-radius: 4px; padding: 5px 8px; font: inherit; font-size: .8rem; }
 .vl-compose-batch { background: #0a0a0c; border: 1px solid #ff6600; border-radius: 8px; padding: 14px; margin-bottom: 14px; } .vl-compose-batch textarea { width: 100%; min-height: 220px; background: #141416; color: #fff; border: 1px solid #333; border-radius: 4px; padding: 10px; font: inherit; font-size: .85rem; line-height: 1.5; resize: vertical; }
-.vl-soak-frame { position: fixed; left: 0; top: 0; width: 640px; height: 360px; opacity: 0.001; pointer-events: none; z-index: -1; }
+/* the playtest window: the game, visible, in the corner while the bots play it */
+.vl-soak-win { position: fixed; right: 16px; bottom: 16px; width: 480px; background: #0a0a0c; border: 1px solid #ff6600; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.8); z-index: 1500; overflow: hidden; }
+.vl-soak-win.min { width: 300px; } .vl-soak-win.min .vl-soak-frame { height: 0; } .vl-soak-win.ok { border-color: #00ff66; } .vl-soak-win.bad { border-color: #ff4d6d; }
+.vl-soak-title { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 10px; font-size: .74rem; color: #ffcc00; letter-spacing: 1px; background: #111113; border-bottom: 1px solid #222; } .vl-soak-title button { background: none; border: 1px solid #444; color: #bbb; border-radius: 4px; width: 22px; height: 20px; line-height: 1; font-size: .8rem; padding: 0; }
+.vl-soak-frame { display: block; width: 100%; height: 270px; border: 0; background: #000; }
+@media (max-width: 600px) { .vl-soak-win { right: 8px; left: 8px; width: auto; } }

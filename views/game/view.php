@@ -159,12 +159,15 @@ async function runBrowserSoak(req) {
   try {
     const c = await Forge.api(`/game/soakclaim/${slug}`, { id: req.id }); if (!c.claimed) return;
     $('streamNote').textContent = `playtest ${req.id} running in this browser (${req.secs} s at ${req.fast}x)…`;
-    const f = document.createElement('iframe'); f.className = 'vl-soak-frame'; f.src = `/games/${slug}/?soak=${req.secs}&fast=${req.fast}&seed=7&r=${Date.now()}`; document.body.appendChild(f);
+    const win = document.createElement('div'); win.className = 'vl-soak-win'; win.innerHTML = `<div class="vl-soak-title"><span>▶ playtest · ${req.secs} game-seconds at ${req.fast}x · the bots are playing</span><button type="button" title="hide the window (the playtest keeps running)">–</button></div>`;
+    win.querySelector('button').onclick = () => win.classList.toggle('min');
+    const f = document.createElement('iframe'); f.className = 'vl-soak-frame'; f.src = `/games/${slug}/?soak=${req.secs}&fast=${req.fast}&seed=7&r=${Date.now()}`; win.appendChild(f); document.body.appendChild(win);
     const budget = Date.now() + (req.secs / Math.max(1, req.fast)) * 1000 * 2.5 + 20000; let rep = null, errs = [];
     try { f.contentWindow.addEventListener('error', e => errs.push(String(e.message))); } catch (e) {}
     while (Date.now() < budget) { await new Promise(r => setTimeout(r, 500)); try { if (f.contentWindow && f.contentWindow.__SOAK) { rep = f.contentWindow.__SOAK; break; } } catch (e) { break; } }
     if (!rep) rep = { status: 'timeout', errors: [{ text: 'the game never finished the soak in this browser (' + errs.join('; ') + ')' }], scenes: {} };
-    f.remove();
+    win.querySelector('.vl-soak-title span').textContent = rep.ok ? '✓ playtest ok · ' + (rep.fps || '?') + ' fps · score ' + (rep.score ?? '') : '✗ playtest ' + (rep.status || 'failed') + ' · ' + ((rep.errors || []).length) + ' error(s)';
+    win.classList.add(rep.ok ? 'ok' : 'bad'); setTimeout(() => win.remove(), 4000);
     await Forge.api(`/game/soakdone/${slug}`, { id: req.id, report: rep });
     hereCount++; $('hereCount').textContent = hereCount; $('hereLast').textContent = new Date().toLocaleTimeString() + (rep.ok ? ' · ok' : ' · ' + (rep.status || 'failed'));
     $('streamNote').textContent = ''; refreshDue = true;
