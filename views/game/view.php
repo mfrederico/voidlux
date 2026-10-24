@@ -6,8 +6,8 @@ $slug = $game['slug'];
 <div class="vl-gamebar"><span class="vl-pill" id="statusPill"><?= h($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span>
   <?php if ($game['publishedUrl']): ?><a class="btn btn-sm btn-outline-primary ms-auto" href="<?= h($game['publishedUrl']) ?>" target="_blank">Live</a><?php endif; ?></div>
 <div class="vl-tabs" id="tabs">
-  <button data-tab="play" class="on">Play</button><button data-tab="build">Build</button><button data-tab="notes">Notes <span id="notesTab"></span></button><button data-tab="test">Test</button><button data-tab="media">Media</button><button data-tab="ship">Ship</button>
-  <span class="vl-tab-menu"><button data-tab="advanced" type="button">Advanced ▾</button><span class="vl-tab-menu-list"><button data-tab="design">Concept</button><button data-tab="status">Status</button><button data-tab="config">Config</button><button data-tab="history">History</button></span></span>
+  <a href="#play" data-tab="play" class="on">Play</a><a href="#build" data-tab="build">Build</a><a href="#notes" data-tab="notes">Notes <span id="notesTab"></span></a><a href="#test" data-tab="test">Test</a><a href="#media" data-tab="media">Media</a><a href="#ship" data-tab="ship">Ship</a>
+  <span class="vl-tab-menu"><button data-tab="advanced" type="button">Advanced ▾</button><span class="vl-tab-menu-list"><a href="#design" data-tab="design">Concept</a><a href="#status" data-tab="status">Status</a><a href="#config" data-tab="config">Config</a><a href="#history" data-tab="history">History</a></span></span>
 </div>
 
 <section class="vl-pane" id="pane-status">
@@ -130,7 +130,7 @@ const GROUP = { sfx: 'media', tracker: 'media', assets: 'media', design: 'advanc
 function showTab(name) {
   if (name === 'advanced') { document.querySelector('.vl-tab-menu').classList.toggle('open'); return; }
   document.querySelector('.vl-tab-menu').classList.remove('open');
-  for (const b of document.querySelectorAll('.vl-tabs button')) b.classList.toggle('on', b.dataset.tab === name || b.dataset.tab === GROUP[name]);
+  for (const b of document.querySelectorAll('.vl-tabs [data-tab]')) b.classList.toggle('on', b.dataset.tab === name || b.dataset.tab === GROUP[name]);
   for (const p of document.querySelectorAll('.vl-pane')) p.classList.toggle('on', p.id === 'pane-' + name);
   location.hash = name;
   if (name === 'play' && !loaded.play) { loaded.play = 1; $('playFrame').src = `/games/${slug}/`; }
@@ -140,7 +140,7 @@ function showTab(name) {
   if (name === 'notes') loadNotes();
   if (name === 'assets') loadAssets(); // the timeline opens on the newest event
 }
-$('tabs').onclick = e => { const b = e.target.closest('button'); if (b) { e.stopPropagation(); showTab(b.dataset.tab); } };
+$('tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (!b) return; e.stopPropagation(); if (b.tagName === 'A' && (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1)) return; /* a new tab or window: the browser's business */ e.preventDefault(); showTab(b.dataset.tab); };
 document.addEventListener('click', () => document.querySelector('.vl-tab-menu').classList.remove('open')); // a click anywhere else closes the Advanced menu
 async function loadAssets() { try { const r = await Forge.api(`/game/assets/${slug}`); $('assets').innerHTML = r.files.length ? r.files.map(f => `<div class="vl-asset"><a href="/games/${slug}/assets/${encodeURIComponent(f.name)}" target="_blank">${/\.(svg|png|jpe?g|gif|webp)$/i.test(f.name) ? `<img src="/games/${slug}/assets/${encodeURIComponent(f.name)}" alt="">` : ''}</a><div class="vl-asset-name">${Forge.esc(f.name)}</div><div class="vl-note-meta">${Math.round(f.size / 1024)} KB</div><div class="vl-note-actions"><a class="btn btn-sm btn-outline-secondary" href="/games/${slug}/assets/${encodeURIComponent(f.name)}" download>Download</a><button class="btn btn-sm btn-outline-secondary" onclick="deleteAsset('${Forge.esc(f.name)}')">Delete</button></div></div>`).join('') : '<div class="vl-kv">No files yet. Upload an SVG or an image above.</div>'; } catch (e) { $('assets').innerHTML = '<div class="vl-kv">' + Forge.esc(e.message) + '</div>'; } }
 async function deleteAsset(name) { if (!confirm('Delete ' + name + '?')) return; try { await Forge.api(`/game/assetdelete/${slug}`, { name }); loadAssets(); } catch (e) { alert(e.message); } }
