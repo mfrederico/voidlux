@@ -243,7 +243,7 @@ function renderNotes() {
   for (const b of document.querySelectorAll('#notesFolders button')) { b.classList.toggle('on', b.dataset.folder === filt); b.querySelector('span').textContent = NOTES.filter(n => n.state === b.dataset.folder).length || ''; }
   $('notesTab').textContent = NOTES.some(n => n.state === 'open') ? '(' + NOTES.filter(n => n.state === 'open').length + ')' : '';
   $('notesBig').innerHTML = big.length ? big.map(n => `<div class="vl-note-card ${n.state}">
-      ${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="" onclick="lightbox(${n.id}, this.src)">` : '<div class="vl-note-noshot">no picture</div>'}
+      ${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="" onclick="lightbox(${n.id}, this.src)">` : '<div class="vl-note-noshot">no image</div>'}
       <div class="vl-note-body"><div class="vl-note-head"><label><input type="checkbox" data-id="${n.id}" ${n.state === 'done' ? 'disabled' : ''} onchange="notesButtons()"> <b>${Forge.esc(n.byName || 'someone')}</b></label><span><button class="vl-vote ${n.voted ? 'on' : ''}" onclick="noteVote(${n.id})" title="${Forge.esc((n.voters || []).join(', ') || 'no votes yet')}">▲ ${n.votes || 0}</button> <span class="vl-state ${n.state}">${FOLDER[n.state]}</span></span></div>
         <div class="vl-note-big-text">${Forge.esc(n.text)}</div>
         <div class="vl-note-meta">${n.scene === 'note' ? 'general note' : 'scene ' + Forge.esc(n.scene) + ' · at (' + n.x + ', ' + n.y + ')' + (n.what && n.what.label ? ' · ' + Forge.esc(n.what.label) : '')} · ${Forge.esc((n.createdAt || '').slice(0, 16).replace('T', ' '))}</div>
