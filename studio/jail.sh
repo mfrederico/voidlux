@@ -30,8 +30,10 @@ if [ "${JAIL_HOME_CLAUDE:-0}" = "1" ]; then
   [ -d "$H/.claude" ] && args+=(--bind "$H/.claude" "$H/.claude")
   [ -f "$H/.claude.json" ] && args+=(--bind "$H/.claude.json" "$H/.claude.json")
 else
-  mkdir -p "$GAME/.studio/home/.claude"; args+=(--bind "$GAME/.studio/home/.claude" "$H/.claude")   # the agent's own state, kept with the game, never the operator's
-  [ -f "$GAME/.studio/home/.claude.json" ] || echo '{}' > "$GAME/.studio/home/.claude.json"; args+=(--bind "$GAME/.studio/home/.claude.json" "$H/.claude.json")
+  # the app's own agents' home (.aibuilder/home): where the AI agents page (/agents) installs plugins and skills with the
+  # app's bin/claude, so every game's runs get them. Sessions still stay per game (claude keys them by working folder).
+  AH="$ROOT/.aibuilder/home"; mkdir -p "$AH/.claude"; [ -f "$AH/.claude.json" ] || echo '{}' > "$AH/.claude.json"
+  args+=(--bind "$AH/.claude" "$H/.claude" --bind "$AH/.claude.json" "$H/.claude.json")
 fi
 [ -f "$H/.gitconfig" ] && args+=(--ro-bind "$H/.gitconfig" "$H/.gitconfig")
 IFS=: read -ra extra <<< "${JAIL_RW:-}"; for d in "${extra[@]}"; do [ -n "$d" ] && [ -e "$d" ] && args+=(--bind "$d" "$d"); done
