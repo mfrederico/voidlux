@@ -59,13 +59,16 @@ the scene's `enter`. Check `Music.has(name)` before relying on a song that may n
 **Testing.** Every scene has a `bot(dt)`: it sets `Input.bot.axis` and presses keys with `Input.tapKey`, so the soak can
 play from the title through game over and back. `../../studio/bin/soak 60 4` runs a headless 60 game-second soak at 4x and prints
 the report; `ok: true` means no exceptions, no console errors, no failed `Test.assert`. The report also
-lists which scenes were visited: a screen the bot never reached is untested.
+lists which scenes were visited: a screen the bot never reached is untested. Run it when the autopilot's run goes through
+what you changed (gameplay, scene flow, load order); skip it, and say what you checked instead, when it would not (a screen
+the bot never reaches, docs, tuning, copy). It takes the producer a minute each time.
 
 ## House rules
 
 - Match the code around you: dense lines, several statements per line, plain-English comments that say what a thing is
   for and why. Every file starts with a header comment saying what it holds.
 - **Never splice a `//` comment into the middle of a line**: it silently comments out the rest. Use `/* ... */` inside a line.
-- `node --check` every changed file. Then soak. Then commit, saying what changed and why.
+- `node --check` every changed file. Soak when the autopilot would play through the change, not otherwise. Then commit,
+  saying what changed and why.
 - Files the editors write (tuning.js, sfx.js, music-themes.js) are the designer's work: never revert or tidy them.
 - The kit is shared. A game-specific need goes in the game. A need two games share goes in the kit, documented here.
