@@ -265,18 +265,22 @@ class GameStore {
     public static function browserSoak(string $slug, int $secs, int $fast): ?array {
         $id = self::requestSoak($slug, $secs, $fast); $f = self::dir($slug) . '/.studio/soaks/' . $id . '.json';
         self::emit($slug, 'note', ['text' => "soak: {$secs} game-seconds at {$fast}x, in a viewer's browser"]);
-        $deadline = time() + (int) ($secs / max(1, $fast) * 2.5) + 60; $claimDeadline = time() + 25;
+        $deadline = time() + (int) ($secs / max(1, $fast) * 2.5) + 90; $claimDeadline = time() + (int) self::cfg('browser_soak_wait', 60);
         while (time() < $deadline) {
             if (is_file($f)) return json_decode((string) file_get_contents($f), true) ?: null;
             $r = self::soakRequest($slug); if (!$r) break; if (empty($r['claimed']) && time() > $claimDeadline) break; // nobody took it: fall back
             sleep(1);
         }
-        @unlink(self::dir($slug) . '/.studio/soak-request.json'); self::emit($slug, 'note', ['text' => 'no browser answered the soak request; running it on the server']); return null;
+        @unlink(self::dir($slug) . '/.studio/soak-request.json'); self::emit($slug, 'note', ['text' => 'no browser answered the playtest request']); return null;
     }
-    /** A soak, blocking: in an attached viewer's browser when one is there, else headless on the server. */
+    /** A soak, blocking, in a viewer's browser. The server's own Chrome runs one only when [forge] server_chrome = 1: on
+     *  this machine it brought the box down, so with nobody's page open the answer is a 'no-browser' report, not a launch. */
     public static function runSoak(string $slug, int $secs = 60, int $fast = 4): array {
-        if (self::browserAttached($slug)) { $rep = self::browserSoak($slug, $secs, $fast); if ($rep !== null) return $rep; }
-        return self::chromeSoak($slug, $secs, $fast);
+        $rep = self::browserSoak($slug, $secs, $fast); if ($rep !== null) return $rep;
+        if ((string) self::cfg('server_chrome', '0') === '1') return self::chromeSoak($slug, $secs, $fast);
+        $rep = ['ok' => false, 'status' => 'no-browser', 'runner' => 'none', 'errors' => [], 'checks' => [], 'scenes' => [], 'note' => 'no browser is attached to this game: open its page in the forge (Play or Test tab) and the playtest runs there. Not a fault in the game.'];
+        self::emit($slug, 'soak', ['id' => '', 'ok' => false, 'status' => 'no-browser', 'runner' => 'none', 'errors' => [], 'browserErrors' => [], 'checks' => [], 'scenes' => [], 'text' => $rep['note']]);
+        return $rep;
     }
     /** The server's own headless Chrome through Playwright. */
     public static function chromeSoak(string $slug, int $secs = 60, int $fast = 4): array {

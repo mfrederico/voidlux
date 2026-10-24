@@ -128,6 +128,7 @@ class GameAgent {
     public function fix(): void {
         $rep = GameStore::runSoak($this->slug, 90, 4);
         if (!empty($rep['ok'])) { $this->emit('stage', ['stage' => 'accepted', 'text' => 'the soak already passes']); return; }
+        if (($rep['status'] ?? '') === 'no-browser') { $this->emit('stage', ['stage' => 'rejected', 'text' => 'nothing to fix yet: no browser is attached to run the playtest. Open the game page and try again.']); return; }
         $this->run(str_replace('{report}', mb_substr(json_encode($this->trim($rep), JSON_PRETTY_PRINT), 0, 6000), self::FIX), true, false, 0, 'fix'); $this->checkpoint('fix');
     }
     private function trim(array $rep): array { $o = []; foreach (['status', 'errors', 'checks', 'browserErrors', 'scenes', 'fps', 'slowFrames'] as $k) if (isset($rep[$k])) $o[$k] = $rep[$k]; return $o; }
@@ -164,6 +165,7 @@ class GameAgent {
             $this->emit('stage', ['stage' => 'soak', 'text' => 'headless soak, 90 game-seconds at 4x']);
             $rep = GameStore::runSoak($this->slug, 90, 4);
             if (!empty($rep['ok'])) break;
+            if (($rep['status'] ?? '') === 'no-browser') { $this->emit('stage', ['stage' => 'soak', 'text' => 'no browser attached to playtest in: skipping the playtest gate (open the game page in the forge to run one)']); break; }
             if ($i === $rounds) { $this->emit('error', ['text' => "the soak still fails after {$rounds} fix rounds"]); break; }
             $this->emit('stage', ['stage' => 'fix', 'text' => 'soak failed: asking the agent to fix it (round ' . ($i + 1) . ')']);
             $r = $this->run(str_replace('{report}', mb_substr(json_encode($this->trim($rep), JSON_PRETTY_PRINT), 0, 6000), self::FIX), true, false, 0, 'fix');
