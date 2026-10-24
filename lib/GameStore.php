@@ -411,6 +411,7 @@ class GameStore {
         // the pad's strokes as exact vector paths: the geometry the builder draws on when it makes the SVG itself
         $strokes = []; foreach ((array) ($b['strokes'] ?? []) as $s) { if (!is_array($s) || empty($s['pts']) || !is_array($s['pts'])) continue; $pts = []; foreach (array_slice($s['pts'], 0, 4000) as $p) if (is_array($p) && count($p) >= 2) $pts[] = [max(0, min(512, (int) $p[0])), max(0, min(512, (int) $p[1]))]; if ($pts) $strokes[] = ['pen' => preg_match('/^#[0-9a-f]{6}$/i', (string) ($s['pen'] ?? '')) ? (string) $s['pen'] : 'erase', 'w' => max(1, min(120, (int) ($s['w'] ?? 10))), 'pts' => $pts]; if (count($strokes) >= 400) break; }
         if ($strokes) {
+            self::writeAtomic($dir . '/strokes.json', json_encode($strokes, JSON_UNESCAPED_SLASHES)); // the pad can take the drawing back
             $paths = ''; foreach ($strokes as $s) { $d = ''; foreach ($s['pts'] as $i => $p) $d .= ($i ? ' L' : 'M') . $p[0] . ' ' . $p[1]; if (count($s['pts']) === 1) $d .= ' L' . ($s['pts'][0][0] + 1) . ' ' . $s['pts'][0][1]; $paths .= '  <path d="' . $d . '" stroke="' . ($s['pen'] === 'erase' ? '#ffffff' : $s['pen']) . '" stroke-width="' . $s['w'] . "\"/>\n"; }
             self::writeAtomic($dir . '/sketch.svg', "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 512 512\" width=\"512\" height=\"512\" fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n" . $paths . "</svg>\n");
         }
@@ -426,8 +427,10 @@ class GameStore {
             if (!$has && is_file("$dir/sketch.png")) $has = true;
             $refine = ['id' => $pid, 'file' => $pf, 'ext' => $ext];
         }
-        $req = ['id' => $id, 'note' => $note, 'style' => $style, 'pixel' => $pixel, 'size' => $size, 'key' => $key, 'palette' => $pal, 'sketch' => $has, 'strokes' => count($strokes), 'maker' => $maker, 'refine' => $refine, 'by' => $memberId, 'at' => time()];
+        $saveOnly = !empty($b['save_only']);
+        $req = ['id' => $id, 'note' => $note, 'style' => $style, 'pixel' => $pixel, 'size' => $size, 'key' => $key, 'palette' => $pal, 'sketch' => $has, 'strokes' => count($strokes), 'maker' => $maker, 'refine' => $refine, 'saved' => $saveOnly, 'by' => $memberId, 'at' => time()];
         self::writeAtomic($dir . '/request.json', json_encode($req, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        if ($saveOnly) return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'saved' => true]; // kept in the gallery, not sent
         $what = $note !== '' ? "\"{$note}\"" : 'nothing written: go by the drawing';
         $target = "{$size}×{$size} px, {$style}, transparent background" . ($pal ? ', using only these colours: ' . implode(', ', $pal) : '');
         $look = ($has ? "Their drawing: sketches/{$id}/sketch.png (512×512, coloured lines on white; look at it with Read)" . ($strokes ? ", and sketches/{$id}/sketch.svg: the very same strokes as vector paths in a 512×512 viewBox, the geometry to build on" : '') . ". " : 'They drew nothing: go by the note alone. ');
@@ -475,7 +478,7 @@ class GameStore {
         foreach (is_dir($root) ? scandir($root, SCANDIR_SORT_DESCENDING) : [] as $id) {
             if (!preg_match(self::SKETCH_ID, $id) || !is_file("$root/$id/request.json")) continue;
             $s = self::sketchStatus($slug, $id); $req = json_decode((string) file_get_contents("$root/$id/request.json"), true) ?: [];
-            $out[] = ['id' => $id, 'at' => (int) ($req['at'] ?? 0), 'note' => (string) ($req['note'] ?? ''), 'key' => $s['key'], 'maker' => (string) ($req['maker'] ?? 'spritecook'), 'size' => (int) ($req['size'] ?? 0), 'sketch' => is_file("$root/$id/sketch.png"), 'refine' => $req['refine'] ?? null, 'base' => $s['base'], 'result' => $s['result']];
+            $out[] = ['id' => $id, 'at' => (int) ($req['at'] ?? 0), 'note' => (string) ($req['note'] ?? ''), 'key' => $s['key'], 'maker' => (string) ($req['maker'] ?? 'spritecook'), 'size' => (int) ($req['size'] ?? 0), 'sketch' => is_file("$root/$id/sketch.png"), 'strokes' => is_file("$root/$id/strokes.json"), 'refine' => $req['refine'] ?? null, 'saved' => $s['saved'], 'style' => (string) ($req['style'] ?? ''), 'pixel' => !empty($req['pixel']), 'base' => $s['base'], 'result' => $s['result']];
         }
         return ['jobs' => $out, 'busy' => self::agentState($slug)['busy']];
     }
@@ -499,7 +502,8 @@ class GameStore {
         if (is_file($dir . '/result.json') && !is_array($res)) $res = ['ok' => false, 'error' => 'the builder wrote a result.json that is not JSON'];
         if (is_array($res) && !empty($res['ok'])) $res['files'] = array_values(array_filter((array) ($res['files'] ?? []), fn($f) => preg_match('/^out-[0-9]+\.(png|svg|js)$/', (string) $f) && is_file($dir . '/' . $f) && self::takeIsSafe($dir . '/' . $f)));
         $busy = self::agentState($slug)['busy'];
-        return ['id' => $id, 'key' => (string) ($req['key'] ?? 'sprite'), 'base' => "/games/{$slug}/sketches/{$id}/", 'busy' => $busy, 'status' => $busy ? 'the builder is working…' : 'waiting for the builder to start', 'result' => $res];
+        $saved = !empty($req['saved']) && $res === null;
+        return ['id' => $id, 'key' => (string) ($req['key'] ?? 'sprite'), 'base' => "/games/{$slug}/sketches/{$id}/", 'busy' => $busy, 'saved' => $saved, 'status' => $saved ? 'a saved drawing, not sent to the builder' : ($busy ? 'the builder is working…' : 'waiting for the builder to start'), 'result' => $res];
     }
 
     public static function saveSfx(string $slug, array $data): int {
