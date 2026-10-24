@@ -30,6 +30,11 @@ h1, h2, h3, .h1, .h2, .h3 { color:#fff; letter-spacing: 1px; } .ui-eyebrow { col
 .badge.text-bg-success, .bg-success { background-color: rgba(0,255,102,0.15) !important; color:#00ff66 !important; }
 a.ui-nav-link.active, .ui-sidebar .active { color:#111 !important; }
 .dropdown-menu { --bs-dropdown-bg:#111113; --bs-dropdown-color:#e8e8e8; --bs-dropdown-link-color:#e8e8e8; --bs-dropdown-link-hover-bg:#1c1c1c; --bs-dropdown-link-hover-color:#fff; --bs-dropdown-border-color:#333; }
+.list-group { --bs-list-group-bg:#111113; --bs-list-group-color:#e8e8e8; --bs-list-group-border-color:#232323; --bs-list-group-action-color:#e8e8e8; --bs-list-group-action-hover-color:#fff; --bs-list-group-action-hover-bg:rgba(255,102,0,0.14); --bs-list-group-action-active-bg:rgba(255,102,0,0.25); --bs-list-group-action-active-color:#fff; --bs-list-group-active-bg:#ff6600; --bs-list-group-active-border-color:#ff6600; --bs-list-group-active-color:#111; }
+.list-group-item-action:hover, .list-group-item-action:focus { color:#fff; } .list-group-item-action:hover small, .list-group-item-action:hover .text-muted, .list-group-item-action:hover .text-secondary { color:#ccc !important; }
+.text-muted, .text-secondary { color:#9a9a9a !important; } .bg-light, .table-light { background-color:#17171a !important; color:#e8e8e8 !important; }
+.btn-light, .btn-outline-light { --bs-btn-bg:#1a1a1a; --bs-btn-color:#e8e8e8; --bs-btn-border-color:#333; --bs-btn-hover-bg:#222; --bs-btn-hover-color:#fff; --bs-btn-hover-border-color:#ff6600; }
+.alert { --bs-alert-bg:#17171a; --bs-alert-color:#e8e8e8; --bs-alert-border-color:#333; }
 .modal-content { background:#111113; color:#e8e8e8; border-color:#333; }
 </style>
 <link rel="stylesheet" href="/forge.css">

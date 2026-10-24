@@ -21,7 +21,7 @@
         <div class="vl-card"><div class="vl-card-title">&#9670; The Planner</div>Reads the brief and writes GAME.md: design, acceptance criteria, ordered tasks. Nothing vague survives into the task list.</div>
         <div class="vl-card"><div class="vl-card-title">&#9679; The Builders</div>Claude Code sessions in the game's own folder, one task at a time, each ending in <code>node --check</code>, a headless soak and a commit.</div>
         <div class="vl-card"><div class="vl-card-title">&#9733; The Reviewer</div>A fresh session that never saw the build judges every criterion with evidence. Rejected criteria go back as rework, up to two rounds.</div>
-        <div class="vl-card"><div class="vl-card-title">&#8734; The Kit</div>Centipede's engine pulled out: pooled-voice synth, chip tracker, sprite atlas, touch controls, soak harness. Every game shares it; every editor works on every game.</div>
+        <div class="vl-card"><div class="vl-card-title">&#8734; The Kit</div>Centipede's engine pulled out: pooled-voice synth, chip tracker, sprite atlas, touch controls, soak harness. Or spring from all of Centipede itself: the centipede template is the whole game, ready to become another.</div>
         <div class="vl-card"><div class="vl-card-title">&#9876; Checkpoints</div>Every run is bracketed by a git tag. Roll back any time; the state before a rollback is a checkpoint too.</div>
         <div class="vl-card"><div class="vl-card-title">&#9813; Ship</div>A build with the kit inlined and a version stamp, served at its own subdomain in one click.</div>
     </div>

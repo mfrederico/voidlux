@@ -40,7 +40,7 @@ class GameAgent {
         $env['PATH'] = '/usr/local/bin:/usr/bin:/bin' . (!empty($env['PATH']) ? ':' . $env['PATH'] : '');
         $home = (string) ($env['HOME'] ?? ''); if ($home === '') { $env['HOME'] = (string) (posix_getpwuid(posix_geteuid())['dir'] ?? '/tmp'); $home = $env['HOME']; }
         $env['PATH'] = $home . '/.local/bin:' . $env['PATH'];
-        $bin = \app\ClaudeBinary::hostBinary() ?? ($home . '/.local/bin/claude');
+        $bin = is_executable($root . '/bin/claude') ? $root . '/bin/claude' : (\app\ClaudeBinary::hostBinary() ?? ($home . '/.local/bin/claude')); // the app's own agent program first (/agents installs it), else the host's
         if (!is_executable($bin)) throw new \RuntimeException("no claude CLI for the agent (looked for {$bin}); install Claude Code for the user PHP runs as");
         if ($mode === 'app') {
             [$aenv, $err, $note] = \app\Pipeline\Steps\AgentStep::agentEnv('claude', $root);
