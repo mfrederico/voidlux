@@ -7,7 +7,7 @@
 <div class="vl-grid">
 <?php foreach ($games as $g): $soak = $g['lastSoak']; $a = $g['agent']; $t = $g['tasks']; ?>
     <div class="vl-card vl-game">
-        <a class="vl-cover" href="/game/view/<?= htmlspecialchars($g['slug']) ?>#play"><?php if (!empty($g['cover'])): ?><img src="/game/soakshot/<?= htmlspecialchars($g['slug']) ?>?id=<?= htmlspecialchars($g['cover']) ?>" alt="" loading="lazy"><?php else: ?><span><?= htmlspecialchars($g['title']) ?></span><?php endif; ?></a>
+        <a class="vl-cover" href="/game/view/<?= htmlspecialchars($g['slug']) ?>#play" title="play <?= htmlspecialchars($g['title']) ?>"><?php if (!empty($g['cover'])): ?><img src="/game/soakshot/<?= htmlspecialchars($g['slug']) ?>?id=<?= htmlspecialchars($g['cover']) ?>" alt="" loading="lazy"><?php else: ?><span><?= htmlspecialchars($g['title']) ?></span><?php endif; ?><b class="vl-play-badge">▶ PLAY</b></a>
         <a class="vl-card-title" href="/game/view/<?= htmlspecialchars($g['slug']) ?>#play"><?= htmlspecialchars($g['title']) ?> <?php if (!empty($a['busy'])): ?><span class="vl-pill live">● <?= htmlspecialchars($a['mode']) ?></span><?php endif; ?></a>
         <div class="vl-brief"><?= htmlspecialchars($g['brief']) ?></div>
         <div class="vl-meta"><?= htmlspecialchars($g['template']) ?> · <?= htmlspecialchars($g['status']) ?> · <?= $t['total'] ? 'tasks ' . $t['done'] . '/' . $t['total'] : 'no plan yet' ?> · <?= (int) $g['checkpoints'] ?> checkpoints<?php if ($soak): ?> · playtest <?= $soak['ok'] ? '<b class="ok">ok</b>' : '<b class="bad">' . htmlspecialchars((string) ($soak['errors'] ?: $soak['status'])) . '</b>' ?><?= $soak['fps'] ? ' ' . $soak['fps'] . ' fps' : '' ?><?php endif; ?></div>
