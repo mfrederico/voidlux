@@ -209,7 +209,12 @@ class GameStore {
     }
     public static function stopRunner(string $slug): array {
         $s = self::agentState($slug);
-        if ($s['pid'] > 0 && self::alive((int) $s['pid'])) { exec('kill -TERM -- -' . (int) $s['pid'] . ' 2>/dev/null; kill -TERM ' . (int) $s['pid'] . ' 2>/dev/null'); usleep(300000); }
+        $pid = (int) $s['pid'];
+        if ($pid > 0 && self::alive($pid)) { // the runner and its claude share a process group (setsid): TERM the group, wait, then KILL what is left
+            exec('kill -TERM -- -' . $pid . ' 2>/dev/null; kill -TERM ' . $pid . ' 2>/dev/null');
+            for ($i = 0; $i < 40 && self::alive($pid); $i++) usleep(250000);
+            if (self::alive($pid)) { exec('kill -KILL -- -' . $pid . ' 2>/dev/null; kill -KILL ' . $pid . ' 2>/dev/null'); usleep(300000); }
+        }
         $s['busy'] = false; $s['mode'] = ''; self::saveAgentState($slug, $s);
         self::emit($slug, 'note', ['text' => 'stopped by the producer']);
         return $s;

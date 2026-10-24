@@ -32,7 +32,8 @@ try {
     $outcome = 'failed: ' . $e->getMessage();
     \app\GameStore::emit($slug, 'error', ['text' => 'runner: ' . $e->getMessage()]);
 } finally {
-    $s = \app\GameStore::agentState($slug); $s['busy'] = false; $s['mode'] = ''; $s['pid'] = 0; \app\GameStore::saveAgentState($slug, $s);
+    $s = \app\GameStore::agentState($slug);
+    if ((int) $s['pid'] === getmypid() || !\app\GameStore::alive((int) $s['pid'])) { $s['busy'] = false; $s['mode'] = ''; $s['pid'] = 0; \app\GameStore::saveAgentState($slug, $s); } // only my own lock: a runner started after a Stop must not be cleared by the one dying
     \app\GameStore::emit($slug, 'idle', []);
     if ($mode !== 'soak') \app\GameNotices::finished($slug, $mode, $outcome, $memberId);
 }
