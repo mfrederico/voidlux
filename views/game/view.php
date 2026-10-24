@@ -146,7 +146,9 @@ $('cardForm').onsubmit = async e => { e.preventDefault(); const f = e.target; tr
 let NOTES = [];
 function noteMode() { const f = $('playFrame'); if (!f.contentWindow) return; f.contentWindow.postMessage({ type: 'forge:notes', on: true }, '*'); f.focus(); }
 window.addEventListener('message', async e => {
-  const m = e.data || {}; if (m.type !== 'forge:note' || !m.note) return;
+  const m = e.data || {};
+  if (m.type === 'forge:notes-open') { $('playFrame').scrollIntoView({ block: 'center', behavior: 'smooth' }); return; } // the game is in note mode: keep the whole frame in view
+  if (m.type !== 'forge:note' || !m.note) return;
   try { const r = await Forge.api(`/game/note/${slug}`, { note: m.note }); NOTES = r.notes; renderNotes(); if (m.note.build) refreshDue = true; } catch (err) { alert('note not saved: ' + err.message); }
 });
 function renderNotes() {
