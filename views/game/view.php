@@ -6,9 +6,8 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 <div class="vl-gamebar"><b><?= $e($game['title']) ?></b><span id="metaLine"><?= $e($game['template']) ?> · <?= (int) $game['checkpoints'] ?> checkpoints · <?= $e($game['lastCommit']) ?></span><span class="vl-pill" id="statusPill"><?= $e($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span>
   <a class="btn btn-sm btn-outline-secondary ms-auto" href="/games/<?= $e($slug) ?>/" target="_blank">Play in a tab</a><?php if ($game['publishedUrl']): ?><a class="btn btn-sm btn-outline-primary" href="<?= $e($game['publishedUrl']) ?>" target="_blank">Live</a><?php endif; ?></div>
 <div class="vl-tabs" id="tabs">
-  <button data-tab="play" class="on">Play</button><button data-tab="build">Build</button><button data-tab="test">Test</button><button data-tab="notes">Notes <span id="notesTab"></span></button><button data-tab="media">Media</button>
+  <button data-tab="play" class="on">Play</button><button data-tab="build">Build</button><button data-tab="test">Test</button><button data-tab="notes">Notes <span id="notesTab"></span></button><button data-tab="media">Media</button><button data-tab="ship">Ship</button>
   <span class="vl-tab-menu"><button data-tab="advanced" type="button">Advanced ▾</button><span class="vl-tab-menu-list"><button data-tab="design">Concept</button><button data-tab="status">Status</button><button data-tab="config">Config</button><button data-tab="history">History</button></span></span>
-  <button data-tab="ship">Ship</button>
 </div>
 
 <section class="vl-pane" id="pane-status">
@@ -260,7 +259,6 @@ function renderNotes() {
   notesButtons();
   const open = NOTES.filter(n => n.state === 'open'), rest = NOTES.filter(n => n.state !== 'open').slice(0, 6);
   const row = n => `<div class="vl-note ${n.state}"><label><input type="checkbox" data-id="${n.id}" ${n.state === 'open' ? 'checked' : n.state === 'done' ? 'disabled' : ''}>${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="">` : ''}<div><div class="vl-note-text">${Forge.esc(n.text)}</div><div class="vl-note-meta">${Forge.esc(n.scene)} · (${n.x}, ${n.y})${n.what && n.what.label ? ' · ' + Forge.esc(n.what.label) : ''} · <span class="vl-state ${n.state}">${n.state === 'sent' ? '✓ sent' : n.state}</span></div></div></label><div class="vl-note-btns">${n.state !== 'done' ? `<button title="done" onclick="noteState(${n.id}, 'done')">✓</button>` : ''}${n.state !== 'open' ? `<button title="reopen" onclick="noteState(${n.id}, 'open')">↺</button>` : ''}<button title="delete" onclick="noteState(${n.id}, 'delete')">✕</button></div></div>`;
-  $('notesBox').innerHTML = (open.length ? open.map(row).join('') : '<div class="vl-kv">No open notes. In Play, press Note mode (or Alt+P in the game), click a thing, say what should change.</div>') + (rest.length ? '<div class="vl-note-meta mt-2">recent</div>' + rest.map(row).join('') : '');
   $('notesStrip').innerHTML = open.length ? open.slice(0, 8).map(n => `<span class="vl-chip" title="${Forge.esc(n.text)}">${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="">` : ''}${Forge.esc(n.text.slice(0, 40))}</span>`).join('') + ` <a href="#build" onclick="showTab('build')">${open.length} open note${open.length === 1 ? '' : 's'} → Build</a>` : '';
 }
 async function noteState(id, state) { if (state === 'delete' && !confirm('Delete this note?')) return; try { NOTES = (await Forge.api(`/game/notestate/${slug}`, { id, state })).notes; renderNotes(); } catch (e) { alert(e.message); } }
