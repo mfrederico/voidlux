@@ -150,3 +150,9 @@ a.vl-cover:hover .vl-play-badge, a.vl-cover:focus .vl-play-badge { opacity: 1; t
 /* the Advanced menu: clipped by nothing, closed by a click anywhere else */
 .vl-tab-menu-list { box-shadow: 0 16px 40px rgba(0,0,0,.7); } .vl-tab-menu-list button { width: 100%; padding: 10px 14px; } .vl-tab-menu-list button:hover { background: #1c1c1e; color: #fff; }
 .vl-tab-menu > button::after { content: ""; }
+/* on phones the Advanced menu opens as a row of its own under the tabs, never off the edge */
+@media (max-width: 700px) {
+  .vl-tab-menu { width: 100%; } .vl-tab-menu > button { width: 100%; text-align: left; }
+  .vl-tab-menu-list { position: static; display: none; grid-template-columns: repeat(2, 1fr); border-radius: 6px; margin: 4px 0; box-shadow: none; }
+  .vl-tab-menu.open .vl-tab-menu-list { display: grid; }
+}
