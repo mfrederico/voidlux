@@ -228,23 +228,67 @@ class GameStore {
         foreach (array_slice($files, 0, 30) as $fn) {
             $j = json_decode((string) file_get_contents($d . '/' . $fn), true); if (!is_array($j)) continue;
             $be = array_filter($j['browserErrors'] ?? [], fn($e) => ($e['kind'] ?? '') !== 'network');
-            $out[] = ['id' => substr($fn, 0, -5), 'ok' => (bool) ($j['ok'] ?? false), 'status' => $j['status'] ?? '', 'seconds' => $j['seconds'] ?? null, 'fps' => $j['fps'] ?? null, 'errors' => count($j['errors'] ?? []) + count($be), 'score' => $j['score'] ?? null, 'scenes' => $j['scenes'] ?? [], 'shot' => is_file($d . '/' . substr($fn, 0, -5) . '.png')];
+            $out[] = ['runner' => $j['runner'] ?? 'server', 'id' => substr($fn, 0, -5), 'ok' => (bool) ($j['ok'] ?? false), 'status' => $j['status'] ?? '', 'seconds' => $j['seconds'] ?? null, 'fps' => $j['fps'] ?? null, 'errors' => count($j['errors'] ?? []) + count($be), 'score' => $j['score'] ?? null, 'scenes' => $j['scenes'] ?? [], 'shot' => is_file($d . '/' . substr($fn, 0, -5) . '.png') || is_file($d . '/' . substr($fn, 0, -5) . '.jpg')];
         }
         return $out;
     }
     public static function soak(string $slug): array { return json_decode((string) file_get_contents(self::dir($slug) . '/.studio/soaks/' . basename($slug) . '.json'), true) ?: []; }
     public static function soakUrl(string $slug): string { return (string) self::cfg('soak_url', self::baseUrl()) . '/games/' . $slug . '/'; }
-    /** A headless soak, blocking: Playwright plays the game with its bots and reports. */
+    // ---- a soak in a viewer's own browser: the game page, while open, is a test machine. A request is a file in .studio/
+    // (the jailed agent can write it); the page claims it on its next poll, plays the game in a hidden frame, posts the report ----
+    public static function browserSeen(string $slug): void { @touch(self::studioDir($slug) . '/browser-seen'); }
+    public static function browserAttached(string $slug): bool { $f = self::dir($slug) . '/.studio/browser-seen'; return is_file($f) && time() - filemtime($f) < (int) self::cfg('browser_soak_window', 20); }
+    public static function soakRequest(string $slug): ?array { $f = self::dir($slug) . '/.studio/soak-request.json'; if (!is_file($f)) return null; $r = json_decode((string) file_get_contents($f), true); return is_array($r) ? $r : null; }
+    public static function requestSoak(string $slug, int $secs, int $fast): string {
+        $id = date('Ymd-His') . '-' . substr(bin2hex(random_bytes(2)), 0, 3);
+        self::writeAtomic(self::studioDir($slug) . '/soak-request.json', json_encode(['id' => $id, 'secs' => $secs, 'fast' => $fast, 't' => time(), 'claimed' => 0]));
+        return $id;
+    }
+    /** The page says it is running this request (the first viewer to claim it runs it). */
+    public static function claimSoak(string $slug, string $id): bool {
+        $r = self::soakRequest($slug); if (!$r || $r['id'] !== $id || !empty($r['claimed'])) return false;
+        $r['claimed'] = time(); self::writeAtomic(self::dir($slug) . '/.studio/soak-request.json', json_encode($r)); return true;
+    }
+    /** The page's report for a request: stored like a Chrome soak, the request cleared, the event emitted. */
+    public static function finishBrowserSoak(string $slug, string $id, array $rep): array {
+        $r = self::soakRequest($slug); if (!$r || $r['id'] !== $id) throw new \RuntimeException('no such soak request');
+        $sd = self::studioDir($slug) . '/soaks'; if (!is_dir($sd)) mkdir($sd, 0775, true);
+        if (preg_match('#^data:image/jpeg;base64,([A-Za-z0-9+/=]+)$#', (string) ($rep['shot'] ?? ''), $m)) file_put_contents($sd . '/' . $id . '.jpg', base64_decode($m[1]));
+        unset($rep['shot']); $rep['id'] = $id; $rep['secs'] = (int) $r['secs']; $rep['fast'] = (int) $r['fast']; $rep['runner'] = 'browser'; $rep['status'] = $rep['status'] ?? 'ok';
+        $rep['ok'] = empty($rep['errors']) && empty($rep['checks']) && ($rep['status'] === 'ok');
+        self::writeAtomic($sd . '/' . $id . '.json', json_encode($rep, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        @unlink(self::dir($slug) . '/.studio/soak-request.json');
+        self::emit($slug, 'soak', ['id' => $id, 'ok' => $rep['ok'], 'status' => $rep['status'], 'runner' => 'browser', 'errors' => array_slice($rep['errors'] ?? [], 0, 10), 'browserErrors' => [], 'checks' => $rep['checks'] ?? [], 'fps' => $rep['fps'] ?? null, 'slowFrames' => $rep['slowFrames'] ?? null, 'scenes' => $rep['scenes'] ?? [], 'score' => $rep['score'] ?? null, 'seconds' => $rep['seconds'] ?? null]);
+        return $rep;
+    }
+    /** Ask an attached browser and wait for its report; null when nobody picked it up in time. */
+    public static function browserSoak(string $slug, int $secs, int $fast): ?array {
+        $id = self::requestSoak($slug, $secs, $fast); $f = self::dir($slug) . '/.studio/soaks/' . $id . '.json';
+        self::emit($slug, 'note', ['text' => "soak: {$secs} game-seconds at {$fast}x, in a viewer's browser"]);
+        $deadline = time() + (int) ($secs / max(1, $fast) * 2.5) + 60; $claimDeadline = time() + 25;
+        while (time() < $deadline) {
+            if (is_file($f)) return json_decode((string) file_get_contents($f), true) ?: null;
+            $r = self::soakRequest($slug); if (!$r) break; if (empty($r['claimed']) && time() > $claimDeadline) break; // nobody took it: fall back
+            sleep(1);
+        }
+        @unlink(self::dir($slug) . '/.studio/soak-request.json'); self::emit($slug, 'note', ['text' => 'no browser answered the soak request; running it on the server']); return null;
+    }
+    /** A soak, blocking: in an attached viewer's browser when one is there, else headless on the server. */
     public static function runSoak(string $slug, int $secs = 60, int $fast = 4): array {
+        if (self::browserAttached($slug)) { $rep = self::browserSoak($slug, $secs, $fast); if ($rep !== null) return $rep; }
+        return self::chromeSoak($slug, $secs, $fast);
+    }
+    /** The server's own headless Chrome through Playwright. */
+    public static function chromeSoak(string $slug, int $secs = 60, int $fast = 4): array {
         $d = self::dir($slug); $sd = self::studioDir($slug) . '/soaks'; if (!is_dir($sd)) mkdir($sd, 0775, true);
         $id = date('Ymd-His'); $shot = $sd . '/' . $id . '.png';
         self::emit($slug, 'note', ['text' => "soak: {$secs} game-seconds at {$fast}x"]);
-        $env = ['PLAYWRIGHT_ROOT=' . escapeshellarg((string) self::cfg('playwright_root', '/home/ubuntu')), 'CHROME=' . escapeshellarg((string) self::cfg('chrome', '/usr/bin/google-chrome')), 'HOME=' . escapeshellarg((string) (getenv('HOME') ?: '/home/ubuntu'))];
+        $env = ['PLAYWRIGHT_ROOT=' . escapeshellarg((string) self::cfg('playwright_root', '/home/ubuntu')), 'CHROME=' . escapeshellarg((string) self::cfg('chrome', '/usr/bin/google-chrome')), 'CDP_URL=' . escapeshellarg((string) self::cfg('cdp_url', 'http://127.0.0.1:9222')), 'HOME=' . escapeshellarg((string) (getenv('HOME') ?: '/home/ubuntu'))];
         $cmd = implode(' ', $env) . ' timeout 700 node ' . escapeshellarg(self::root() . '/studio/soak.mjs') . ' ' . escapeshellarg(self::soakUrl($slug)) . ' ' . (int) $secs . ' ' . (int) $fast . ' ' . escapeshellarg($shot) . ' 2>&1';
         exec($cmd, $out, $rc);
         $json = null; foreach (array_reverse($out) as $line) if (str_starts_with($line, '{')) { $json = json_decode($line, true); break; }
         $rep = is_array($json) ? $json : ['ok' => false, 'status' => $rc === 124 ? 'timeout' : 'crashed', 'browserErrors' => [['kind' => 'runner', 'text' => substr(implode("\n", $out), -1500)]]];
-        $rep['id'] = $id; $rep['secs'] = $secs; $rep['fast'] = $fast; unset($rep['notes']);
+        $rep['id'] = $id; $rep['secs'] = $secs; $rep['fast'] = $fast; unset($rep['notes']); if (!empty($rep['shot'])) { if (preg_match('#^data:image/jpeg;base64,([A-Za-z0-9+/=]+)$#', (string) $rep['shot'], $m) && !is_file($shot)) file_put_contents($sd . '/' . $id . '.jpg', base64_decode($m[1])); unset($rep['shot']); }
         self::writeAtomic($sd . '/' . $id . '.json', json_encode($rep, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         $be = array_values(array_filter($rep['browserErrors'] ?? [], fn($e) => ($e['kind'] ?? '') !== 'network'));
         self::emit($slug, 'soak', ['id' => $id, 'ok' => (bool) ($rep['ok'] ?? false), 'status' => $rep['status'] ?? '', 'errors' => array_slice($rep['errors'] ?? [], 0, 10), 'browserErrors' => array_slice($be, 0, 10), 'checks' => $rep['checks'] ?? [], 'fps' => $rep['fps'] ?? null, 'slowFrames' => $rep['slowFrames'] ?? null, 'scenes' => $rep['scenes'] ?? [], 'score' => $rep['score'] ?? null, 'seconds' => $rep['seconds'] ?? null]);

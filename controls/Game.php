@@ -51,7 +51,9 @@ class Game extends BaseControls\Control {
     }
     public function events($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
-        $this->jsonSuccess(GameStore::events($g->slug, (int) $this->getParam('since', 0)) + ['agent' => GameStore::agentState($g->slug)]);
+        GameStore::browserSeen($g->slug); // this viewer's page is open: it can run playtests
+        $req = GameStore::soakRequest($g->slug);
+        $this->jsonSuccess(GameStore::events($g->slug, (int) $this->getParam('since', 0)) + ['agent' => GameStore::agentState($g->slug), 'soakRequest' => ($req && empty($req['claimed'])) ? $req : null]);
     }
     public function doc($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
@@ -70,17 +72,30 @@ class Game extends BaseControls\Control {
         $html = preg_replace('/<li>\[x\] /i', '<li class="done"><span class="box on">✓</span> ', $html);
         return $html;
     }
+    /** The page takes a pending playtest request (first viewer wins). */
+    public function soakclaim($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        $ok = GameStore::claimSoak($g->slug, (string) ($this->body()['id'] ?? '')); $this->jsonSuccess(['claimed' => $ok], $ok ? 'Yours.' : 'Someone else took it.');
+    }
+    /** The page's report for a playtest it ran. */
+    public function soakdone($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        $b = $this->body(); $rep = $b['report'] ?? null; if (!is_array($rep)) { $this->jsonError('a report is needed'); return; }
+        try { $rep['by'] = (string) ($this->member->username ?: $this->member->email); $r = GameStore::finishBrowserSoak($g->slug, (string) ($b['id'] ?? ''), $rep); $this->jsonSuccess(['ok' => $r['ok']], 'Report stored.'); }
+        catch (\Throwable $e) { $this->jsonError($e->getMessage()); }
+    }
     public function soakreport($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
-        $id = (string) $this->getParam('id'); if (!preg_match('/^[0-9-]+$/', $id)) { $this->jsonError('bad id'); return; }
+        $id = (string) $this->getParam('id'); if (!preg_match('/^[0-9a-f-]+$/', $id)) { $this->jsonError('bad id'); return; }
         $f = GameStore::dir($g->slug) . '/.studio/soaks/' . $id . '.json'; if (!is_file($f)) { $this->jsonError('no such soak', 404); return; }
         $this->jsonSuccess(json_decode((string) file_get_contents($f), true) ?: []);
     }
     public function soakshot($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
-        $id = (string) $this->getParam('id'); $f = preg_match('/^[0-9-]+$/', $id) ? GameStore::dir($g->slug) . '/.studio/soaks/' . $id . '.png' : '';
-        if ($f === '' || !is_file($f)) { Flight::notFound(); return; }
-        header('Content-Type: image/png'); header('Cache-Control: no-store'); readfile($f); exit;
+        $id = (string) $this->getParam('id'); $base = preg_match('/^[0-9a-f-]+$/', $id) ? GameStore::dir($g->slug) . '/.studio/soaks/' . $id : '';
+        $f = $base !== '' && is_file($base . '.png') ? $base . '.png' : ($base !== '' && is_file($base . '.jpg') ? $base . '.jpg' : '');
+        if ($f === '') { Flight::notFound(); return; }
+        header('Content-Type: ' . (str_ends_with($f, '.png') ? 'image/png' : 'image/jpeg')); header('Cache-Control: no-store'); readfile($f); exit;
     }
 
     public function agent($params = []): void {
@@ -120,7 +135,12 @@ class Game extends BaseControls\Control {
     private function noteRows(object $g): array {
         $out = [];
         $names = [];
-        foreach (Bean::find('gamenote', 'game_id = ? ORDER BY id DESC', [(int) $g->id]) as $n) { $mid = (int) $n->memberId; if (!isset($names[$mid])) { $m = Bean::load('member', $mid); $names[$mid] = (string) ($m->username ?: $m->email ?: 'someone'); } $out[] = ['byName' => $names[$mid], 'id' => (int) $n->id, 'scene' => (string) $n->scene, 'x' => (int) $n->x, 'y' => (int) $n->y, 'what' => json_decode((string) $n->what, true), 'text' => (string) $n->text, 'state' => (string) $n->state, 'shot' => (string) $n->shot !== '', 'createdAt' => (string) $n->createdAt, 'by' => (int) $n->memberId]; }
+        $me = (int) $this->member->id;
+        $nameOf = function (int $mid) use (&$names): string { if (!isset($names[$mid])) { $m = Bean::load('member', $mid); $names[$mid] = (string) ($m->username ?: $m->email ?: 'someone'); } return $names[$mid]; };
+        foreach (Bean::find('gamenote', 'game_id = ? ORDER BY id DESC', [(int) $g->id]) as $n) { $mid = (int) $n->memberId;
+            $votes = array_values(Bean::find('gamenotevote', 'gamenote_id = ?', [(int) $n->id])); $comments = [];
+            foreach (Bean::find('gamenotecomment', 'gamenote_id = ? ORDER BY id ASC', [(int) $n->id]) as $c) $comments[] = ['id' => (int) $c->id, 'by' => $nameOf((int) $c->memberId), 'mine' => (int) $c->memberId === $me, 'text' => (string) $c->text, 'at' => (string) $c->createdAt];
+            $out[] = ['votes' => count($votes), 'voted' => (bool) array_filter($votes, fn($v) => (int) $v->memberId === $me), 'voters' => array_map(fn($v) => $nameOf((int) $v->memberId), $votes), 'comments' => $comments, 'byName' => $nameOf($mid), 'id' => (int) $n->id, 'scene' => (string) $n->scene, 'x' => (int) $n->x, 'y' => (int) $n->y, 'what' => json_decode((string) $n->what, true), 'text' => (string) $n->text, 'state' => (string) $n->state, 'shot' => (string) $n->shot !== '', 'createdAt' => (string) $n->createdAt, 'by' => (int) $n->memberId]; }
         return $out;
     }
     public function notes($params = []): void { if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $this->jsonSuccess(['notes' => $this->noteRows($g)]); }
@@ -140,6 +160,29 @@ class Game extends BaseControls\Control {
         if (!empty($b['build'])) { $this->sendBatch($g, [(int) $n->id], ''); }
         $this->jsonSuccess(['id' => (int) $n->id, 'notes' => $this->noteRows($g)], !empty($b['build']) ? 'Sent to the build.' : 'Note saved.');
     }
+    private function noteOf(object $g, int $id): ?object { $n = Bean::load('gamenote', $id); return ($n->id && (int) $n->gameId === (int) $g->id) ? $n : null; }
+    /** Toggle my upvote on a note. */
+    public function notevote($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        $n = $this->noteOf($g, (int) ($this->body()['id'] ?? 0)); if (!$n) { $this->jsonError('no such note', 404); return; }
+        $v = Bean::findOne('gamenotevote', 'gamenote_id = ? AND member_id = ?', [(int) $n->id, (int) $this->member->id]);
+        if ($v && $v->id) Bean::trash($v); else { $v = Bean::dispense('gamenotevote'); $v->gamenoteId = (int) $n->id; $v->memberId = (int) $this->member->id; $v->createdAt = date('c'); Bean::store($v); }
+        $this->jsonSuccess(['notes' => $this->noteRows($g)], 'Saved.');
+    }
+    /** A comment under a note. */
+    public function notecomment($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        $b = $this->body(); $n = $this->noteOf($g, (int) ($b['id'] ?? 0)); if (!$n) { $this->jsonError('no such note', 404); return; }
+        if (!empty($b['delete'])) { $c = Bean::load('gamenotecomment', (int) $b['delete']); if ($c->id && (int) $c->gamenoteId === (int) $n->id && ((int) $c->memberId === (int) $this->member->id || Flight::hasLevel(LEVELS['ADMIN']))) Bean::trash($c); }
+        else { $text = mb_substr(trim((string) ($b['text'] ?? '')), 0, 4000); if ($text === '') { $this->jsonError('a comment needs words'); return; } $c = Bean::dispense('gamenotecomment'); $c->gamenoteId = (int) $n->id; $c->memberId = (int) $this->member->id; $c->text = $text; $c->createdAt = date('c'); Bean::store($c); }
+        $this->jsonSuccess(['notes' => $this->noteRows($g)], 'Saved.');
+    }
+    /** The message a batch would send, for the producer to refine before sending. */
+    public function sendpreview($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
+        $ids = array_filter(array_map('intval', explode(',', (string) $this->getParam('ids', ''))));
+        try { $this->jsonSuccess(['message' => $this->composeBatch($g, $ids, (string) $this->getParam('intro', ''))]); } catch (\Throwable $e) { $this->jsonError($e->getMessage()); }
+    }
     public function notestate($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
         $b = $this->body(); $n = Bean::load('gamenote', (int) ($b['id'] ?? 0));
@@ -152,16 +195,32 @@ class Game extends BaseControls\Control {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
         $b = $this->body(); $ids = array_map('intval', (array) ($b['ids'] ?? []));
         if (!$ids) { $this->jsonError('pick at least one note'); return; }
-        try { $r = $this->sendBatch($g, $ids, trim((string) ($b['text'] ?? ''))); $this->jsonSuccess(['notes' => $this->noteRows($g)] + $r, $r['queued'] ? 'Queued for the next run.' : 'Sent to the builder.'); }
+        try { $r = $this->sendBatch($g, $ids, trim((string) ($b['text'] ?? '')), trim((string) ($b['message'] ?? ''))); $this->jsonSuccess(['notes' => $this->noteRows($g)] + $r, $r['queued'] ? 'Queued for the next run.' : 'Sent to the builder.'); }
         catch (\Throwable $e) { $this->jsonError($e->getMessage()); }
     }
+    /** The batch's message as the forge composes it: every note with its votes and comments, most voted first. */
+    private function composeBatch(object $g, array $ids, string $intro): string {
+        $rows = [];
+        foreach ($ids as $id) { $row = $this->noteOf($g, (int) $id); if ($row) $rows[] = $row; }
+        if (!$rows) throw new \RuntimeException('none of those notes belong to this game');
+        usort($rows, fn($a, $b) => Bean::count('gamenotevote', 'gamenote_id = ?', [(int) $b->id]) <=> Bean::count('gamenotevote', 'gamenote_id = ?', [(int) $a->id]));
+        $lines = []; $n = 0; $names = [];
+        $nameOf = function (int $mid) use (&$names): string { if (!isset($names[$mid])) { $m = Bean::load('member', $mid); $names[$mid] = (string) ($m->username ?: $m->email ?: 'someone'); } return $names[$mid]; };
+        foreach ($rows as $row) {
+            $votes = Bean::count('gamenotevote', 'gamenote_id = ?', [(int) $row->id]);
+            $line = $row->box()->line(++$n) . ($votes ? " [{$votes} vote" . ($votes === 1 ? '' : 's') . ']' : '');
+            foreach (Bean::find('gamenotecomment', 'gamenote_id = ? ORDER BY id ASC', [(int) $row->id]) as $c) $line .= "\n   - " . $nameOf((int) $c->memberId) . ': ' . trim((string) $c->text);
+            $lines[] = $line;
+        }
+        return "The producers paused the game and pointed at things on the screen. Each note names the scene, the position (logical canvas coordinates) and what the kit found there; a screenshot crop path is relative to this folder and you can look at it with Read. Votes say what matters most; comments under a note refine or argue with it, and the last word there wins. Do what the notes ask (ask nothing; make the best call), node --check, soak, update GAME.md's Log, commit.\n"
+             . ($intro !== '' ? "The producer adds: {$intro}\n" : '') . "\n" . implode("\n", $lines);
+    }
     /** The batch as one message to the builder: a chat run now, or the inbox while a run is going. Marks the notes sent. */
-    private function sendBatch(object $g, array $ids, string $intro): array {
-        $lines = []; $n = 0; $rows = [];
-        foreach ($ids as $id) { $row = Bean::load('gamenote', $id); if ($row->id && (int) $row->gameId === (int) $g->id) { $rows[] = $row; $lines[] = $row->box()->line(++$n); } }
-        if (!$lines) throw new \RuntimeException('none of those notes belong to this game');
-        $prompt = "The producer paused the game and pointed at things on the screen. Each note names the scene, the position (logical canvas coordinates) and what the kit found there; a screenshot crop path is relative to this folder and you can look at it with Read. Do what each note asks (ask nothing; make the best call), node --check, soak, update GAME.md's Log, commit.\n"
-                . ($intro !== '' ? "The producer adds: {$intro}\n" : '') . "\n" . implode("\n", $lines);
+    private function sendBatch(object $g, array $ids, string $intro, string $message = ''): array {
+        $rows = []; foreach ($ids as $id) { $row = $this->noteOf($g, (int) $id); if ($row) $rows[] = $row; }
+        $prompt = $message !== '' ? $message : $this->composeBatch($g, $ids, $intro);
+        if (!$rows) throw new \RuntimeException('none of those notes belong to this game');
+        $lines = $rows;
         $queued = GameStore::agentState($g->slug)['busy'];
         if ($queued) { file_put_contents(GameStore::studioDir($g->slug) . '/inbox.txt', $prompt . "\n", FILE_APPEND); GameStore::emit($g->slug, 'note', ['text' => count($lines) . ' producer note(s) queued for the next run']); }
         else GameStore::startRunner($g->slug, 'chat', $prompt, (int) $this->member->id);

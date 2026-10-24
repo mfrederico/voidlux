@@ -73,7 +73,7 @@ class GameAgent {
         $inbox = $this->dir . '/.studio/inbox.txt';
         if (is_file($inbox) && trim((string) file_get_contents($inbox)) !== '') { $prompt .= "\n\nNotes from the producer since the last run (follow them where they fit this task; keep them in mind otherwise):\n" . trim((string) file_get_contents($inbox)); unlink($inbox); $this->emit('note', ['text' => "the producer's notes go with this run"]); }
         $env['GAME_URL'] = GameStore::soakUrl($this->slug); $env['STUDIO'] = GameStore::root() . '/studio'; $env['VOIDLUX_GAME'] = $this->slug;
-        $env['PLAYWRIGHT_ROOT'] = (string) GameStore::cfg('playwright_root', '/home/ubuntu'); $env['CHROME'] = (string) GameStore::cfg('chrome', '/usr/bin/google-chrome');
+        $env['PLAYWRIGHT_ROOT'] = (string) GameStore::cfg('playwright_root', '/home/ubuntu'); $env['CHROME'] = (string) GameStore::cfg('chrome', '/usr/bin/google-chrome'); $env['CDP_URL'] = (string) GameStore::cfg('cdp_url', 'http://127.0.0.1:9222');
         if ($jail) { $env['CLAUDE_BIN'] = $bin; $env['JAIL_HOME_CLAUDE'] = (string) GameStore::cfg('agent_login', 'host') === 'host' ? '1' : '0'; $cmd = array_merge([GameStore::root() . '/studio/jail.sh', $this->dir], $cmd); }
         $this->emit('note', ['text' => ($label !== '' ? "{$label}: " : '') . 'agent run starts' . ($resume && $sid ? ' (resumes ' . substr($sid, 0, 8) . ')' : ' (new session)') . " on {$note}" . ($jail ? ', in the jail' : '')]);
         $desc = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];

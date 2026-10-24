@@ -39,7 +39,8 @@ const Test = {
   },
   report() {
     const p = Game.prof, mem = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null;
-    return { game: Game.id, seconds: +this.t.toFixed(1), fast: this.fast, errors: this.errors, checks: this.checks, fps: +(1000 / p.frame).toFixed(1), updateMs: +p.upd.toFixed(2), drawMs: +p.draw.toFixed(2), slowFrames: p.slow, frames: p.frames, scenes: Object.fromEntries(Object.entries(this.scenes).map(([k, v]) => [k, +v.toFixed(1)])), score: Game.score, best: Game.best, heapMB: mem, ok: !this.errors.length && !this.checks.length };
+    let shot = ''; try { const c = document.createElement('canvas'); c.width = 320; c.height = 180; c.getContext('2d').drawImage(Game.canvas, 0, 0, 320, 180); shot = c.toDataURL('image/jpeg', 0.6); } catch (e) {}
+    return { game: Game.id, seconds: +this.t.toFixed(1), fast: this.fast, shot, errors: this.errors, checks: this.checks, fps: +(1000 / p.frame).toFixed(1), updateMs: +p.upd.toFixed(2), drawMs: +p.draw.toFixed(2), slowFrames: p.slow, frames: p.frames, scenes: Object.fromEntries(Object.entries(this.scenes).map(([k, v]) => [k, +v.toFixed(1)])), score: Game.score, best: Game.best, heapMB: mem, ok: !this.errors.length && !this.checks.length };
   },
   finish() {
     if (this.done) return; this.done = true; const r = this.report(); window.__SOAK = r; console.log('SOAK ' + JSON.stringify(r));

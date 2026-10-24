@@ -1,10 +1,26 @@
 #!/usr/bin/env bash
-# Soak this game headless and print the report. usage: soak [game-seconds] [speed] (defaults 60 4). Run from the game's folder.
-# The studio's runner (scripts/game-agent.php) sets GAME_URL and STUDIO; by hand, defaults are derived from the folder.
+# Soak this game and print the report. usage: soak [game-seconds] [speed] (defaults 60 4). Run from the game's folder.
+# If a producer has the game's page open in the forge, their browser runs the playtest (the forge hands it the request
+# written to .studio/ here and the report comes back the same way); otherwise the server's headless Chrome runs it.
 set -euo pipefail
 SECS=${1:-60}; FAST=${2:-4}
 SLUG=${VOIDLUX_GAME:-$(basename "$PWD")}
 STUDIO=${STUDIO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 URL=${GAME_URL:-https://voidlux.com/games/$SLUG/}
-mkdir -p .studio/soaks; ID=$(date +%Y%m%d-%H%M%S)
-PLAYWRIGHT_ROOT=${PLAYWRIGHT_ROOT:-/home/ubuntu} CHROME=${CHROME:-/usr/bin/google-chrome} node "$STUDIO/soak.mjs" "$URL" "$SECS" "$FAST" ".studio/soaks/$ID.png" | tee ".studio/soaks/$ID.json" | python3 -c "import json,sys; r=json.loads(sys.stdin.read().strip().splitlines()[-1]); r.pop('notes',None); r.pop('url',None); print(json.dumps(r, indent=1))" || true
+mkdir -p .studio/soaks
+SEEN=.studio/browser-seen; WINDOW=${BROWSER_SOAK_WINDOW:-20}
+if [ -f "$SEEN" ] && [ $(( $(date +%s) - $(stat -c %Y "$SEEN") )) -lt "$WINDOW" ]; then
+  ID="$(date +%Y%m%d-%H%M%S)-$(head -c 2 /dev/urandom | od -An -tx1 | tr -d ' \n' | cut -c1-3)"
+  printf '{"id":"%s","secs":%d,"fast":%d,"t":%d,"claimed":0}\n' "$ID" "$SECS" "$FAST" "$(date +%s)" > .studio/soak-request.json.tmp && mv .studio/soak-request.json.tmp .studio/soak-request.json
+  echo "soak: asking the producer's browser (request $ID)…" >&2
+  DEADLINE=$(( $(date +%s) + SECS / FAST * 5 / 2 + 60 )); CLAIM_BY=$(( $(date +%s) + 25 ))
+  while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+    if [ -f ".studio/soaks/$ID.json" ]; then python3 -c "import json; r=json.load(open('.studio/soaks/$ID.json')); r.pop('shot',None); print(json.dumps(r, indent=1))"; exit 0; fi
+    [ -f .studio/soak-request.json ] || break
+    if [ "$(date +%s)" -gt "$CLAIM_BY" ] && grep -q '"claimed":0' .studio/soak-request.json 2>/dev/null; then break; fi
+    sleep 1
+  done
+  rm -f .studio/soak-request.json; echo "soak: no browser answered; running on the server" >&2
+fi
+ID=$(date +%Y%m%d-%H%M%S)
+PLAYWRIGHT_ROOT=${PLAYWRIGHT_ROOT:-/home/ubuntu} CHROME=${CHROME:-/usr/bin/google-chrome} CDP_URL=${CDP_URL:-http://127.0.0.1:9222} node "$STUDIO/soak.mjs" "$URL" "$SECS" "$FAST" ".studio/soaks/$ID.png" | tee ".studio/soaks/$ID.json" | python3 -c "import json,sys; r=json.loads(sys.stdin.read().strip().splitlines()[-1]); r.pop('notes',None); r.pop('url',None); print(json.dumps(r, indent=1))" || true

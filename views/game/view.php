@@ -46,7 +46,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
     <label>game-seconds <input type="number" id="soakSecs" value="60" min="5" max="1800" style="width:80px"></label>
     <label>speed <input type="number" id="soakFast" value="4" min="1" max="30" style="width:60px"></label>
     <button class="btn btn-sm btn-primary" onclick="runSoak()" id="soakBtn" title="The game's own bots play it headless for this many game-seconds at this speed; every exception, console error and failed check is reported.">Run a playtest</button>
-    <span>A playtest (the agents call it a soak): a headless browser opens the game, its bots play, and every exception, console error and failed check comes back as a report.</span>
+    <span>A playtest (the agents call it a soak): the game plays itself with its bots while every exception and failed check is caught. It runs in <b>this browser</b> while you have this page open, so the server stays light; with nobody watching, the server's own headless Chrome runs it.</span>
   </div>
   <table class="vl-table"><thead><tr><th>when</th><th>result</th><th>played</th><th>fps</th><th>errors</th><th>scenes</th><th>score</th><th></th></tr></thead><tbody id="soaks"></tbody></table>
   <div id="soakDetail"></div>
@@ -55,6 +55,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 <section class="vl-pane" id="pane-notes">
   <div class="vl-toolbar"><span>Producer's notes: everything anyone pointed at in note mode (Play → Note mode, or Alt+P in the game). Check the ones to hand to the builder in one batch.</span></div>
   <div class="vl-toolbar"><label class="vl-check"><input type="checkbox" id="notesAll" onchange="notesAll(this.checked)"> all open</label><input id="notesIntroBig" placeholder="a word for the builder (optional)" style="flex:1;min-width:160px"><button class="btn btn-sm btn-primary" onclick="sendNotes('big')" id="sendNotesBig">Send checked to build</button><select id="notesFilter" onchange="renderNotes()" title="which notes to show"><option value="all">all notes</option><option value="open">open only</option><option value="sent">sent to a build</option><option value="done">done</option></select></div>
+  <div class="vl-compose-batch" id="composeBatch" style="display:none"><h3 class="vl-h2 mt-0">What the builder will read</h3><p class="vl-kv">Composed from the checked notes, their votes and comments. Change any of it before it goes.</p><textarea id="composeText" spellcheck="false"></textarea><div class="vl-toolbar mt-2"><button class="btn btn-sm btn-primary" onclick="sendComposed()">Send to the builder</button><button class="btn btn-sm btn-outline-secondary" onclick="$('composeBatch').style.display='none'">Cancel</button><span id="composeMsg"></span></div></div>
   <div class="vl-notes-big" id="notesBig"></div>
 </section>
 <div class="vl-lightbox" id="lightbox" onclick="this.classList.remove('on')"><img alt=""><div class="vl-lightbox-cap"></div></div>
@@ -116,7 +117,7 @@ function render(d) {
 function renderTasks(list) { $('tasks').innerHTML = list.length ? list.map(t => `<li class="${t.done ? 'done' : ''}">${t.done ? '✓' : '○'} ${Forge.esc(t.id)}: ${Forge.esc(t.text)}</li>`).join('') : '<li>no plan yet: run the pipeline</li>'; }
 function renderSession(a) { a = a || {}; $('session').innerHTML = `<b>${a.busy ? 'running ' + Forge.esc(a.mode) : 'idle'}</b><br>runs ${a.runs || 0} · spent $${(+a.cost || 0).toFixed(2)}<br>session ${a.session ? Forge.esc(String(a.session).slice(0, 8)) : 'none yet'}`; $('agentStatus').textContent = a.busy ? 'agent: ' + a.mode : 'agent idle'; $('agentStatus').className = 'vl-pill' + (a.busy ? ' live' : ''); $('btnPipeline').disabled = !!a.busy; $('chatBtn').textContent = a.busy ? 'Queue' : 'Send'; $('chatText').placeholder = a.busy ? 'The agent is busy: a message now waits in its inbox and goes with the next run (the next task, fix or rework).' : $('chatText').dataset.ph; }
 function renderCps(list) { $('cps').innerHTML = (list || []).map(c => `<tr><td>${Forge.esc(c.tag)}</td><td>${Forge.esc(c.at.slice(0, 16))}</td><td>${Forge.esc(c.label)}</td><td><button class="btn btn-sm btn-outline-secondary" onclick="rollback('${Forge.esc(c.tag)}')">roll back</button></td></tr>`).join('') || '<tr><td colspan="4">no checkpoints</td></tr>'; }
-function renderSoaks(list) { $('soaks').innerHTML = (list || []).map(s => `<tr><td>${Forge.esc(s.id)}</td><td>${s.ok ? '<b class="ok">ok</b>' : '<b class="bad">' + Forge.esc(s.status || 'fail') + '</b>'}</td><td>${s.seconds || ''} s</td><td>${s.fps || ''}</td><td>${s.errors || 0}</td><td>${Forge.esc(Object.entries(s.scenes || {}).map(([k, v]) => k + ' ' + v + 's').join(', '))}</td><td>${s.score == null ? '' : s.score}</td><td><button class="btn btn-sm btn-outline-secondary" onclick="soakDetail('${Forge.esc(s.id)}')">detail</button></td></tr>`).join('') || '<tr><td colspan="8">no soaks yet</td></tr>'; }
+function renderSoaks(list) { $('soaks').innerHTML = (list || []).map(s => `<tr><td>${Forge.esc(s.id)} <span class="vl-note-meta">${s.runner === 'browser' ? 'in a browser' : 'server'}</span></td><td>${s.ok ? '<b class="ok">ok</b>' : '<b class="bad">' + Forge.esc(s.status || 'fail') + '</b>'}</td><td>${s.seconds || ''} s</td><td>${s.fps || ''}</td><td>${s.errors || 0}</td><td>${Forge.esc(Object.entries(s.scenes || {}).map(([k, v]) => k + ' ' + v + 's').join(', '))}</td><td>${s.score == null ? '' : s.score}</td><td><button class="btn btn-sm btn-outline-secondary" onclick="soakDetail('${Forge.esc(s.id)}')">detail</button></td></tr>`).join('') || '<tr><td colspan="8">no soaks yet</td></tr>'; }
 async function soakDetail(id) { const r = await Forge.api(`/game/soakreport/${slug}?id=${id}`); $('soakDetail').innerHTML = `<pre class="vl-json">${Forge.esc(JSON.stringify(r, null, 1))}</pre><img class="vl-shot" src="/game/soakshot/${slug}?id=${id}" onerror="this.remove()">`; }
 function addEvent(ev) {
   const box = $('stream'), d = document.createElement('div'); d.className = 'ev ' + ev.kind + (ev.error ? ' err' : ''); let text = ev.text || '';
@@ -136,10 +137,30 @@ async function poll() {
     const r = await Forge.api(`/game/events/${slug}?since=${lastId}`);
     for (const ev of r.events) { addEvent(ev); if (['idle', 'checkpoint', 'soak', 'done'].includes(ev.kind)) refreshDue = true; }
     const first = lastId === 0; lastId = r.last; renderSession(r.agent); if (first) { const b = $('stream'); b.scrollTop = b.scrollHeight; }
+    if (r.soakRequest && !soakRunning) runBrowserSoak(r.soakRequest);
     if (refreshDue) { refreshDue = false; render(await Forge.api(`/game/status/${slug}`)); }
     $('streamNote').textContent = '';
   } catch (e) { $('streamNote').textContent = 'polling: ' + e.message; }
   pollT = setTimeout(poll, document.hidden ? 8000 : (G.agent && G.agent.busy ? 1500 : 5000));
+}
+// ---- playtests in this browser: the server hands a pending request to whoever polls first; the game runs in a hidden
+// frame here with its bots, and the report (window.__SOAK, same origin) goes back. The server's Chrome is the fallback ----
+let soakRunning = false;
+async function runBrowserSoak(req) {
+  soakRunning = true;
+  try {
+    const c = await Forge.api(`/game/soakclaim/${slug}`, { id: req.id }); if (!c.claimed) return;
+    $('streamNote').textContent = `playtest ${req.id} running in this browser (${req.secs} s at ${req.fast}x)…`;
+    const f = document.createElement('iframe'); f.className = 'vl-soak-frame'; f.src = `/games/${slug}/?soak=${req.secs}&fast=${req.fast}&seed=7&r=${Date.now()}`; document.body.appendChild(f);
+    const budget = Date.now() + (req.secs / Math.max(1, req.fast)) * 1000 * 2.5 + 20000; let rep = null, errs = [];
+    try { f.contentWindow.addEventListener('error', e => errs.push(String(e.message))); } catch (e) {}
+    while (Date.now() < budget) { await new Promise(r => setTimeout(r, 500)); try { if (f.contentWindow && f.contentWindow.__SOAK) { rep = f.contentWindow.__SOAK; break; } } catch (e) { break; } }
+    if (!rep) rep = { status: 'timeout', errors: [{ text: 'the game never finished the soak in this browser (' + errs.join('; ') + ')' }], scenes: {} };
+    f.remove();
+    await Forge.api(`/game/soakdone/${slug}`, { id: req.id, report: rep });
+    $('streamNote').textContent = ''; refreshDue = true;
+  } catch (e) { $('streamNote').textContent = 'playtest here failed: ' + e.message; }
+  finally { soakRunning = false; }
 }
 async function startAgent(mode, prompt) { try { renderSession(await Forge.api(`/game/agent/${slug}`, { mode, prompt: prompt || '' })); showTab('build'); } catch (e) { alert(e.message); } }
 async function stopAgent() { try { await Forge.api(`/game/stop/${slug}`, {}); } catch (e) { alert(e.message); } }
@@ -166,14 +187,16 @@ window.addEventListener('message', async e => {
 function sendNotesToGame() { const f = $('playFrame'); if (f.contentWindow) f.contentWindow.postMessage({ type: 'forge:notes-list', notes: NOTES.filter(n => n.state !== 'done').map(n => ({ id: n.id, scene: n.scene, x: n.x, y: n.y, what: n.what, text: n.text, state: n.state, by: n.byName })) }, '*'); }
 function renderNotes() {
   sendNotesToGame();
-  const filt = $('notesFilter').value, order = { open: 0, sent: 1, done: 2 }, big = NOTES.filter(n => filt === 'all' || n.state === filt).sort((a, b) => (order[a.state] - order[b.state]) || (b.id - a.id));
+  const filt = $('notesFilter').value, order = { open: 0, sent: 1, done: 2 }, big = NOTES.filter(n => filt === 'all' || n.state === filt).sort((a, b) => (order[a.state] - order[b.state]) || ((b.votes || 0) - (a.votes || 0)) || (b.id - a.id));
   $('notesTab').textContent = NOTES.some(n => n.state === 'open') ? '(' + NOTES.filter(n => n.state === 'open').length + ')' : '';
   $('notesBig').innerHTML = big.length ? big.map(n => `<div class="vl-note-card ${n.state}">
       ${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="" onclick="lightbox(${n.id}, this.src)">` : '<div class="vl-note-noshot">no picture</div>'}
-      <div class="vl-note-body"><div class="vl-note-head"><label><input type="checkbox" data-id="${n.id}" ${n.state === 'open' ? '' : 'disabled'}> <b>${Forge.esc(n.byName || 'someone')}</b></label><span class="vl-pill">${Forge.esc(n.state)}</span></div>
+      <div class="vl-note-body"><div class="vl-note-head"><label><input type="checkbox" data-id="${n.id}" ${n.state === 'open' ? '' : 'disabled'}> <b>${Forge.esc(n.byName || 'someone')}</b></label><span><button class="vl-vote ${n.voted ? 'on' : ''}" onclick="noteVote(${n.id})" title="${Forge.esc((n.voters || []).join(', ') || 'no votes yet')}">▲ ${n.votes || 0}</button> <span class="vl-pill">${Forge.esc(n.state)}</span></span></div>
         <div class="vl-note-big-text">${Forge.esc(n.text)}</div>
         <div class="vl-note-meta">scene ${Forge.esc(n.scene)} · at (${n.x}, ${n.y})${n.what && n.what.label ? ' · ' + Forge.esc(n.what.label) : ''} · ${Forge.esc((n.createdAt || '').slice(0, 16).replace('T', ' '))}</div>
         ${n.what && n.what.fields ? `<div class="vl-note-fields">${Forge.esc(JSON.stringify(n.what.fields))}</div>` : ''}
+        <div class="vl-comments">${(n.comments || []).map(c => `<div class="vl-comment"><b>${Forge.esc(c.by)}</b> ${Forge.esc(c.text)}${c.mine ? ` <a href="#" onclick="noteComment(${n.id}, null, ${c.id}); return false;" title="delete">✕</a>` : ''}</div>`).join('')}
+          <form class="vl-comment-form" onsubmit="noteComment(${n.id}, this.text.value); this.text.value = ''; return false;"><input name="text" placeholder="add a comment: refine it, argue with it…" maxlength="4000"><button class="btn btn-sm btn-outline-secondary" type="submit">Comment</button></form></div>
         <div class="vl-note-actions">${n.state !== 'done' ? `<button class="btn btn-sm btn-outline-secondary" onclick="noteState(${n.id}, 'done')">Done</button>` : ''}${n.state !== 'open' ? `<button class="btn btn-sm btn-outline-secondary" onclick="noteState(${n.id}, 'open')">Reopen</button>` : ''}<button class="btn btn-sm btn-outline-secondary" onclick="noteState(${n.id}, 'delete')">Delete</button></div></div></div>`).join('')
     : `<div class="vl-kv">No ${filt === 'all' ? '' : filt + ' '}notes. In Play, press Note mode (or Alt+P in the game), click a thing, say what should change.</div>`;
   $('sendNotesBig').disabled = !NOTES.some(n => n.state === 'open');
@@ -185,7 +208,16 @@ function renderNotes() {
   $('notesStrip').innerHTML = open.length ? open.slice(0, 8).map(n => `<span class="vl-chip" title="${Forge.esc(n.text)}">${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="">` : ''}${Forge.esc(n.text.slice(0, 40))}</span>`).join('') + ` <a href="#build" onclick="showTab('build')">${open.length} open note${open.length === 1 ? '' : 's'} → Build</a>` : '';
 }
 async function noteState(id, state) { if (state === 'delete' && !confirm('Delete this note?')) return; try { NOTES = (await Forge.api(`/game/notestate/${slug}`, { id, state })).notes; renderNotes(); } catch (e) { alert(e.message); } }
-async function sendNotes(where) { const box = where === 'big' ? '#notesBig' : '#notesBox', intro = where === 'big' ? $('notesIntroBig') : $('notesIntro'); const ids = [...document.querySelectorAll(box + ' input[type=checkbox]:checked')].map(c => +c.dataset.id); if (!ids.length) { alert('Check the notes to send first.'); return; } try { const r = await Forge.api(`/game/sendnotes/${slug}`, { ids, text: intro.value.trim() }); NOTES = r.notes; renderNotes(); intro.value = ''; refreshDue = true; showTab('build'); } catch (e) { alert(e.message); } }
+let composeIds = [];
+async function sendNotes(where) {
+  const box = where === 'big' ? '#notesBig' : '#notesBox', intro = where === 'big' ? $('notesIntroBig') : $('notesIntro'); const ids = [...document.querySelectorAll(box + ' input[type=checkbox]:checked')].map(c => +c.dataset.id);
+  if (!ids.length) { alert('Check the notes to send first.'); return; }
+  if (where !== 'big') { try { const r = await Forge.api(`/game/sendnotes/${slug}`, { ids, text: intro.value.trim() }); NOTES = r.notes; renderNotes(); intro.value = ''; refreshDue = true; showTab('build'); } catch (e) { alert(e.message); } return; }
+  try { const r = await Forge.api(`/game/sendpreview/${slug}?ids=${ids.join(',')}&intro=${encodeURIComponent(intro.value.trim())}`); composeIds = ids; $('composeText').value = r.message; $('composeBatch').style.display = ''; $('composeBatch').scrollIntoView({ block: 'start', behavior: 'smooth' }); $('composeText').focus(); } catch (e) { alert(e.message); }
+}
+async function sendComposed() { try { const r = await Forge.api(`/game/sendnotes/${slug}`, { ids: composeIds, message: $('composeText').value.trim() }); NOTES = r.notes; renderNotes(); $('composeBatch').style.display = 'none'; $('notesIntroBig').value = ''; refreshDue = true; showTab('build'); } catch (e) { $('composeMsg').textContent = e.message; } }
+async function noteVote(id) { try { NOTES = (await Forge.api(`/game/notevote/${slug}`, { id })).notes; renderNotes(); } catch (e) { alert(e.message); } }
+async function noteComment(id, text, del) { if (!del && !(text || '').trim()) return; try { NOTES = (await Forge.api(`/game/notecomment/${slug}`, del ? { id, delete: del } : { id, text })).notes; renderNotes(); } catch (e) { alert(e.message); } }
 function notesAll(on) { for (const c of document.querySelectorAll('#notesBig input[type=checkbox]:not([disabled])')) c.checked = on; }
 function lightbox(id, src) { const n = NOTES.find(x => x.id === id), L = $('lightbox'); L.querySelector('img').src = src; L.querySelector('.vl-lightbox-cap').textContent = n ? (n.byName || '') + ': ' + n.text : ''; L.classList.add('on'); }
 async function loadNotes() { try { NOTES = (await Forge.api(`/game/notes/${slug}`)).notes; renderNotes(); } catch (e) {} }
