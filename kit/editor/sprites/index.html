@@ -80,7 +80,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
 @media (max-width: 900px) { .sketch { grid-template-columns: 1fr; } .sketch .go { writing-mode: horizontal-tb; width: 100%; } .sketch .go button { transform: rotate(90deg); } }
 .pad, .out { display: grid; gap: 8px; align-content: start; }
 .pad h3, .out h3 { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--muted); margin: 0; letter-spacing: 0.06em; text-transform: uppercase; }
-#pad { width: 100%; aspect-ratio: 1; max-height: 420px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); touch-action: none; cursor: crosshair; display: block; }
+#pad { width: min(100%, 480px); height: auto; aspect-ratio: 1 / 1; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); touch-action: none; cursor: crosshair; display: block; }
 .go { display: grid; place-items: center; } .go button { font-family: var(--display); font-size: 28px; font-weight: 800; padding: 14px 20px; border-radius: 16px; line-height: 1; }
 .outbox { min-height: 200px; border: 1px dashed var(--line); border-radius: 10px; padding: 10px; display: grid; gap: 10px; align-content: start; background: var(--plot); }
 .cand { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: center; } .cand img { width: 96px; height: 96px; object-fit: contain; image-rendering: pixelated; background: repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 16px 16px; border-radius: 8px; }
