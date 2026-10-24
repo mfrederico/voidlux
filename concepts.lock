@@ -1,0 +1,12 @@
+{
+    "version": 1,
+    "concepts": [],
+    "connectors": {
+        "mailgun": {
+            "version": "1.0.0",
+            "source": "control-plane catalog",
+            "installed_at": "2026-10-24T04:41:28+00:00",
+            "hash": "sha256:0f11b713f306e5887ba408a23e8096ea5ee8921b1ef4c2664b7469e0b6fb9312"
+        }
+    }
+}
