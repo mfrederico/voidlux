@@ -4,5 +4,6 @@ if ($__loggedIn) {
     $__sections['The forge'] = [
         ['url' => '/forge', 'label' => 'Games', 'icon' => 'controller'],
         ['url' => '/forge/summon', 'label' => 'Summon a game', 'icon' => 'stars'],
+        ['url' => '/teams', 'label' => 'Teams', 'icon' => 'people'],
     ];
 }
