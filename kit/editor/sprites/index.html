@@ -34,6 +34,16 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
 .main { display: grid; grid-template-columns: 250px 1fr 300px; gap: 16px; align-items: start; }
 @media (max-width: 1100px) { .main { grid-template-columns: 250px 1fr; } .ai { grid-column: 1 / -1; } }
 @media (max-width: 760px) { .main { grid-template-columns: 1fr; } .list { position: static; max-height: none; } }
+/* nothing may be wider than the phone: grid children shrink, selects and inputs cap at their box, long words break */
+.wrap > *, .main > *, .panel > *, .sketch > *, .pad > *, .out > *, .note > * { min-width: 0; }
+select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-width: 100%; } .row > label > select { flex: 1 1 auto; min-width: 0; }
+.slot .k, .job .mono, .msg { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  body { padding: 12px 12px 32px; font-size: 13.5px; } h1 { font-size: 28px; } .wrap { gap: 10px; } .panel { padding: 12px; }
+  .tools button { padding: 4px 8px; font-size: 12px; } .tools .sep { display: none; }
+  .job { grid-template-columns: 48px 1fr; } .job .sk { width: 48px; height: 48px; } .cand { grid-template-columns: 72px 1fr; } .cand img { width: 72px; height: 72px; }
+  .go button { font-size: 22px; padding: 10px 16px; } .stage { padding: 6px; } #frameList canvas { width: 36px; height: 36px; }
+}
 .list { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px; position: sticky; top: 10px; max-height: calc(100vh - 30px); overflow: auto; display: grid; gap: 6px; align-content: start; }
 .list input[type=search] { width: 100%; border-radius: 999px; }
 .list h3 { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--muted); margin: 10px 4px 2px; letter-spacing: 0.06em; text-transform: uppercase; }
@@ -112,7 +122,7 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
       </div>
     </div>
     <div class="note"><div class="lbl">Describe it — what it is, and anything else the builder should know (colours, mood, what it does in the game)</div><textarea id="aiSubject" rows="3" placeholder="e.g. “an anteater looking left, sleepy, brown with a cream stripe; it wanders the farm and sniffs at hay bales”"></textarea>
-      <div class="row"><label>maker <select id="maker"><option value="svg">the builder draws SVG from your sketch</option><option value="code">the builder writes drawing code (like Centipede's creatures)</option><option value="spritecook">SpriteCook (pixel art, credits)</option></select></label><label>style <select id="aiStyle"><option value="pixel">pixel art</option><option value="16bit">16-bit SNES</option><option value="gameboy">4-colour Game Boy</option><option value="hd">painted HD</option></select></label><label>size <select id="aiSize"><option>16</option><option>24</option><option selected>32</option><option>48</option><option>64</option><option>128</option></select></label><label><input type="checkbox" id="aiPal"> this sprite's palette</label></div></div>
+      <div class="row"><label>maker <select id="maker"><option value="svg">builder: SVG</option><option value="code">builder: drawing code</option><option value="spritecook">SpriteCook (credits)</option></select></label><label>style <select id="aiStyle"><option value="pixel">pixel art</option><option value="16bit">16-bit SNES</option><option value="gameboy">4-colour Game Boy</option><option value="hd">painted HD</option></select></label><label>size <select id="aiSize"><option>16</option><option>24</option><option selected>32</option><option>48</option><option>64</option><option>128</option></select></label><label><input type="checkbox" id="aiPal"> this sprite's palette</label></div></div>
     <div id="aiStatus" class="muted small"></div>
     <details id="jobsBox"><summary class="lbl" style="cursor:pointer">Everything the builder has made from your sketches <span id="jobsN" class="muted"></span></summary>
       <p class="muted small">Every job, newest first, with its takes. Click a take to choose it, set the key, then Keep or Edit above. A job is scratch: nothing here is in the game until you keep it.</p>
