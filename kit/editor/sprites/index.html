@@ -121,7 +121,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
       <div class="out">
         <h3>What the AI makes of it</h3>
         <div class="outbox" id="outbox"><span class="muted small">Draw something on the left, say what it is below, and press &gt;&gt;. The builder takes your strokes as the shape and draws a clean sprite from them, two takes: as SVG, or as drawing code the game runs, or through SpriteCook. Keep one into the game as it is or as pixels, or edit it first.</span></div>
-        <div class="row"><label>key <input id="aiKey" placeholder="bee" pattern="[a-z][a-z0-9_\-]{0,40}" style="width:120px"></label><button id="keepBtn" disabled>Keep as a sprite</button><button id="keepPxBtn" disabled class="hidden">Keep as pixels</button><button id="editBtn" disabled>Edit</button></div>
+        <div class="row"><label>key <input id="aiKey" placeholder="bee" pattern="[a-z][a-z0-9_\-]{0,40}" style="width:120px"></label><button id="keepBtn" disabled>Keep as a sprite</button><button id="keepPxBtn" disabled class="hidden">Keep as pixels</button><button id="editBtn" disabled>Edit</button><button id="overBtn" disabled title="lay this take on the drawing pad and mark it up">✎ Draw over it</button></div>
       </div>
     </div>
     <div id="aiStatus" class="muted small"></div>
@@ -131,7 +131,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
   </section>
   <div id="askSave" role="dialog" aria-label="unsaved drawing"><div class="ask"><p>You changed the drawing. Save it before loading another?</p><div class="row"><button class="primary" id="askYes">Save it</button><button id="askNo">Don't save</button><button id="askStay">Stay here</button></div></div></div>
   <div id="viewer" role="dialog" aria-label="a take, full screen">
-    <div class="vhead"><span class="mono" id="vTitle"></span><div class="row"><button id="vKeep" class="primary">Keep</button><button id="vKeepPx">Keep as pixels</button><button id="vEdit">Edit</button><button id="vClose">✕ close</button></div></div>
+    <div class="vhead"><span class="mono" id="vTitle"></span><div class="row"><button id="vKeep" class="primary">Keep</button><button id="vKeepPx">Keep as pixels</button><button id="vEdit">Edit</button><button id="vOver" title="lay this take on the drawing pad and mark it up">✎ Draw over this</button><button id="vClose">✕ close</button></div></div>
     <div class="vstage" id="vStage"></div>
     <div class="vfoot"><div class="muted small" id="vNote"></div><div class="refine"><textarea id="vRefine" rows="2" placeholder="refine this: e.g. “make the snout longer and add a cream stripe along the back”"></textarea><button id="vGo" class="primary">Refine this &gt;&gt;</button></div><div class="small" id="vStatus"></div></div>
   </div>
@@ -431,7 +431,8 @@ const paletteLine = () => el('aiPal').checked && doc ? ` Use only these colours:
 const rules = (key, extra) => ` Save the result as assets/${key}.png (download its sprite_url with curl -s -o), register "${key}" in assets/sprites.json with its w, h, frames and fps and "source": "spritecook", commit the files, and reply with one line saying what you made.${extra || ''} If the SpriteCook tools answer that they need authentication, stop and say so in one line. Do not run a soak for this.`;
 // ---- the drawing pad: a rough freehand sketch the AI takes as its reference ----
 const pad = el('pad'), pc = pad.getContext('2d'); let padPen = '#1d1530', padDown = false, padLast = null, padStrokes = [], padHist = [], padImg = null, padDirty = false, padErase = false, padFrom = null; // padFrom: the gallery job this drawing came back from
-function padClear() { pc.fillStyle = '#ffffff'; pc.fillRect(0, 0, pad.width, pad.height); if (padImg) pc.drawImage(padImg, 0, 0, pad.width, pad.height); }
+function padClear() { pc.fillStyle = '#ffffff'; pc.fillRect(0, 0, pad.width, pad.height); if (padImg) { pc.globalAlpha = padImgAlpha; pc.drawImage(padImg, 0, 0, pad.width, pad.height); pc.globalAlpha = 1; } }
+let padImgAlpha = 1;
 function padRedraw() { padClear(); for (const s of padStrokes) { pc.strokeStyle = s.pen === 'erase' ? '#ffffff' : s.pen; pc.lineWidth = s.w; pc.lineCap = pc.lineJoin = 'round'; pc.beginPath(); s.pts.forEach(([x, y], i) => i ? pc.lineTo(x, y) : pc.moveTo(x, y)); if (s.pts.length === 1) pc.lineTo(s.pts[0][0] + .1, s.pts[0][1]); pc.stroke(); } }
 const padPos = e => { const r = pad.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * pad.width, (e.clientY - r.top) / r.height * pad.height]; };
 function eraseAt(p) { const r = Math.max(12, +el('padW').value * 1.5), n = padStrokes.length; padStrokes = padStrokes.filter(s => !s.pts.some(q => Math.hypot(q[0] - p[0], q[1] - p[1]) <= r + s.w / 2)); if (padStrokes.length !== n) { padDirty = true; padRedraw(); } }
@@ -442,10 +443,10 @@ for (const b of document.querySelectorAll('[data-pen]')) b.onclick = () => { pad
 el('padErase').onclick = () => { padErase = !padErase; el('padErase').classList.toggle('on', padErase); pad.style.cursor = padErase ? 'cell' : 'crosshair'; for (const o of document.querySelectorAll('[data-pen]')) o.classList.toggle('on', !padErase && o.dataset.pen === padPen); };
 function setFrom(job) { padFrom = job ? { id: job.id, at: job.at, note: job.note } : null; const L = el('padFromLine'); L.classList.toggle('hidden', !padFrom); if (padFrom) { L.innerHTML = `revising the drawing from ${esc(new Date(padFrom.at * 1000).toLocaleString())}: the builder will see the takes it made then${cand ? ', the selected one as the favourite' : ''}. <a href="#" id="padFromX">start clean instead</a>`; el('padFromX').onclick = e => { e.preventDefault(); setFrom(null); remember(); }; } }
 el('padUndo').onclick = () => { padStrokes.pop(); padDirty = true; padRedraw(); };
-el('padClear').onclick = () => { padStrokes = []; padImg = null; padDirty = false; setFrom(null); padRedraw(); };
+el('padClear').onclick = () => { padStrokes = []; padImg = null; padImgAlpha = 1; padDirty = false; setFrom(null); padRedraw(); };
 // the request the pad describes, for >> and for a plain save
 function padBody(extra) { const thin = pts => pts.filter((p, i, a) => i === 0 || i === a.length - 1 || Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) >= 3).map(p => [Math.round(p[0]), Math.round(p[1])]); const subj = el('aiSubject').value.trim(), st = el('aiStyle').value;
-  return Object.assign({ note: subj, style: STYLE[st], pixel: st !== 'hd', size: parseInt(el('aiSize').value, 10), key: el('aiKey').value.trim() || 'sprite', maker: el('maker').value, palette: el('aiPal').checked && doc ? docPalette() : [], png: (padStrokes.length || padImg) ? pad.toDataURL('image/png') : '', strokes: padStrokes.map(s => ({ pen: s.pen, w: s.w, pts: thin(s.pts) })), from: padFrom ? { id: padFrom.id, liked: cand && cand.includes('/' + padFrom.id + '/') ? cand.replace(/^.*\//, '').replace(/\?.*$/, '') : '' } : null }, extra || {}); }
+  return Object.assign({ note: subj, style: STYLE[st], pixel: st !== 'hd', size: parseInt(el('aiSize').value, 10), key: el('aiKey').value.trim() || 'sprite', maker: el('maker').value, palette: el('aiPal').checked && doc ? docPalette() : [], png: (padStrokes.length || padImg) ? pad.toDataURL('image/png') : '', strokes: padStrokes.map(s => ({ pen: s.pen, w: s.w, pts: thin(s.pts) })), from: padFrom ? { id: padFrom.id, liked: padFrom.over || (cand && cand.includes('/' + padFrom.id + '/') ? cand.replace(/^.*\//, '').replace(/\?.*$/, '') : ''), over: !!padFrom.over } : null }, extra || {}); }
 async function saveDrawing() { // into the gallery, not to the builder
   if (!padStrokes.length && !padImg && !el('aiSubject').value.trim()) { say('nothing to save yet', 'err'); return false; }
   try { const r = await fetch(apiUrl('sketch'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify(padBody({ save_only: true })) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); padDirty = false; say('drawing saved to the gallery (not sent)', 'ok'); loadJobs(); return true; }
@@ -458,11 +459,29 @@ async function loadJob(job) {
     if (job.strokes) { padStrokes = await (await fetch(job.base + 'strokes.json', { cache: 'no-store' })).json(); padImg = null; }
     else if (job.sketch) { padStrokes = []; padImg = await loadImage(job.base + 'sketch.png'); }
     else { padStrokes = []; padImg = null; }
+    padImgAlpha = 1;
     el('aiSubject').value = job.note || ''; el('aiKey').value = job.key || ''; if (job.size) el('aiSize').value = job.size; if (job.maker) el('maker').value = job.maker;
     const st = Object.keys(STYLE).find(k => STYLE[k] === job.style); if (st) el('aiStyle').value = st;
     setFrom(job); padRedraw(); padDirty = false; remember(); say(`loaded the drawing “${job.note || job.id}” into the pad${job.strokes ? '' : ' as a picture to draw over'}`, 'ok'); pad.scrollIntoView({ behavior: 'smooth', block: 'center' });
   } catch (e) { say('could not load it: ' + e.message, 'err'); }
 }
+async function drawOver(jobId, file, url, note, at) {
+  const go = async () => {
+    try {
+      const n = 512, c = document.createElement('canvas'); c.width = c.height = n; const g = c.getContext('2d'), m = Math.round(n * 0.08);
+      if (/\.js(\?|$)/i.test(url)) { const text = await (await fetch(url, { cache: 'no-store' })).text(); g.drawImage(renderCode(text, n - 2 * m, 0).canvas, m, m); }
+      else { const im = await loadImage(url + (url.includes('?') ? '&' : '?') + 't=' + Date.now()); const s = Math.min((n - 2 * m) / im.naturalWidth, (n - 2 * m) / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s; g.imageSmoothingEnabled = !/\.png(\?|$)/i.test(url); g.drawImage(im, (n - w) / 2, (n - h) / 2, w, h); }
+      padStrokes = []; padImg = c; padImgAlpha = 0.45; padDirty = false; padFrom = { id: jobId, at: at || Math.floor(Date.now() / 1000), note: note || '', over: file.replace(/\?.*$/, '') }; cand = url; pickCand();
+      const L = el('padFromLine'); L.classList.remove('hidden'); L.innerHTML = `marking up the builder's take <span class="mono">${esc(padFrom.over)}</span>: draw your changes on it and press &gt;&gt;. <a href="#" id="padFromX">start clean instead</a>`; el('padFromX').onclick = e => { e.preventDefault(); padImg = null; padImgAlpha = 1; setFrom(null); padRedraw(); remember(); };
+      padRedraw(); remember(); closeViewer(); say('the take is on the pad, faded: draw your changes over it, say what they mean, press >>', 'ok'); pad.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch (e) { say('could not lay it on the pad: ' + e.message, 'err'); }
+  };
+  if (!padDirty) { go(); return; }
+  const box = el('askSave'); box.classList.add('open'); const done = () => { box.classList.remove('open'); for (const id of ['askYes', 'askNo', 'askStay']) el(id).onclick = null; };
+  el('askYes').onclick = async () => { done(); if (await saveDrawing()) go(); }; el('askNo').onclick = () => { done(); go(); }; el('askStay').onclick = done;
+}
+el('overBtn').onclick = () => { if (!cand) return; const sk = SK || {}; drawOver(sk.id, cand.replace(/^.*\//, ''), cand, '', sk.at); };
+el('vOver').onclick = () => { if (V) drawOver(V.job, V.file, V.url, el('vNote').textContent, (SK && SK.id === V.job) ? SK.at : 0); };
 function askThenLoad(job) {
   if (!padDirty) { loadJob(job); return; }
   const box = el('askSave'); box.classList.add('open'); const done = () => { box.classList.remove('open'); for (const id of ['askYes', 'askNo', 'askStay']) el(id).onclick = null; };
@@ -490,7 +509,7 @@ function showOut(j) {
   cand = j.base + files[0]; pickCand(); if (!el('aiKey').value) el('aiKey').value = j.key || '';
 }
 const candIsSvg = () => /\.svg(\?|$)/i.test(cand || ''), candIsCode = () => /\.js(\?|$)/i.test(cand || '');
-function pickCand() { const svg = candIsSvg(), code = candIsCode(); el('keepBtn').disabled = el('editBtn').disabled = el('keepPxBtn').disabled = !cand; el('keepBtn').textContent = svg ? 'Keep as SVG' : code ? 'Keep as code' : 'Keep as a sprite'; el('keepPxBtn').classList.toggle('hidden', !(svg || code)); el('editBtn').textContent = svg ? 'Edit the SVG' : code ? 'Edit the code' : 'Edit its pixels'; }
+function pickCand() { const svg = candIsSvg(), code = candIsCode(); el('keepBtn').disabled = el('editBtn').disabled = el('keepPxBtn').disabled = el('overBtn').disabled = !cand; el('keepBtn').textContent = svg ? 'Keep as SVG' : code ? 'Keep as code' : 'Keep as a sprite'; el('keepPxBtn').classList.toggle('hidden', !(svg || code)); el('editBtn').textContent = svg ? 'Edit the SVG' : code ? 'Edit the code' : 'Edit its pixels'; }
 el('goBtn').onclick = async () => {
   const subj = el('aiSubject').value.trim(), n = parseInt(el('aiSize').value, 10), st = el('aiStyle').value;
   if (!subj && !padStrokes.length && !padImg) { el('aiSubject').focus(); say('draw something, or say what you want, or both', 'err'); return; }
@@ -510,7 +529,7 @@ async function loadJobs() {
   try { const j = await (await fetch(apiUrl('sketches'), { cache: 'no-store' })).json(); const box = el('jobs'); box.innerHTML = ''; const jobs = j.jobs; el('jobsN').textContent = j.jobs.length ? `(${j.jobs.length})` : '(none yet)';
     for (const job of j.jobs) {
       const d = document.createElement('div'); d.className = 'job'; const when = new Date(job.at * 1000).toLocaleString(), files = (job.result && job.result.files) || [];
-      d.innerHTML = `${job.sketch ? `<img class="sk" alt="" title="load this drawing into the pad" src="${esc(job.base)}sketch.png">` : '<div class="sk muted small" style="display:grid;place-items:center;cursor:pointer" title="load its description into the pad">no drawing</div>'}<div><div><b>${esc(job.note || '(no description)')}</b> <span class="muted small">· ${esc(when)} · ${esc(job.maker === 'svg' ? 'drawn by the builder as SVG' : job.maker === 'code' ? 'drawing code by the builder' : 'SpriteCook')}${job.refine ? ' · refines ' + esc(job.refine.file) + ' of an earlier job' : ''}${job.from ? ' · a revision, the builder saw its earlier takes' : ''} · key ${esc(job.key)}</span> <button class="small" data-job-rm="${esc(job.id)}" style="float:right">remove</button></div>
+      d.innerHTML = `${job.sketch ? `<img class="sk" alt="" title="load this drawing into the pad" src="${esc(job.base)}sketch.png">` : '<div class="sk muted small" style="display:grid;place-items:center;cursor:pointer" title="load its description into the pad">no drawing</div>'}<div><div><b>${esc(job.note || '(no description)')}</b> <span class="muted small">· ${esc(when)} · ${esc(job.maker === 'svg' ? 'drawn by the builder as SVG' : job.maker === 'code' ? 'drawing code by the builder' : 'SpriteCook')}${job.refine ? ' · refines ' + esc(job.refine.file) + ' of an earlier job' : ''}${job.from ? (job.from.over ? ' · marks drawn over ' + esc(job.from.liked) + ' of an earlier job' : ' · a revision, the builder saw its earlier takes') : ''} · key ${esc(job.key)}</span> <button class="small" data-job-rm="${esc(job.id)}" style="float:right">remove</button></div>
         ${job.result ? (job.result.ok === false ? `<div class="msg err">${esc(job.result.error || 'failed')}</div>` : `<div class="muted small">${esc(job.result.note || '')}</div><div class="takes">${files.map(f => `<img alt="" title="${esc(f)}" data-take="${esc(job.base + f)}" data-key="${esc(job.key)}" data-size="${job.size}" data-job="${esc(job.id)}" data-i="${jobs.indexOf(job)}" data-note="${esc(job.result.note || '')}">`).join('')}</div>`) : `<div class="muted small">${job.saved ? 'a saved drawing, not sent: load it into the pad and press >> when it is ready' : j.busy ? 'the builder is working on it…' : 'no result yet'}</div>`}</div>`;
       d.querySelector('.sk').onclick = () => askThenLoad(job);
       box.appendChild(d);

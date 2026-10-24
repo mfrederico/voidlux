@@ -435,7 +435,7 @@ class GameStore {
                 $fres = json_decode((string) file_get_contents("$fdir/result.json"), true) ?: []; $files = array_values(array_filter((array) ($fres['files'] ?? []), fn($f) => preg_match('/^out-[0-9]+\.(svg|js|png)$/', (string) $f) && is_file("$fdir/$f")));
                 if ($liked !== '' && in_array($liked, $files, true)) { $files = array_merge([$liked], array_values(array_diff($files, [$liked]))); }
                 $copied = []; foreach ($files as $i => $f) { $ext = pathinfo($f, PATHINFO_EXTENSION); copy("$fdir/$f", "$dir/earlier-" . ($i + 1) . ".$ext"); $copied[] = 'earlier-' . ($i + 1) . ".$ext"; }
-                if ($copied) $from = ['id' => $fid, 'liked' => $liked !== '' && in_array($liked, $files, true) ? 'earlier-1.' . pathinfo($liked, PATHINFO_EXTENSION) : '', 'files' => $copied, 'note' => (string) ($fres['note'] ?? '')];
+                if ($copied) $from = ['id' => $fid, 'liked' => $liked !== '' && in_array($liked, $files, true) ? 'earlier-1.' . pathinfo($liked, PATHINFO_EXTENSION) : '', 'files' => $copied, 'note' => (string) ($fres['note'] ?? ''), 'over' => !empty($b['from']['over']) && $liked !== '' && in_array($liked, $files, true)]; // over: the producer drew on top of the liked take
             }
         }
         $saveOnly = !empty($b['save_only']);
@@ -483,7 +483,8 @@ class GameStore {
         if ($from && !$refine) {
             $p .= "\nEARLIER ROUNDS. This drawing is the producer's revision of one they sent before. The takes you made then are here: " . implode(', ', array_map(fn($f) => "sketches/{$id}/{$f}", $from['files'])) . ($from['note'] !== '' ? " (your note then: \"{$from['note']}\")" : '') . '. '
                 . ($from['liked'] !== '' ? "They liked {$from['liked']} best: start from its craft, palette and character, " : 'Start from the craft, palette and character of those, ')
-                . "and apply what the new drawing and note change (compare the drawing with what you drew before: what moved, grew, shrank, appeared or vanished is the point of this round). Keep what they did not change.";
+                . (!empty($from['over']) ? "and this time they drew DIRECTLY ON TOP of {$from['liked']}: sketch.png shows your take, faded, with their marks over it, and sketch.svg holds only their marks (in the take's 512-grid frame; the take fills the middle of it). Read each mark as an instruction on that spot: a new line is a shape to add or move there, a scribble over something means change or remove it, and the note says the rest. Keep everything they did not mark."
+                   : "and apply what the new drawing and note change (compare the drawing with what you drew before: what moved, grew, shrank, appeared or vanished is the point of this round). Keep what they did not change.");
         }
         $r = self::askBuilder($slug, $p, $memberId);
         return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'queued' => !empty($r['queued'])];
