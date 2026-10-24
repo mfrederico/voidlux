@@ -77,6 +77,13 @@ $slug = $game['slug'];
 
 <section class="vl-pane" id="pane-notes">
   <div class="vl-toolbar"><span>Producer's notes: everything anyone pointed at in note mode (Play → Note mode, or Alt+P in the game). Check the ones to hand to the builder in one batch.</span></div>
+  <details class="vl-card mb-3 vl-newnote"><summary class="vl-h2 mt-0" style="cursor:pointer">✎ New note <span class="vl-meta">(no need to run the game)</span></summary>
+    <form id="newNoteForm" class="vl-form mt-2" enctype="multipart/form-data">
+      <label>The note <textarea name="text" rows="3" placeholder="What should change, be added or be checked? A picture helps: a sketch, a reference, a screenshot." required maxlength="4000"></textarea></label>
+      <div class="vl-toolbar"><label style="margin:0">Picture (optional) <input type="file" name="picture" accept=".svg,.png,.jpg,.jpeg,.gif,.webp"></label><label class="vl-check"><input type="checkbox" name="to_assets" value="1"> also add it to Media for the builder to use</label></div>
+      <div class="vl-toolbar"><button type="submit" class="btn btn-sm btn-primary">Save note</button><span class="vl-msg" id="newNoteMsg"></span></div>
+    </form>
+  </details>
   <div class="vl-folders" id="notesFolders"><button data-folder="open" class="on">Awaiting Verdict <span></span></button><button data-folder="sent">Sent to build <span></span></button><button data-folder="done">Scrapyard <span></span></button></div>
   <div class="vl-toolbar"><label class="vl-check"><input type="checkbox" id="notesAll" onchange="notesAll(this.checked)"> check all</label><input id="notesIntroBig" placeholder="a word for the builder (optional)" style="flex:1;min-width:160px"><button class="btn btn-sm btn-primary" onclick="sendNotes('big')" id="sendNotesBig">Send checked to build</button></div>
   <div class="vl-compose-batch" id="composeBatch" style="display:none"><h3 class="vl-h2 mt-0">What the builder will read</h3><p class="vl-kv">Composed from the checked notes, their votes and comments. Change any of it before it goes.</p><textarea id="composeText" spellcheck="false"></textarea><div class="vl-toolbar mt-2"><button class="btn btn-sm btn-primary" onclick="sendComposed()">Send to the builder</button><button class="btn btn-sm btn-outline-secondary" onclick="$('composeBatch').style.display='none'">Cancel</button><span id="composeMsg"></span></div></div>
@@ -239,7 +246,7 @@ function renderNotes() {
       ${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="" onclick="lightbox(${n.id}, this.src)">` : '<div class="vl-note-noshot">no picture</div>'}
       <div class="vl-note-body"><div class="vl-note-head"><label><input type="checkbox" data-id="${n.id}" ${n.state === 'done' ? 'disabled' : ''} onchange="notesButtons()"> <b>${Forge.esc(n.byName || 'someone')}</b></label><span><button class="vl-vote ${n.voted ? 'on' : ''}" onclick="noteVote(${n.id})" title="${Forge.esc((n.voters || []).join(', ') || 'no votes yet')}">▲ ${n.votes || 0}</button> <span class="vl-state ${n.state}">${FOLDER[n.state]}</span></span></div>
         <div class="vl-note-big-text">${Forge.esc(n.text)}</div>
-        <div class="vl-note-meta">scene ${Forge.esc(n.scene)} · at (${n.x}, ${n.y})${n.what && n.what.label ? ' · ' + Forge.esc(n.what.label) : ''} · ${Forge.esc((n.createdAt || '').slice(0, 16).replace('T', ' '))}</div>
+        <div class="vl-note-meta">${n.scene === 'note' ? 'general note' : 'scene ' + Forge.esc(n.scene) + ' · at (' + n.x + ', ' + n.y + ')' + (n.what && n.what.label ? ' · ' + Forge.esc(n.what.label) : '')} · ${Forge.esc((n.createdAt || '').slice(0, 16).replace('T', ' '))}</div>
         ${n.what && n.what.fields ? `<div class="vl-note-fields">${Forge.esc(JSON.stringify(n.what.fields))}</div>` : ''}
         <div class="vl-comments">${(n.comments || []).map(c => `<div class="vl-comment"><b>${Forge.esc(c.by)}</b> ${Forge.esc(c.text)}${c.mine ? ` <a href="#" onclick="noteComment(${n.id}, null, ${c.id}); return false;" title="delete">✕</a>` : ''}</div>`).join('')}
           <form class="vl-comment-form" onsubmit="noteComment(${n.id}, this.text.value); this.text.value = ''; return false;"><input name="text" placeholder="add a comment: refine it, argue with it…" maxlength="4000"><button class="btn btn-sm btn-outline-secondary" type="submit">Comment</button></form></div>
@@ -258,6 +265,8 @@ async function sendNotes(where) {
   try { const r = await Forge.api(`/game/sendpreview/${slug}?ids=${ids.join(',')}&intro=${encodeURIComponent(intro.value.trim())}`); composeIds = ids; $('composeText').value = r.message; $('composeBatch').style.display = ''; $('composeBatch').scrollIntoView({ block: 'start', behavior: 'smooth' }); $('composeText').focus(); } catch (e) { alert(e.message); }
 }
 async function sendComposed() { try { const r = await Forge.api(`/game/sendnotes/${slug}`, { ids: composeIds, message: $('composeText').value.trim() }); NOTES = r.notes; renderNotes(); $('composeBatch').style.display = 'none'; $('notesIntroBig').value = ''; refreshDue = true; showTab('build'); } catch (e) { $('composeMsg').textContent = e.message; } }
+$('newNoteForm').onsubmit = async e => { e.preventDefault(); const f = e.target, fd = new FormData(f); fd.append('_csrf_token', Forge.token); $('newNoteMsg').textContent = 'saving…';
+  try { const r = await fetch(`/game/noteadd/${slug}`, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } }); const j = await r.json(); if (!r.ok || j.success === false) throw new Error(j.message || j.error || 'could not save'); NOTES = j.data.notes; notesFolder = 'open'; renderNotes(); f.reset(); $('newNoteMsg').textContent = 'saved'; } catch (err) { $('newNoteMsg').textContent = err.message; } };
 async function noteVote(id) { try { NOTES = (await Forge.api(`/game/notevote/${slug}`, { id })).notes; renderNotes(); } catch (e) { alert(e.message); } }
 async function noteComment(id, text, del) { if (!del && !(text || '').trim()) return; try { NOTES = (await Forge.api(`/game/notecomment/${slug}`, del ? { id, delete: del } : { id, text })).notes; renderNotes(); } catch (e) { alert(e.message); } }
 function notesAll(on) { for (const c of document.querySelectorAll('#notesBig input[type=checkbox]:not([disabled])')) c.checked = on; notesButtons(); }

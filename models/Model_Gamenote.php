@@ -17,6 +17,7 @@ class Model_Gamenote extends \RedBeanPHP\SimpleModel {
         $b = $this->bean; $what = json_decode((string) $b->what, true);
         $where = $what && !empty($what['label']) ? $what['label'] . ' ' . json_encode($what['fields'] ?? new \stdClass(), JSON_UNESCAPED_SLASHES) : 'the spot';
         $shot = (string) $b->shot !== '' ? " (screenshot crop: {$b->shot})" : '';
+        if ((string) $b->scene === 'note') return "{$n}. [a general note, not tied to a spot on screen{$shot}] " . trim((string) $b->text);
         return "{$n}. [scene {$b->scene}, at ({$b->x}, {$b->y}), pointing at {$where}{$shot}] " . trim((string) $b->text);
     }
 }

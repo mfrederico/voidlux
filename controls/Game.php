@@ -183,6 +183,36 @@ class Game extends BaseControls\Control {
         $ids = array_filter(array_map('intval', explode(',', (string) $this->getParam('ids', ''))));
         try { $this->jsonSuccess(['message' => $this->composeBatch($g, $ids, (string) $this->getParam('intro', ''))]); } catch (\Throwable $e) { $this->jsonError($e->getMessage()); }
     }
+    /** POST /game/noteadd/<slug> (multipart, CSRF field): a note written on the Notes tab, with an optional picture, without
+     *  running the game. Same row as a note made in note mode, just no scene or position. */
+    public function noteadd($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        $text = mb_substr(trim((string) $this->getParam('text', '')), 0, 4000); if ($text === '') { $this->jsonError('a note needs words'); return; }
+        $n = Bean::dispense('gamenote');
+        $n->gameId = (int) $g->id; $n->memberId = (int) $this->member->id; $n->scene = 'note'; $n->x = 0; $n->y = 0; $n->what = json_encode(null); $n->text = $text; $n->state = 'open'; $n->createdAt = date('c'); $n->shot = '';
+        Bean::store($n);
+        $f = $_FILES['picture'] ?? null;
+        if ($f && ($f['error'] ?? 1) === UPLOAD_ERR_OK) {
+            if ($f['size'] > 5 * 1024 * 1024) { $this->jsonError('That picture is over 5 MB.'); return; }
+            $mime = (string) mime_content_type($f['tmp_name']);
+            if (in_array($mime, ['text/plain', 'text/xml', 'application/xml'], true) && stripos((string) file_get_contents($f['tmp_name'], false, null, 0, 2048), '<svg') !== false) $mime = 'image/svg+xml';
+            if (!isset(self::ASSET_TYPES[$mime])) { $this->jsonError('A picture is SVG, PNG, JPG, GIF or WebP (that was ' . $mime . ').'); return; }
+            if ($mime === 'image/svg+xml' && preg_match('/<script|\son[a-z]+\s*=|javascript:|<foreignObject/i', (string) file_get_contents($f['tmp_name']))) { $this->jsonError('That SVG carries script, so it cannot be shown.'); return; }
+            $dir = GameStore::studioDir($g->slug) . '/notes'; if (!is_dir($dir)) mkdir($dir, 0775, true);
+            $ext = self::ASSET_TYPES[$mime]; $path = $dir . '/' . (int) $n->id . '.' . $ext;
+            if (!move_uploaded_file($f['tmp_name'], $path)) { $this->jsonError('Could not store the picture.'); return; }
+            $n->shot = '.studio/notes/' . (int) $n->id . '.' . $ext; Bean::store($n);
+            if ($this->getParam('to_assets')) { // the picture is for the builder to use: it goes into assets/ too
+                $adir = GameStore::dir($g->slug) . '/assets'; if (!is_dir($adir)) mkdir($adir, 0775, true);
+                $name = preg_replace('/[^a-z0-9._-]+/', '-', strtolower(pathinfo((string) $f['name'], PATHINFO_FILENAME))); $name = trim($name, '-.') ?: 'note-' . (int) $n->id;
+                $apath = $adir . '/' . $name . '.' . $ext; $k = 2; while (is_file($apath)) { $apath = $adir . '/' . $name . '-' . $k++ . '.' . $ext; }
+                copy($path, $apath); GameStore::git(GameStore::dir($g->slug), ['add', 'assets/' . basename($apath)]);
+                $n->text .= "\n(picture also in assets/" . basename($apath) . ')'; Bean::store($n);
+            }
+        }
+        GameStore::emit($g->slug, 'note', ['text' => 'producer\'s note #' . (int) $n->id . ': ' . mb_substr($n->text, 0, 160)]);
+        $this->jsonSuccess(['id' => (int) $n->id, 'notes' => $this->noteRows($g)], 'Note saved.');
+    }
     public function notestate($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
         $b = $this->body(); $n = Bean::load('gamenote', (int) ($b['id'] ?? 0));
@@ -233,7 +263,8 @@ class Game extends BaseControls\Control {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
         $n = Bean::load('gamenote', (int) $this->getParam('id', 0)); $f = ($n->id && (int) $n->gameId === (int) $g->id && (string) $n->shot !== '') ? GameStore::dir($g->slug) . '/' . $n->shot : '';
         if ($f === '' || !is_file($f)) { Flight::notFound(); return; }
-        header('Content-Type: image/jpeg'); header('Cache-Control: private, max-age=3600'); readfile($f); exit;
+        $types = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'gif' => 'image/gif', 'webp' => 'image/webp', 'svg' => 'image/svg+xml'];
+        header('Content-Type: ' . ($types[strtolower(pathinfo($f, PATHINFO_EXTENSION))] ?? 'application/octet-stream')); header('Cache-Control: private, max-age=3600'); readfile($f); exit;
     }
 
     // ---- the game's media library: files in games/<slug>/assets/, uploaded by producers, used by the builder ----
