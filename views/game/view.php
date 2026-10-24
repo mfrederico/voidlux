@@ -228,10 +228,11 @@ function noteMode() { const f = $('playFrame'); if (!f.contentWindow) return; f.
 window.addEventListener('message', async e => {
   const m = e.data || {};
   if (m.type === 'forge:notes-open') { $('playFrame').scrollIntoView({ block: 'center', behavior: 'smooth' }); sendNotesToGame(); return; } // the game is in note mode: keep the whole frame in view, show it the notes so far
+  if (m.type === 'forge:note-action' && m.id) { noteState(m.id, m.action === 'delete' ? 'delete' : 'done', true); return; } // scrap or delete, asked from note mode
   if (m.type !== 'forge:note' || !m.note) return;
   try { const r = await Forge.api(`/game/note/${slug}`, { note: m.note }); NOTES = r.notes; renderNotes(); if (m.note.build) refreshDue = true; } catch (err) { alert('note not saved: ' + err.message); }
 });
-function sendNotesToGame() { const f = $('playFrame'); if (f.contentWindow) f.contentWindow.postMessage({ type: 'forge:notes-list', notes: NOTES.filter(n => n.state !== 'done').map(n => ({ id: n.id, scene: n.scene, x: n.x, y: n.y, what: n.what, text: n.text, state: n.state, by: n.byName })) }, '*'); }
+function sendNotesToGame() { const f = $('playFrame'); if (f.contentWindow) f.contentWindow.postMessage({ type: 'forge:notes-list', notes: NOTES.filter(n => n.state !== 'done').map(n => ({ id: n.id, scene: n.scene, x: n.x, y: n.y, what: n.what, text: n.text, state: n.state, by: n.byName, canManage: !!n.canManage, votes: n.votes || 0 })) }, '*'); }
 function renderNotes() {
   sendNotesToGame();
   const filt = notesFolder, big = NOTES.filter(n => n.state === filt).sort((a, b) => ((b.votes || 0) - (a.votes || 0)) || (b.id - a.id));
@@ -251,7 +252,7 @@ function renderNotes() {
   const open = NOTES.filter(n => n.state === 'open'), rest = NOTES.filter(n => n.state !== 'open').slice(0, 6);
   $('notesStrip').innerHTML = open.length ? open.slice(0, 8).map(n => `<span class="vl-chip" title="${Forge.esc(n.text)}">${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="">` : ''}${Forge.esc(n.text.slice(0, 40))}</span>`).join('') + ` <a href="#notes" onclick="showTab('notes')">${open.length} awaiting verdict → Notes</a>` : '';
 }
-async function noteState(id, state) { if (state === 'delete' && !confirm('Delete this note?')) return; try { NOTES = (await Forge.api(`/game/notestate/${slug}`, { id, state })).notes; renderNotes(); } catch (e) { alert(e.message); } }
+async function noteState(id, state, sure) { if (state === 'delete' && !sure && !confirm('Delete this note?')) return; try { NOTES = (await Forge.api(`/game/notestate/${slug}`, { id, state })).notes; renderNotes(); } catch (e) { alert(e.message); } }
 let composeIds = [];
 async function sendNotes(where) {
   const box = where === 'big' ? '#notesBig' : '#notesBox', intro = where === 'big' ? $('notesIntroBig') : $('notesIntro'); const ids = [...document.querySelectorAll(box + ' input[type=checkbox]:checked')].map(c => +c.dataset.id);

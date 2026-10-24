@@ -140,7 +140,7 @@ class Game extends BaseControls\Control {
         foreach (Bean::find('gamenote', 'game_id = ? ORDER BY id DESC', [(int) $g->id]) as $n) { $mid = (int) $n->memberId;
             $votes = array_values(Bean::find('gamenotevote', 'gamenote_id = ?', [(int) $n->id])); $comments = [];
             foreach (Bean::find('gamenotecomment', 'gamenote_id = ? ORDER BY id ASC', [(int) $n->id]) as $c) $comments[] = ['id' => (int) $c->id, 'by' => $nameOf((int) $c->memberId), 'mine' => (int) $c->memberId === $me, 'text' => (string) $c->text, 'at' => (string) $c->createdAt];
-            $out[] = ['votes' => count($votes), 'voted' => (bool) array_filter($votes, fn($v) => (int) $v->memberId === $me), 'voters' => array_map(fn($v) => $nameOf((int) $v->memberId), $votes), 'comments' => $comments, 'byName' => $nameOf($mid), 'id' => (int) $n->id, 'scene' => (string) $n->scene, 'x' => (int) $n->x, 'y' => (int) $n->y, 'what' => json_decode((string) $n->what, true), 'text' => (string) $n->text, 'state' => (string) $n->state, 'shot' => (string) $n->shot !== '', 'createdAt' => (string) $n->createdAt, 'by' => (int) $n->memberId]; }
+            $out[] = ['canManage' => $mid === $me || (int) $g->memberId === $me || Flight::hasLevel(LEVELS['ADMIN']), 'votes' => count($votes), 'voted' => (bool) array_filter($votes, fn($v) => (int) $v->memberId === $me), 'voters' => array_map(fn($v) => $nameOf((int) $v->memberId), $votes), 'comments' => $comments, 'byName' => $nameOf($mid), 'id' => (int) $n->id, 'scene' => (string) $n->scene, 'x' => (int) $n->x, 'y' => (int) $n->y, 'what' => json_decode((string) $n->what, true), 'text' => (string) $n->text, 'state' => (string) $n->state, 'shot' => (string) $n->shot !== '', 'createdAt' => (string) $n->createdAt, 'by' => (int) $n->memberId]; }
         return $out;
     }
     public function notes($params = []): void { if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $this->jsonSuccess(['notes' => $this->noteRows($g)]); }
@@ -187,6 +187,8 @@ class Game extends BaseControls\Control {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
         $b = $this->body(); $n = Bean::load('gamenote', (int) ($b['id'] ?? 0));
         if (!$n->id || (int) $n->gameId !== (int) $g->id) { $this->jsonError('no such note', 404); return; }
+        $mine = (int) $n->memberId === (int) $this->member->id || (int) $g->memberId === (int) $this->member->id || Flight::hasLevel(LEVELS['ADMIN']);
+        if (in_array($b['state'] ?? '', ['delete', 'done'], true) && !$mine) { $this->jsonError('Only the note\'s author or the game\'s owner can scrap or delete it.', 403); return; }
         if (($b['state'] ?? '') === 'delete') { $f = GameStore::dir($g->slug) . '/' . $n->shot; if ((string) $n->shot !== '' && is_file($f)) @unlink($f); Bean::trash($n); }
         else { $n->state = (string) ($b['state'] ?? 'open'); Bean::store($n); }
         $this->jsonSuccess(['notes' => $this->noteRows($g)], 'Saved.');
