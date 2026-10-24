@@ -36,7 +36,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 </section>
 
 <section class="vl-pane on" id="pane-play">
-  <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="reloadPlay()">Reload</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('fps=1')">Profiler</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('bot=1')">Autopilot</button><button class="btn btn-sm btn-primary" onclick="noteMode()" id="noteBtn">Note mode (Alt+P)</button><span>The game as a player sees it, straight from its folder. Note mode pauses it: click anything, say what should change.</span></div>
+  <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="reloadPlay()">Reload</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('fps=1')">Profiler</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('bot=1')">Autopilot</button><button class="btn btn-sm btn-primary" onclick="noteMode()" id="noteBtn">Note mode<span class="vl-note-alt"> (Alt+P)</span></button><span>The game as a player sees it, straight from its folder. Note mode pauses it: click anything, say what should change.</span></div>
   <iframe class="vl-frame" id="playFrame" allow="autoplay; fullscreen"></iframe>
   <div class="vl-notes-strip" id="notesStrip"></div>
 </section>
