@@ -109,3 +109,6 @@ a.vl-card:hover { border-color: #ff6600; color: #ddd; }
 .ev.result.err summary { color: #d08090; }
 .ev.done { background: #06220f; border: 1px solid #0f5a2a; border-radius: 6px; padding: 10px 12px; margin: 10px 0; color: #e8e8e8; } .ev.done time { display: block; min-width: 0; margin-bottom: 4px; } .vl-done-head { color: #66ff99; font-weight: bold; margin-bottom: 6px; }
 .ev.stage { color: #ffcc00; font-weight: bold; margin-top: 14px; border-top: 1px dashed #2a2a2a; padding-top: 10px; } .ev.soak { color: #ffb86b; } .ev.checkpoint { color: #a0a0ff; font-size: .78rem; } .ev.note { color: #8a8a8a; font-size: .78rem; } .ev.idle { color: #555; text-align: center; }
+/* the notes folders */
+.vl-folders { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; } .vl-folders button { background: #0a0a0c; border: 1px solid #333; color: #bbb; border-radius: 999px; padding: 6px 14px; font: inherit; font-size: .78rem; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; } .vl-folders button span { color: #ffcc00; margin-left: 4px; }
+.vl-folders button:hover { border-color: #ff6600; color: #fff; } .vl-folders button.on { background: #ff6600; border-color: #ff6600; color: #111; font-weight: bold; } .vl-folders button.on span { color: #111; }
