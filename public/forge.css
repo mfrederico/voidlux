@@ -126,3 +126,6 @@ details.vl-anatomy .vl-card { cursor: pointer; }
 .vl-cover span { position: absolute; inset: 0; display: grid; place-items: center; color: #ffcc00; font-size: 1.6rem; letter-spacing: 4px; text-transform: uppercase; opacity: .8; }
 .vl-card .vl-cover { aspect-ratio: 16 / 7; margin: -14px -14px 10px; width: auto; border-radius: 6px 6px 0 0; }
 .vl-game .vl-cover { margin: 0; border-radius: 0; aspect-ratio: 16 / 9; }
+/* the cover fades out diagonally: full at the top-left, gone at the bottom-right, into the card's own dark */
+.vl-cover img { -webkit-mask-image: linear-gradient(135deg, #000 20%, rgba(0,0,0,0.75) 45%, rgba(0,0,0,0.25) 75%, transparent 100%); mask-image: linear-gradient(135deg, #000 20%, rgba(0,0,0,0.75) 45%, rgba(0,0,0,0.25) 75%, transparent 100%); }
+.vl-cover { background: var(--ui-surface); } .vl-cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(135deg, transparent 50%, rgba(255,102,0,0.08) 100%); pointer-events: none; }
