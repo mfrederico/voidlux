@@ -21,7 +21,10 @@ args=(--ro-bind /usr /usr --ro-bind /etc /etc --ro-bind /proc /proc --dev-bind /
 for d in /lib /lib64 /bin /sbin /opt; do [ -e "$d" ] && args+=(--ro-bind "$d" "$d"); done
 for d in kit studio templates centipede; do [ -d "$ROOT/$d" ] && args+=(--ro-bind "$ROOT/$d" "$ROOT/$d"); done
 args+=(--bind "$GAME" "$GAME")
-args+=(--ro-bind "$NODE_BIN" "$NODE_BIN" --ro-bind "$CLAUDE_DIR" "$CLAUDE_DIR")
+args+=(--ro-bind "$CLAUDE_DIR" "$CLAUDE_DIR")
+# the node install: the whole prefix, not just bin/ (npx is a link into ../lib/node_modules, and a plugin's MCP server such as
+# mojulo starts with `npx -y`); /usr and /opt are bound already
+NODE_HOME=$(dirname "$NODE_BIN"); case "$NODE_HOME" in /usr*|/opt*) ;; *) args+=(--ro-bind "$NODE_HOME" "$NODE_HOME");; esac
 # the soak: Playwright from the operator's node_modules, its browser cache, and Chrome (/opt/google is under /opt above)
 PW_ROOT=${PLAYWRIGHT_ROOT:-$H}
 [ -d "$PW_ROOT/node_modules" ] && args+=(--ro-bind "$PW_ROOT/node_modules" "$PW_ROOT/node_modules")
@@ -34,6 +37,8 @@ else
   # app's bin/claude, so every game's runs get them. Sessions still stay per game (claude keys them by working folder).
   AH="$ROOT/.aibuilder/home"; mkdir -p "$AH/.claude"; [ -f "$AH/.claude.json" ] || echo '{}' > "$AH/.claude.json"
   args+=(--bind "$AH/.claude" "$H/.claude" --bind "$AH/.claude.json" "$H/.claude.json")
+  # what the plugins keep between runs: mojulo's recipes and models (~/.mojulo), and npm's cache so `npx -y` does not fetch every run
+  for d in .mojulo .npm; do mkdir -p "$AH/$d"; args+=(--bind "$AH/$d" "$H/$d"); done
 fi
 [ -f "$H/.gitconfig" ] && args+=(--ro-bind "$H/.gitconfig" "$H/.gitconfig")
 IFS=: read -ra extra <<< "${JAIL_RW:-}"; for d in "${extra[@]}"; do [ -n "$d" ] && [ -e "$d" ] && args+=(--bind "$d" "$d"); done

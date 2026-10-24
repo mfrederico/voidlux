@@ -46,6 +46,10 @@ class GameAgent {
         $env['PATH'] = '/usr/local/bin:/usr/bin:/bin' . (!empty($env['PATH']) ? ':' . $env['PATH'] : '');
         $home = (string) ($env['HOME'] ?? ''); if ($home === '') { $env['HOME'] = (string) (posix_getpwuid(posix_geteuid())['dir'] ?? '/tmp'); $home = $env['HOME']; }
         $env['PATH'] = $home . '/.local/bin:' . $env['PATH'];
+        // [forge] node_bin: the folder of the node the agents and their plugins' MCP servers run on (mojulo wants 22.14+, the
+        // system node here is 20). Set and missing is a fault to fix in conf/config.ini, never a quiet fall back to the system node.
+        $nodeBin = rtrim((string) GameStore::cfg('node_bin', ''), '/');
+        if ($nodeBin !== '') { if (!is_executable($nodeBin . '/node')) throw new \RuntimeException("[forge] node_bin = {$nodeBin} has no node program; fix conf/config.ini"); $env['PATH'] = $nodeBin . ':' . $env['PATH']; }
         $bin = is_executable($root . '/bin/claude') ? $root . '/bin/claude' : (\app\ClaudeBinary::hostBinary() ?? ($home . '/.local/bin/claude')); // the app's own agent program first (/agents installs it), else the host's
         if (!is_executable($bin)) throw new \RuntimeException("no claude CLI for the agent (looked for {$bin}); install Claude Code for the user PHP runs as");
         if ($mode === 'app') {

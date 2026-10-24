@@ -7,6 +7,10 @@
 //                                 kinds stamped cost a fraction of drawing each one stroke by stroke: use it for anything that
 //                                 repeats. Anything upright or changing every frame (shadows, bars) is drawn live around it.
 //   Draw.textStamp(s, x, y, size, color, align)  the same for text that repeats (damage numbers, scores)
+//   Draw.load(key, 'assets/x.png')  a picture from a file (uploaded media, AI-made sprites) fetched once at boot;
+//   Draw.pic(key, x, y, w, h, angle) draws it centred every frame (nothing, and false, until it has arrived; a file that will
+//                                 not load is a console error, which the soak reports). Draw.loaded(key) says when it is there;
+//                                 something stamped hundreds of times goes into the atlas then: Draw.sprite(key, half, g => g.drawImage(Draw.images.get(key), -half, -half, half * 2, half * 2)).
 // The atlas is one 2048 px canvas per page (one for sprites, one for text) packed in shelves; a full page is wiped and refills.
 const Draw = {
   ctx: null, px: 1, sprites: new Map(), pages: {}, ATLAS: 2048, camM: null, FONT: '"Trebuchet MS", "Segoe UI", sans-serif',
@@ -28,6 +32,15 @@ const Draw = {
     const g = S.cv.getContext('2d'), was = this.ctx, k = this.px;
     g.save(); g.beginPath(); g.rect(S.x, S.y, S.w, S.h); g.clip(); g.translate(S.x + ox, S.y + oy); g.scale(k, k); g.lineCap = 'round';
     this.ctx = g; try { paint(g); } finally { this.ctx = was; g.restore(); }
+  },
+  images: new Map(),
+  load(key, url) { const im = new Image(); im.onerror = () => console.error(`Draw.load: ${url} did not load (key ${key})`); im.src = url; this.images.set(key, im); return im; },
+  loaded(key) { const im = this.images.get(key); return !!(im && im.complete && im.naturalWidth); },
+  pic(key, x, y, w, h, a) {
+    const im = this.images.get(key); if (!im || !im.complete || !im.naturalWidth) return false;
+    const c = this.ctx; h = h || w * im.naturalHeight / im.naturalWidth;
+    if (!a) { c.drawImage(im, x - w / 2, y - h / 2, w, h); return true; }
+    const m = c.getTransform(); c.translate(x, y); c.rotate(a); c.drawImage(im, -w / 2, -h / 2, w, h); c.setTransform(m.a, m.b, m.c, m.d, m.e, m.f); return true;
   },
   textSprite(s, size, color, align) {
     const k = this.px, id = 'T' + s + '|' + size + '|' + color + '|' + (align || 'left') + '@' + k; let S = this.sprites.get(id); if (S) return S;

@@ -13,7 +13,7 @@ every game in mind and never for one game's convenience.
 | kit-util.js | `TAU`, `U`, `Rng`, `Pool` | random, clamp, lerp, distance, angle helpers, `U.damp(rate, dt)` for frame-rate independent easing, `U.hit` circle tests, a seeded random for repeatable runs, object pools |
 | kit-sfx.js | `SFX` | `SFX.play('key')` plays the sound designed under that key in js/sfx.js (or `SFX.FALLBACK[key]`, or a blip). `SFX.at(x, fn)` pans by screen position. Voices are pooled: never create audio nodes per sound |
 | kit-music.js | `Music` | `Music.start('name')` loops a tracker song from js/music-themes.js; `setMood(semitones, fever)`; `playOnce`; `fanfare`; `Music.has(name)` |
-| kit-draw.js | `Draw` | `Draw.text` (outlined), `Draw.ink`, `circle`, `ring`, `roundRect`, `glow`, `bar`, `button`; the sprite atlas: `Draw.sprite(key, radius, paint)` draws once, `Draw.stamp(S, x, y, angle)` stamps every frame |
+| kit-draw.js | `Draw` | `Draw.text` (outlined), `Draw.ink`, `circle`, `ring`, `roundRect`, `glow`, `bar`, `button`; the sprite atlas: `Draw.sprite(key, radius, paint)` draws once, `Draw.stamp(S, x, y, angle)` stamps every frame; pictures from files: `Draw.load(key, 'assets/x.png')` once, `Draw.pic(key, x, y, w, h, angle)` every frame |
 | kit-input.js | `Input`, `TOUCH` | `Input.down(code)`, `Input.once(code)`, `Input.axis()` (WASD / arrows / joystick / gamepad), `Input.mouse`, `Input.taps`, `Input.tapped(rect)`; `TOUCH.buttons` is the phone's button cluster (data: edit it at boot) |
 | kit-game.js | `Game`, `Settings`, `Save` | the loop, scenes, canvas fit, camera, messages, shake, profiler; settings and one saved run per game in localStorage |
 | kit-notes.js | `Notes` | the producer's note mode: Alt+P pauses, a click picks the nearest thing with an x and y in the game's state and opens a note dialog; notes reach the forge. A game can answer better with `Game.describe = (x, y) => [{ label, fields }]` |
@@ -62,6 +62,25 @@ the report; `ok: true` means no exceptions, no console errors, no failed `Test.a
 lists which scenes were visited: a screen the bot never reached is untested. Run it when the autopilot's run goes through
 what you changed (gameplay, scene flow, load order); skip it, and say what you checked instead, when it would not (a screen
 the bot never reaches, docs, tuning, copy). It takes the producer a minute each time.
+
+## Plugins the builder has
+
+The forge's agents share the plugins installed on /agents (Skills & plugins). A plugin's skills load when a task matches them
+or when a message names one (`/spritecook:spritecook-generate-sprites`); a plugin's MCP tools need the forge's sign-in to
+that service (`php scripts/agent-shell.php`, then `/mcp`). A tool that answers "needs authentication" is not signed in: say so
+in one line and stop; never work around it with an API key or a web form.
+
+- **spritecook** — pixel-art sprites, character animations, tilesets, UI kits. Read `spritecook-workflow-essentials` before
+  the first call. Download each result's `sprite_url` into `assets/` (`curl -s -o assets/<name>.png <url>`), commit the file,
+  and draw it with `Draw.load` / `Draw.pic` (into the atlas with `Draw.sprite` once `Draw.loaded`). Generation costs the
+  producer credits: one variation first, more only when asked.
+- **cellcog** — art, music, sound, video and documents from a remote agent on the producer's own CellCog account. For a whole
+  asset family in one style, or music beyond the tracker. Results are links good for 30 days: download what the game uses
+  into `assets/` and commit it.
+- **game-trend-skills** — market scans, idea scoring, build briefs, launch plans, metrics, all with live cited sources. For
+  GAME.md's Design and the Concept conversation, not for code.
+- **mojulo** — a 3D recipe compiler (glTF, STL, a walkable HTML page). Rarely the tool for a canvas game; its data lives in
+  the agents' home (`~/.mojulo`) and is kept between runs.
 
 ## House rules
 

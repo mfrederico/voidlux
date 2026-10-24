@@ -24,7 +24,7 @@ $slug = $game['slug'];
     <a class="vl-media-card" href="#sfx" onclick="showTab('sfx'); return false;"><div class="vl-media-icon">♪</div><div class="vl-media-title">SFX</div><div class="vl-media-sub">Sound effects for the elements of the game. Every sound the code plays is a slot; design it as layers of swept tones and noise, hear it, save it into the game.</div></a>
     <a class="vl-media-card" href="#tracker" onclick="showTab('tracker'); return false;"><div class="vl-media-icon">▦</div><div class="vl-media-title">Tracker</div><div class="vl-media-sub">Make chiptune music on an 8-track tracker with the game's own synth and drums. Songs save by name (title, play, boss) straight into the game.</div></a>
     <a class="vl-media-card" href="#assets" onclick="showTab('assets'); return false;"><div class="vl-media-icon">◈</div><div class="vl-media-title">Media</div><div class="vl-media-sub">Upload and download SVG and image files for the builder to use. Tell it which, in a note or a message.</div></a>
-    <div class="vl-media-card soon"><div class="vl-media-icon">✦</div><div class="vl-media-title">Sprites</div><div class="vl-media-sub">Draw sprites on the game's atlas. Coming.</div></div>
+    <a class="vl-media-card" href="#build" onclick="askBuilder('Using the spritecook skills, generate pixel-art sprites for: … (one variation each). Save the PNGs in assets/, commit them, and draw them in the game with Draw.load and Draw.pic.'); return false;"><div class="vl-media-icon">✦</div><div class="vl-media-title">Sprites</div><div class="vl-media-sub">AI pixel art through the builder's SpriteCook plugin: say what you need, it makes the PNGs, saves them in Media and draws them.</div></a>
   </div>
 </section>
 
@@ -127,6 +127,7 @@ $slug = $game['slug'];
 const slug = <?= json_encode($slug) ?>, $ = id => document.getElementById(id);
 let G = <?= json_encode($game, JSON_UNESCAPED_SLASHES) ?>, lastId = 0, loaded = {}, pollT = null;
 const GROUP = { sfx: 'media', tracker: 'media', assets: 'media', design: 'advanced', status: 'advanced', config: 'advanced', history: 'advanced' };
+function askBuilder(text) { showTab('build'); const ta = $('chatForm').querySelector('textarea'); ta.value = text; ta.focus(); const i = text.indexOf('…'); if (i >= 0) ta.setSelectionRange(i, i + 1); }
 function showTab(name) {
   if (name === 'advanced') { document.querySelector('.vl-tab-menu').classList.toggle('open'); return; }
   document.querySelector('.vl-tab-menu').classList.remove('open');
