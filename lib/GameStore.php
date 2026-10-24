@@ -125,7 +125,7 @@ class GameStore {
             'memberId' => (int) $g->memberId, 'teamId' => (int) $g->teamId, 'createdAt' => (string) $g->createdAt, 'publishedAt' => (string) $g->publishedAt, 'publishedUrl' => (string) $g->publishedUrl,
             'lastSoak' => $soaks[0] ?? null, 'checkpoints' => count(self::checkpoints($slug)), 'lastCommit' => mb_substr(trim($log), 0, 140),
             'tasks' => ['done' => count(array_filter($tasks, fn($t) => $t['done'])), 'total' => count($tasks)], 'taskList' => $tasks,
-            'agent' => self::agentState($slug), 'playUrl' => '/games/' . $slug . '/',
+            'agent' => self::agentState($slug), 'playUrl' => '/games/' . $slug . '/', 'cover' => self::cover($slug),
         ];
     }
     public static function tasks(string $slug): array {
@@ -232,6 +232,8 @@ class GameStore {
         }
         return $out;
     }
+    /** The newest playtest picture: a mid-game view of the game as it is now, or '' when none was taken yet. */
+    public static function cover(string $slug): string { foreach (self::soaks($slug) as $k) if (!empty($k['shot'])) return (string) $k['id']; return ''; }
     public static function soak(string $slug): array { return json_decode((string) file_get_contents(self::dir($slug) . '/.studio/soaks/' . basename($slug) . '.json'), true) ?: []; }
     public static function soakUrl(string $slug): string { return (string) self::cfg('soak_url', self::baseUrl()) . '/games/' . $slug . '/'; }
     // ---- a soak in a viewer's own browser: the game page, while open, is a test machine. A request is a file in .studio/
