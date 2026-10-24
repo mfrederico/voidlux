@@ -11,11 +11,14 @@
 //   with Game.describe = (x, y) => [{ label, fields }] (or G.describe for Centipede-style games).
 const Notes = {
   known: [], open: false, picking: false, hover: null, picked: null, el: null, dlg: null, canvas: null, KEY: 'voidlux.notes.queue', slug: '',
+  forge() { try { if (window.parent !== window) return window.parent; } catch (e) {} try { if (window.opener && !window.opener.closed) return window.opener; } catch (e) {} return null; },
   init() {
     this.canvas = document.getElementById('game'); if (!this.canvas) return;
     this.slug = (location.pathname.match(/\/games\/([a-z0-9-]+)\//) || [])[1] || (typeof Game !== 'undefined' ? Game.id : 'game');
     window.addEventListener('keydown', e => { if (e.altKey && e.code === 'KeyP') { e.preventDefault(); this.toggle(); } else if (e.code === 'Escape' && this.open) { e.preventDefault(); this.close(); } }, true);
     window.addEventListener('message', e => { const m = e.data || {}; if (m.type === 'forge:notes') { if (m.on) this.start(); else this.close(); } else if (m.type === 'forge:notes-list') { this.known = Array.isArray(m.notes) ? m.notes : []; if (this.open) this.pins(); } });
+    this.canvas.addEventListener('touchstart', e => { if (e.touches.length === 3) { e.preventDefault(); this.toggle(); } else if (this.open && this.picking && e.touches.length === 1) { e.preventDefault(); const t = e.touches[0]; this._tp = { x: t.clientX, y: t.clientY }; } }, { passive: false });
+    this.canvas.addEventListener('touchend', e => { if (this.open && this.picking && this._tp) { e.preventDefault(); const p = this.logical(this._tp.x, this._tp.y); this._tp = null; this.hover = this.describe(p.x, p.y); this.pick(p); } }, { passive: false });
     this.style(); this.flushQueue();
   },
   // ---- pause: a kit game has Game.paused; a Centipede-style game gets its G.update wrapped ----
@@ -30,8 +33,8 @@ const Notes = {
   toggle() { if (this.open) this.close(); else this.start(); },
   start() {
     if (this.open) return; this.open = true; this.picking = true; this.pause(true);
-    const el = this.el = document.createElement('div'); el.className = 'vl-notes'; el.innerHTML = '<div class="vl-notes-bar"><b>NOTE MODE</b> paused · click anything on the screen · <kbd>Esc</kbd> resumes</div><svg class="vl-notes-wire" width="100%" height="100%"><line x1="0" y1="0" x2="0" y2="0"></line><circle cx="0" cy="0" r="4"></circle></svg><div class="vl-notes-ring"></div>';
-    try { window.parent.postMessage({ type: 'forge:notes-open' }, '*'); } catch (e) {} // the forge scrolls the game into view
+    const el = this.el = document.createElement('div'); el.className = 'vl-notes'; el.innerHTML = '<div class="vl-notes-bar"><b>NOTE MODE</b> paused · ' + ('ontouchstart' in window ? 'tap anything on the screen · three-finger tap resumes' : 'click anything on the screen · <kbd>Esc</kbd> resumes') + '</div>'<svg class="vl-notes-wire" width="100%" height="100%"><line x1="0" y1="0" x2="0" y2="0"></line><circle cx="0" cy="0" r="4"></circle></svg><div class="vl-notes-ring"></div>';
+    try { const f = this.forge(); if (f) f.postMessage({ type: 'forge:notes-open' }, '*'); } catch (e) {} // the forge scrolls the game into view, sends the notes so far
     document.body.appendChild(el);
     this._move = e => { if (!this.picking) return; const p = this.logical(e.clientX, e.clientY); this.hover = this.describe(p.x, p.y); this.ring(this.hover ? this.hover.at : p, !!this.hover); };
     this._click = e => { if (!this.picking) return; const t = e.target; if (this.dlg && this.dlg.contains(t)) return; if (!this.canvas.contains(t) && t !== this.el && !t.classList.contains('vl-notes-ring') && !t.closest('.vl-notes-pin')) return; /* a pin is a pick too: it sits on the thing it is about */ e.preventDefault(); e.stopPropagation(); const p = this.logical(e.clientX, e.clientY); this.pick(p); };
@@ -56,7 +59,7 @@ const Notes = {
     window.removeEventListener('mousemove', this._move, true); window.removeEventListener('click', this._click, true);
     if (this.dlg) { this.dlg.remove(); this.dlg = null; } if (this._place) window.removeEventListener('resize', this._place); if (this.el) { this.el.remove(); this.el = null; }
     document.body.classList.remove('vl-notes-on'); this.picked = null; this.hover = null;
-    try { window.parent.postMessage({ type: 'forge:notes-closed' }, '*'); } catch (e) {}
+    try { const f = this.forge(); if (f) f.postMessage({ type: 'forge:notes-closed' }, '*'); } catch (e) {}
   },
   ring(p, hit) { const r = this.el && this.el.querySelector('.vl-notes-ring'); if (!r) return; const c = this.css(p.x, p.y), s = this.canvas.getBoundingClientRect().width / this.canvas.width; const rad = (hit && this.hover && this.hover.r ? this.hover.r + 10 : 22) * s; r.style.cssText = `left:${c.x - rad}px;top:${c.y - rad}px;width:${rad * 2}px;height:${rad * 2}px;opacity:1;border-color:${hit ? '#ffcc00' : 'rgba(255,255,255,0.5)'}`; },
   // ---- what is at (x, y): the game's own describe hook, else the scan ----
@@ -103,13 +106,14 @@ const Notes = {
     d.innerHTML = `<div class="vl-notes-what">${where}<div class="vl-notes-meta">scene ${this.esc(this.picked.scene)} · (${this.picked.x}, ${this.picked.y})</div></div>${priorHtml}<img class="vl-notes-shot" src="${this.picked.shot}" alt=""><textarea placeholder="What about it? 'too fast', 'make this gold and bigger', 'this should drop a shield'…"></textarea><div class="vl-notes-btns"><button data-act="note">Save note</button><button data-act="build" class="hot">Send to build</button><button data-act="again">Pick again</button><button data-act="close">Resume</button></div>`;
     document.body.appendChild(d); this.place(what ? what.at : p); this._place = () => { if (this.picked) this.place(what ? what.at : p); }; window.addEventListener('resize', this._place); const ta = d.querySelector('textarea'); setTimeout(() => ta.focus(), 50);
     d.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; e.stopPropagation(); const act = b.dataset.act;
-      if (act === 'scrap' || act === 'delete') { if (act === 'delete' && !confirm('Delete this note for good?')) return; try { window.parent.postMessage({ type: 'forge:note-action', id: +b.dataset.note, action: act }, '*'); } catch (err) {} const row = b.closest('[data-note]'); if (row) row.remove(); this.known = this.known.filter(n => n.id !== +b.dataset.note); this.pins(); this.toast(act === 'delete' ? 'note deleted' : 'note scrapped'); return; } if (act === 'close') this.close(); else if (act === 'again') { d.remove(); this.dlg = null; this.picking = true; this.wireOff(); } else this.send(act === 'build', ta.value.trim()); });
+      if (act === 'scrap' || act === 'delete') { if (act === 'delete' && !confirm('Delete this note for good?')) return; try { const f = this.forge(); if (f) f.postMessage({ type: 'forge:note-action', id: +b.dataset.note, action: act }, '*'); } catch (err) {} const row = b.closest('[data-note]'); if (row) row.remove(); this.known = this.known.filter(n => n.id !== +b.dataset.note); this.pins(); this.toast(act === 'delete' ? 'note deleted' : 'note scrapped'); return; } if (act === 'close') this.close(); else if (act === 'again') { d.remove(); this.dlg = null; this.picking = true; this.wireOff(); } else this.send(act === 'build', ta.value.trim()); });
     ta.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); this.send(true, ta.value.trim()); } e.stopPropagation(); });
   },
   // the dialog sits in the middle of whichever half of the screen the pick is NOT in (never over it), vertically centred,
   // and a wire runs from its nearest edge to the ring, so it is always on screen and always says what it is about
   place(p) {
-    const d = this.dlg; if (!d) return; const c = this.css(p.x, p.y), vw = window.innerWidth, vh = window.innerHeight, w = Math.min(330, vw - 16), h = d.offsetHeight || 360;
+    const d = this.dlg; if (!d) return;
+    if (window.innerWidth < 640) { d.classList.add('sheet'); d.style.left = ''; d.style.top = ''; this.wireOff(); return; } d.classList.remove('sheet'); const c = this.css(p.x, p.y), vw = window.innerWidth, vh = window.innerHeight, w = Math.min(330, vw - 16), h = d.offsetHeight || 360;
     const right = c.x < vw / 2; const left = right ? Math.min(vw - w - 8, Math.max(vw / 2 + 24, vw * 0.75 - w / 2)) : Math.max(8, Math.min(vw / 2 - w - 24, vw * 0.25 - w / 2));
     const top = Math.max(8, Math.min(vh - h - 8, vh / 2 - h / 2)); d.style.left = left + 'px'; d.style.top = top + 'px'; d.classList.toggle('from-left', !right);
     const svg = this.el && this.el.querySelector('.vl-notes-wire'); if (!svg) return;
@@ -120,13 +124,13 @@ const Notes = {
     if (!text) { const ta = this.dlg && this.dlg.querySelector('textarea'); if (ta) { ta.placeholder = 'Say something about it first.'; ta.focus(); } return; }
     const note = Object.assign({ slug: this.slug, text, build }, this.picked);
     let delivered = false;
-    try { if (window.parent !== window) { window.parent.postMessage({ type: 'forge:note', note }, '*'); delivered = true; } } catch (e) {}
+    try { const f = this.forge(); if (f) { f.postMessage({ type: 'forge:note', note }, '*'); delivered = true; } } catch (e) {}
     if (!delivered) { try { const q = JSON.parse(localStorage.getItem(this.KEY) || '[]'); q.push(note); localStorage.setItem(this.KEY, JSON.stringify(q.slice(-50))); } catch (e) {} }
     this.toast(delivered ? (build ? 'sent to the build' : 'note saved') : 'note queued: open the game from the forge to deliver it');
     this.dlg.remove(); this.dlg = null; this.picking = true; this.picked = null; this.wireOff();
   },
   wireOff() { const svg = this.el && this.el.querySelector('.vl-notes-wire'); if (svg) svg.style.opacity = 0; },
-  flushQueue() { try { const q = JSON.parse(localStorage.getItem(this.KEY) || '[]'); if (q.length && window.parent !== window) { for (const n of q) window.parent.postMessage({ type: 'forge:note', note: n }, '*'); localStorage.removeItem(this.KEY); } } catch (e) {} },
+  flushQueue() { try { const q = JSON.parse(localStorage.getItem(this.KEY) || '[]'), f = this.forge(); if (q.length && f) { for (const n of q) f.postMessage({ type: 'forge:note', note: n }, '*'); localStorage.removeItem(this.KEY); } } catch (e) {} },
   toast(s) { const t = document.createElement('div'); t.className = 'vl-notes-toast'; t.textContent = s; document.body.appendChild(t); setTimeout(() => t.remove(), 2200); },
   esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); },
   style() {
@@ -144,6 +148,7 @@ const Notes = {
       .vl-notes-pin { position: fixed; width: 18px; height: 18px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: #ffcc00; border: 2px solid #111; box-shadow: 0 0 8px rgba(255,204,0,0.7); pointer-events: auto; z-index: 9000; cursor: help; } .vl-notes-pin.sent { background: #7df9ff; } .vl-notes-pin span { display: block; transform: rotate(45deg); font: bold 10px/14px monospace; color: #111; text-align: center; }
       .vl-notes-prior button { font: inherit; font-size: 10px; background: #1a1a1a; color: #bbb; border: 1px solid #444; border-radius: 3px; padding: 0 5px; margin-left: 4px; cursor: pointer; } .vl-notes-prior button:hover { border-color: #ff4d6d; color: #fff; }
       .vl-notes-prior { margin-top: 8px; padding: 6px 8px; background: #17171a; border: 1px solid #333; border-radius: 4px; font-size: 11.5px; color: #ccc; max-height: 7em; overflow: auto; } .vl-notes-prior b { color: #ffcc00; display: block; margin-bottom: 2px; } .vl-notes-prior i { color: #7df9ff; font-style: normal; }
+      @media (max-width: 640px) { .vl-notes-dlg.sheet { left: 6px !important; right: 6px; width: auto !important; top: auto !important; bottom: 6px; max-height: 70vh; overflow: auto; } .vl-notes-dlg.sheet .vl-notes-shot { height: 90px; } .vl-notes-bar { font-size: 11px; padding: 5px 10px; white-space: nowrap; max-width: 96vw; overflow: hidden; text-overflow: ellipsis; } }
       .vl-notes-toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 9002; background: #111; color: #ffcc00; border: 1px solid #333; border-radius: 999px; padding: 6px 14px; font: 13px "IBM Plex Mono", monospace; }`;
     document.head.appendChild(s);
   },
