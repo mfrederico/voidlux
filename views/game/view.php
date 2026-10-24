@@ -4,7 +4,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 ?>
 <meta name="csrf-token" content="<?= $e(csrf_token()) ?>">
 <div class="vl-gamebar"><b><?= $e($game['title']) ?></b><span id="metaLine" class="vl-desktop-only"><?= $e($game['template']) ?> · <?= (int) $game['checkpoints'] ?> checkpoints · <?= $e($game['lastCommit']) ?></span><span class="vl-pill" id="statusPill"><?= $e($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span>
-  <a class="btn btn-sm btn-outline-secondary ms-auto" href="/games/<?= $e($slug) ?>/" target="_blank">Play in a tab</a><?php if ($game['publishedUrl']): ?><a class="btn btn-sm btn-outline-primary" href="<?= $e($game['publishedUrl']) ?>" target="_blank">Live</a><?php endif; ?></div>
+  <?php if ($game['publishedUrl']): ?><a class="btn btn-sm btn-outline-primary ms-auto" href="<?= $e($game['publishedUrl']) ?>" target="_blank">Live</a><?php endif; ?></div>
 <div class="vl-tabs" id="tabs">
   <button data-tab="play" class="on">Play</button><button data-tab="build">Build</button><button data-tab="notes">Notes <span id="notesTab"></span></button><button data-tab="test">Test</button><button data-tab="media">Media</button><button data-tab="ship">Ship</button>
   <span class="vl-tab-menu"><button data-tab="advanced" type="button">Advanced ▾</button><span class="vl-tab-menu-list"><button data-tab="design">Concept</button><button data-tab="status">Status</button><button data-tab="config">Config</button><button data-tab="history">History</button></span></span>
@@ -36,7 +36,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 </section>
 
 <section class="vl-pane on" id="pane-play">
-  <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="reloadPlay()">Reload</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('fps=1')">Profiler</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('bot=1')">Autopilot</button><button class="btn btn-sm btn-primary" onclick="noteMode()" id="noteBtn">Note mode<span class="vl-note-alt"> (Alt+P)</span></button></div>
+  <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="reloadPlay()">Reload</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('fps=1')">Profiler</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('bot=1')">Autopilot</button><button class="btn btn-sm btn-primary" onclick="noteMode()" id="noteBtn" title="pause the game and point at what should change (Alt+P inside the game)">Note mode</button><a class="btn btn-sm btn-outline-secondary" href="/games/<?= $e($slug) ?>/" target="_blank" onclick="playTab = window.open(this.href, 'play-<?= $e($slug) ?>'); return false;" title="full screen in its own tab; notes made there still reach this page (on a phone: a three-finger tap opens note mode)">Play in a tab</a></div>
   <iframe class="vl-frame" id="playFrame" allow="autoplay; fullscreen"></iframe>
   <div class="vl-notes-strip" id="notesStrip"></div>
   <form class="vl-compose vl-compose-play" data-chat><textarea placeholder="Tell the builder what to do…"></textarea><div class="btns"><button type="submit" class="btn btn-primary">Send</button></div></form>
@@ -224,7 +224,9 @@ $('cardForm').onsubmit = async e => { e.preventDefault(); const f = e.target; tr
 let NOTES = [], notesFolder = 'open';
 const FOLDER = { open: 'awaiting verdict', sent: '✓ sent to build', done: 'scrapyard' };
 document.getElementById('notesFolders').onclick = e => { const b = e.target.closest('button'); if (b) { notesFolder = b.dataset.folder; renderNotes(); } };
-function noteMode() { const f = $('playFrame'); if (!f.contentWindow) return; f.contentWindow.postMessage({ type: 'forge:notes', on: true }, '*'); f.focus(); }
+let playTab = null;
+function gameWindows() { const w = []; try { if (playTab && !playTab.closed) w.push(playTab); } catch (e) { playTab = null; } const f = $('playFrame'); if (f.contentWindow) w.push(f.contentWindow); return w; }
+function noteMode() { const ws = gameWindows(); if (!ws.length) return; ws[0].postMessage({ type: 'forge:notes', on: true }, '*'); try { ws[0].focus(); } catch (e) {} }
 window.addEventListener('message', async e => {
   const m = e.data || {};
   if (m.type === 'forge:notes-open') { $('playFrame').scrollIntoView({ block: 'center', behavior: 'smooth' }); sendNotesToGame(); return; } // the game is in note mode: keep the whole frame in view, show it the notes so far
@@ -232,7 +234,7 @@ window.addEventListener('message', async e => {
   if (m.type !== 'forge:note' || !m.note) return;
   try { const r = await Forge.api(`/game/note/${slug}`, { note: m.note }); NOTES = r.notes; renderNotes(); if (m.note.build) refreshDue = true; } catch (err) { alert('note not saved: ' + err.message); }
 });
-function sendNotesToGame() { const f = $('playFrame'); if (f.contentWindow) f.contentWindow.postMessage({ type: 'forge:notes-list', notes: NOTES.filter(n => n.state !== 'done').map(n => ({ id: n.id, scene: n.scene, x: n.x, y: n.y, what: n.what, text: n.text, state: n.state, by: n.byName, canManage: !!n.canManage, votes: n.votes || 0 })) }, '*'); }
+function sendNotesToGame() { for (const w of gameWindows()) w.postMessage({ type: 'forge:notes-list', notes: NOTES.filter(n => n.state !== 'done').map(n => ({ id: n.id, scene: n.scene, x: n.x, y: n.y, what: n.what, text: n.text, state: n.state, by: n.byName, canManage: !!n.canManage, votes: n.votes || 0 })) }, '*'); }
 function renderNotes() {
   sendNotesToGame();
   const filt = notesFolder, big = NOTES.filter(n => n.state === filt).sort((a, b) => ((b.votes || 0) - (a.votes || 0)) || (b.id - a.id));
