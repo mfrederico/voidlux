@@ -87,7 +87,7 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
 #viewer { position: fixed; inset: 0; background: rgba(8, 4, 16, .92); display: none; grid-template-rows: auto 1fr auto; gap: 10px; padding: 16px; z-index: 50; color: #f1ecfa; }
 #viewer.open { display: grid; } #viewer .vhead { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
 #viewer .vhead .mono { font-size: 14px; } #viewer .vstage { display: grid; place-items: center; min-height: 0; overflow: hidden; }
-#viewer .vstage img, #viewer .vstage canvas { max-width: min(92vw, 92vh); max-height: 100%; width: min(92vw, 70vh); height: auto; background: repeating-conic-gradient(#2a2238 0 25%, #1e1730 0 50%) 0 0 / 24px 24px; border-radius: 12px; }
+#viewer .vstage img, #viewer .vstage canvas { display: block; object-fit: contain; background: repeating-conic-gradient(#2a2238 0 25%, #1e1730 0 50%) 0 0 / 24px 24px; border-radius: 12px; }
 #viewer .vstage img.px { image-rendering: pixelated; }
 #viewer .vfoot { display: grid; gap: 8px; } #viewer .refine { display: grid; grid-template-columns: 1fr auto; gap: 8px; } @media (max-width: 700px) { #viewer .refine { grid-template-columns: 1fr; } }
 #viewer textarea { background: #1b1428; color: #f1ecfa; border-color: #2e2440; } #viewer button { background: #1b1428; color: #f1ecfa; border-color: #2e2440; } #viewer button.primary { background: #ffd166; color: #1d1530; border-color: #ffd166; }
@@ -359,7 +359,7 @@ async function openViewer(job, file, url, note) {
   const isCode = /\.js(\?|$)/i.test(url), isSvg = /\.svg(\?|$)/i.test(url);
   try {
     if (isCode) { const text = await (await fetch(url, { cache: 'no-store' })).text(); const r = renderCode(text, Math.min(768, Math.floor(Math.min(innerWidth, innerHeight) * 0.9)), 0); st.appendChild(r.canvas); }
-    else { const im = document.createElement('img'); im.alt = file; im.className = isSvg ? '' : 'px'; im.src = url; st.appendChild(im); }
+    else { const im = document.createElement('img'); im.alt = file; im.className = isSvg ? '' : 'px'; const n = Math.max(160, Math.floor(Math.min(innerWidth * 0.92, innerHeight * 0.66))); im.width = im.height = n; im.style.width = im.style.height = n + 'px'; im.onerror = () => { st.innerHTML = `<div class="msg err">could not load ${esc(file)}</div>`; }; im.src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(); st.appendChild(im); }
   } catch (e) { st.innerHTML = `<div class="msg err">${esc(e.message)}</div>`; }
   el('vKeep').textContent = isSvg ? 'Keep as SVG' : isCode ? 'Keep as code' : 'Keep as a sprite'; el('vKeepPx').classList.toggle('hidden', !(isSvg || isCode)); el('vEdit').textContent = isSvg ? 'Edit the SVG' : isCode ? 'Edit the code' : 'Edit its pixels';
   el('viewer').classList.add('open'); el('vRefine').focus();
