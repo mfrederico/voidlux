@@ -108,7 +108,7 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
       <div class="out">
         <h3>What the AI makes of it</h3>
         <div class="outbox" id="outbox"><span class="muted small">Draw something on the left, say what it is below, and press &gt;&gt;. The builder takes your strokes as the shape and draws a clean sprite from them, two takes: as SVG, or as drawing code the game runs, or through SpriteCook. Keep one into the game as it is or as pixels, or edit it first.</span></div>
-        <div class="row"><label>key <input id="aiKey" placeholder="bee" pattern="[a-z][a-z0-9_-]{0,40}" style="width:120px"></label><button id="keepBtn" disabled>Keep as a sprite</button><button id="keepPxBtn" disabled class="hidden">Keep as pixels</button><button id="editBtn" disabled>Edit</button></div>
+        <div class="row"><label>key <input id="aiKey" placeholder="bee" pattern="[a-z][a-z0-9_\-]{0,40}" style="width:120px"></label><button id="keepBtn" disabled>Keep as a sprite</button><button id="keepPxBtn" disabled class="hidden">Keep as pixels</button><button id="editBtn" disabled>Edit</button></div>
       </div>
     </div>
     <div class="note"><div class="lbl">Describe it — what it is, and anything else the builder should know (colours, mood, what it does in the game)</div><textarea id="aiSubject" rows="3" placeholder="e.g. “an anteater looking left, sleepy, brown with a cream stripe; it wanders the farm and sniffs at hay bales”"></textarea>
@@ -127,7 +127,7 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
   <div class="main">
     <aside class="list">
       <div class="row"><button class="primary" id="newBtn">+ New</button><button id="importBtn">Import…</button><input type="file" id="importFile" accept=".png,.svg,.gif,.webp,.jpg,.jpeg" hidden></div>
-      <form class="newform" id="newForm"><input id="newKey" placeholder="key, e.g. cow" pattern="[a-z][a-z0-9_-]{0,40}" required><div class="row"><label>size <select id="newSize"><option>8</option><option>16</option><option>24</option><option selected>32</option><option>48</option><option>64</option><option>96</option><option>128</option></select></label><button class="primary">Create</button></div></form>
+      <form class="newform" id="newForm"><input id="newKey" placeholder="key, e.g. cow" pattern="[a-z][a-z0-9_\-]{0,40}" required><div class="row"><label>size <select id="newSize"><option>8</option><option>16</option><option>24</option><option selected>32</option><option>48</option><option>64</option><option>96</option><option>128</option></select></label><button class="primary">Create</button></div></form>
       <input type="search" id="q" placeholder="find a sprite">
       <h3>In the game</h3><div id="listIn" class="muted small">loading…</div>
       <h3>Files not in the game</h3><div id="listLoose" class="muted small"></div>
