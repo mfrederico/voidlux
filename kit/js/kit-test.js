@@ -43,7 +43,6 @@ const Test = {
   },
   finish() {
     if (this.done) return; this.done = true; const r = this.report(); window.__SOAK = r; console.log('SOAK ' + JSON.stringify(r));
-    try { fetch('/api/soak/report?game=' + encodeURIComponent(Game.id), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(r) }).catch(() => {}); } catch (e) {}
   },
 };
 // the soak clock rides on Game's step: wrap scene updates through Test.tick

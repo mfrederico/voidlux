@@ -56,8 +56,8 @@ the scene's `enter`. Check `Music.has(name)` before relying on a song that may n
 - Watch `?fps=1`: update and draw ms must stay under 8 each on a phone-class budget.
 
 **Testing.** Every scene has a `bot(dt)`: it sets `Input.bot.axis` and presses keys with `Input.tapKey`, so the soak can
-play from the title through game over and back. `node ../../studio/soak.mjs <slug> 60 4` runs a headless 60 game-second soak
-at 4x and prints the report; `ok: true` means no exceptions, no console errors, no failed `Test.assert`. The report also
+play from the title through game over and back. `../../studio/bin/soak 60 4` runs a headless 60 game-second soak at 4x and prints
+the report; `ok: true` means no exceptions, no console errors, no failed `Test.assert`. The report also
 lists which scenes were visited: a screen the bot never reached is untested.
 
 ## House rules

@@ -1,5 +1,5 @@
 <?php /* The member's games on the dashboard: what each is doing right now, and the door to the forge. */
-$__games = \app\GameStore::forMember((int) $__mid);
+$__games = \app\GameStore::forMember(member_id(\Flight::getMember()));
 ?>
 <div class="ui-panel mb-3">
     <div class="ui-panel-header d-flex justify-content-between align-items-center"><h3><i class="bi bi-controller text-primary me-2"></i>Your games</h3><a href="/forge/summon" class="btn btn-sm btn-primary"><i class="bi bi-stars"></i> Summon a game</a></div>

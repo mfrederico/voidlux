@@ -26,6 +26,6 @@ the brief, the design, the acceptance criteria and the task list are the contrac
 - `CFG` holds every number a designer might tune. No magic numbers in world.js.
 - Comments say what a thing is for and why. Never splice a `//` comment into the middle of a line.
 - After a change: `for f in js/*.js; do node --check $f || exit 1; done`, then a soak:
-  `node ../../studio/soak.mjs __SLUG__ 60 4` (60 game-seconds at 4x). Fix every error it reports before you call a task done.
+  `../../studio/bin/soak 60 4` (60 game-seconds at 4x). Fix every error it reports before you call a task done.
 - Add a line to GAME.md's log when a task is done, and tick its acceptance line only when the soak proves it.
 - Commit small, in plain English: what changed and why. The studio makes checkpoints (tags) around your runs.
