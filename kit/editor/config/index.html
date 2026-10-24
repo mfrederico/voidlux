@@ -60,7 +60,14 @@ code { font-family: var(--mono); font-size: 12.5px; }
   </div>
   <div class="list" id="list"></div>
 </div>
-<script>const API = '/gameapi', GAME = new URLSearchParams(location.search).get('game') || ''; let CSRF = ''; // the forge's API for this game: /gameapi/<verb>/<slug>, writes with X-CSRF-TOKEN const apiUrl = verb => `${API}/${verb}/${GAME}`; const apiHeaders = () => ({ 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest' }); async function apiToken() { try { const r = await fetch(apiUrl('token'), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); if (r.ok) { CSRF = (await r.json()).token || ''; return true; } } catch (e) {} return false; } document.title = `Config · ${GAME} · VoidLux Studio`; document.write('<script src="/games/' + GAME + '/js/config.js?t=' + Date.now() + '"><\/script>'); /* the game's own CFG, untouched: every default here comes from it */</script>
+<script>
+/* the forge's API for this game: /gameapi/<verb>/<slug>, writes with X-CSRF-TOKEN; the game's own CFG loads next, untouched */
+const API = '/gameapi', GAME = new URLSearchParams(location.search).get('game') || ''; let CSRF = '';
+const apiUrl = verb => `${API}/${verb}/${GAME}`; const apiHeaders = () => ({ 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest' });
+async function apiToken() { try { const r = await fetch(apiUrl('token'), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); if (r.ok) { CSRF = (await r.json()).token || ''; return true; } } catch (e) {} return false; }
+document.title = `Config · ${GAME} · VoidLux Studio`;
+document.write('<script src="/games/' + GAME + '/js/config.js?t=' + Date.now() + '"><\/script>');
+</script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
