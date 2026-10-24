@@ -334,17 +334,34 @@ class GameStore {
             if (preg_match('/<script|\son[a-z]+\s*=|javascript:|<foreignObject/i', $svg)) throw new \InvalidArgumentException('that SVG carries script or event handlers; the game serves it from its own origin, so it is refused');
             $file = "$key.svg"; if ($w < 1 || $h < 1) { $w = $w ?: 64; $h = $h ?: 64; } $frames = 1;
             self::writeAtomic("$dir/$file", $svg);
+        } elseif (isset($b['code'])) {
+            $code = (string) $b['code']; self::checkSpriteCode($code);
+            $file = "$key.js"; $half = 0; if (preg_match('/Draw\.define\(\s*([\'"])' . preg_quote($key, '/') . '\1\s*,\s*([0-9.]+)/', $code, $dm)) $half = (float) $dm[2];
+            if ($half <= 0) throw new \InvalidArgumentException("the code must call Draw.define('{$key}', <half>, (g, f) => { ... }) with this sprite's key");
+            if ($w < 1 || $h < 1) { $w = $h = (int) round($half * 2); }
+            if (preg_match('/frames:\s*([0-9]+)/', $code, $fm)) $frames = max(1, (int) $fm[1]); if (preg_match('/fps:\s*([0-9]+)/', $code, $pm)) $fps = min(60, max(1, (int) $pm[1]));
+            self::writeAtomic("$dir/$file", rtrim($code) . "\n"); $kind = 'code';
         } elseif (!empty($b['file'])) {
             $file = basename((string) $b['file']); if ($file[0] === '.' || !is_file("$dir/$file")) throw new \InvalidArgumentException("assets/$file does not exist");
             if ($w < 1 || $h < 1) { $sz = @getimagesize("$dir/$file"); $w = $sz ? (int) ($sz[0] / $frames) : 64; $h = $sz ? (int) $sz[1] : 64; }
         } else throw new \InvalidArgumentException('a sprite needs png, svg or file');
         $all = self::readSprites($slug); $sprites = (array) $all['sprites'];
         $entry = ['file' => $file, 'w' => $w, 'h' => $h, 'frames' => $frames, 'fps' => $fps, 'source' => preg_replace('/[^a-z-]/', '', (string) ($b['source'] ?? 'editor')) ?: 'editor'];
-        if (!empty($b['smooth'])) $entry['smooth'] = true;
+        if (!empty($b['smooth'])) $entry['smooth'] = true; if (!empty($kind)) $entry['kind'] = $kind;
         $sprites[$key] = $entry; ksort($sprites);
         self::writeAtomic("$dir/sprites.json", json_encode(['version' => 1, 'sprites' => (object) $sprites], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
         self::git(self::dir($slug), ['add', 'assets/sprites.json', "assets/$file"]);
         return $entry;
+    }
+    /** A code sprite is a script the game runs: only drawing, and it must parse. Throws with the reason. */
+    public static function checkSpriteCode(string $code): void {
+        if (strlen($code) > 60000) throw new \InvalidArgumentException('a code sprite is under 60 KB');
+        if (!str_contains($code, 'Draw.define(')) throw new \InvalidArgumentException('a code sprite calls Draw.define(key, half, (g, f) => { ... })');
+        if (preg_match('/\b(fetch|XMLHttpRequest|WebSocket|import|require|eval|Function|document|window|globalThis|localStorage|sessionStorage|navigator|location|cookie|setTimeout|setInterval)\b|<\/?script/i', $code, $m)) throw new \InvalidArgumentException("a code sprite only draws: '{$m[0]}' is not allowed in it");
+        $node = (string) self::cfg('node_bin', ''); $node = $node !== '' ? rtrim($node, '/') . '/node' : 'node';
+        $tmp = tempnam(sys_get_temp_dir(), 'sprite') . '.js'; file_put_contents($tmp, $code);
+        exec('timeout 10 ' . escapeshellarg($node) . ' --check ' . escapeshellarg($tmp) . ' 2>&1', $out, $rc); @unlink($tmp);
+        if ($rc !== 0) throw new \InvalidArgumentException('the code does not parse: ' . mb_substr(trim(implode("\n", $out)), 0, 300));
     }
     public static function deleteSprite(string $slug, string $key, bool $withFile): void {
         if (!preg_match(self::SPRITE_KEY, $key)) throw new \InvalidArgumentException('not a sprite key');
@@ -393,12 +410,36 @@ class GameStore {
             $paths = ''; foreach ($strokes as $s) { $d = ''; foreach ($s['pts'] as $i => $p) $d .= ($i ? ' L' : 'M') . $p[0] . ' ' . $p[1]; if (count($s['pts']) === 1) $d .= ' L' . ($s['pts'][0][0] + 1) . ' ' . $s['pts'][0][1]; $paths .= '  <path d="' . $d . '" stroke="' . ($s['pen'] === 'erase' ? '#ffffff' : $s['pen']) . '" stroke-width="' . $s['w'] . "\"/>\n"; }
             self::writeAtomic($dir . '/sketch.svg', "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 512 512\" width=\"512\" height=\"512\" fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n" . $paths . "</svg>\n");
         }
-        $maker = ($b['maker'] ?? 'svg') === 'spritecook' ? 'spritecook' : 'svg';
-        $req = ['id' => $id, 'note' => $note, 'style' => $style, 'pixel' => $pixel, 'size' => $size, 'key' => $key, 'palette' => $pal, 'sketch' => $has, 'strokes' => count($strokes), 'maker' => $maker, 'by' => $memberId, 'at' => time()];
+        $maker = in_array($b['maker'] ?? 'svg', ['svg', 'code', 'spritecook'], true) ? (string) $b['maker'] : 'svg';
+        // a refinement: the producer points at one earlier take and says what to change; the take comes along as base.<ext>
+        $refine = null;
+        if (!empty($b['refine']) && is_array($b['refine'])) {
+            $pid = (string) ($b['refine']['id'] ?? ''); $pf = basename((string) ($b['refine']['file'] ?? '')); $pdir = self::sketchDir($slug, $pid);
+            if (!preg_match(self::SKETCH_ID, $pid) || !preg_match('/^out-[0-9]+\.(svg|js|png)$/', $pf) || !is_file("$pdir/$pf")) throw new \InvalidArgumentException('the take to refine does not exist');
+            if ($note === '') throw new \InvalidArgumentException('say what to change');
+            $ext = pathinfo($pf, PATHINFO_EXTENSION); $maker = $ext === 'svg' ? 'svg' : ($ext === 'js' ? 'code' : 'spritecook');
+            copy("$pdir/$pf", "$dir/base.$ext"); foreach (['sketch.png', 'sketch.svg', 'base.svg', 'base.js', 'base.png'] as $f) if ($f !== "base.$ext" && is_file("$pdir/$f") && !is_file("$dir/$f")) copy("$pdir/$f", "$dir/" . (str_starts_with($f, 'base.') ? 'earlier-' . $f : $f));
+            if (!$has && is_file("$dir/sketch.png")) $has = true;
+            $refine = ['id' => $pid, 'file' => $pf, 'ext' => $ext];
+        }
+        $req = ['id' => $id, 'note' => $note, 'style' => $style, 'pixel' => $pixel, 'size' => $size, 'key' => $key, 'palette' => $pal, 'sketch' => $has, 'strokes' => count($strokes), 'maker' => $maker, 'refine' => $refine, 'by' => $memberId, 'at' => time()];
         self::writeAtomic($dir . '/request.json', json_encode($req, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
         $what = $note !== '' ? "\"{$note}\"" : 'nothing written: go by the drawing';
         $target = "{$size}×{$size} px, {$style}, transparent background" . ($pal ? ', using only these colours: ' . implode(', ', $pal) : '');
-        if ($maker === 'svg') {
+        $look = ($has ? "Their drawing: sketches/{$id}/sketch.png (512×512, coloured lines on white; look at it with Read)" . ($strokes ? ", and sketches/{$id}/sketch.svg: the very same strokes as vector paths in a 512×512 viewBox, the geometry to build on" : '') . ". " : 'They drew nothing: go by the note alone. ');
+        if ($maker === 'code') {
+            $half = $size / 2;
+            $p = "The producer wants a game sprite drawn from a rough sketch, and you are the artist: you draw it as canvas code, the way Centipede draws its creatures (see games/centipede/js/render-enemies.js for the manner). First read GAME.md's Design so the sprite belongs in this game's world, and look at assets/sprites.json and the files it names (if any) so it matches the look and palette of the sprites the game already has. "
+               . $look . "Their note: {$what}. Target: {$target}.\n"
+               . "Write two takes, each one file that is exactly one call plus a header comment:\n"
+               . "  // {$key}: <what it is>, drawn from the producer's sketch\n  Draw.define('{$key}', {$half}, (g, f) => { ... });\n"
+               . "g is a 2D canvas context already translated and scaled so that (0, 0) is the sprite's centre and {$half} is the radius it may fill; draw it facing right (angle 0) with plain canvas calls (beginPath, arc, ellipse, moveTo, lineTo, quadraticCurveTo, bezierCurveTo, closePath, fill, stroke, fillStyle, strokeStyle, lineWidth, lineCap, save/restore, translate/rotate/scale) and Math and TAU; Draw.circle, Draw.ring, Draw.roundRect and Draw.glow may be called too (they draw on g). f is the frame index, 0 for a still; for a little life (a bob, a blink, legs) you may pass { frames: 4, fps: 8 } as a fourth argument and draw by f. Nothing else: no images, no text, no document, no globals, no timers.\n"
+               . "- sketches/{$id}/out-1.js, faithful: keep the drawing's shapes, proportions and placement (its 512 grid maps to the diameter {$size}: a point at (256 + d, 256 + e) is (d, e) × " . round($size / 512, 4) . "), smooth the wobbly strokes into clean filled shapes with a readable palette, add the details the note implies.\n"
+               . "- sketches/{$id}/out-2.js, bolder: the same pose and layout with more character, shading and a stronger outline.\n"
+               . "Both must read at {$size} px in a game (bold shapes, outlines about " . max(1, round($size / 32, 1)) . " wide, few tiny details) and pass `node --check`. Run it on each before you finish.\n"
+               . "Then write sketches/{$id}/result.json as {\"ok\": true, \"files\": [\"out-1.js\", \"out-2.js\"], \"note\": \"<one line on what you drew>\"}.\n"
+               . "Do not add anything to assets/ or assets/sprites.json and do not commit: the producer chooses what to keep on the sprite page. If something stops you, write sketches/{$id}/result.json as {\"ok\": false, \"error\": \"<why, in one line>\"} and stop. Do not run a soak. Reply with one line.";
+        } elseif ($maker === 'svg') {
             $p = "The producer wants a game sprite drawn from a rough sketch, and you are the artist: you draw it as SVG. First read GAME.md's Design so the sprite belongs in this game's world, and look at assets/sprites.json and the files it names (if any) so it matches the look and palette of the sprites the game already has. "
                . ($has ? "Their drawing: sketches/{$id}/sketch.png (512×512, coloured lines on white; look at it with Read)" . ($strokes ? ", and sketches/{$id}/sketch.svg: the very same strokes as vector paths in a 512×512 viewBox, the geometry to build on" : '') . ". " : 'They drew nothing: go by the note alone. ')
                . "Their note: {$what}. Target: {$target}.\n"
@@ -414,6 +455,13 @@ class GameStore {
            . "a prompt built from the note" . ($has ? ' and what the drawing shows' : '') . ", width and height {$size}, pixel=" . ($pixel ? 'true' : 'false') . ", bg_mode transparent, variations=2. "
            . "Download each result's sprite_url to sketches/{$id}/out-1.png and sketches/{$id}/out-2.png. Then write sketches/{$id}/result.json as {\"ok\": true, \"files\": [\"out-1.png\", \"out-2.png\"], \"note\": \"<one line on what you made>\"}.\n"
            . "Do not add anything to assets/ or assets/sprites.json and do not commit: the producer chooses what to keep on the sprite page. If anything stops you (SpriteCook needs authentication, no credits, an error), write sketches/{$id}/result.json as {\"ok\": false, \"error\": \"<why, in one line>\"} and stop. Do not run a soak. Reply with one line.";
+        if ($refine) { // the same craft, but starting from the earlier take rather than from the sketch
+            $ext = $refine['ext'];
+            $p = "REFINEMENT. The producer looked at a take you made earlier and wants one change. The take: sketches/{$id}/base.{$ext}" . ($ext === 'png' ? '' : ' (read it: it is the starting point, not the sketch)') . ". Their instruction: \"{$note}\". The original drawing and note are there for context only" . ($has ? " (sketches/{$id}/sketch.png)" : '') . ".\n"
+               . "Make sketches/{$id}/out-1." . ($ext === 'png' ? 'png' : $ext) . " the earlier take with exactly that change and nothing else changed, and out-2 the same change taken a step further. "
+               . ($ext === 'png' ? "Use the spritecook skills: upload base.png with spritecook-upload-assets and generate with edit_asset_id = that asset and the instruction as the prompt, variations=2, then download the results. " : "Keep the file's format, size and rules as before (" . ($ext === 'svg' ? "a complete SVG, viewBox 0 0 {$size} {$size}, only shapes, no script, no images, no text" : "exactly one Draw.define('{$key}', " . ($size / 2) . ", (g, f) => { ... }) that only draws, passing node --check") . "). ")
+               . "Then write sketches/{$id}/result.json as {\"ok\": true, \"files\": [\"out-1.{$ext}\", \"out-2.{$ext}\"], \"note\": \"<one line on what changed>\"}. Do not add anything to assets/ or assets/sprites.json and do not commit. If something stops you, write result.json as {\"ok\": false, \"error\": \"<why>\"} and stop. Do not run a soak. Reply with one line.";
+        }
         $r = self::askBuilder($slug, $p, $memberId);
         return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'queued' => !empty($r['queued'])];
     }
@@ -423,7 +471,7 @@ class GameStore {
         foreach (is_dir($root) ? scandir($root, SCANDIR_SORT_DESCENDING) : [] as $id) {
             if (!preg_match(self::SKETCH_ID, $id) || !is_file("$root/$id/request.json")) continue;
             $s = self::sketchStatus($slug, $id); $req = json_decode((string) file_get_contents("$root/$id/request.json"), true) ?: [];
-            $out[] = ['id' => $id, 'at' => (int) ($req['at'] ?? 0), 'note' => (string) ($req['note'] ?? ''), 'key' => $s['key'], 'maker' => (string) ($req['maker'] ?? 'spritecook'), 'size' => (int) ($req['size'] ?? 0), 'sketch' => is_file("$root/$id/sketch.png"), 'base' => $s['base'], 'result' => $s['result']];
+            $out[] = ['id' => $id, 'at' => (int) ($req['at'] ?? 0), 'note' => (string) ($req['note'] ?? ''), 'key' => $s['key'], 'maker' => (string) ($req['maker'] ?? 'spritecook'), 'size' => (int) ($req['size'] ?? 0), 'sketch' => is_file("$root/$id/sketch.png"), 'refine' => $req['refine'] ?? null, 'base' => $s['base'], 'result' => $s['result']];
         }
         return ['jobs' => $out, 'busy' => self::agentState($slug)['busy']];
     }
@@ -433,13 +481,19 @@ class GameStore {
         foreach (scandir($dir) as $f) if ($f[0] !== '.' && is_file("$dir/$f")) unlink("$dir/$f");
         rmdir($dir);
     }
+    /** A take the page may show: an svg without script, a js that only draws (checked like a saved code sprite), a png. */
+    private static function takeIsSafe(string $path): bool {
+        if (str_ends_with($path, '.svg')) return !preg_match('/<script|\son[a-z]+\s*=|javascript:|<foreignObject|<image/i', (string) file_get_contents($path));
+        if (str_ends_with($path, '.js')) { try { self::checkSpriteCode((string) file_get_contents($path)); return true; } catch (\InvalidArgumentException $e) { error_log("ERROR sprite take {$path} refused: " . $e->getMessage()); return false; } }
+        return true;
+    }
     public static function sketchStatus(string $slug, string $id): array {
         if (!preg_match(self::SKETCH_ID, $id)) throw new \InvalidArgumentException('not a sketch id');
         $dir = self::sketchDir($slug, $id); if (!is_file($dir . '/request.json')) throw new \InvalidArgumentException('no such sketch');
         $req = json_decode((string) file_get_contents($dir . '/request.json'), true) ?: [];
         $res = is_file($dir . '/result.json') ? json_decode((string) file_get_contents($dir . '/result.json'), true) : null;
         if (is_file($dir . '/result.json') && !is_array($res)) $res = ['ok' => false, 'error' => 'the builder wrote a result.json that is not JSON'];
-        if (is_array($res) && !empty($res['ok'])) $res['files'] = array_values(array_filter((array) ($res['files'] ?? []), fn($f) => preg_match('/^out-[0-9]+\.(png|svg)$/', (string) $f) && is_file($dir . '/' . $f) && (!str_ends_with((string) $f, '.svg') || !preg_match('/<script|\son[a-z]+\s*=|javascript:|<foreignObject|<image/i', (string) file_get_contents($dir . '/' . $f)))));
+        if (is_array($res) && !empty($res['ok'])) $res['files'] = array_values(array_filter((array) ($res['files'] ?? []), fn($f) => preg_match('/^out-[0-9]+\.(png|svg|js)$/', (string) $f) && is_file($dir . '/' . $f) && self::takeIsSafe($dir . '/' . $f)));
         $busy = self::agentState($slug)['busy'];
         return ['id' => $id, 'key' => (string) ($req['key'] ?? 'sprite'), 'base' => "/games/{$slug}/sketches/{$id}/", 'busy' => $busy, 'status' => $busy ? 'the builder is working…' : 'waiting for the builder to start', 'result' => $res];
     }

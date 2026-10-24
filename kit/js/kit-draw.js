@@ -9,6 +9,10 @@
 //   Draw.textStamp(s, x, y, size, color, align)  the same for text that repeats (damage numbers, scores)
 //   Draw.loadManifest()           assets/sprites.json, written by the sprite editor and the builder: key → { file, w, h, frames,
 //                                 fps }. Game.boot calls it; no file means no sprites. Draw.load(key, url) fetches one picture by hand.
+//                                 An entry with "kind": "code" is a script (assets/<key>.js) that calls Draw.define: a sprite drawn
+//                                 by code into the atlas, the way Centipede draws its creatures.
+//   Draw.define(key, half, (g, f) => {...}, { frames, fps })  a code sprite: paint draws at (0, 0), facing right, within radius half;
+//                                 f is the frame. Draw.pic / Draw.anim draw it like any other key, scaled to the w asked for.
 //   Draw.pic(key, x, y, w, h, angle, frame)  draws a sprite centred, crisp (nothing, and false, until its file has arrived; a file
 //                                 that will not load is a console error, which the soak reports). A strip of frames: frame picks one;
 //                                 Draw.anim(key, Game.time, x, y, w) runs through them at the manifest's fps. Draw.loaded(key) says
@@ -36,23 +40,30 @@ const Draw = {
     g.save(); g.beginPath(); g.rect(S.x, S.y, S.w, S.h); g.clip(); g.translate(S.x + ox, S.y + oy); g.scale(k, k); g.lineCap = 'round';
     this.ctx = g; try { paint(g); } finally { this.ctx = was; g.restore(); }
   },
-  images: new Map(), meta: new Map(),
+  images: new Map(), meta: new Map(), painters: new Map(),
+  define(key, half, paint, o) { this.painters.set(key, { half, paint, frames: (o && o.frames) || 1, fps: (o && o.fps) || 8 }); for (const id of [...this.sprites.keys()]) if (id.startsWith(key + '#')) this.sprites.delete(id); },
   load(key, url, m) { const im = new Image(); im.onerror = () => console.error(`Draw.load: ${url} did not load (key ${key})`); im.src = url; this.images.set(key, im); if (m) this.meta.set(key, m); return im; },
   loaded(key) { const im = this.images.get(key); return !!(im && im.complete && im.naturalWidth); },
   loadManifest(url) {
     url = url || 'assets/sprites.json'; const dir = url.slice(0, url.lastIndexOf('/') + 1);
     return fetch(url, { cache: 'no-store' }).then(r => { if (r.status === 404) return null; if (!r.ok) throw new Error(url + ': HTTP ' + r.status); return r.json(); })
-      .then(j => { let n = 0; for (const [k, m] of Object.entries((j && j.sprites) || {})) { this.load(k, dir + m.file, m); n++; } return n; })
+      .then(j => { let n = 0; for (const [k, m] of Object.entries((j && j.sprites) || {})) { n++; if (m.kind === 'code') { const s = document.createElement('script'); s.src = dir + m.file; s.onerror = () => console.error(`Draw.loadManifest: ${dir}${m.file} did not load (code sprite ${k})`); document.head.appendChild(s); this.meta.set(k, m); } else this.load(k, dir + m.file, m); } return n; })
       .catch(e => { console.error('Draw.loadManifest: ' + e.message); return 0; });
   },
   pic(key, x, y, w, h, a, frame) {
+    const P = this.painters.get(key);
+    if (P) { // a code sprite: painted once per frame index into the atlas, stamped scaled to w
+      const n = P.frames, f = n > 1 ? ((frame | 0) % n + n) % n : 0, S = this.sprite(key + '#' + f, P.half, g => P.paint(g, f)), c = this.ctx, k = w ? w / (P.half * 2) : 1;
+      if (k === 1) { this.stamp(S, x, y, a); return true; }
+      const t = c.getTransform(); c.translate(x, y); c.scale(k, k); this.stamp(S, 0, 0, a); c.setTransform(t.a, t.b, t.c, t.d, t.e, t.f); return true;
+    }
     const im = this.images.get(key); if (!im || !im.complete || !im.naturalWidth) return false;
     const m = this.meta.get(key), n = m && m.frames > 1 ? m.frames : 1, fw = im.naturalWidth / n, fh = im.naturalHeight, f = n > 1 ? ((frame | 0) % n + n) % n : 0;
     const c = this.ctx, sm = c.imageSmoothingEnabled; h = h || w * fh / fw; c.imageSmoothingEnabled = !!(m && m.smooth);
     if (!a) { c.drawImage(im, f * fw, 0, fw, fh, x - w / 2, y - h / 2, w, h); c.imageSmoothingEnabled = sm; return true; }
     const t = c.getTransform(); c.translate(x, y); c.rotate(a); c.drawImage(im, f * fw, 0, fw, fh, -w / 2, -h / 2, w, h); c.setTransform(t.a, t.b, t.c, t.d, t.e, t.f); c.imageSmoothingEnabled = sm; return true;
   },
-  anim(key, t, x, y, w, h, a) { const m = this.meta.get(key); return this.pic(key, x, y, w, h, a, m ? Math.floor(t * (m.fps || 8)) : 0); },
+  anim(key, t, x, y, w, h, a) { const m = this.painters.get(key) || this.meta.get(key); return this.pic(key, x, y, w, h, a, m ? Math.floor(t * (m.fps || 8)) : 0); },
   textSprite(s, size, color, align) {
     const k = this.px, id = 'T' + s + '|' + size + '|' + color + '|' + (align || 'left') + '@' + k; let S = this.sprites.get(id); if (S) return S;
     const c = this.ctx; c.font = `bold ${size}px ${this.FONT}`; const tw = c.measureText(s).width, pad = Math.max(3, size * 0.18) + 2;

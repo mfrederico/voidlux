@@ -77,6 +77,12 @@ will not load is a console error, which the soak reports.
   draw them where the game needs them. A sprite you make (by code, or through a plugin) you register in the manifest
   yourself (key, file, w, h, frames, fps, `"source": "spritecook"` / `"cellcog"` / `"builder"`) and commit with the file.
 - An SVG in the manifest draws like any picture (scaled smoothly, set `"smooth": true`); pixel art stays crisp by default.
+- A **code sprite** is `assets/<key>.js` with `"kind": "code"` in the manifest: one `Draw.define('<key>', half, (g, f) => { ... })`
+  that draws at (0, 0), facing right, within radius `half` (plain canvas calls on `g`, `Draw.circle` and friends, `f` the
+  frame; `{ frames, fps }` as a fourth argument for a little life). The manifest loads the script; `Draw.pic` paints it
+  once per frame into the atlas and stamps it scaled, so it costs what a picture costs. The sprite page can make these
+  from a sketch (maker "drawing code"), and you may write one yourself the same way instead of a stroke-by-stroke
+  drawer in render.js.
 - Publishing copies `assets/` with the game.
 - The sprite page's `>>` sends the producer's sketch to you with a message that says exactly what to draw and where
   (`sketches/<id>/out-N.svg` or `.png`, then `result.json`). Follow it to the letter: nothing goes into `assets/` or the
