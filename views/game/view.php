@@ -6,7 +6,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 <div class="vl-gamebar"><b><?= $e($game['title']) ?></b><span id="metaLine"><?= $e($game['template']) ?> · <?= (int) $game['checkpoints'] ?> checkpoints · <?= $e($game['lastCommit']) ?></span><span class="vl-pill" id="statusPill"><?= $e($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span>
   <a class="btn btn-sm btn-outline-secondary ms-auto" href="/games/<?= $e($slug) ?>/" target="_blank">Play in a tab</a><?php if ($game['publishedUrl']): ?><a class="btn btn-sm btn-outline-primary" href="<?= $e($game['publishedUrl']) ?>" target="_blank">Live</a><?php endif; ?></div>
 <div class="vl-tabs" id="tabs">
-  <button data-tab="play" class="on">Play</button><button data-tab="build">Build</button><button data-tab="test">Test</button><button data-tab="notes">Notes <span id="notesTab"></span></button><button data-tab="media">Media</button><button data-tab="ship">Ship</button>
+  <button data-tab="play" class="on">Play</button><button data-tab="build">Build</button><button data-tab="notes">Notes <span id="notesTab"></span></button><button data-tab="test">Test</button><button data-tab="media">Media</button><button data-tab="ship">Ship</button>
   <span class="vl-tab-menu"><button data-tab="advanced" type="button">Advanced ▾</button><span class="vl-tab-menu-list"><button data-tab="design">Concept</button><button data-tab="status">Status</button><button data-tab="config">Config</button><button data-tab="history">History</button></span></span>
 </div>
 
