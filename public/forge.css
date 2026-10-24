@@ -112,3 +112,8 @@ a.vl-card:hover { border-color: #ff6600; color: #ddd; }
 /* the notes folders */
 .vl-folders { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; } .vl-folders button { background: #0a0a0c; border: 1px solid #333; color: #bbb; border-radius: 999px; padding: 6px 14px; font: inherit; font-size: .78rem; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; } .vl-folders button span { color: #ffcc00; margin-left: 4px; }
 .vl-folders button:hover { border-color: #ff6600; color: #fff; } .vl-folders button.on { background: #ff6600; border-color: #ff6600; color: #111; font-weight: bold; } .vl-folders button.on span { color: #111; }
+/* the games list */
+.vl-game .vl-card-title { text-decoration: none; } .vl-game .vl-card-title:hover { color: #ffcc00; }
+.vl-game-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+details.vl-anatomy { margin-top: 36px; } details.vl-anatomy > summary { list-style: none; cursor: pointer; margin: 0 0 12px; } details.vl-anatomy > summary::-webkit-details-marker { display: none; } details.vl-anatomy > summary::before { content: "▸ "; color: #ff6600; } details.vl-anatomy[open] > summary::before { content: "▾ "; }
+details.vl-anatomy .vl-card { cursor: pointer; }
