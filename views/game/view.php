@@ -244,7 +244,6 @@ function renderNotes() {
         <div class="vl-note-actions">${n.state !== 'done' ? `<button class="btn btn-sm btn-outline-secondary" onclick="noteState(${n.id}, 'done')">Done</button>` : ''}${n.state !== 'open' ? `<button class="btn btn-sm btn-outline-secondary" onclick="noteState(${n.id}, 'open')">Reopen</button>` : ''}<button class="btn btn-sm btn-outline-secondary" onclick="noteState(${n.id}, 'delete')">Delete</button></div></div></div>`).join('')
     : `<div class="vl-kv">No ${filt === 'all' ? '' : filt + ' '}notes. In Play, press Note mode (or Alt+P in the game), click a thing, say what should change.</div>`;
   notesButtons();
-  const open = NOTES.filter(n => n.state === 'open'), rest = NOTES.filter(n => n.state !== 'open').slice(0, 6);
   $('notesTab').textContent = NOTES.some(n => n.state === 'open') ? '(' + NOTES.filter(n => n.state === 'open').length + ')' : '';
   $('notesBig').innerHTML = big.length ? big.map(n => `<div class="vl-note-card ${n.state}">
       ${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="" onclick="lightbox(${n.id}, this.src)">` : '<div class="vl-note-noshot">no picture</div>'}
