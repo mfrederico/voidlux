@@ -6,8 +6,26 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 <div class="vl-gamebar"><b><?= $e($game['title']) ?></b><span id="metaLine"><?= $e($game['template']) ?> · <?= (int) $game['checkpoints'] ?> checkpoints · <?= $e($game['lastCommit']) ?></span><span class="vl-pill" id="statusPill"><?= $e($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span>
   <a class="btn btn-sm btn-outline-secondary ms-auto" href="/games/<?= $e($slug) ?>/" target="_blank">Play in a tab</a><?php if ($game['publishedUrl']): ?><a class="btn btn-sm btn-outline-primary" href="<?= $e($game['publishedUrl']) ?>" target="_blank">Live</a><?php endif; ?></div>
 <div class="vl-tabs" id="tabs">
-  <button data-tab="play" class="on">Play</button><button data-tab="build">Build</button><button data-tab="test">Test</button><button data-tab="notes">Notes <span id="notesTab"></span></button><button data-tab="sfx">SFX</button><button data-tab="tracker">Tracker</button><button data-tab="config">Config</button><button data-tab="design">Concept</button><button data-tab="history">History</button><button data-tab="ship">Ship</button>
+  <button data-tab="play" class="on">Play</button><button data-tab="build">Build</button><button data-tab="test">Test</button><button data-tab="notes">Notes <span id="notesTab"></span></button><button data-tab="media">Media</button>
+  <span class="vl-tab-menu"><button data-tab="advanced" type="button">Advanced ▾</button><span class="vl-tab-menu-list"><button data-tab="design">Concept</button><button data-tab="config">Config</button><button data-tab="history">History</button></span></span>
+  <button data-tab="ship">Ship</button>
 </div>
+
+<section class="vl-pane" id="pane-media">
+  <div class="vl-toolbar"><span>The game's sound, music and pictures. Each opens its own workshop; the editors write straight into the game's files.</span></div>
+  <div class="vl-media-grid">
+    <a class="vl-media-card" href="#sfx" onclick="showTab('sfx'); return false;"><div class="vl-media-icon">♪</div><div class="vl-media-title">SFX</div><div class="vl-media-sub">Sound effects for the elements of the game: every <code>SFX.play</code> key, designed as layers.</div></a>
+    <a class="vl-media-card" href="#tracker" onclick="showTab('tracker'); return false;"><div class="vl-media-icon">▦</div><div class="vl-media-title">Tracker</div><div class="vl-media-sub">Make chiptune music: the 8-track tracker with the kit's own synth and drums.</div></a>
+    <a class="vl-media-card" href="#assets" onclick="showTab('assets'); return false;"><div class="vl-media-icon">◈</div><div class="vl-media-title">Media</div><div class="vl-media-sub">Download and upload SVG and image files into the game's <code>assets/</code> folder for the builder to use.</div></a>
+    <div class="vl-media-card soon"><div class="vl-media-icon">✦</div><div class="vl-media-title">Sprites</div><div class="vl-media-sub">A sprite editor on the kit's atlas. Not built yet.</div></div>
+  </div>
+</section>
+
+<section class="vl-pane" id="pane-assets">
+  <div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>Files in the game's <code>assets/</code> folder. The builder can load them with <code>new Image()</code> or inline an SVG; tell it which in a note or a chat message.</span></div>
+  <form class="vl-toolbar" method="post" action="/game/assetupload/<?= $e($slug) ?>" enctype="multipart/form-data"><?= csrf_field() ?><input type="file" name="file" accept=".svg,.png,.jpg,.jpeg,.gif,.webp" required><button class="btn btn-sm btn-primary" type="submit">Upload</button><span>SVG, PNG, JPG, GIF or WebP, up to 5 MB.</span></form>
+  <div class="vl-assets" id="assets"></div>
+</section>
 
 <section class="vl-pane on" id="pane-play">
   <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="reloadPlay()">Reload</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('fps=1')">Profiler</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('bot=1')">Autopilot</button><button class="btn btn-sm btn-primary" onclick="noteMode()" id="noteBtn">Note mode (Alt+P)</button><span>The game as a player sees it, straight from its folder. Note mode pauses it: click anything, say what should change.</span></div>
@@ -67,8 +85,8 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
   <div class="vl-notes-big" id="notesBig"></div>
 </section>
 <div class="vl-lightbox" id="lightbox" onclick="this.classList.remove('on')"><img alt=""><div class="vl-lightbox-cap"></div></div>
-<section class="vl-pane" id="pane-sfx"><div class="vl-toolbar">Every <code>SFX.play('key')</code> in the game's code is a slot here. Design it as layers; Save writes js/sfx.js. <a href="/editor/sfx/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="sfxFrame"></iframe></section>
-<section class="vl-pane" id="pane-tracker"><div class="vl-toolbar">The 8-track chip tracker. Press / to load or save a song into js/music-themes.js; name songs after where they play (title, play, boss). <a href="/editor/tracker/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="trackerFrame"></iframe></section>
+<section class="vl-pane" id="pane-sfx"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a>Every <code>SFX.play('key')</code> in the game's code is a slot here. Design it as layers; Save writes js/sfx.js. <a href="/editor/sfx/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="sfxFrame"></iframe></section>
+<section class="vl-pane" id="pane-tracker"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a>The 8-track chip tracker. Press / to load or save a song into js/music-themes.js; name songs after where they play (title, play, boss). <a href="/editor/tracker/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="trackerFrame"></iframe></section>
 <section class="vl-pane" id="pane-config"><div class="vl-toolbar">Every number in js/config.js with its comment. Changes save to js/tuning.js and apply on reload. <a href="/editor/config/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="configFrame"></iframe></section>
 
 <section class="vl-pane" id="pane-design">
@@ -103,17 +121,23 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 <script>
 const slug = <?= json_encode($slug) ?>, $ = id => document.getElementById(id);
 let G = <?= json_encode($game, JSON_UNESCAPED_SLASHES) ?>, lastId = 0, loaded = {}, pollT = null;
+const GROUP = { sfx: 'media', tracker: 'media', assets: 'media', design: 'advanced', config: 'advanced', history: 'advanced' };
 function showTab(name) {
-  for (const b of document.querySelectorAll('.vl-tabs button')) b.classList.toggle('on', b.dataset.tab === name);
+  if (name === 'advanced') { document.querySelector('.vl-tab-menu').classList.toggle('open'); return; }
+  document.querySelector('.vl-tab-menu').classList.remove('open');
+  for (const b of document.querySelectorAll('.vl-tabs button')) b.classList.toggle('on', b.dataset.tab === name || b.dataset.tab === GROUP[name]);
   for (const p of document.querySelectorAll('.vl-pane')) p.classList.toggle('on', p.id === 'pane-' + name);
   location.hash = name;
   if (name === 'play' && !loaded.play) { loaded.play = 1; $('playFrame').src = `/games/${slug}/`; }
   if (['sfx', 'tracker', 'config'].includes(name) && !loaded[name]) { loaded[name] = 1; $(name + 'Frame').src = `/editor/${name}/?game=${slug}`; }
   if (name === 'design') loadDoc();
   if (name === 'build') { const b = $('stream'); b.scrollTop = b.scrollHeight; }
-  if (name === 'notes') loadNotes(); // the timeline opens on the newest event
+  if (name === 'notes') loadNotes();
+  if (name === 'assets') loadAssets(); // the timeline opens on the newest event
 }
 $('tabs').onclick = e => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); };
+async function loadAssets() { try { const r = await Forge.api(`/game/assets/${slug}`); $('assets').innerHTML = r.files.length ? r.files.map(f => `<div class="vl-asset"><a href="/games/${slug}/assets/${encodeURIComponent(f.name)}" target="_blank">${/\.(svg|png|jpe?g|gif|webp)$/i.test(f.name) ? `<img src="/games/${slug}/assets/${encodeURIComponent(f.name)}" alt="">` : ''}</a><div class="vl-asset-name">${Forge.esc(f.name)}</div><div class="vl-note-meta">${Math.round(f.size / 1024)} KB</div><div class="vl-note-actions"><a class="btn btn-sm btn-outline-secondary" href="/games/${slug}/assets/${encodeURIComponent(f.name)}" download>Download</a><button class="btn btn-sm btn-outline-secondary" onclick="deleteAsset('${Forge.esc(f.name)}')">Delete</button></div></div>`).join('') : '<div class="vl-kv">No files yet. Upload an SVG or an image above.</div>'; } catch (e) { $('assets').innerHTML = '<div class="vl-kv">' + Forge.esc(e.message) + '</div>'; } }
+async function deleteAsset(name) { if (!confirm('Delete ' + name + '?')) return; try { await Forge.api(`/game/assetdelete/${slug}`, { name }); loadAssets(); } catch (e) { alert(e.message); } }
 function reloadPlay() { $('playFrame').src = `/games/${slug}/?r=${Date.now()}`; }
 function playWith(q) { $('playFrame').src = `/games/${slug}/?${q}&r=${Date.now()}`; }
 function render(d) {

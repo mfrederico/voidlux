@@ -234,6 +234,41 @@ class Game extends BaseControls\Control {
         header('Content-Type: image/jpeg'); header('Cache-Control: private, max-age=3600'); readfile($f); exit;
     }
 
+    // ---- the game's media library: files in games/<slug>/assets/, uploaded by producers, used by the builder ----
+    private const ASSET_TYPES = ['image/svg+xml' => 'svg', 'image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'];
+    public function assets($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
+        $dir = GameStore::dir($g->slug) . '/assets'; $files = [];
+        foreach (is_dir($dir) ? scandir($dir) : [] as $f) if ($f[0] !== '.' && is_file($dir . '/' . $f)) $files[] = ['name' => $f, 'size' => filesize($dir . '/' . $f), 'at' => date('c', filemtime($dir . '/' . $f))];
+        $this->jsonSuccess(['files' => $files]);
+    }
+    /** A form upload (multipart, CSRF field). An SVG is checked for script before it is served from the game's origin. */
+    public function assetupload($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params, false)) return;
+        $back = '/game/view/' . $g->slug . '#assets';
+        $f = $_FILES['file'] ?? null;
+        if (!$f || ($f['error'] ?? 1) !== UPLOAD_ERR_OK) { $this->flash('error', 'No file arrived (up to 5 MB).'); Flight::redirect($back); return; }
+        if ($f['size'] > 5 * 1024 * 1024) { $this->flash('error', 'That file is over 5 MB.'); Flight::redirect($back); return; }
+        $mime = (string) mime_content_type($f['tmp_name']);
+        if ($mime === 'text/plain' || $mime === 'text/html' || $mime === 'application/xml' || $mime === 'text/xml') { $head = (string) file_get_contents($f['tmp_name'], false, null, 0, 2048); if (stripos($head, '<svg') !== false) $mime = 'image/svg+xml'; }
+        if (!isset(self::ASSET_TYPES[$mime])) { $this->flash('error', 'Only SVG, PNG, JPG, GIF or WebP files go in assets/ (that was ' . $mime . ').'); Flight::redirect($back); return; }
+        if ($mime === 'image/svg+xml') { $svg = (string) file_get_contents($f['tmp_name']); if (preg_match('/<script|\son[a-z]+\s*=|javascript:|<foreignObject/i', $svg)) { $this->flash('error', 'That SVG carries script or event handlers; the game serves assets from its own origin, so it cannot be used as it is.'); Flight::redirect($back); return; } }
+        $name = preg_replace('/[^a-z0-9._-]+/', '-', strtolower(pathinfo((string) $f['name'], PATHINFO_FILENAME))); $name = trim($name, '-.') ?: 'file';
+        $ext = self::ASSET_TYPES[$mime]; $dir = GameStore::dir($g->slug) . '/assets'; if (!is_dir($dir)) mkdir($dir, 0775, true);
+        $path = $dir . '/' . $name . '.' . $ext; $n = 2; while (is_file($path)) { $path = $dir . '/' . $name . '-' . $n++ . '.' . $ext; }
+        if (!move_uploaded_file($f['tmp_name'], $path)) { $this->flash('error', 'Could not store the file.'); Flight::redirect($back); return; }
+        GameStore::git(GameStore::dir($g->slug), ['add', 'assets/' . basename($path)]);
+        GameStore::emit($g->slug, 'note', ['text' => 'asset uploaded by ' . ($this->member->username ?: $this->member->email) . ': assets/' . basename($path)]);
+        $this->flash('success', basename($path) . ' is in assets/.'); Flight::redirect($back);
+    }
+    public function assetdelete($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        $name = basename((string) ($this->body()['name'] ?? '')); $path = GameStore::dir($g->slug) . '/assets/' . $name;
+        if ($name === '' || $name[0] === '.' || !is_file($path)) { $this->jsonError('no such file', 404); return; }
+        unlink($path); GameStore::git(GameStore::dir($g->slug), ['rm', '-q', '--cached', '--ignore-unmatch', 'assets/' . $name]);
+        $this->jsonSuccess(['ok' => true], 'Deleted.');
+    }
+
     public function card($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
         $b = $this->body();
