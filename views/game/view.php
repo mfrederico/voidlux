@@ -127,6 +127,7 @@ $slug = $game['slug'];
 <script>
 const slug = <?= json_encode($slug) ?>, $ = id => document.getElementById(id);
 let G = <?= json_encode($game, JSON_UNESCAPED_SLASHES) ?>, lastId = 0, loaded = {}, pollT = null;
+const EDITOR_V = <?= json_encode(array_combine(['sfx', 'tracker', 'sprites', 'config'], array_map(fn($e) => @filemtime(\app\GameStore::root() . "/kit/editor/{$e}/index.html") ?: 0, ['sfx', 'tracker', 'sprites', 'config']))) ?>;
 const GROUP = { sfx: 'media', tracker: 'media', sprites: 'media', assets: 'media', design: 'advanced', status: 'advanced', config: 'advanced', history: 'advanced' };
 function askBuilder(text) { showTab('build'); const ta = $('chatForm').querySelector('textarea'); ta.value = text; ta.focus(); const i = text.indexOf('…'); if (i >= 0) ta.setSelectionRange(i, i + 1); }
 function showTab(name) {
@@ -136,7 +137,7 @@ function showTab(name) {
   for (const p of document.querySelectorAll('.vl-pane')) p.classList.toggle('on', p.id === 'pane-' + name);
   location.hash = name;
   if (name === 'play' && !loaded.play) { loaded.play = 1; $('playFrame').src = `/games/${slug}/`; }
-  if (['sfx', 'tracker', 'sprites', 'config'].includes(name) && !loaded[name]) { loaded[name] = 1; $(name + 'Frame').src = `/editor/${name}/?game=${slug}`; }
+  if (['sfx', 'tracker', 'sprites', 'config'].includes(name) && !loaded[name]) { loaded[name] = 1; $(name + 'Frame').src = `/editor/${name}/?game=${slug}&v=${EDITOR_V[name] || 0}`; } // v: the editor file's mtime, so a changed editor is never the browser's stale copy
   if (name === 'design') loadDoc();
   if (name === 'build') { const b = $('stream'); b.scrollTop = b.scrollHeight; }
   if (name === 'notes') loadNotes();
