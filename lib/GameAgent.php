@@ -60,15 +60,22 @@ class GameAgent {
         $result = ['ok' => false, 'text' => '', 'cost' => 0.0, 'turns' => 0];
         try { [$env, $bin, $note] = self::environment(GameStore::root()); } catch (\Throwable $e) { $this->emit('error', ['text' => $e->getMessage()]); return $result; }
         $sid = $fresh ? null : ($this->state['session'] ?? null);
-        $cmd = [$bin, '-p', $prompt, '--output-format', 'stream-json', '--verbose', '--max-turns', (string) ($maxTurns ?: (int) GameStore::cfg('max_turns', 60)), '--permission-mode', 'acceptEdits', '--allowedTools'];
-        $cmd = array_merge($cmd, self::ALLOWED);
+        $jail = (string) GameStore::cfg('jail', '0') === '1' && is_executable('/usr/bin/bwrap');
+        $cmd = [$bin, '-p', $prompt, '--output-format', 'stream-json', '--verbose', '--max-turns', (string) ($maxTurns ?: (int) GameStore::cfg('max_turns', 60))];
+        // Jailed ([forge] jail = 1): bubblewrap is the boundary (studio/jail.sh: the OS read-only, only this game writable, nothing
+        // else of the machine visible), so inside it the agent runs without permission prompts, as the tiknix AI Builder did.
+        // Unjailed: edits inside the folder are accepted and Bash is limited to the allowlist above.
+        if ($jail) array_push($cmd, '--permission-mode', 'bypassPermissions');
+        else { array_push($cmd, '--permission-mode', 'acceptEdits', '--allowedTools'); $cmd = array_merge($cmd, self::ALLOWED); }
         foreach (['kit', 'studio', 'centipede', 'templates'] as $extra) if (is_dir(GameStore::root() . '/' . $extra)) array_push($cmd, '--add-dir', GameStore::root() . '/' . $extra); // the shared engine, the soak tools and the reference game are readable beyond the game's folder
         $model = (string) GameStore::cfg('model', ''); if ($model !== '') array_push($cmd, '--model', $model);
         if ($resume && $sid) array_push($cmd, '--resume', $sid);
         $inbox = $this->dir . '/.studio/inbox.txt';
         if (is_file($inbox) && trim((string) file_get_contents($inbox)) !== '') { $prompt .= "\n\nNotes from the producer since the last run (follow them where they fit this task; keep them in mind otherwise):\n" . trim((string) file_get_contents($inbox)); unlink($inbox); $this->emit('note', ['text' => "the producer's notes go with this run"]); }
         $env['GAME_URL'] = GameStore::soakUrl($this->slug); $env['STUDIO'] = GameStore::root() . '/studio'; $env['VOIDLUX_GAME'] = $this->slug;
-        $this->emit('note', ['text' => ($label !== '' ? "{$label}: " : '') . 'agent run starts' . ($resume && $sid ? ' (resumes ' . substr($sid, 0, 8) . ')' : ' (new session)') . " on {$note}"]);
+        $env['PLAYWRIGHT_ROOT'] = (string) GameStore::cfg('playwright_root', '/home/ubuntu'); $env['CHROME'] = (string) GameStore::cfg('chrome', '/usr/bin/google-chrome');
+        if ($jail) { $env['CLAUDE_BIN'] = $bin; $env['JAIL_HOME_CLAUDE'] = (string) GameStore::cfg('agent_login', 'host') === 'host' ? '1' : '0'; $cmd = array_merge([GameStore::root() . '/studio/jail.sh', $this->dir], $cmd); }
+        $this->emit('note', ['text' => ($label !== '' ? "{$label}: " : '') . 'agent run starts' . ($resume && $sid ? ' (resumes ' . substr($sid, 0, 8) . ')' : ' (new session)') . " on {$note}" . ($jail ? ', in the jail' : '')]);
         $desc = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
         $proc = proc_open($cmd, $desc, $pipes, $this->dir, $env);
         if (!is_resource($proc)) { $this->emit('error', ['text' => 'cannot start the agent process']); return $result; }

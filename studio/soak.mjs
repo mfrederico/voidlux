@@ -9,7 +9,8 @@ if (!url) { console.error('usage: node soak.mjs <game url> [secs] [fast] [screen
 const budgetMs = Math.min(600000, (+secs / Math.max(1, +fast)) * 1000 * 2.5 + 20000); // wall time: the game-seconds at speed, with slack
 const errors = [], logs = [];
 // the system Chrome when config names one (CHROME env): no Playwright browser download needed
-const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined, args: ['--autoplay-policy=no-user-gesture-required', '--use-gl=swiftshader', '--mute-audio'] });
+// inside the jail (JAILED=1) Chrome cannot make its own sandbox (no user namespaces there): bubblewrap is the sandbox
+const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined, args: ['--autoplay-policy=no-user-gesture-required', '--use-gl=swiftshader', '--mute-audio'].concat(process.env.JAILED ? ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] : []) });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', e => errors.push({ text: String(e && e.stack || e), kind: 'pageerror' }));
 page.on('console', m => { const loc = (m.location() || {}).url || ''; if (m.type() === 'error') { if (/favicon|webmanifest/.test(loc + m.text())) return; errors.push({ text: m.text() + (loc ? ' @ ' + loc : ''), kind: 'console' }); } else if (m.type() === 'warning' || /SOAK/.test(m.text())) logs.push(m.text().slice(0, 500)); });
