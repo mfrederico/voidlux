@@ -42,6 +42,14 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 </section>
 
 <section class="vl-pane" id="pane-test">
+  <div class="vl-card mb-3"><h3 class="vl-h2 mt-0">Your browser is the test machine</h3>
+    <div class="vl-kv"><span class="vl-pill live" id="attachedPill">● this browser is attached</span> While this page is open, playtests for <b><?= $e($game['title']) ?></b> run here: the game plays itself with its bots in a hidden frame, every error is caught, and the report goes back to the forge. Nothing to install, any computer, any browser. Close the page and the server's own Chrome takes over. If several of you have the page open, whoever's browser answers first runs it.</div>
+    <div class="vl-kv mt-2"><b>Playtests run here so far:</b> <span id="hereCount">0</span> · last: <span id="hereLast">none yet</span></div>
+    <details class="mt-2"><summary class="vl-kv" style="cursor:pointer">Advanced: let the server drive a visible Chrome on your own computer</summary>
+      <div class="vl-kv mt-2">Needs an SSH login on the server, so this is for the operator, not for everyone. Start Chrome with remote debugging, then open a tunnel; while it is up, playtests run in that Chrome and you watch the bots play.<br>
+      <b>Mac / Linux:</b> <code>google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-debug</code> then <code>ssh -N -R 9222:localhost:9222 ubuntu@voidlux.com</code><br>
+      <b>Windows (PowerShell):</b> <code>&amp; "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir=$env:TEMP\chrome-debug</code> then <code>ssh -N -R 9222:localhost:9222 ubuntu@voidlux.com</code> (Windows 10 and 11 ship ssh.exe).</div></details>
+  </div>
   <div class="vl-toolbar">
     <label>game-seconds <input type="number" id="soakSecs" value="60" min="5" max="1800" style="width:80px"></label>
     <label>speed <input type="number" id="soakFast" value="4" min="1" max="30" style="width:60px"></label>
@@ -139,13 +147,13 @@ async function poll() {
     const first = lastId === 0; lastId = r.last; renderSession(r.agent); if (first) { const b = $('stream'); b.scrollTop = b.scrollHeight; }
     if (r.soakRequest && !soakRunning) runBrowserSoak(r.soakRequest);
     if (refreshDue) { refreshDue = false; render(await Forge.api(`/game/status/${slug}`)); }
-    $('streamNote').textContent = '';
-  } catch (e) { $('streamNote').textContent = 'polling: ' + e.message; }
+    $('streamNote').textContent = ''; $('attachedPill').className = 'vl-pill live'; $('attachedPill').textContent = '● this browser is attached';
+  } catch (e) { $('streamNote').textContent = 'polling: ' + e.message; $('attachedPill').className = 'vl-pill'; $('attachedPill').textContent = '○ not attached (reconnecting)'; }
   pollT = setTimeout(poll, document.hidden ? 8000 : (G.agent && G.agent.busy ? 1500 : 5000));
 }
 // ---- playtests in this browser: the server hands a pending request to whoever polls first; the game runs in a hidden
 // frame here with its bots, and the report (window.__SOAK, same origin) goes back. The server's Chrome is the fallback ----
-let soakRunning = false;
+let soakRunning = false, hereCount = 0;
 async function runBrowserSoak(req) {
   soakRunning = true;
   try {
@@ -158,6 +166,7 @@ async function runBrowserSoak(req) {
     if (!rep) rep = { status: 'timeout', errors: [{ text: 'the game never finished the soak in this browser (' + errs.join('; ') + ')' }], scenes: {} };
     f.remove();
     await Forge.api(`/game/soakdone/${slug}`, { id: req.id, report: rep });
+    hereCount++; $('hereCount').textContent = hereCount; $('hereLast').textContent = new Date().toLocaleTimeString() + (rep.ok ? ' · ok' : ' · ' + (rep.status || 'failed'));
     $('streamNote').textContent = ''; refreshDue = true;
   } catch (e) { $('streamNote').textContent = 'playtest here failed: ' + e.message; }
   finally { soakRunning = false; }
