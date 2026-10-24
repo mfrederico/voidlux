@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>__TITLE__</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#060608">
+<style>
+  html, body { margin:0; height:100%; background:#060608; overflow:hidden; font-family: "Trebuchet MS", "Segoe UI", sans-serif; overscroll-behavior:none; touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  #wrap { display:flex; align-items:center; justify-content:center; width:100%; height:100%; }
+  canvas { display:block; background:#0d0a16; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.6); touch-action:none; }
+  body.mobile canvas, body.desktop canvas { border-radius:0; box-shadow:none; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game" width="1280" height="720"></canvas></div>
+<!-- the VoidLux kit: shared by every game, read-only from a game's point of view (edit it in kit/, with every game in mind) -->
+<script src="../../kit/js/kit-util.js"></script>
+<script src="../../kit/js/kit-sfx.js"></script>
+<script src="../../kit/js/kit-music.js"></script>
+<script src="../../kit/js/kit-draw.js"></script>
+<script src="../../kit/js/kit-input.js"></script>
+<script src="../../kit/js/kit-game.js"></script>
+<script src="../../kit/js/kit-test.js"></script>
+<!-- the game: files written by the editors first (config, tuning, sfx, music), then the game's own code, main.js last -->
+<script src="js/config.js"></script>
+<script src="js/tuning.js"></script>
+<script src="js/sfx.js"></script>
+<script src="js/music-themes.js"></script>
+<script src="js/world.js"></script>
+<script src="js/render.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

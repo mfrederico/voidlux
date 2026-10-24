@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoidLux Studio</title>
+<meta name="description" content="The AI game creation suite: summon a game from a brief, let the swarm plan, build, test and review it, tune its sound and music, ship it.">
+<link rel="stylesheet" href="/ui/studio.css">
+</head>
+<body>
+<header class="header">
+  <h1><a href="/studio/">VoidLux Studio</a></h1>
+  <nav class="nav">
+    <a href="#games">Games</a><a href="#summon">Summon</a><a href="/centipede/" target="_blank">Centipede</a><a href="/kit/AGENTS.md" target="_blank">Kit guide</a><a href="/studio/settings">Settings</a>
+    <span class="status-bar" id="status"><span class="dot dot-orange"></span>checking…</span>
+  </nav>
+</header>
+<section class="hero" id="hero">
+  <div class="hero-inner">
+    <div class="eyebrow">&#9673; &#9673; &#9673;</div>
+    <h2 class="title">THE FORGE</h2>
+    <p class="sub">games people will pay for, cranked out by the swarm</p>
+    <p class="lede">Write a brief. The planner turns it into a design, acceptance criteria and tasks. Agents build each task on the
+      VoidLux kit, soak-test it headless, and an independent reviewer judges the result against the criteria. Fail? Rework. Pass?
+      Checkpoint, tune the sound in the SFX editor and the tracker, and ship.</p>
+    <div class="hero-actions"><a class="btn" href="#summon">Summon a game</a><a class="btn ghost" href="#games">Open a game</a></div>
+  </div>
+  <div class="flow">
+    <span>Brief</span><i>&#10230;</i><span>LLM Plan</span><i>&#10230;</i><span>Build</span><i>&#10230;</i><span>Soak</span><i>&#10230;</i><span>Review</span><i>&#10230;</i><span>Ship</span>
+  </div>
+</section>
+<main class="main">
+  <section class="section" id="games">
+    <h2>Games in the forge <span class="count" id="gameCount"></span></h2>
+    <div class="card-grid" id="gameGrid"><div class="card empty">Loading…</div></div>
+  </section>
+  <section class="section" id="summon">
+    <h2>Summon a game</h2>
+    <form class="task-form expanded" id="createForm">
+      <div class="row2">
+        <label>Title <input name="title" placeholder="Void Drift" required maxlength="60"></label>
+        <label>Slug <input name="slug" placeholder="void-drift" pattern="[a-z][a-z0-9-]{1,40}" required></label>
+        <label>Template <select name="template" id="templateSel"><option value="blank">blank arena shooter</option></select></label>
+      </div>
+      <label>Brief <textarea name="brief" rows="5" placeholder="What is the game? Who is the player, what do they do every ten seconds, what makes a run end, what do they collect or build, what is the hook that sells it? Mention the platform (phone, desktop, both) and a price point."></textarea></label>
+      <div class="row2">
+        <label class="check"><input type="checkbox" name="pipeline" checked> run the pipeline right away (plan, build, soak, review)</label>
+        <button type="submit" id="createBtn">Summon</button>
+      </div>
+      <div class="msg" id="createMsg"></div>
+    </form>
+  </section>
+  <section class="section anatomy">
+    <h2>Anatomy of the forge</h2>
+    <div class="card-grid">
+      <div class="card"><div class="card-title">&#9670; The Planner</div>Reads the brief and writes GAME.md: design, acceptance criteria, ordered tasks. Nothing vague survives into the task list.</div>
+      <div class="card"><div class="card-title">&#9679; The Builders</div>Claude Code sessions in the game's own folder, one task at a time, each ending in <code>node --check</code>, a headless soak and a commit.</div>
+      <div class="card"><div class="card-title">&#9733; The Reviewer</div>A fresh session that never saw the build judges every criterion with evidence. Rejected criteria go back as rework, up to two rounds.</div>
+      <div class="card"><div class="card-title">&#8734; The Kit</div>Centipede's engine pulled out: pooled-voice synth, chip tracker, sprite atlas, touch controls, soak harness. Every game shares it; every editor works on every game.</div>
+      <div class="card"><div class="card-title">&#9876; Checkpoints</div>Every run is bracketed by a git tag. Roll back any time; the state before a rollback is a checkpoint too.</div>
+      <div class="card"><div class="card-title">&#9813; Ship</div>A build with the kit inlined and a version stamp, rsynced to the store folder in one click.</div>
+    </div>
+  </section>
+</main>
+<footer class="footer">VOIDLUX STUDIO &mdash; the swarm does not sleep · <a href="/centipede/" target="_blank">centipede</a> · <a href="/kit/AGENTS.md" target="_blank">kit</a></footer>
+<script src="/ui/studio.js"></script>
+<script>
+Studio.particles(document.getElementById('hero'));
+async function loadStatus() {
+  try { const s = await Studio.api('/api/status'); const ok = s.claude && s.playwright;
+    document.getElementById('status').innerHTML = `<span class="dot ${ok ? 'dot-green' : 'dot-orange'}"></span>${s.claude ? 'claude ' + s.claude.split(' ')[0] : 'no claude CLI'} · ${s.playwright ? 'soak ready' : 'no playwright'} · ${s.jail ? 'jail' : 'no jail'} · ${s.permissions}`;
+    const sel = document.getElementById('templateSel'); sel.innerHTML = s.templates.map(t => `<option value="${t}">${t}</option>`).join('');
+  } catch (e) { document.getElementById('status').innerHTML = '<span class="dot dot-red"></span>studio offline'; }
+}
+async function loadGames() {
+  const grid = document.getElementById('gameGrid');
+  try {
+    const games = await Studio.api('/api/games'); document.getElementById('gameCount').textContent = games.length ? '(' + games.length + ')' : '';
+    if (!games.length) { grid.innerHTML = '<div class="card empty">Nothing in the forge yet. Summon a game below.</div>'; return; }
+    grid.innerHTML = games.map(g => {
+      const soak = g.lastSoak, a = g.agent || {}, t = g.tasks || {};
+      return `<a class="card game" href="/game/${g.slug}">
+        <div class="card-title">${Studio.esc(g.title || g.slug)} ${a.busy ? '<span class="pill live">● ' + Studio.esc(a.mode) + '</span>' : ''}</div>
+        <div class="brief">${Studio.esc(g.brief || '')}</div>
+        <div class="card-meta">${g.template || ''} · ${g.status || 'new'} · ${t.total ? `tasks ${t.done}/${t.total}` : 'no plan yet'} · ${g.checkpoints} checkpoints${soak ? ` · soak ${soak.ok ? '<b class="ok">ok</b>' : '<b class="bad">' + (soak.errors || soak.status) + '</b>'} ${soak.fps ? soak.fps + ' fps' : ''}` : ''}</div>
+        <div class="card-meta">${Studio.esc(g.lastCommit || '')}</div>
+      </a>`; }).join('');
+  } catch (e) { grid.innerHTML = '<div class="card empty">Could not load games: ' + Studio.esc(e.message) + '</div>'; }
+}
+document.getElementById('createForm').onsubmit = async e => {
+  e.preventDefault(); const f = e.target, btn = document.getElementById('createBtn'), msg = document.getElementById('createMsg');
+  const body = { title: f.title.value.trim(), slug: f.slug.value.trim(), brief: f.brief.value.trim(), template: f.template.value };
+  btn.disabled = true; msg.textContent = 'Summoning…';
+  try {
+    const g = await Studio.api('/api/games', body);
+    if (f.pipeline.checked) await Studio.api(`/api/games/${g.slug}/agent`, { mode: 'pipeline', prompt: '' });
+    location.href = '/game/' + g.slug;
+  } catch (err) { msg.textContent = err.message; btn.disabled = false; }
+};
+document.querySelector('[name=title]').addEventListener('input', e => { const s = document.querySelector('[name=slug]'); if (!s.dataset.touched) s.value = Studio.slugify(e.target.value); });
+document.querySelector('[name=slug]').addEventListener('input', e => { e.target.dataset.touched = '1'; });
+loadStatus(); loadGames(); setInterval(loadGames, 8000);
+</script>
+</body>
+</html>

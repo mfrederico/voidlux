@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Soak this game headless and print the report. usage: soak [game-seconds] [speed] (defaults 60 4). Run from the game's folder.
+# The studio's runner (scripts/game-agent.php) sets GAME_URL and STUDIO; by hand, defaults are derived from the folder.
+set -euo pipefail
+SECS=${1:-60}; FAST=${2:-4}
+SLUG=${VOIDLUX_GAME:-$(basename "$PWD")}
+STUDIO=${STUDIO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+URL=${GAME_URL:-https://voidlux.com/games/$SLUG/}
+mkdir -p .studio/soaks; ID=$(date +%Y%m%d-%H%M%S)
+PLAYWRIGHT_ROOT=${PLAYWRIGHT_ROOT:-/home/ubuntu} CHROME=${CHROME:-/usr/bin/google-chrome} node "$STUDIO/soak.mjs" "$URL" "$SECS" "$FAST" ".studio/soaks/$ID.png" | tee ".studio/soaks/$ID.json" | python3 -c "import json,sys; r=json.loads(sys.stdin.read().strip().splitlines()[-1]); r.pop('notes',None); r.pop('url',None); print(json.dumps(r, indent=1))" || true

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Config · VoidLux Studio</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: a settings sheet. A sticky search bar, then every CFG setting in config.js order: plain settings as rows, groups
+   (LOOT, SWARM, NIGHTMARE...) as cards of rows, each with the comment config.js gives it. */
+:root {
+  --bg: #f5f2fa; --surface: #ffffff; --ink: #1d1530; --muted: #6b6080; --line: #e2dbee; --accent: #9a6400; --focus: #7a3cff;
+  --set-bg: #ffdcae; --set-fg: #7a3b00; --ph: #8a809c;
+  --display: "Baloo 2", "Trebuchet MS", system-ui, sans-serif; --body: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #120a1e; --surface: #1b1428; --ink: #f1ecfa; --muted: #a59bb8; --line: #2e2440; --accent: #ffd166; --focus: #b48cff;
+  --set-bg: #5a3a12; --set-fg: #ffd9a8; --ph: #6f6684; color-scheme: dark;
+} }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 14px; line-height: 1.5; padding: 24px max(16px, env(safe-area-inset-left, 0px)) 48px; }
+.wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 18px; }
+.crumbs { font-size: 13px; color: var(--muted); } .crumbs a { color: var(--accent); }
+h1 { font-family: var(--display); font-weight: 800; font-size: 40px; line-height: 1.05; margin: 0; }
+.lede { color: var(--muted); max-width: 70ch; margin: 6px 0 0; }
+code { font-family: var(--mono); font-size: 12.5px; }
+.bar { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 10px 0; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+.bar input[type=search] { font: inherit; width: min(360px, 100%); padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.bar label { font-size: 13px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.status { font-size: 13px; color: var(--muted); } .status b { color: var(--ink); font-weight: 600; }
+.list { display: grid; gap: 12px; }
+.group { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; gap: 6px; }
+.group h2 { font-family: var(--mono); font-size: 15px; font-weight: 500; margin: 0; }
+.group .about { color: var(--muted); font-size: 12.5px; max-width: 90ch; margin: 0 0 4px; }
+.row { display: grid; grid-template-columns: minmax(0, 220px) auto minmax(0, 1fr); gap: 4px 14px; align-items: center; padding: 5px 0; border-top: 1px solid var(--line); }
+.row:first-of-type { border-top: 0; }
+.key { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+.key .path { color: var(--muted); }
+.ctl { display: inline-flex; align-items: center; gap: 4px; }
+.num { font-family: var(--mono); font-size: 13px; width: 110px; padding: 4px 8px; border-radius: 7px; border: 1px solid var(--line); background: transparent; color: var(--ink); }
+.num::placeholder { color: var(--ph); }
+.num.set, .bool.set { border-color: var(--accent); background: var(--set-bg); color: var(--set-fg); }
+.bool { font: inherit; font-size: 13px; padding: 3px 8px; border-radius: 7px; border: 1px solid var(--line); background: transparent; color: var(--ink); }
+.reset { font: inherit; font-size: 12px; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px 4px; border-radius: 5px; }
+.reset:hover { color: var(--ink); }
+.num:focus-visible, .bool:focus-visible, .reset:focus-visible, .bar input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.desc { font-size: 12.5px; color: var(--muted); }
+.single { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 4px 16px; }
+.empty { color: var(--muted); padding: 16px; }
+@media (max-width: 640px) { .row { grid-template-columns: 1fr auto; } .desc { grid-column: 1 / -1; } }
+</style>
+</head><body>
+<div class="wrap">
+  <nav class="crumbs"><a href="/forge">Forge</a> / <a id="crumbGame" href="#">game</a> / Game config</nav>
+  <header>
+    <h1>Game config</h1>
+    <p class="lede">Every number and switch in <code>js/config.js</code>, with its comment. Type a value to change it (it turns gold); clear it or press ✕ to go back. Changes save to <code>js/tuning.js</code>, which the game applies on top of <code>config.js</code> as it loads; <code>config.js</code> itself is never rewritten. Reload the game to play with them.</p>
+  </header>
+  <div class="bar">
+    <input type="search" id="q" placeholder="Search settings (e.g. swarm, loot, nightmare)" aria-label="Search settings">
+    <label><input type="checkbox" id="onlySet"> changed only</label>
+    <span class="status" id="status" role="status">Loading…</span>
+  </div>
+  <div class="list" id="list"></div>
+</div>
+<script>const API = '/gameapi', GAME = new URLSearchParams(location.search).get('game') || ''; let CSRF = ''; // the forge's API for this game: /gameapi/<verb>/<slug>, writes with X-CSRF-TOKEN const apiUrl = verb => `${API}/${verb}/${GAME}`; const apiHeaders = () => ({ 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest' }); async function apiToken() { try { const r = await fetch(apiUrl('token'), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); if (r.ok) { CSRF = (await r.json()).token || ''; return true; } } catch (e) {} return false; } document.title = `Config · ${GAME} · VoidLux Studio`; document.write('<script src="/games/' + GAME + '/js/config.js?t=' + Date.now() + '"><\/script>'); /* the game's own CFG, untouched: every default here comes from it */</script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+const state = { over: {}, notes: {}, q: '', onlySet: false, ready: false };
+// every number and switch in CFG, in source order: [path, default, top-level key]
+const LEAVES = []; (function walk(o, p, top) { for (const [k, v] of Object.entries(o)) { const q = p ? p + '.' + k : k; if (typeof v === 'number' || typeof v === 'boolean') LEAVES.push([q, v, top || k]); else if (v && typeof v === 'object') walk(v, q, top || k); } })(CFG, '', '');
+// the comments config.js gives each top-level key: the block above it, and the one on its line
+function readNotes(src) {
+  const a = src.indexOf('const CFG = {'), b = src.indexOf('\n};', a), lines = src.slice(a, b).split('\n'), notes = {}; let above = [];
+  for (const line of lines) {
+    const c = line.match(/^\s*\/\/\s?(.*)$/); if (c) { above.push(c[1]); continue; }
+    const k = line.match(/^  ([A-Z][A-Z0-9_]*)\s*:/);
+    if (k) { const i = line.indexOf('//'); notes[k[1]] = { above: above.join(' '), inline: i >= 0 ? line.slice(i + 2).trim() : '' }; above = []; }
+    else if (!line.trim()) above = [];
+  }
+  return notes;
+}
+function label(path) { // a dungeon tier shows its name: DUNGEON_TIERS › Burrow › ghosts
+  const ks = path.split('.'); let o = CFG; const out = [];
+  for (let i = 0; i < ks.length; i++) { o = o[ks[i]]; out.push(i && /^\d+$/.test(ks[i]) && o && o.name ? o.name : ks[i]); }
+  return out;
+}
+function render() {
+  const q = state.q.toLowerCase(), groups = [];
+  for (const L of LEAVES) {
+    const [path, def, top] = L, n = state.notes[top] || {};
+    if (state.onlySet && !(path in state.over)) continue;
+    if (q && !(path.toLowerCase().includes(q) || (n.above + ' ' + n.inline).toLowerCase().includes(q))) continue;
+    const g = groups[groups.length - 1];
+    if (g && g.top === top) g.rows.push(L); else groups.push({ top, rows: [L] });
+  }
+  const row = ([path, def]) => {
+    const set = path in state.over, v = set ? state.over[path] : def, parts = label(path), id = 'f-' + path.replace(/\./g, '-');
+    const ctl = typeof def === 'boolean'
+      ? `<select class="bool${set ? ' set' : ''}" id="${id}" data-p="${path}" aria-label="${esc(path)}"><option value="true"${v ? ' selected' : ''}>true</option><option value="false"${v ? '' : ' selected'}>false</option></select>`
+      : `<input class="num${set ? ' set' : ''}" type="number" step="any" id="${id}" data-p="${path}" placeholder="${def}" value="${set ? v : ''}" aria-label="${esc(path)} (game value ${def})">`;
+    return `<div class="row"><span class="key">${parts.length > 1 ? `<span class="path">${esc(parts.slice(1, -1).map(x => x + ' › ').join(''))}</span>` : ''}${esc(parts[parts.length - 1])}</span><span class="ctl">${ctl}${set ? `<button type="button" class="reset" data-p="${path}" aria-label="Back to ${def}" title="back to ${def}">✕</button>` : ''}</span><span class="desc">${set ? `game value ${def}` : ''}</span></div>`;
+  };
+  let html = '', singles = [];
+  const flush = () => { if (singles.length) { html += `<div class="single">${singles.join('')}</div>`; singles = []; } };
+  for (const g of groups) {
+    const n = state.notes[g.top] || {}, about = [n.above, n.inline].filter(Boolean).join(' ');
+    if (g.rows.length === 1 && g.rows[0][0] === g.top) { // a plain setting: a row, its comment beside it
+      singles.push(row(g.rows[0]).replace('<span class="desc">', `<span class="desc">${esc(about)} `)); continue;
+    }
+    flush();
+    html += `<section class="group"><h2>${esc(g.top)}</h2>${about ? `<p class="about">${esc(about)}</p>` : ''}${g.rows.map(row).join('')}</section>`;
+  }
+  flush();
+  const af = document.activeElement && document.activeElement.id;
+  $('list').innerHTML = html || '<div class="empty">No setting matches.</div>';
+  if (af && $(af)) $(af).focus();
+}
+// saving: the whole set of overrides, a moment after the last change
+let saveT = null, saving = Promise.resolve();
+function setVal(path, v) {
+  const def = LEAVES.find(L => L[0] === path)[1];
+  if (v === null || v === def) delete state.over[path]; else state.over[path] = v;
+  render(); $('status').textContent = 'Saving…';
+  clearTimeout(saveT); saveT = setTimeout(() => { saving = saving.then(flush); }, 250);
+}
+async function flush() {
+  try {
+    const r = await fetch(apiUrl('tuning'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify(state.over) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok) { setStatus(); return; }
+    $('status').textContent = r.status === 403 ? 'This device can look but not save.' : 'Not saved: ' + (j.error || r.status);
+  } catch (e) { $('status').textContent = 'Not saved: the studio is not answering.'; }
+}
+function setStatus() { const n = Object.keys(state.over).length; $('status').innerHTML = `<b>Saved</b> to js/tuning.js · ${n} changed setting${n === 1 ? '' : 's'}`; }
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.id === 'onlySet') { state.onlySet = t.checked; render(); return; }
+  if (!t.dataset || !t.dataset.p) return;
+  if (t.classList.contains('bool')) { setVal(t.dataset.p, t.value === 'true'); return; }
+  const raw = t.value.trim(); if (raw === '') { setVal(t.dataset.p, null); return; }
+  const v = Number(raw); if (!Number.isFinite(v)) { $('status').textContent = 'Not saved: type a number.'; return; }
+  setVal(t.dataset.p, v);
+});
+document.addEventListener('click', e => { const r = e.target.closest('.reset'); if (r) { setVal(r.dataset.p, null); const f = $('f-' + r.dataset.p.replace(/\./g, '-')); if (f) f.focus(); } });
+$('q').addEventListener('input', e => { state.q = e.target.value.trim(); render(); });
+async function start() {
+  render();
+  try {
+    const [src, over] = await Promise.all([fetch('/games/' + GAME + '/js/config.js', { cache: 'no-store' }).then(r => r.text()), fetch(apiUrl('tuning'), { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })]);
+    state.notes = readNotes(src); state.over = over || {}; state.ready = true;
+  } catch (e) { $('status').textContent = 'Could not load: open this page from a game\'s page in the studio (?game=<slug>).'; return; }
+  document.getElementById('crumbGame').textContent = GAME; document.getElementById('crumbGame').href = '/game/view/' + GAME; apiToken();
+  render(); setStatus();
+}
+start();
+</script>
+</body></html>

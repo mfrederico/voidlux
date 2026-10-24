@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SFX · VoidLux Studio</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: the sound list on the left (game events, creature deaths and hits, boss deaths and hits, elements), the sound
+   being designed on the right: a pitch picture of its layers, the layers as rows of sliders, and the recipes that add
+   a layer. Sounds play through the game's own SFX code (js/util.js), so what you hear here is what the game plays. */
+:root {
+  --bg: #f5f2fa; --surface: #ffffff; --ink: #1d1530; --muted: #6b6080; --line: #e2dbee; --accent: #9a6400; --focus: #7a3cff;
+  --set: #c2410c; --ok: #2f7d32; --plot: #faf7ff;
+  --display: "Baloo 2", "Trebuchet MS", system-ui, sans-serif; --body: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #120a1e; --surface: #1b1428; --ink: #f1ecfa; --muted: #a59bb8; --line: #2e2440; --accent: #ffd166; --focus: #b48cff;
+  --set: #ff9b5c; --ok: #9bf06a; --plot: #0e0918; color-scheme: dark;
+} }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 14px; line-height: 1.45; padding: 20px max(16px, env(safe-area-inset-left, 0px)) 40px; }
+.wrap { max-width: 1280px; margin: 0 auto; display: grid; gap: 14px; }
+.crumbs { font-size: 13px; color: var(--muted); } .crumbs a { color: var(--accent); }
+h1 { font-family: var(--display); font-weight: 800; font-size: 36px; line-height: 1.05; margin: 0; }
+.lede { color: var(--muted); max-width: 90ch; margin: 4px 0 0; }
+code, .mono { font-family: var(--mono); font-size: 12.5px; }
+button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+button:hover { border-color: var(--accent); } button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+button.primary { background: var(--accent); color: #1d1530; border-color: var(--accent); font-weight: 600; }
+button.danger { color: var(--set); }
+.main { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+@media (max-width: 820px) { .main { grid-template-columns: 1fr; } }
+.list { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px; position: sticky; top: 10px; max-height: calc(100vh - 30px); overflow: auto; }
+.list input[type=search] { width: 100%; font: inherit; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); margin-bottom: 6px; }
+.list h3 { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--muted); margin: 12px 4px 4px; letter-spacing: 0.06em; text-transform: uppercase; }
+.slot { display: flex; justify-content: space-between; gap: 8px; width: 100%; text-align: left; border: 0; border-radius: 8px; padding: 4px 8px; background: none; }
+.slot:hover { background: var(--bg); } .slot.on { background: var(--bg); outline: 2px solid var(--accent); }
+.slot .k { font-family: var(--mono); font-size: 12.5px; } .slot .d { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+.slot .dot { color: var(--set); font-weight: 700; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 12px; }
+.head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.head h2 { font-family: var(--mono); font-size: 18px; font-weight: 500; margin: 0; }
+.head .what { color: var(--muted); margin: 2px 0 0; }
+.badge { font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.badge.set { color: var(--set); border-color: var(--set); }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#layers tr { cursor: pointer; } #layers tr:hover td { background: rgba(255,255,255,0.03); }
+tr.muted td { opacity: 0.45; } button.mute.on { background: #ff7b6b; color: #2a0a06; border-color: #ff7b6b; }
+tr.selrow td { background: rgba(255,209,102,0.13); } tr.selrow td:first-child { box-shadow: inset 3px 0 0 #ffd166; }
+canvas { width: 100%; height: 190px; background: var(--plot); border: 1px solid var(--line); border-radius: 10px; display: block; }
+table { border-collapse: collapse; width: 100%; }
+th { font-size: 12px; color: var(--muted); font-weight: 500; text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+td input[type=range] { width: 100%; min-width: 70px; accent-color: var(--accent); }
+td .num { display: flex; align-items: center; gap: 3px; justify-content: flex-end; }
+td .num input { width: 64px; font-family: var(--mono); font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); text-align: right; }
+td .num span { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 18px; }
+#jitterN { width: 52px; font-family: var(--mono); font-size: 12px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); text-align: right; }
+td select { font: inherit; font-size: 13px; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+input.swc { width: 22px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 5px; margin-right: 6px; vertical-align: middle; background: none; cursor: pointer; }
+.recipes { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; } .recipes span { color: var(--muted); font-size: 13px; margin-right: 4px; }
+.note { color: var(--muted); font-size: 13px; }
+.status { font-size: 13px; color: var(--muted); } .status.err { color: var(--set); } .status.ok { color: var(--ok); }
+</style>
+</head><body>
+<div class="wrap">
+  <div class="crumbs"><a href="/forge">Forge</a> / <a id="crumbGame" href="#">game</a> / SFX</div>
+  <header>
+    <h1>Sound effects</h1>
+    <p class="lede">Pick a sound, shape it, hear it. Every sound is a stack of layers: a wave sweeping from one pitch to another, fading over its length, starting after its delay. Opening a sound reads how the game plays it now; your edits replace it in the game once you save (reload the game to hear them). Sounds you never touch stay exactly as the game codes them.</p>
+  </header>
+  <div class="tools" style="justify-content:space-between">
+    <span id="status" class="status">loading…</span>
+    <span class="tools"><button id="saveAll" class="primary">Save to the game (Ctrl+S)</button></span>
+  </div>
+  <div class="main">
+    <nav class="list" aria-label="Sounds"><input id="q" type="search" placeholder="Find a sound…" aria-label="Find a sound"><div id="slots"></div></nav>
+    <section class="panel" id="panel" aria-live="polite">
+      <div class="head">
+        <div><h2 id="title">…</h2><p class="what" id="what"></p></div>
+        <span id="badge" class="badge">game's own</span>
+      </div>
+      <div class="tools">
+        <button id="play" class="primary">▶ Play (Space)</button>
+        <button id="playOrig">▶ The game's original</button>
+        <label class="note">pitch variation <input id="jitter" type="range" min="0" max="0.2" step="0.01" style="vertical-align:middle;accent-color:var(--accent)"> ± <input id="jitterN" type="number" min="0" max="50" step="1" aria-label="pitch variation in percent">%</label>
+        <button id="revert" class="danger">Revert to the game's</button>
+      </div>
+      <div class="tools">
+        <button id="copy" title="copy this whole sound">Copy sound (Ctrl+C)</button>
+        <button id="paste" title="replace this sound with the copied one">Paste (Ctrl+V)</button>
+        <button id="pasteAdd" title="add the copied sound's layers on top of this one">Paste on top (Ctrl+Shift+V)</button>
+        <button id="undo" title="undo the last paste, layer change or revert">Undo (Ctrl+Z)</button>
+        <span id="clip" class="note"></span>
+      </div>
+      <div class="tools">
+        <button id="simplify" title="join layers that make one line into one long sweep; each press joins more (Ctrl+Z undoes)">Simplify</button>
+        <button id="shimmer" title="a fast square-wave wobble of about a semitone on the tones: the chiptune trill; each press deepens it">Shimmer</button>
+        <span class="note">pitch</span><button id="tpOd" title="an octave down (Shift+↓ with a selection)">−oct</button><button id="tpSd" title="a semitone down (↓ with a selection)">−1</button><button id="tpSu" title="a semitone up (↑ with a selection)">+1</button><button id="tpOu" title="an octave up (Shift+↑ with a selection)">+oct</button>
+        <label class="note" title="colour the selected lines (editor only: the game ignores it)">colour <input id="selColor" type="color" class="swc" value="#ffd166" disabled></label><button id="selColorReset" disabled title="the selected lines back to their wave's colour">reset</button>
+        <button id="reverse" title="back to front (Ctrl+R): the selection, or with the trim flags pulled in, everything between them; start times mirrored, every sweep the other way">Reverse (Ctrl+R)</button>
+        <button id="selDup" disabled title="the selection again, right after itself (Ctrl+D)">Repeat (Ctrl+D)</button>
+        <button id="selMute" disabled title="mute or unmute the selected lines (M)">Mute (M)</button>
+        <button id="selDel" class="danger" disabled title="remove the selected layers (Delete)">Delete selected (Del)</button>
+        <span id="selNote" class="note">Click a line on the graph to select it (Shift or Ctrl click: more). Drag it, or ← / →, to move it.</span>
+      </div>
+      <div class="tools" id="recRow">
+        <button id="rec" title="record yourself (the browser asks for the microphone)">🎤 Record</button>
+        <button id="recLoad" title="an audio file: mp3, wav, ogg…">Load a recording…</button><input id="recFile" type="file" accept="audio/*" hidden>
+        <label class="note">style <select id="recStyle"><option value="chip">8-bit (square buzz)</option><option value="soft">soft (sine)</option></select></label>
+        <label class="note">piece <input id="recChunk" type="range" min="30" max="150" step="10" value="60" style="vertical-align:middle;accent-color:var(--accent)"> <span id="recChunkN">60</span> ms</label>
+        <label class="note"><input type="checkbox" id="recSnap" checked> snap pitch to notes</label>
+        <button id="recPlay" disabled>▶ the recording</button>
+        <span id="recNote" class="note">Turn a recording into this sound's layers: speak, and it is rebuilt from square waves and noise.</span>
+      </div>
+      <canvas id="plot" width="1200" height="190" aria-label="Each layer's pitch over time: drag the handles at either end to trim"></canvas>
+      <div class="tools" id="trimRow">
+        <span class="note">trim</span>
+        <label class="note">start <input id="trimA" type="number" min="0" step="1" style="width:6em"> ms</label>
+        <label class="note">end <input id="trimB" type="number" min="1" step="1" style="width:6em"> ms</label>
+        <button id="trimApply" disabled>Apply trim</button><button id="trimReset" disabled>Reset</button>
+        <span id="trimNote" class="note">Drag the handles at either end of the graph (or type the times) to cut noise off the start or end. ▶ Play plays it trimmed.</span>
+      </div>
+      <div class="recipes"><span>Add a layer:</span></div>
+      <table><thead><tr><th>wave</th><th>start pitch</th><th>end pitch</th><th>length</th><th>volume</th><th>delay</th><th>wobble</th><th>wobble depth</th><th title="distortion">crush</th><th></th></tr></thead><tbody id="layers"></tbody></table>
+      <p class="note" id="special"></p>
+    </section>
+  </div>
+</div>
+<script src="/kit/js/kit-util.js"></script>
+<script src="/kit/js/kit-sfx.js"></script>
+<script>
+// ---- what the game has: its event sounds and creature deaths read from js/util.js (with their comments), plus the slots
+// that are new here: a hit per creature, boss deaths and hits, and the fire and poison element effects ----
+const el = id => document.getElementById(id);
+const API = '/gameapi', GAME = new URLSearchParams(location.search).get('game') || ''; let CSRF = ''; // the forge's API for this game: /gameapi/<verb>/<slug>, writes with X-CSRF-TOKEN
+const apiUrl = verb => `${API}/${verb}/${GAME}`; const apiHeaders = () => ({ 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest' });
+async function apiToken() { try { const r = await fetch(apiUrl('token'), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); if (r.ok) { CSRF = (await r.json()).token || ''; return true; } } catch (e) {} return false; }
+document.title = `SFX · ${GAME} · VoidLux Studio`;
+const WAVES = ['square', 'sawtooth', 'triangle', 'sine', 'noise'], WCOL = { square: '#ffb347', sawtooth: '#ff5c8a', triangle: '#7de0ff', sine: '#9bf06a', noise: '#c9b8ff' };
+const SOUND_RECIPES = {
+  'Punch': [{ w: 'sine', f0: 160, f1: 45, d: 0.14, v: 0.6 }],
+  'Crunch': [{ w: 'noise', f0: 4000, f1: 600, d: 0.08, v: 0.45 }],
+  'Sparkle': [{ w: 'triangle', f0: 1568, f1: 2093, d: 0.08, v: 0.25 }, { w: 'triangle', f0: 2093, f1: 2637, d: 0.08, v: 0.2, t: 60 }, { w: 'triangle', f0: 2637, f1: 3136, d: 0.12, v: 0.15, t: 120 }],
+  'Coin': [{ w: 'square', f0: 988, f1: 988, d: 0.07, v: 0.3 }, { w: 'square', f0: 1319, f1: 1319, d: 0.18, v: 0.3, t: 70 }],
+  'Zap': [{ w: 'sawtooth', f0: 2400, f1: 200, d: 0.12, v: 0.3 }],
+  'Boom': [{ w: 'noise', f0: 1200, f1: 80, d: 0.5, v: 0.6 }, { w: 'sine', f0: 90, f1: 30, d: 0.45, v: 0.6 }],
+  'Squish': [{ w: 'sine', f0: 300, f1: 900, d: 0.1, v: 0.35 }, { w: 'sine', f0: 700, f1: 150, d: 0.15, v: 0.3, t: 80 }],
+  'Whoosh': [{ w: 'noise', f0: 400, f1: 2500, d: 0.25, v: 0.25 }],
+  'Growl': [{ w: 'sawtooth', f0: 170, f1: 60, d: 0.5, v: 0.45, lfo: 12, depth: 40, crush: 1 }],
+  'Blip': [{ w: 'square', f0: 660, f1: 660, d: 0.05, v: 0.3 }],
+};
+// what each game event is, where the game's code does not say (from where it is played)
+const EVENT_WHAT = { "kill": "an enemy dies", "hurt": "the player takes a hit", "die": "the player dies", "wave": "a new wave or level begins", "start": "a run starts", "tab": "a menu step", "pickup": "the player collects something", "shoot": "the player fires", "hit": "a bullet lands on an enemy",
+  /* centipede's event notes, kept as examples */ "_x": {"shoot": "you fire a bullet (two may overlap)", "hit": "a bullet lands on a monster (every creature, until it has its own)", "pickup": "you pick up a segment, an egg, a minion", "parasite": "a parasite latches on; Hive Mind", "lose": "you lose a segment; a refused purchase", "die": "you die; Sacrifice goes off", "dot": "eat a dot; small UI clicks (workbench, toggles)", "pellet": "a power pellet; the potion; trashing on the workbench", "power": "the rest: the boss climb, the siphon, the fortune teller, the cake, a crafted piece, the coffin ghost", "fuse": "a fusion on the workbench; the perk reel lands", "fuse4": "a tier-4 fusion (unused right now)", "land": "a piece lands on the workbench; a perk card lands", "tab": "workbench tab / perk shop row change", "kill": "a monster dies with no sound of its own; boss deaths; the saucer deck", "wall": "a wall breaks; blasts, crashes, Sacrifice landing", "freeze": "something freezes (ice, Deep Freeze)", "zap": "an electric arc", "enter": "you enter a dungeon", "shed": "a segment drops off; clearing the loadout", "eat": "you eat a ghost", "scream": "the crab's scream; a swarm arrives", "roar": "a boss roars; something wakes", "fuel": "the tractor's low-fuel blips", "stomp": "heavy footsteps; the Fast and Hard BONK", "hiss": "a snake's hiss", "ray": "an invader's ray on the saucer deck", "moo": "a cow (custom code)", "block": "a shield blocks a shot", "shieldup": "a shield recharges", "charge": "a boss charges", "snip": "the crab snips off a segment", "abduct": "a tractor beam lifts something", "beam": "a saucer dives on the deck", "baa": "a farm sheep (parasite) bleats", "honk": "a clown honk; a kamikaze clown", "horn": "the clown car's horn", "vroom": "an engine revs: the tractor, the barn", "sputter": "the clown car runs out of gas", "squirt": "the clown car's flower squirts", "squeak": "rubber chicken bullets", "splat": "a cream pie hits the lens", "laugh": "laughing gas; the mushroom", "trombone": "the sad trombone", "trumpet": "an elephant trumpets", "cannon": "a cannon fires you", "geyser": "a jungle geyser erupts", "cluck": "chickens appear", "bell": "the dungeon's bell rings", "mole": "a mole pops up / is smashed", "megaReady": "your mega is charged and ready; the Star card", "perkShop": "the perk shop opens after a dungeon", "perk": "you buy a perk in the shop", "cleared": "ALL DOTS, DECK CLEARED, SWARM CLEARED", "minion": "a minion hatches or joins you; Brood absorbs a parasite", "loadout": "your loadout is saved, regenerated, or filled from the bag", "discover": "a new-segment card; the crafting tip", "storm": "Bullet Storm goes off"} };
+// ---- a recording, rebuilt from the game's own layers (8-bit "sine-wave speech"): the recording is cut into short pieces;
+// each voiced piece becomes a buzz at the speaker's pitch plus two tones riding the first two formants (the resonances that
+// make one vowel sound unlike another), each sweeping from the piece's start to its end; a hissy piece ('h', 's', 'th')
+// becomes a noise layer swept across its band. Approximate on purpose: it should sound like a chip trying to talk ----
+const Rec = {
+  SR: 11025, HOP: 0.01,
+  mono(ab) { const n = ab.length, out = new Float32Array(n); for (let c = 0; c < ab.numberOfChannels; c++) { const d = ab.getChannelData(c); for (let i = 0; i < n; i++) out[i] += d[i] / ab.numberOfChannels; } return out; },
+  async resample(ab, sr) { const oc = new OfflineAudioContext(1, Math.max(1, Math.ceil(ab.duration * sr)), sr), s = oc.createBufferSource(); s.buffer = ab; s.connect(oc.destination); s.start(); return (await oc.startRendering()).getChannelData(0); },
+  // the period by autocorrelation (70-500 Hz). A smooth signal always resembles itself at tiny lags, so the search starts
+  // past the first dip; then the shortest lag nearly as good as the best wins, so it does not drop an octave
+  pitch(x, SR) {
+    const n = x.length, lo = Math.floor(SR / 500), hi = Math.min(n - 2, Math.ceil(SR / 70)); let m = 0; for (const v of x) m += v; m /= n;
+    const y = Float32Array.from(x, v => v - m), r = [];
+    for (let L = 1; L <= hi + 1; L++) { let num = 0, d1 = 0, d2 = 0; for (let i = 0; i + L < n; i++) { num += y[i] * y[i + L]; d1 += y[i] * y[i]; d2 += y[i + L] * y[i + L]; } r[L] = num / Math.sqrt(d1 * d2 + 1e-12); }
+    let s0 = 1; while (s0 < hi && r[s0 + 1] < r[s0]) s0++; s0 = Math.max(s0, lo); // down the first slope
+    let best = 0; for (let L = s0; L <= hi; L++) best = Math.max(best, r[L]);
+    for (let L = s0 + 1; L < hi; L++) if (r[L] >= best * 0.88 && r[L] >= r[L - 1] && r[L] >= r[L + 1]) { const a = r[L - 1], b = r[L], c = r[L + 1], off = (a - c) / (2 * (a - 2 * b + c) || 1); return { f: SR / (L + Math.max(-0.5, Math.min(0.5, off))), conf: best }; }
+    return { f: 0, conf: 0 };
+  },
+  // linear prediction (order p): the vocal tract as a filter; its envelope's peaks are the formants
+  lpc(x, p) {
+    const n = x.length, y = new Float64Array(n); for (let i = 0; i < n; i++) y[i] = (x[i] - (i ? 0.95 * x[i - 1] : 0)) * (0.54 - 0.46 * Math.cos(2 * Math.PI * i / (n - 1)));
+    const R = []; for (let k = 0; k <= p; k++) { let s = 0; for (let i = k; i < n; i++) s += y[i] * y[i - k]; R[k] = s; }
+    let a = [1], E = R[0] * 1.0001 + 1e-9;
+    for (let i = 1; i <= p; i++) { let acc = R[i]; for (let j = 1; j < i; j++) acc += a[j] * R[i - j]; const k = -acc / E, b = a.slice(); for (let j = 1; j < i; j++) b[j] = a[j] + k * a[i - j]; b[i] = k; a = b; E *= 1 - k * k; }
+    return a;
+  },
+  formants(a, SR, prev) {
+    const nb = 256, env = [], pk = []; for (let k = 0; k < nb; k++) { const w = Math.PI * k / nb; let re = 0, im = 0; a.forEach((c, j) => { re += c * Math.cos(w * j); im -= c * Math.sin(w * j); }); env[k] = 1 / Math.sqrt(re * re + im * im); }
+    for (let k = 1; k < nb - 1; k++) if (env[k] > env[k - 1] && env[k] >= env[k + 1]) pk.push({ hz: k * SR / 2 / nb, m: env[k] });
+    const pick = (lo, hi) => pk.find(q => q.hz >= lo && q.hz <= hi);
+    const f1 = pick(200, 1000), f2 = pick(Math.max((f1 ? f1.hz : prev[0]) + 200, 700), 2700);
+    return { f: [f1 ? f1.hz : prev[0], f2 ? f2.hz : prev[1]], w2: f1 && f2 ? Math.min(1.5, Math.max(0.15, f2.m / f1.m)) : 0.5 };
+  },
+  // every 10 ms: loudness, pitch (and how sure), the two formants, and how hissy (zero crossings at the full rate)
+  async analyse(ab) {
+    const SR = this.SR, x = await this.resample(ab, SR), raw = this.mono(ab), rsr = ab.sampleRate, H = Math.round(SR * this.HOP), N = Math.round(SR * 0.03), fr = [];
+    let prev = [500, 1500];
+    for (let s0 = 0; s0 + N <= x.length; s0 += H) {
+      const seg = x.subarray(s0, s0 + N); let e = 0; for (const v of seg) e += v * v;
+      const P = this.pitch(seg, SR), F = this.formants(this.lpc(seg, 12), SR, prev); prev = F.f;
+      const r0 = Math.floor(s0 / SR * rsr), r1 = Math.min(raw.length, Math.floor((s0 + N) / SR * rsr)); let z = 0; for (let i = r0 + 1; i < r1; i++) if ((raw[i] >= 0) !== (raw[i - 1] >= 0)) z++;
+      fr.push({ rms: Math.sqrt(e / N), p: P.f, conf: P.conf, F: F.f, w2: F.w2, zHz: z / Math.max(1, r1 - r0) * rsr / 2 });
+    }
+    const max = Math.max(...fr.map(f => f.rms)) || 1;
+    for (const f of fr) { f.lv = f.rms / max; f.silent = f.lv < 0.05; f.voiced = !f.silent && f.p > 0 && (f.conf > 0.45 && f.zHz < 2500 || f.conf > 0.25 && f.zHz < 1600); } // (a quiet vowel is less sure of its pitch, but it is not hissy)
+    for (let i = 0; i < fr.length;) { if (!fr[i].voiced) { i++; continue; } let j = i; while (j < fr.length && fr[j].voiced) j++; if (j - i < 5) for (let k = i; k < j; k++) fr[k].voiced = false; i = j; } // a voiced blip under 50 ms is a glitch, not a vowel
+    { // pitch continuity: a frame that jumped to a harmonic (x2, x3) or an octave down comes back next to its neighbour; real glides stay
+      let last = (fr.find(f => f.voiced) || {}).p;
+      for (const f of fr) { if (!f.voiced) continue; if (Math.abs(Math.log(f.p / last)) > Math.log(1.45)) { const c = [f.p, f.p / 2, f.p / 3, f.p * 2].filter(x => x >= 70 && x <= 500); f.p = c.reduce((b, x) => Math.abs(Math.log(x / last)) < Math.abs(Math.log(b / last)) ? x : b, c[0] || f.p); } last = f.p; } // (only a sudden jump is corrected)
+    }
+    const med = (get, set, ok) => { const v = fr.map(get); fr.forEach((f, i) => { if (!ok(f)) return; const w = []; for (let k = i - 2; k <= i + 2; k++) if (fr[k] && ok(fr[k])) w.push(v[k]); w.sort((p, q) => p - q); set(f, w[w.length >> 1]); }); };
+    med(f => f.p, (f, v) => f.p = v, f => f.voiced); med(f => f.F[0], (f, v) => f.F[0] = v, f => !f.silent); med(f => f.F[1], (f, v) => f.F[1] = v, f => !f.silent);
+    let a = 0, b = fr.length; while (a < b && fr[a].silent) a++; while (b > a && fr[b - 1].silent) b--; // trim the silence at both ends
+    return fr.slice(a, b);
+  },
+  // the layers: one piece every `ms` (cut short where voiced turns to hiss), three layers a voiced piece, one a hissy one
+  build(fr, o) {
+    const chip = o.style === 'chip', snap = f => 440 * Math.pow(2, Math.round(12 * Math.log2(f / 440)) / 12);
+    const fit = Math.max(10, Math.min(o.ms, Math.floor(fr.length / 6) * 10)); // a short sound (a pop, a click) gets short pieces: at least ~6 of them
+    for (let ms = fit; ; ms += 10) {
+      const K = Math.max(1, Math.round(ms / 10)), out = []; let i = 0;
+      while (i < fr.length) {
+        if (fr[i].silent) { i++; continue; }
+        const v = fr[i].voiced; let j = i + 1; while (j < fr.length && j - i < K && !fr[j].silent && fr[j].voiced === v && Math.abs(Math.log((fr[j].lv + 0.02) / (fr[j - 1].lv + 0.02))) < 0.45) j++; // (a sharp change in loudness starts a new piece: each ha of a laugh stays its own burst)
+        const A = fr[i], B = fr[j - 1], run = fr.slice(i, j), lv = run.reduce((q, f) => q + f.lv, 0) / run.length, t = i * 10, d = +Math.max(0.03, (j - i) * 0.01 * 1.6).toFixed(3); // (each layer fades as it plays: it rings on into the next piece)
+        if (v) {
+          const p0 = o.snap ? snap(A.p) : A.p, p1 = o.snap ? snap(B.p) : B.p, w2 = run.reduce((q, f) => q + f.w2, 0) / run.length;
+          out.push({ w: chip ? 'square' : 'sawtooth', f0: +p0.toFixed(1), f1: +p1.toFixed(1), d, v: 0.3 * lv, t, ...(chip ? { crush: 1 } : {}) });
+          const hz = (f, p) => Math.round(Math.max(1, Math.round(f / p)) * p); // a formant tone on the nearest harmonic of the voice: in tune with the buzz, not grinding against it
+          out.push({ w: chip ? 'triangle' : 'sine', f0: hz(A.F[0], p0), f1: hz(B.F[0], p1), d, v: (chip ? 0.5 : 0.7) * lv, t });
+          out.push({ w: chip ? 'triangle' : 'sine', f0: hz(A.F[1], p0), f1: hz(B.F[1], p1), d, v: (chip ? 0.35 : 0.6) * lv * w2, t });
+        } else out.push({ w: 'noise', f0: Math.round(Math.min(9000, Math.max(800, A.zHz * 1.2))), f1: Math.round(Math.min(9000, Math.max(800, B.zHz * 1.2))), d, v: 0.7 * lv, t });
+        i = j;
+      }
+      if (out.length <= 64 || ms >= 300) { const top = Math.max(...out.map(L => L.v)) || 1; for (const L of out) L.v = +Math.min(1, L.v * 0.8 / top).toFixed(3); return { layers: out.slice(0, 64), ms }; } // too many: longer pieces
+    }
+  },
+};
+// ---- trimming: keep only [a, b] ms of a sound. A layer wholly outside goes; one crossing an edge is cut there and starts
+// at the pitch and volume it had reached (its sweep and fade are exponential), so what is left sounds as it did; the
+// sound then starts at 0. Its end fades a little sooner (a layer always fades out over its own length) ----
+const Trim = {
+  total(S) { return Math.round(Math.max(0, ...S.layers.map(L => (L.t || 0) + L.d * 1000))); },
+  cut(S, a, b) {
+    const A = a / 1000, B = b / 1000, out = [];
+    for (const L of S.layers) {
+      const t0 = (L.t || 0) / 1000, t1 = t0 + L.d; if (t1 <= A || t0 >= B) continue;
+      const s0 = Math.max(t0, A), s1 = Math.min(t1, B), d = s1 - s0; if (d < 0.005) continue;
+      const fAt = u => L.f0 * Math.pow(L.f1 / L.f0, (u - t0) / L.d), v = L.v > 0.001 ? L.v * Math.pow(0.001 / L.v, (s0 - t0) / L.d) : L.v;
+      out.push({ ...L, t: Math.round((s0 - A) * 1000), d: +d.toFixed(3), f0: +fAt(s0).toFixed(1), f1: +fAt(s1).toFixed(1), v: +v.toFixed(3) });
+    }
+    return { ...S, layers: out.length ? out : S.layers.slice(0, 1) };
+  },
+};
+// ---- Simplify: layers that make one line (the same wave and crush, each starting while the last still sounds and near the
+// pitch it reached) are joined into one long sweep wherever a single exponential sweep still passes within `tol` (a
+// fraction of the pitch) of the points it replaces; near-silent layers go. A higher tol joins more ----
+const Simplify = {
+  run(layers, tol) {
+    const L = layers.map((x, i) => ({ ...x, i })).filter(x => x.v >= 0.02).sort((a, b) => (a.t || 0) - (b.t || 0));
+    const chains = [];
+    for (const x of L) {
+      const t = x.t || 0; let best = null, bd = Infinity;
+      for (const ch of chains) { const y = ch[ch.length - 1], yt = y.t || 0, end = yt + y.d * 1000; if (y.w !== x.w || !!y.crush !== !!x.crush || !!y.m !== !!x.m || (y.lfo || 0) !== (x.lfo || 0) || t < yt || t > end + 5) continue; const dist = Math.abs(Math.log(x.f0 / y.f1)); if (dist < 0.35 && dist < bd) { bd = dist; best = ch; } }
+      if (best) best.push(x); else chains.push([x]);
+    }
+    const out = [];
+    for (const ch of chains) {
+      let run = [ch[0]];
+      const flush = () => { const a = run[0], b = run[run.length - 1], t0 = a.t || 0, t1 = (b.t || 0) + b.d * 1000; out.push({ ...a, i: undefined, t: t0, d: +((t1 - t0) / 1000).toFixed(3), f1: b.f1, v: +Math.max(...run.map(r => r.v)).toFixed(3) }); };
+      for (let k = 1; k < ch.length; k++) {
+        const cand = run.concat(ch[k]), a = cand[0], b = cand[cand.length - 1], t0 = a.t || 0, t1 = (b.t || 0) + b.d * 1000;
+        const ok = cand.every(r => { const u = ((r.t || 0) - t0) / (t1 - t0), f = a.f0 * Math.pow(b.f1 / a.f0, u); return Math.abs(Math.log(r.f0 / f)) <= tol; }); // the joined sweep still follows every start point
+        if (ok) run = cand; else { flush(); run = [ch[k]]; }
+      }
+      flush();
+    }
+    for (const x of out) { delete x.i; if (!x.t) x.t = 0; }
+    return out.sort((a, b) => a.t - b.t);
+  },
+};
+const Ed = {
+  data: {}, saved: '{}', slots: [], cur: null, draft: null, orig: null, special: '', canSave: false, clip: null, undos: [],
+  async init() {
+    // the catalog: every SFX.play('key') in the game's code (from the studio), designed sounds the code no longer plays, and
+    // the standard keys every game tends to have, so a new game has slots before its code does
+    let cat = { sounds: [], designed: [], themes: [] }; try { cat = await (await fetch(apiUrl('sounds'), { cache: 'no-store' })).json(); } catch (e) { /* no studio */ }
+    const seen = new Map(); for (const x of cat.sounds || []) { if (!seen.has(x.key)) seen.set(x.key, { key: x.key, label: x.key, what: (x.what || EVENT_WHAT[x.key] || 'played by the game') + ` · ${x.file}:${x.line}`, from: x.key }); }
+    const STD = ['shoot', 'hit', 'kill', 'pickup', 'hurt', 'die', 'wave', 'start', 'tab'];
+    this.slots = [
+      { group: 'Sounds the code plays', items: [...seen.values()] },
+      { group: 'Designed, not played by the code now', items: (cat.designed || []).filter(k => !seen.has(k)).map(k => ({ key: k, label: k, what: 'in js/sfx.js; nothing calls SFX.play(\'' + k + '\') today', from: k })) },
+      { group: 'Standard keys', items: STD.filter(k => !seen.has(k) && !(cat.designed || []).includes(k)).map(k => ({ key: k, label: k, what: EVENT_WHAT[k] || 'a usual game event', from: null })) },
+    ];
+    try { const r = await fetch(apiUrl('sfx'), { cache: 'no-store' }); if (r.ok) { this.data = await r.json(); this.canSave = await apiToken(); } } catch (e) { /* no forge */ }
+    if (!this.canSave) { this.say('Read-only: open this page from the studio with ?game=<slug> to save.', 'err'); el('saveAll').disabled = true; }
+    else this.say(`${Object.keys(this.data).length} designed sound${Object.keys(this.data).length === 1 ? '' : 's'} in js/sfx.js`);
+    el('crumbGame').textContent = GAME; el('crumbGame').href = '/game/view/' + GAME;
+    el('q').insertAdjacentHTML('afterend', '<button id="newKey" title="a slot for a key the code does not play yet">+ key</button>'); el('newKey').onclick = () => { const k = prompt('New sound key (letters, digits, _ or :)'); if (k && /^[a-z][A-Za-z0-9_]*(:[A-Za-z0-9_-]+)?$/.test(k) && !this.find(k)) { this.slots[0].items.push({ key: k, label: k, what: `added by hand: play it with SFX.play('${k}')`, from: null }); this.renderList(); this.open(k); } };
+    this.saved = JSON.stringify(this.data);
+    for (const [name, L] of Object.entries(SOUND_RECIPES)) { const b = document.createElement('button'); b.textContent = '+ ' + name; b.onclick = () => { this.pushUndo(); this.draft.layers.push(...L.map(x => ({ t: 0, lfo: 0, depth: 0, crush: 0, ...x }))); this.changed(true); }; el('panel').querySelector('.recipes').appendChild(b); }
+    el('q').oninput = () => this.renderList();
+    el('play').onclick = () => this.play(); el('playOrig').onclick = () => this.playOrig();
+    el('copy').onclick = () => this.copy(); el('paste').onclick = () => this.paste(false); el('pasteAdd').onclick = () => this.paste(true); el('undo').onclick = () => this.undo();
+    try { this.clip = JSON.parse(localStorage.getItem('sfx.clip') || 'null'); } catch (e) { this.clip = null; } this.showClip();
+    el('revert').onclick = () => { this.pushUndo(); delete this.data[this.cur.key]; this.open(this.cur.key); this.renderList(); this.say('reverted: the game plays its own sound again (save to keep it that way)'); };
+    el('jitter').oninput = e => { this.draft.jitter = +e.target.value; el('jitterN').value = Math.round(this.draft.jitter * 100); this.changed(); };
+    el('jitterN').onchange = e => { const x = Math.min(50, Math.max(0, parseFloat(e.target.value) || 0)); this.draft.jitter = x / 100; e.target.value = x; el('jitter').value = Math.min(0.2, this.draft.jitter); this.changed(); this.play(); };
+    el('jitterN').onkeydown = e => { if (e.key === 'Enter') e.target.blur(); };
+    el('saveAll').onclick = () => this.save();
+    this.plotPointer(); el('simplify').onclick = () => this.simplify(); el('shimmer').onclick = () => this.shimmer(); el('selDel').onclick = () => this.selDelete();
+    el('selColor').onfocus = () => this.pushUndo(); el('selColor').oninput = e => { for (const i of this.selList()) this.draft.layers[i].c = e.target.value; this.changed(true); this.selSet(this.selList()); }; // (one undo per visit to the picker)
+    el('reverse').onclick = () => this.reverse(); el('selMute').onclick = () => this.selMute(); el('selDup').onclick = () => this.selDuplicate();
+    el('selColorReset').onclick = () => { this.pushUndo(); for (const i of this.selList()) delete this.draft.layers[i].c; this.changed(true); this.selSet(this.selList()); }; for (const [id, n] of [['tpOd', -12], ['tpSd', -1], ['tpSu', 1], ['tpOu', 12]]) el(id).onclick = () => this.transpose(n); el('trimApply').onclick = () => this.trimApply(); el('trimReset').onclick = () => this.trimReset();
+    for (const id of ['trimA', 'trimB']) { el(id).onchange = () => { this.trimSet(+el('trimA').value, +el('trimB').value); this.play(); }; el(id).onkeydown = e => { if (e.key === 'Enter') e.target.blur(); }; }
+    // a recording: record (the microphone) or load a file; it is rebuilt into this sound's layers (style / piece / snap rebuild it)
+    el('rec').onclick = () => this.recToggle(); el('recLoad').onclick = () => el('recFile').click();
+    el('recFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (f) this.recUse(await f.arrayBuffer(), f.name); };
+    el('recChunk').oninput = () => { el('recChunkN').textContent = el('recChunk').value; };
+    for (const id of ['recChunk', 'recStyle', 'recSnap']) el(id).onchange = () => { if (this.rec) this.recBuild(); };
+    el('recPlay').onclick = () => { if (!this.rec) return; SFX.init(); const s = SFX.ctx.createBufferSource(); s.buffer = this.rec.ab; s.connect(SFX.ctx.destination); s.start(); };
+    document.addEventListener('keydown', e => {
+      const typing = /INPUT|SELECT|TEXTAREA/.test(e.target.tagName) && e.target.type !== 'range' && e.target.type !== 'checkbox';
+      if ((e.ctrlKey || e.metaKey) && !typing && e.code === 'KeyA') { e.preventDefault(); this.selSet(this.draft.layers.map((_, i) => i)); return; } // every line
+      if ((e.ctrlKey || e.metaKey) && !typing && e.code === 'KeyC') { e.preventDefault(); this.copy(); return; }
+      if ((e.ctrlKey || e.metaKey) && !typing && e.code === 'KeyV') { e.preventDefault(); this.paste(e.shiftKey); return; }
+      if ((e.ctrlKey || e.metaKey) && !typing && e.code === 'KeyZ') { e.preventDefault(); this.undo(); return; }
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') { e.preventDefault(); this.save(); return; }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !typing && e.code === 'KeyR') { e.preventDefault(); this.reverse(); return; } // (not the browser's reload: Ctrl+Shift+R still reloads)
+      if ((e.ctrlKey || e.metaKey) && !typing && e.code === 'KeyD') { e.preventDefault(); this.selDuplicate(); return; } // (not the browser's bookmark)
+      if (!typing && e.target.type !== 'range' && this.selList().length) { // the selection: Delete, Esc, ← / → (Shift: 10 ms). (A focused slider keeps its arrows)
+        if (e.code === 'Delete' || e.code === 'Backspace') { e.preventDefault(); this.selDelete(); return; }
+        if (e.code === 'Escape') { this.selSet([]); return; }
+        if (e.code === 'KeyM' && !e.ctrlKey && !e.metaKey) { this.selMute(); return; }
+        if (e.code === 'ArrowUp' || e.code === 'ArrowDown') { e.preventDefault(); this.transpose((e.code === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 12 : 1)); return; } // ↑ / ↓: a semitone (Shift: an octave)
+        if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { e.preventDefault(); const now = performance.now(); if (now - (this.nudgeT || 0) > 700) this.pushUndo(); this.nudgeT = now; /* (a burst of nudges is one undo) */ this.selMove((e.code === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 10 : 1)); return; }
+      }
+      if (e.code === 'Space' && !/INPUT|SELECT|TEXTAREA|BUTTON/.test(e.target.tagName)) { e.preventDefault(); this.play(); }
+    });
+    window.addEventListener('beforeunload', e => { if (JSON.stringify(this.data) !== this.saved) { e.preventDefault(); e.returnValue = ''; } });
+    this.renderList(); this.open(location.hash.slice(1) || this.firstKey());
+  },
+  say(t, kind) { const s = el('status'); s.textContent = t; s.className = 'status' + (kind ? ' ' + kind : ''); },
+  find(key) { for (const g of this.slots) for (const it of g.items) if (it.key === key) return it; return null; },
+  firstKey() { for (const g of this.slots) if (g.items.length) return g.items[0].key; return 'shoot'; },
+  renderList() {
+    const q = el('q').value.trim().toLowerCase(), box = el('slots'); box.innerHTML = '';
+    for (const g of this.slots) {
+      const items = g.items.filter(it => !q || (it.key + ' ' + it.label + ' ' + it.what).toLowerCase().includes(q)); if (!items.length) continue;
+      const h = document.createElement('h3'); h.textContent = g.group; box.appendChild(h);
+      for (const it of items) {
+        const b = document.createElement('button'); b.className = 'slot' + (this.cur && this.cur.key === it.key ? ' on' : ''); b.title = it.what;
+        b.innerHTML = `<span><span class="k"></span> <span class="dot">${this.data[it.key] ? '●' : ''}</span></span><span class="d"></span>`;
+        b.querySelector('.k').textContent = it.label; b.querySelector('.d').textContent = it.what;
+        b.onclick = () => this.open(it.key); box.appendChild(b);
+      }
+    }
+  },
+  // ---- read how the game plays a sound now: run its code with tone/growl recording instead of sounding, and every
+  // setTimeout run at once on a virtual clock, so the layers and their delays come out instantly ----
+  // what the game plays for this key before it is designed: the kit's plain blip (a game's SFX.FALLBACK is set in its
+  // code at run time, which this page does not run)
+  capture(from) { if (!from) return { layers: [], special: '' }; return { layers: SFX.BLIP.map(L => ({ t: 0, lfo: 0, depth: 0, crush: 0, ...L })), special: this.data[from] ? '' : "the kit's plain blip until you design it" }; },
+  open(key) {
+    const it = this.find(key) || this.find(this.firstKey()) || { key: 'shoot', label: 'shoot', what: '', from: null }; this.cur = it; location.hash = it.key;
+    const cap = this.capture(it.from); this.orig = cap.layers; this.special = cap.special;
+    if (it.alias && this.data[it.alias] && !this.data[it.key]) this.orig = JSON.parse(JSON.stringify(this.data[it.alias].layers)); // it borrows a sound you designed: start from that one
+    const mine = this.data[it.key];
+    this.draft = mine ? JSON.parse(JSON.stringify(mine)) : { layers: JSON.parse(JSON.stringify(this.orig.length ? this.orig : [{ w: 'square', f0: 660, f1: 330, d: 0.1, v: 0.3, t: 0, lfo: 0, depth: 0, crush: 0 }])), jitter: 0 };
+    for (const L of this.draft.layers) { L.t = L.t || 0; L.lfo = L.lfo || 0; L.depth = L.depth || 0; L.crush = L.crush || 0; }
+    el('title').textContent = it.label + (it.label !== it.key ? `  ·  ${it.key}` : ''); el('what').textContent = it.what;
+    el('special').textContent = this.special ? `The game's version uses ${this.special}: ▶ the game's original plays it; the layers here start you off and replace it once saved.` : (!it.from ? 'This sound is new: the game plays nothing here until you design and save it.' : '');
+    el('playOrig').disabled = !it.from;
+    this.sel = new Set(); this.simpLevel = 0; this.trimReset(true); this.renderList(); this.render(); this.selSet([]);
+  },
+  changed(rebuild) { if (this.trim) { const tot = Trim.total(this.draft); if (this.trim.b > tot || !this.trimmed()) this.trim = { a: Math.min(this.trim.a, tot), b: tot }; this.trimUi(); } this.data[this.cur.key] = JSON.parse(JSON.stringify(this.draft)); this.renderList(); if (rebuild) this.render(); else this.paint(); this.badge(); },
+  badge() { const b = el('badge'), on = !!this.data[this.cur.key]; b.textContent = on ? 'designed: replaces the game\'s' : (this.cur.from ? 'the game\'s own' : 'silent until designed'); b.className = 'badge' + (on ? ' set' : ''); },
+  // ---- the layer rows: sliders (pitches on a log scale) with their values ----
+  render() {
+    const tb = el('layers'); tb.innerHTML = ''; el('jitter').value = this.draft.jitter || 0; el('jitterN').value = Math.round((this.draft.jitter || 0) * 100);
+    const logS = { min: 0, max: 1000, to: f => Math.round(Math.log(f / 30) / Math.log(12000 / 30) * 1000), from: x => +(30 * Math.pow(12000 / 30, x / 1000)).toFixed(1) };
+    // each field: its slider (pitches on a log scale) and a box to type the value in its unit (Hz, ms, 0..1)
+    const fields = [
+      ['f0', logS, 'Hz', v => Math.round(v * 10) / 10, x => x, 1, 20, 20000], ['f1', logS, 'Hz', v => Math.round(v * 10) / 10, x => x, 1, 20, 20000],
+      ['d', { min: 10, max: 2000, to: v => Math.round(v * 1000), from: x => x / 1000 }, 'ms', v => Math.round(v * 1000), x => x / 1000, 1, 10, 5000],
+      ['v', { min: 0, max: 100, to: v => Math.round(v * 100), from: x => x / 100 }, '', v => Math.round(v * 100) / 100, x => x, 0.01, 0, 1],
+      ['t', { min: 0, max: 1500, to: v => v, from: x => x }, 'ms', v => Math.round(v), x => x, 1, 0, 5000],
+      ['lfo', { min: 0, max: 60, to: v => v, from: x => x }, 'Hz', v => Math.round(v * 10) / 10, x => x, 0.5, 0, 200],
+      ['depth', { min: 0, max: 800, to: v => v, from: x => x }, 'Hz', v => Math.round(v), x => x, 1, 0, 5000],
+    ];
+    this.draft.layers.forEach((L, i) => {
+      const tr = document.createElement('tr');
+      const w = document.createElement('td'), sel = document.createElement('select'); sel.setAttribute('aria-label', `layer ${i + 1} wave`);
+      WAVES.forEach(x => { const o = document.createElement('option'); o.value = o.textContent = x; sel.appendChild(o); }); sel.value = L.w;
+      sel.onchange = () => { L.w = sel.value; if (!L.c) sw.value = WCOL[L.w]; this.changed(); this.playLayer(L); };
+      const sw = document.createElement('input'); sw.type = 'color'; sw.className = 'swc'; sw.value = L.c || WCOL[L.w]; sw.title = 'this layer\'s colour on the graph (editor only)'; sw.setAttribute('aria-label', `layer ${i + 1} colour`);
+      sw.oninput = () => { L.c = sw.value; this.changed(); }; w.append(sw, sel); tr.appendChild(w);
+      for (const [f, S, unit, show, parse, step, lo, hi] of fields) {
+        const td = document.createElement('td'), r = document.createElement('input'), box = document.createElement('div'), n = document.createElement('input'), u = document.createElement('span');
+        r.type = 'range'; r.min = S.min; r.max = S.max; r.value = S.to(L[f]); r.setAttribute('aria-label', `layer ${i + 1} ${f} slider`);
+        n.type = 'number'; n.step = step; n.min = lo; n.max = hi; n.value = show(L[f]); n.setAttribute('aria-label', `layer ${i + 1} ${f}${unit ? ' in ' + unit : ''}`); u.textContent = unit; box.className = 'num'; box.append(n, u);
+        r.oninput = () => { L[f] = S.from(+r.value); n.value = show(L[f]); this.changed(); };
+        r.onchange = () => this.play(); // letting go plays the whole sound
+        n.onchange = () => { const x = parseFloat(n.value); if (!isFinite(x)) { n.value = show(L[f]); return; } L[f] = parse(Math.min(hi, Math.max(lo, x))); n.value = show(L[f]); r.value = S.to(L[f]); this.changed(); this.play(); }; // typed: Enter or leaving the box applies it (beyond the slider's range too, within the limits)
+        n.onkeydown = e => { if (e.key === 'Enter') n.blur(); };
+        td.append(r, box); tr.appendChild(td);
+      }
+      const cr = document.createElement('td'), cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!L.crush; cb.setAttribute('aria-label', `layer ${i + 1} crush`); cb.onchange = () => { L.crush = cb.checked ? 1 : 0; this.changed(); this.play(); }; cr.appendChild(cb); tr.appendChild(cr);
+      const act = document.createElement('td'); act.style.whiteSpace = 'nowrap';
+      const solo = document.createElement('button'); solo.textContent = '▶'; solo.title = 'this layer alone'; solo.onclick = () => this.playLayer(L);
+      const dup = document.createElement('button'); dup.textContent = '⧉'; dup.title = 'duplicate'; dup.onclick = () => { this.pushUndo(); this.draft.layers.splice(i + 1, 0, { ...L }); this.changed(true); };
+      const del = document.createElement('button'); del.textContent = '✕'; del.title = 'remove'; del.className = 'danger'; del.onclick = () => { if (this.draft.layers.length > 1) { this.pushUndo(); this.draft.layers.splice(i, 1); this.changed(true); } };
+      const mu = document.createElement('button'); mu.textContent = '🔇'; mu.className = 'mute' + (L.m ? ' on' : ''); mu.title = L.m ? 'muted: click to hear it again' : 'mute this layer (it stays, silent)'; mu.onclick = () => { this.pushUndo(); if (L.m) delete L.m; else L.m = 1; this.changed(true); this.play(); }; if (L.m) tr.classList.add('muted');
+      act.append(solo, ' ', mu, ' ', dup, ' ', del);
+      // the row selects its line on the graph: a click on the row (Shift / Ctrl: add), or starting to edit any of its controls
+      tr.addEventListener('click', e => { if (e.target.closest('input, select, button')) return; const add = e.shiftKey || e.ctrlKey || e.metaKey, s = new Set(add ? this.sel : []); if (add && s.has(i)) s.delete(i); else s.add(i); this.selSet([...s]); });
+      tr.addEventListener('focusin', () => { if (!(this.sel && this.sel.has(i))) this.selSet([i]); }); tr.appendChild(act); tb.appendChild(tr);
+    });
+    this.badge(); document.querySelectorAll('#layers tr').forEach((tr, i) => tr.classList.toggle('selrow', !!(this.sel && this.sel.has(i)))); this.paint();
+  },
+  // ---- the picture: each layer's pitch over time (log pitch), thick as it is loud, in its wave's colour; the game's
+  // original as a faint dashed outline behind it ----
+  paint() {
+    const cv = el('plot'), c = cv.getContext('2d'), W = cv.width, H = cv.height, all = this.draft.layers.concat(this.orig || []);
+    const end = Math.max(0.2, ...all.map(L => (L.t || 0) / 1000 + L.d)) * 1.08, X = s => 40 + (W - 50) * s / end, Y = f => H - 18 - (H - 30) * Math.log(Math.max(30, f) / 30) / Math.log(12000 / 30);
+    c.clearRect(0, 0, W, H); const css = getComputedStyle(document.body), ink = css.color;
+    c.font = '11px IBM Plex Mono, monospace'; c.fillStyle = ink; c.globalAlpha = 0.5;
+    for (const f of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) { c.fillRect(40, Y(f), W - 50, 1); c.fillText(f >= 1000 ? f / 1000 + 'k' : f, 4, Y(f) + 4); }
+    for (let s = 0; s <= end; s += end > 1 ? 0.25 : 0.05) c.fillText(Math.round(s * 1000) + 'ms', X(s) - 10, H - 4);
+    c.globalAlpha = 1;
+    const line = (L, ghost) => {
+      const t0 = (L.t || 0) / 1000; c.beginPath();
+      for (let k = 0; k <= 40; k++) { const u = k / 40, f = L.f0 * Math.pow(L.f1 / L.f0, u) + (L.lfo && L.depth ? (Math.floor(u * L.d * L.lfo * 2) % 2 ? 1 : -1) * L.depth : 0); const x = X(t0 + u * L.d), y = Y(f); k ? c.lineTo(x, y) : c.moveTo(x, y); }
+      if (ghost) { c.setLineDash([5, 5]); c.strokeStyle = ink; c.globalAlpha = 0.3; c.lineWidth = 2; } else { c.setLineDash(L.w === 'noise' ? [2, 3] : []); c.strokeStyle = L.c || WCOL[L.w]; c.globalAlpha = 1; c.lineWidth = 2 + 8 * L.v; }
+      if (L.m && !ghost) { c.setLineDash([3, 5]); c.globalAlpha = 0.28; } // muted: faint and dashed
+      c.stroke(); c.setLineDash([]); c.globalAlpha = 1;
+    };
+    if (this.data[this.cur.key]) for (const L of this.orig || []) line(L, true);
+    this.draft.layers.forEach((L, i) => { if (this.sel && this.sel.has(i)) { c.save(); c.shadowColor = '#fff'; c.shadowBlur = 10; const w = L.w; line(L, false); c.restore(); } else line(L, false); });
+    if (this.sel && this.sel.size) this.draft.layers.forEach((L, i) => { if (!this.sel.has(i)) return; const t0 = (L.t || 0) / 1000; c.beginPath(); for (let k = 0; k <= 40; k++) { const u = k / 40, x = X(t0 + u * L.d), y = Y(L.f0 * Math.pow(L.f1 / L.f0, u)); k ? c.lineTo(x, y) : c.moveTo(x, y); } c.strokeStyle = '#fff'; c.lineWidth = 1.5; c.stroke(); }); // the selection: a white core over its own colour
+    this.plotEnd = end; // (the trim handles map pointer x back to ms with it)
+    if (this.trim) { // the trim: the cut parts shaded, a handle at each end (a bar with a grip), the times above them
+      const T = this.trim, xa = X(T.a / 1000), xb = X(T.b / 1000), acc = css.getPropertyValue('--accent') || '#ffd166';
+      c.fillStyle = 'rgba(0,0,0,0.55)'; c.fillRect(40, 0, xa - 40, H - 14); c.fillRect(xb, 0, W - 10 - xb, H - 14);
+      for (const [x, ms, side] of [[xa, T.a, 1], [xb, T.b, -1]]) {
+        c.fillStyle = acc; c.fillRect(x - 1.5, 4, 3, H - 22); c.beginPath(); c.roundRect ? c.roundRect(x - 7, H / 2 - 16, 14, 32, 5) : c.rect(x - 7, H / 2 - 16, 14, 32); c.fill();
+        c.fillStyle = '#1a1228'; for (const dy of [-6, 0, 6]) c.fillRect(x - 4, H / 2 + dy - 1, 8, 2);
+        c.fillStyle = acc; c.textAlign = side > 0 ? 'left' : 'right'; c.fillText(ms + 'ms', x + side * 10, 14); c.textAlign = 'left';
+      }
+    }
+  },
+  // drag a trim handle on the graph (it snaps to whole ms)
+  plotPointer() {
+    const cv = el('plot'), toMs = e => { const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * cv.width / r.width; return (x - 40) / (cv.width - 50) * (this.plotEnd || 1) * 1000; };
+    const near = e => { if (!this.trim) return null; const r = cv.getBoundingClientRect(), px = ms => r.left + (40 + (cv.width - 50) * ms / 1000 / (this.plotEnd || 1)) * r.width / cv.width, x = e.clientX; const da = Math.abs(x - px(this.trim.a)), db = Math.abs(x - px(this.trim.b)); return Math.min(da, db) > 14 ? null : da <= db ? 'a' : 'b'; };
+    // which layer's line is under the pointer (within 8 px of its drawn path), or -1
+    const hit = e => { const r = cv.getBoundingClientRect(), px = (e.clientX - r.left) * cv.width / r.width, py = (e.clientY - r.top) * cv.height / r.height, W = cv.width, H = cv.height, end = this.plotEnd || 1, X = s => 40 + (W - 50) * s / end, Y = f => H - 18 - (H - 30) * Math.log(Math.max(30, f) / 30) / Math.log(12000 / 30); let best = -1, bd = 8;
+      this.draft.layers.forEach((L, i) => { const t0 = (L.t || 0) / 1000; for (let k = 0; k <= 40; k++) { const u = k / 40, d = Math.hypot(X(t0 + u * L.d) - px, Y(L.f0 * Math.pow(L.f1 / L.f0, u)) - py); if (d < bd) { bd = d; best = i; } } }); return best; };
+    cv.addEventListener('pointerdown', e => {
+      const h = near(e); if (h) { this.drag = h; cv.setPointerCapture(e.pointerId); e.preventDefault(); return; }
+      const i = hit(e), add = e.shiftKey || e.ctrlKey || e.metaKey;
+      if (i < 0) { if (!add) this.selSet([]); return; }
+      if (add) { const s = new Set(this.sel || []); s.has(i) ? s.delete(i) : s.add(i); this.selSet([...s]); } else if (!(this.sel && this.sel.has(i))) this.selSet([i]);
+      if (this.sel.has(i)) { this.drag = { move: true, x0: toMs(e), cx: e.clientX, cy: e.clientY, axis: null, base: this.selList().map(j => [j, this.draft.layers[j].t || 0, { ...this.draft.layers[j] }]), undone: false }; cv.setPointerCapture(e.pointerId); } // (the drag locks to the way it first goes: across = time, up / down = pitch)
+      SFX.init(); SFX.muted = false; SFX.voice(this.draft.layers[i], 1); // hear the one you picked
+    });
+    cv.addEventListener('dblclick', e => { const i = hit(e); if (i < 0) return; const w = this.draft.layers[i].w, all = this.draft.layers.map((L, j) => L.w === w ? j : -1).filter(j => j >= 0); this.selSet(all); this.say(`selected all ${all.length} ${w} line${all.length > 1 ? 's' : ''}`, 'ok'); }); // double-click: every line of that wave
+    cv.addEventListener('pointermove', e => {
+      if (!this.drag) { cv.style.cursor = near(e) ? 'ew-resize' : hit(e) >= 0 ? 'pointer' : ''; return; }
+      if (this.drag.move) {
+        const D = this.drag; if (!D.axis) { const ax = Math.abs(e.clientX - D.cx), ay = Math.abs(e.clientY - D.cy); if (Math.max(ax, ay) < 5) return; D.axis = ay > ax ? 'pitch' : 'time'; }
+        if (D.axis === 'pitch') { // up / down: the pitch, in semitones
+          const n = Math.round(-(e.clientY - D.cy) / 5), k = Math.pow(2, n / 12); // 5 px a semitone (an octave is 60 px): the graph squeezes 8 octaves into its height, far too twitchy to follow the cursor exactly
+          if (n && !D.undone) { this.pushUndo(); D.undone = true; }
+          for (const [j, , L0] of D.base) { const L = this.draft.layers[j]; L.f0 = +Math.min(20000, Math.max(20, L0.f0 * k)).toFixed(1); L.f1 = +Math.min(20000, Math.max(20, L0.f1 * k)).toFixed(1); if (L0.depth) L.depth = Math.round(L0.depth * k); }
+          D.moved = n; this.changed(); this.paint(); el('selNote').textContent = `pitch ${n > 0 ? '+' : ''}${n} semitone${Math.abs(n) === 1 ? '' : 's'}${Math.abs(n) >= 12 ? ` (${(n / 12).toFixed(1)} octaves)` : ''}`; return;
+        }
+        const dms = Math.round(toMs(e) - D.x0), lo = Math.min(...D.base.map(b => b[1])), m = Math.max(-lo, dms); if (m && !D.undone) { this.pushUndo(); D.undone = true; } for (const [j, t0] of D.base) this.draft.layers[j].t = t0 + m; D.moved = m; this.changed(); this.paint(); return;
+      }
+      const ms = toMs(e); if (this.drag === 'a') this.trimSet(ms, this.trim.b); else this.trimSet(this.trim.a, ms);
+    });
+    cv.addEventListener('pointerup', e => { if (!this.drag) return; const D = this.drag; this.drag = null; if (D.move) { if (D.moved) { this.render(); this.selSet(this.selList()); this.play(); } return; } this.play(); }); // letting go plays it (trimmed)
+  },
+  // ---- copy and paste between sounds: the clipboard keeps the whole sound (its layers and pitch variation) in this
+  // browser, so it survives switching sounds and reloading; paste replaces this sound, paste on top adds its layers ----
+  copy() { const S = this.selList(); if (S.length) { this.clip = { from: this.cur.key, label: `${S.length} layer${S.length > 1 ? 's' : ''} of ${this.cur.label}`, sound: { layers: JSON.parse(JSON.stringify(S.map(i => this.draft.layers[i]))) } }; try { localStorage.setItem('sfx.clip', JSON.stringify(this.clip)); } catch (e) { /* storage off */ } this.showClip(); this.say(`copied ${S.length} layer${S.length > 1 ? 's' : ''}: Paste on top (Ctrl+Shift+V) adds them, here or in another sound`, 'ok'); return; }
+    this.clip = { from: this.cur.key, label: this.cur.label, sound: JSON.parse(JSON.stringify(this.draft)) }; try { localStorage.setItem('sfx.clip', JSON.stringify(this.clip)); } catch (e) { /* storage off */ } this.showClip(); this.say(`copied ${this.cur.label}: open another sound and paste`, 'ok'); },
+  paste(onTop) {
+    if (!this.clip) { this.say('nothing copied yet: open a sound and Copy it first'); return; }
+    this.pushUndo(); const S = JSON.parse(JSON.stringify(this.clip.sound));
+    if (onTop) { this.draft.layers.push(...S.layers); this.draft.layers = this.draft.layers.slice(0, 64); } else this.draft = S;
+    this.changed(true); this.play(); this.say(`${onTop ? 'added the layers of' : 'pasted'} ${this.clip.label} ${onTop ? 'on top of' : 'into'} ${this.cur.label} (Ctrl+Z undoes; save to keep it)`, 'ok');
+  },
+  showClip() { el('clip').textContent = this.clip ? `clipboard: ${this.clip.label} (${this.clip.sound.layers.length} layer${this.clip.sound.layers.length === 1 ? '' : 's'})` : ''; el('paste').disabled = el('pasteAdd').disabled = !this.clip; },
+  pushUndo() { this.undos.push({ key: this.cur.key, sound: JSON.parse(JSON.stringify(this.draft)), data: this.data[this.cur.key] ? JSON.parse(JSON.stringify(this.data[this.cur.key])) : null }); if (this.undos.length > 100) this.undos.shift(); },
+  undo() {
+    const u = this.undos.pop(); if (!u) { this.say('nothing to undo'); return; }
+    if (u.data) this.data[u.key] = u.data; else delete this.data[u.key];
+    if (this.cur.key !== u.key) this.open(u.key); this.draft = u.sound; this.sel = new Set(); this.render(); this.renderList(); this.selSet([]); this.trimReset(); this.say('undone');
+  },
+  // ---- sound: the game's own SFX code plays everything ----
+  // ---- the selection (layer indices): click a line on the graph; Shift / Ctrl add. Drag or arrows move it, Delete removes it ----
+  selList() { return [...(this.sel || [])].filter(i => i < this.draft.layers.length).sort((a, b) => a - b); },
+  selSet(list) { this.sel = new Set(list); const n = this.selList().length; el('selDel').disabled = el('selDup').disabled = el('selMute').disabled = el('selColor').disabled = el('selColorReset').disabled = !n; if (n) { const c0 = this.draft.layers[this.selList()[0]]; el('selColor').value = c0.c || WCOL[c0.w]; } el('selNote').textContent = n ? `${n} layer${n > 1 ? 's' : ''} selected · drag across to move it, up / down to pitch it (or ← / → 1 ms, ↑ / ↓ a semitone; Shift: 10 ms / an octave) · Ctrl+D repeats it · Ctrl+R reverses · M mutes · Del removes · Ctrl+C copies · Simplify and Shimmer work on ${n > 1 ? 'them' : 'it'} · Esc clears` : 'Click a line on the graph to select it (Shift or Ctrl click: more; double-click: every line of that wave; Ctrl+A: all). Drag it across to move it, up or down to change its pitch (or the arrow keys).'; document.querySelectorAll('#layers tr').forEach((tr, i) => tr.classList.toggle('selrow', this.sel.has(i))); this.paint(); },
+  selMove(ms) { const S = this.selList(); if (!S.length) return; const lo = Math.min(...S.map(i => this.draft.layers[i].t || 0)); ms = Math.max(-lo, ms); if (!ms) return; for (const i of S) this.draft.layers[i].t = Math.round((this.draft.layers[i].t || 0) + ms); this.changed(true); this.selSet(S); },
+  selMute() { const S = this.selList(); if (!S.length) return; this.pushUndo(); const on = !S.every(i => this.draft.layers[i].m); for (const i of S) { if (on) this.draft.layers[i].m = 1; else delete this.draft.layers[i].m; } this.changed(true); this.selSet(S); this.play(); this.say(`${on ? 'muted' : 'unmuted'} ${S.length} layer${S.length > 1 ? 's' : ''} (Ctrl+Z undoes)`, 'ok'); }, // all muted: unmute them; else mute them all
+  // Ctrl+R: the selection (else the whole sound) back to front inside its own span: each line starts where the mirror of
+  // its end was, and sweeps the other way. (A layer always fades out, never in, so each piece still decays: an approximation)
+  // With the trim flags pulled in, the flags are the window: the selection (else every line inside the flags) mirrors there
+  reverse() {
+    const flags = this.trimmed(), T = this.trim, sel = this.selList(), inside = i => { const L = this.draft.layers[i], s0 = L.t || 0; return s0 >= T.a - 0.5 && s0 + L.d * 1000 <= T.b + 0.5; };
+    const idx = sel.length ? sel : flags ? this.draft.layers.map((_, i) => i).filter(inside) : this.scope(); if (!idx.length) { this.say('no lines inside the flags to reverse', 'bad'); return; }
+    const Ls = idx.map(i => this.draft.layers[i]), a = flags ? T.a : Math.min(...Ls.map(L => L.t || 0)), b = flags ? T.b : Math.max(...Ls.map(L => (L.t || 0) + L.d * 1000));
+    this.pushUndo(); for (const L of Ls) { const t = Math.round(a + (b - ((L.t || 0) + L.d * 1000))); L.t = Math.max(0, t); [L.f0, L.f1] = [L.f1, L.f0]; }
+    const keep = { ...T }; this.changed(true); if (flags) { this.trim = keep; this.trimUi(); } this.selSet(this.selList()); this.play(); this.say(`reversed ${idx.length} layer${idx.length > 1 ? 's' : ''}${flags ? ` between the flags (${keep.a}–${keep.b} ms)` : ''} (Ctrl+R again turns it back; Ctrl+Z undoes)`, 'ok'); // (the flags stay where they were)
+  },
+  // Ctrl+D: the selection again, right after itself (shifted by its own length: start of the first to end of the last); the
+  // copy becomes the selection, so pressing again keeps the pattern going
+  selDuplicate() {
+    const S = this.selList(); if (!S.length) { this.say('select a line first (click it on the graph), then Ctrl+D repeats it', 'bad'); return; }
+    if (this.draft.layers.length + S.length > 64) { this.say('a sound holds 64 layers: no room for another copy', 'bad'); return; }
+    const Ls = S.map(i => this.draft.layers[i]), a = Math.min(...Ls.map(L => L.t || 0)), span = Math.max(1, Math.round(Math.max(...Ls.map(L => (L.t || 0) + L.d * 1000)) - a));
+    this.pushUndo(); const n0 = this.draft.layers.length; for (const L of Ls) this.draft.layers.push({ ...JSON.parse(JSON.stringify(L)), t: Math.round((L.t || 0) + span) });
+    this.changed(true); this.selSet(Ls.map((_, k) => n0 + k)); this.trimReset(); this.play();
+    this.say(`repeated ${S.length} layer${S.length > 1 ? 's' : ''} ${span} ms later (Ctrl+D again for another; Ctrl+Z undoes)`, 'ok');
+  },
+  selDelete() { const S = this.selList(); if (!S.length || S.length >= this.draft.layers.length) { if (S.length) this.say('a sound needs at least one layer', 'bad'); return; } this.pushUndo(); this.draft.layers = this.draft.layers.filter((_, i) => !this.sel.has(i)); this.changed(true); this.selSet([]); this.say(`removed ${S.length} layer${S.length > 1 ? 's' : ''} (Ctrl+Z undoes)`, 'ok'); },
+  // the layers Simplify / Shimmer work on: the selection, else all of them
+  scope() { const S = this.selList(); return S.length ? S : this.draft.layers.map((_, i) => i); },
+  simplify() {
+    const idx = this.scope(), keep = this.draft.layers.filter((_, i) => !idx.includes(i)), pick = idx.map(i => this.draft.layers[i]), before = this.draft.layers.length;
+    this.simpLevel = (this.simpLevel || 0) + 1; let tol = [0.06, 0.12, 0.2, 0.32, 0.5][Math.min(4, this.simpLevel - 1)], got = Simplify.run(pick, tol);
+    while (got.length >= pick.length && tol < 0.8) { tol += 0.12; got = Simplify.run(pick, tol); } // nothing joined yet: loosen until something does
+    if (got.length >= pick.length) { this.say('nothing more to join: these layers do not make lines', 'bad'); return; }
+    this.pushUndo(); this.draft.layers = keep.concat(got).sort((a, b) => (a.t || 0) - (b.t || 0)); this.changed(true); this.selSet([]); this.play();
+    this.say(`simplified: ${before} → ${this.draft.layers.length} layers (press again to join more; Ctrl+Z undoes)`, 'ok');
+  },
+  // pitch shift: the selection (or the whole sound) up or down n semitones; a sweep keeps its shape, a wobble scales with it,
+  // noise moves its band. A burst of presses is one undo
+  transpose(n) {
+    const idx = this.scope(), k = Math.pow(2, n / 12), now = performance.now(); if (now - (this.tpT || 0) > 700) this.pushUndo(); this.tpT = now;
+    let clipped = 0; for (const i of idx) { const L = this.draft.layers[i]; for (const f of ['f0', 'f1']) { const v = L[f] * k, c = Math.min(20000, Math.max(20, v)); if (c !== v) clipped++; L[f] = +c.toFixed(1); } if (L.depth) L.depth = Math.round(L.depth * k); }
+    this.changed(true); this.selSet(this.selList()); this.play();
+    this.say(`${n > 0 ? 'up' : 'down'} ${Math.abs(n) === 12 ? 'an octave' : Math.abs(n) + ' semitone' + (Math.abs(n) > 1 ? 's' : '')}: ${idx.length} layer${idx.length > 1 ? 's' : ''}${clipped ? ' (some hit the 20 Hz / 20 kHz edge)' : ''}`, 'ok');
+  },
+  shimmer() {
+    const idx = this.scope().filter(i => this.draft.layers[i].w !== 'noise'); if (!idx.length) { this.say('shimmer works on tones, not noise', 'bad'); return; }
+    this.pushUndo();
+    for (const i of idx) { const L = this.draft.layers[i], f = Math.sqrt(L.f0 * L.f1); if (L.lfo > 0 && L.depth > 0) { L.depth = Math.round(Math.min(f * 0.5, L.depth * 1.6)); L.lfo = Math.min(40, Math.round(L.lfo * 1.15)); } else { L.lfo = 18; L.depth = Math.max(2, Math.round(f * 0.06)); } } // first: a semitone trill at 18 Hz; again: deeper and faster
+    this.changed(true); this.selSet(this.selList()); this.play(); this.say(`shimmer on ${idx.length} tone${idx.length > 1 ? 's' : ''} (press again for more; Ctrl+Z undoes)`, 'ok');
+  },
+  play() { SFX.init(); SFX.muted = false; SFX.layers(this.trimmed() ? Trim.cut(this.draft, this.trim.a, this.trim.b) : this.draft); },
+  // ---- trim: the handles on the graph and the two boxes (whole ms); Apply cuts the layers (undoable) ----
+  trimmed() { const T = this.trim; return T && (T.a > 0 || T.b < Trim.total(this.draft)); },
+  trimReset(quiet) { const tot = Trim.total(this.draft); this.trim = { a: 0, b: tot }; this.trimUi(); if (!quiet) this.paint(); },
+  trimSet(a, b) { const tot = Trim.total(this.draft); a = Math.max(0, Math.min(tot - 5, Math.round(a))); b = Math.max(a + 5, Math.min(tot, Math.round(b))); this.trim = { a, b }; this.trimUi(); this.paint(); },
+  trimUi() { const T = this.trim, on = this.trimmed(); el('trimA').value = T.a; el('trimB').value = T.b; el('trimApply').disabled = !on; el('trimReset').disabled = !on; el('trimNote').textContent = on ? `keeping ${T.a}–${T.b} ms (${T.b - T.a} ms of ${Trim.total(this.draft)}): ▶ Play to hear it, Apply to cut` : 'Drag the handles at either end of the graph (or type the times) to cut noise off the start or end. ▶ Play plays it trimmed.'; },
+  trimApply() { if (!this.trimmed()) return; this.pushUndo(); const T = this.trim; this.draft = Trim.cut(this.draft, T.a, T.b); this.say(`trimmed to ${T.b - T.a} ms (Undo puts it back). Save to keep it.`, 'ok'); this.changed(true); this.trimReset(); this.play(); },
+  async recToggle() {
+    if (this.recorder) { this.recorder.stop(); return; }
+    let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { this.say('no microphone: ' + e.message, 'bad'); return; }
+    const chunks = [], R = new MediaRecorder(stream); this.recorder = R;
+    R.ondataavailable = e => chunks.push(e.data);
+    R.onstop = async () => { stream.getTracks().forEach(t => t.stop()); this.recorder = null; el('rec').textContent = '🎤 Record'; el('rec').classList.remove('danger'); this.recUse(await new Blob(chunks).arrayBuffer(), 'your recording'); };
+    R.start(); el('rec').textContent = '■ Stop'; el('rec').classList.add('danger'); this.say('recording… speak, then press Stop');
+  },
+  async recUse(buf, name) {
+    try { SFX.init(); const ab = await SFX.ctx.decodeAudioData(buf.slice(0)); this.say(`listening to ${name}…`); this.rec = { ab, name, fr: await Rec.analyse(ab) }; el('recPlay').disabled = false; this.recBuild(); }
+    catch (e) { this.say('could not read that recording: ' + e.message, 'bad'); }
+  },
+  recBuild() {
+    const R = this.rec; if (!R.fr.length) { this.say('that recording is silent', 'bad'); return; }
+    const o = { ms: +el('recChunk').value, style: el('recStyle').value, snap: el('recSnap').checked }, b = Rec.build(R.fr, o);
+    this.pushUndo(); this.draft = { layers: b.layers, ...(this.draft.jitter ? { jitter: this.draft.jitter } : {}) }; this.changed(true); this.play();
+    this.say(`${R.name}: ${(R.fr.length / 100).toFixed(2)}s rebuilt as ${b.layers.length} layers (${b.ms} ms pieces${b.ms > o.ms ? ', longer to fit in 64 layers' : b.ms < o.ms ? ', shorter for a short sound' : ''}). Save to keep it.`, 'ok');
+  },
+  playLayer(L) { SFX.init(); SFX.muted = false; SFX.voice(L, 1); },
+  playOrig() { const it = this.cur; if (!it.from) return; SFX.init(); SFX.muted = false; SFX.layers({ layers: this.capture(it.from).layers }); },
+  async save() {
+    if (!this.canSave) { this.say('Saving needs the studio: open this page from a game\'s page.', 'err'); return; }
+    try {
+      const r = await fetch(apiUrl('sfx'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify(this.data) }), j = await r.json();
+      if (!r.ok) throw new Error(j.error || r.status);
+      this.saved = JSON.stringify(this.data); this.say(`Saved ${j.sounds} designed sound${j.sounds === 1 ? '' : 's'} to js/sfx.js. Reload the game to hear them.`, 'ok');
+    } catch (e) { this.say('Not saved: ' + e.message, 'err'); }
+  },
+};
+Ed.init();
+</script>
+</body></html>

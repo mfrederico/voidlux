@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tracker · VoidLux Studio</title>
+<style>
+  :root { --bg: #14101c; --panel: #1f1830; --line: #352a4a; --amber: #ffd166; --pink: #ff5c8a; --cyan: #7df9ff; --green: #9bf06a; --text: #e8e0f0; --dim: #8f84a6; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.4 "Courier New", ui-monospace, monospace; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 10px 14px; background: var(--panel); border-bottom: 2px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 16px; margin: 0 10px 0 0; color: var(--amber); letter-spacing: 1px; }
+  header label { color: var(--dim); display: inline-flex; align-items: center; gap: 4px; }
+  input[type=text], input[type=number], select { background: #0d0a14; color: var(--text); border: 1px solid var(--line); padding: 3px 6px; font: inherit; border-radius: 4px; }
+  input[type=number] { width: 64px; }
+  button { background: #2b2140; color: var(--text); border: 1px solid var(--line); padding: 4px 10px; font: inherit; border-radius: 6px; cursor: pointer; }
+  button:hover { border-color: var(--amber); }
+  button.primary { background: var(--amber); color: #2b1d3a; font-weight: bold; }
+  button.danger { color: var(--pink); }
+  main { display: grid; grid-template-columns: 1fr 300px; gap: 12px; padding: 12px 14px; }
+  #gridWrap { overflow: auto; max-height: calc(100vh - 150px); border: 1px solid var(--line); background: #0d0a14; border-radius: 6px; }
+  table { border-collapse: collapse; user-select: none; }
+  th { position: sticky; top: 0; background: var(--panel); color: var(--amber); padding: 4px 6px; border-bottom: 2px solid var(--line); text-align: left; z-index: 1; }
+  th .inst { color: var(--dim); font-weight: normal; }
+  th.mute { color: var(--dim); text-decoration: line-through; }
+  td { padding: 1px 6px; border-right: 1px solid #1a1426; white-space: nowrap; cursor: pointer; min-width: 58px; }
+  td.row { color: var(--dim); min-width: 32px; text-align: right; cursor: default; }
+  tr.beat td { border-top: 1px solid #241c36; }
+  tr.bar td { border-top: 1px solid var(--line); }
+  tr.bar td.row { color: var(--amber); }
+  tr.playing td { background: rgba(255,209,102,0.12); }
+  td.cur { outline: 2px solid var(--cyan); outline-offset: -2px; background: rgba(125,249,255,0.12); }
+  td.sel { background: rgba(125,249,255,0.16); }
+  td.drop { outline: 2px dashed var(--amber); outline-offset: -2px; background: rgba(255,209,102,0.14); }
+  #grid.moving, #grid.moving td { cursor: grabbing; }
+  #grid td.sel { cursor: grab; }
+  td.note { color: #fff; }
+  td.off { color: var(--pink); }
+  td.empty { color: #3b3050; }
+  td.drum { color: var(--green); }
+  aside { display: flex; flex-direction: column; gap: 10px; }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+  .box h2 { margin: 0 0 6px; font-size: 13px; color: var(--amber); letter-spacing: 1px; }
+  .box label { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin: 3px 0; color: var(--dim); }
+  .box label span { color: var(--text); min-width: 36px; text-align: right; }
+  input[type=range] { width: 130px; }
+  .keys { color: var(--dim); font-size: 12px; }
+  .keys b { color: var(--text); }
+  #patterns { display: flex; flex-wrap: wrap; gap: 4px; }
+  #patterns button.on { border-color: var(--amber); color: var(--amber); }
+  textarea { width: 100%; height: 120px; background: #0d0a14; color: var(--green); border: 1px solid var(--line); font: 11px/1.3 ui-monospace, monospace; }
+  .status { color: var(--dim); font-size: 12px; }
+  .tracks { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+  .tracks button { padding: 3px 0; font-size: 11px; }
+  .tracks button.on { border-color: var(--cyan); color: var(--cyan); }
+  #synBox { display: none; border-color: var(--cyan); }
+  #synBox.on { display: block; }
+  #synBox h2 .sub { color: var(--dim); font-weight: normal; letter-spacing: 0; }
+  .oscHead { display: flex; justify-content: space-between; align-items: center; margin: 8px 0 2px; color: var(--cyan); font-size: 12px; letter-spacing: 1px; border-top: 1px solid var(--line); padding-top: 6px; }
+  .synRow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+  .synRow .keys { flex: 1 1 100%; }
+  #dlg { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 20; }
+  #dlg.open { display: flex; }
+  #dlg .win { background: var(--panel); border: 2px solid var(--amber); border-radius: 10px; padding: 16px 18px; width: 560px; max-width: 95vw; max-height: 85vh; overflow: auto; }
+  #dlg h2 { margin: 0 0 8px; color: var(--amber); font-size: 15px; letter-spacing: 1px; }
+  #dlg .list { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+  #dlg .list .row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; }
+  #dlg .list .row b { color: var(--text); min-width: 120px; }
+  #dlg .list .row span { color: var(--dim); flex: 1; }
+  #dlg .foot { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+  #dlg .msg { color: var(--dim); font-size: 12px; margin-top: 6px; }
+  /* the save toast: a big pill at the top, green when the song went into music-themes.js, red when it did not */
+  .toast { position: fixed; top: 14px; left: 50%; transform: translate(-50%, -30px); opacity: 0; transition: opacity .2s, transform .2s; z-index: 50; padding: 10px 22px; border-radius: 999px; font: bold 15px system-ui, sans-serif; color: #12210a; background: #9bf06a; box-shadow: 0 6px 24px rgba(0,0,0,.45); pointer-events: none; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast.bad { background: #ff7b6b; color: #2a0a06; }
+</style>
+</head>
+<body>
+<div class="toast" id="toast"></div>
+<header>
+  <h1>8-TRACK CHIP TRACKER</h1>
+  <label>song <input id="name" type="text" value="untitled" size="14"></label>
+  <label>bpm <input id="bpm" type="number" min="40" max="300" value="140"></label>
+  <label>steps <select id="steps"><option>16</option><option selected>32</option><option>64</option></select></label>
+  <label>order <input id="order" type="text" value="0" size="12" title="which patterns play, in order, e.g. 0 0 1 1"></label>
+  <button id="play" class="primary">▶ pattern (space)</button>
+  <button id="playSong">▶ song (shift+space)</button>
+  <button id="stop">■ stop</button>
+  <label><input id="loop" type="checkbox" checked> loop</label>
+  <label>vol <input id="master" type="range" min="0" max="1" step="0.05" value="0.5"></label>
+  <label>octave <span id="octLabel">4</span></label>
+  <button id="octDown">oct −</button><button id="octUp">oct +</button>
+  <label>edit step <input id="editStep" type="number" min="0" max="8" value="1"></label>
+  <button id="save" class="primary" title="save this song into the game's js/music-themes.js under its name (Ctrl+S)">save (Ctrl+S)</button><button id="exportFile" title="download the song as a .tracker.json file">export</button><button id="load" title="open a .tracker.json file">load</button><input id="file" type="file" accept="application/json" style="display:none">
+  <button id="export" title="the music-themes.js code for this song, to copy">music-themes.js snippet</button>
+  <button id="clear" class="danger">clear pattern</button>
+</header>
+<main>
+  <div>
+    <div id="patterns"></div>
+    <div id="gridWrap"><table id="grid"></table></div>
+    <div class="status" id="status">click a cell, then play notes on the keyboard. piano: Q A W S E D R F T G Y H U J I K O L P (C up to the F# above) · Z/X octave · C/V volume · B/N transpose the column a semitone · M mute · , . instrument · 1 note off · DEL clears · arrows move · F1-F8 mute any track · / load or save in the game's music-themes.js · SPACE loops this pattern, SHIFT+SPACE plays the song</div>
+  </div>
+  <aside>
+    <div class="box">
+      <h2>TRACK <span id="trackNo">1</span></h2>
+      <div class="tracks" id="trackButtons"></div>
+      <label>name <input id="tName" type="text" size="10"></label>
+      <label>instrument <select id="tInst">
+        <optgroup label="waves"><option value="square">square</option><option value="pulse">pulse 25%</option><option value="sawtooth">sawtooth</option><option value="triangle">triangle</option><option value="sine">sine</option><option value="noise">noise</option><option value="arp">arp (octave)</option><option value="wail">wail (vibrato)</option></optgroup>
+        <optgroup label="synth"><option value="synth">synth (3-osc, editable)</option></optgroup>
+        <optgroup label="8-bit drums"><option value="kick">kick</option><option value="snare">snare</option><option value="hat">hi-hat</option><option value="ohat">open hat</option><option value="tom">tom</option><option value="clap">clap</option><option value="cowbell">cowbell</option><option value="zap">zap</option></optgroup>
+      </select></label>
+      <label>volume <input id="tVol" type="range" min="0" max="1" step="0.02"><span id="tVolV"></span></label>
+      <label>length (steps) <input id="tLen" type="range" min="0.25" max="8" step="0.25"><span id="tLenV"></span></label>
+      <label>attack <input id="tAtk" type="range" min="0" max="0.5" step="0.01"><span id="tAtkV"></span></label>
+      <label>detune (cents) <input id="tDet" type="range" min="-50" max="50" step="1"><span id="tDetV"></span></label>
+      <label>slide (semitones) <input id="tSlide" type="range" min="-24" max="24" step="1"><span id="tSlideV"></span></label>
+      <label>lowpass (Hz) <input id="tCut" type="range" min="200" max="12000" step="100"><span id="tCutV"></span></label>
+      <label><input id="tMute" type="checkbox"> mute</label>
+    </div>
+    <div class="box" id="synBox">
+      <h2>SYNTH <span class="sub">3-osc additive · track <span id="synTrack">1</span></span></h2>
+      <label>preset <select id="sPreset"></select></label>
+      <div id="sOscs"></div>
+      <div class="oscHead">ENVELOPE</div>
+      <label>attack (s) <input id="sA" type="range" min="0.002" max="2" step="0.002"><span id="sAV"></span></label>
+      <label>decay (s) <input id="sD" type="range" min="0.01" max="2" step="0.01"><span id="sDV"></span></label>
+      <label>sustain <input id="sS" type="range" min="0" max="1" step="0.02"><span id="sSV"></span></label>
+      <label>release (s) <input id="sR" type="range" min="0.01" max="3" step="0.01"><span id="sRV"></span></label>
+      <div class="synRow"><input id="sName" type="text" size="12" placeholder="preset name"><button id="sSave">save preset</button><button id="sDel" class="danger">delete</button></div>
+      <div class="synRow"><button id="sTest">▶ test note</button><span class="keys">a note plays when you let go of a knob. Track attack is ignored; the envelope above shapes the note, and track length is how long it is held.</span></div>
+    </div>
+    <div class="box">
+      <h2>EXPORT</h2>
+      <div class="keys">Paste the snippet into <b>Music.THEMES</b> in the game's js/music-themes.js, then set <b>music: 'name'</b> on a boss in BOSSES, or name it <b>maze</b> or <b>dungeon</b> to play in every maze (or <b>maze_level1</b> … <b>maze_level5</b> / <b>dungeon_level1</b> … for one level's mazes, or <b>maze_burrow</b>, <b>maze_cathedral</b>, <b>maze_temple</b>, <b>maze_bigtop</b> for one kind), <b>deck</b> for the saucer deck, <b>complete_level1</b> … <b>complete_level5</b> for a short tune played once when that level's boss falls (or <b>complete</b> for every level), <b>dungeon_victory</b> for a tune played once when a dungeon is cleared (or <b>dungeon_victory_level1</b> …, <b>deck_victory</b> for the saucer deck), <b>perk_shop</b> for the perk shop that follows, or <b>level2</b> … <b>level5</b> to play across that level's regions.</div>
+      <textarea id="out" readonly placeholder="press 'export for music-themes.js'"></textarea>
+      <button id="copy">copy</button>
+    </div>
+    <div class="box keys">
+      <h2>HOW IT WORKS</h2>
+      <b>Editing like a spreadsheet:</b> drag a note to move it; drag from an empty cell (or Shift+click, Shift+arrows) to select a block, then drag the block to move it; hold <b>Ctrl</b> while dropping to copy; <b>Alt+arrows</b> nudge it; <b>Ctrl+C / X / V</b> copy, cut, paste at the cursor; <b>DEL</b> clears it; <b>Ctrl+Z</b> undoes; Ctrl+A selects the pattern; Esc drops the selection.<br><br>
+      Each row is a 16th note; 32 steps is two bars of 4/4. A track plays its instrument at the note in the row; the note holds for the track's <b>length</b> or until a <b>note off</b> (the pink ===). Drum tracks ignore the pitch except <b>tom</b> and <b>zap</b>. The song is the pattern <b>order</b> looping. In the game the boss music climbs a semitone at 50% and 30% hp and speeds up at 20%; drums stay put.
+    </div>
+  </aside>
+</main>
+<div id="dlg"><div class="win">
+  <h2>MUSIC.JS  <span id="dlgFile" style="color:var(--dim);font-weight:normal"></span></h2>
+  <div class="keys">Songs found in the game's <b>Music.THEMES</b>: tracker songs, and the hand-written boss themes converted into tracks (marked <i style="color:var(--pink)">classic</i>; saving one writes a tracker version under the same name, which the game then plays instead). <b>Load</b> brings one into the editor. <b>Save</b> writes the current song into music-themes.js under its name (replacing a song of the same name). Saving needs the dev server (<b>python3 tools/devserver.py</b>); otherwise the snippet goes to the clipboard.</div>
+  <div class="list" id="dlgList"></div>
+  <div class="foot"><button id="dlgSave" class="primary">save current song as <span id="dlgName"></span></button><button id="dlgRefresh">refresh</button><button id="dlgClose">close (esc)</button></div>
+  <div class="msg" id="dlgMsg"></div>
+</div></div>
+<script>
+// ---------------------------------------------------------------------------------------------------------
+// SYNTH: the same instrument code lives in the game's js/music.js (Music.inst). Keep the two in step.
+// inst(ctx, dest, kind, freq, time, dur, vol, opts) schedules one note.
+// ---------------------------------------------------------------------------------------------------------
+const API = '/gameapi', GAME = new URLSearchParams(location.search).get('game') || ''; let CSRF = ''; // the forge's API for this game: /gameapi/<verb>/<slug>, writes with X-CSRF-TOKEN
+const apiUrl = verb => `${API}/${verb}/${GAME}`; const apiHeaders = () => ({ 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest' });
+async function apiToken() { try { const r = await fetch(apiUrl('token'), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); if (r.ok) { CSRF = (await r.json()).token || ''; return true; } } catch (e) {} return false; }
+apiToken();
+document.title = `Tracker · ${GAME} · VoidLux Studio`;
+const Synth = {
+  noiseBuf: null,
+  noise(ctx) { if (!this.noiseBuf) { const n = ctx.sampleRate * 2, b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; this.noiseBuf = b; } const s = ctx.createBufferSource(); s.buffer = this.noiseBuf; s.loop = true; return s; },
+  env(ctx, dest, t, dur, vol, atk) { const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), t + Math.max(0.003, atk || 0.01)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); g.connect(dest); return g; },
+  inst(ctx, dest, kind, f, t, dur, vol, o) {
+    o = o || {}; const det = o.detune || 0, cut = o.cut || 0, slide = o.slide || 0;
+    let out = dest; if (cut && cut < 12000) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = cut; lp.connect(dest); out = lp; }
+    const osc = (type, f0, f1, d, v, atk) => { const x = ctx.createOscillator(), g = this.env(ctx, out, t, d, v, atk); x.type = type; x.frequency.setValueAtTime(f0, t); if (f1 && f1 !== f0) x.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + d); x.detune.value = det; x.connect(g); x.start(t); x.stop(t + d + 0.05); return x; };
+    const nz = (d, v, hp, lp) => { const s = this.noise(ctx), g = this.env(ctx, out, t, d, v, 0.002); let node = s; if (hp) { const h = ctx.createBiquadFilter(); h.type = 'highpass'; h.frequency.value = hp; node.connect(h); node = h; } if (lp) { const l = ctx.createBiquadFilter(); l.type = 'lowpass'; l.frequency.value = lp; node.connect(l); node = l; } node.connect(g); s.start(t); s.stop(t + d + 0.05); };
+    const f1 = slide ? f * Math.pow(2, slide / 12) : f;
+    switch (kind) {
+      case 'square': case 'sawtooth': case 'triangle': case 'sine': osc(kind, f, f1, dur, vol, o.atk); break;
+      case 'pulse': { const x = ctx.createOscillator(), y = ctx.createOscillator(), g = this.env(ctx, out, t, dur, vol * 0.7, o.atk); x.type = 'sawtooth'; y.type = 'sawtooth'; x.frequency.setValueAtTime(f, t); y.frequency.setValueAtTime(f, t); if (f1 !== f) { x.frequency.exponentialRampToValueAtTime(f1, t + dur); y.frequency.exponentialRampToValueAtTime(f1, t + dur); } y.detune.value = det + 3; const inv = ctx.createGain(); inv.gain.value = -1; const dl = ctx.createDelay(); dl.delayTime.value = 0.25 / f; x.connect(g); y.connect(dl); dl.connect(inv); inv.connect(g); x.start(t); y.start(t); x.stop(t + dur + 0.05); y.stop(t + dur + 0.05); break; } // two saws, one inverted and delayed: a 25% pulse
+      case 'noise': nz(dur, vol, 0, cut || 4000); break;
+      case 'arp': { const n = Math.max(2, Math.round(dur / 0.06)); for (let i = 0; i < n; i++) { const x = ctx.createOscillator(), g = this.env(ctx, out, t + i * 0.06, 0.07, vol, 0.003); x.type = 'square'; x.frequency.value = f * (i % 2 ? 2 : 1); x.detune.value = det; x.connect(g); x.start(t + i * 0.06); x.stop(t + i * 0.06 + 0.1); } break; }
+      case 'wail': { const x = ctx.createOscillator(), g = this.env(ctx, out, t, dur, vol, dur * 0.25), lfo = ctx.createOscillator(), lg = ctx.createGain(); x.type = 'sine'; x.frequency.setValueAtTime(f * 0.94, t); x.frequency.exponentialRampToValueAtTime(f1, t + dur * 0.3); lfo.frequency.value = 5.5; lg.gain.value = f * 0.025; lfo.connect(lg); lg.connect(x.frequency); x.connect(g); x.start(t); lfo.start(t); x.stop(t + dur + 0.05); lfo.stop(t + dur + 0.05); break; }
+      case 'synth': { // 3-oscillator additive synth. o.syn = { osc: [{ w, st, fine, lvl } x3], a, d, s, r }: wave (sine, triangle, square,
+        // sawtooth, noise, off), semitones above the note, cents, level 0..1; then attack, decay, release in seconds and sustain 0..1
+        const p = o.syn || { osc: [{ w: 'sine', st: 0, fine: 0, lvl: 1 }], a: 0.01, d: 0.1, s: 0.7, r: 0.1 };
+        const a = Math.max(0.003, p.a ?? 0.01), d = Math.max(0.005, p.d ?? 0.1), s = Math.min(1, Math.max(0, p.s ?? 0.7)), r = Math.max(0.01, p.r ?? 0.1);
+        const oscs = (p.osc || []).filter(x => x && x.w && x.w !== 'off' && x.lvl > 0), sum = oscs.reduce((m, x) => m + x.lvl, 0); if (!sum) break;
+        const g = ctx.createGain(), rel = Math.max(t + dur, t + a), end = rel + r * 1.6 + 0.05; // the gate is the note length; the release rings past it
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + a);
+        if (rel > t + a + 0.001) g.gain.setTargetAtTime(vol * s, t + a, d / 3);
+        g.gain.setTargetAtTime(0, rel, r / 4); g.connect(out);
+        for (const x of oscs) {
+          const m = ctx.createGain(); m.gain.value = x.lvl / Math.max(1, sum); m.connect(g); // levels mix down so three full oscillators do not clip
+          if (x.w === 'noise') { const n = this.noise(ctx); n.connect(m); n.start(t); n.stop(end); continue; }
+          const k = Math.pow(2, (x.st || 0) / 12), y = ctx.createOscillator(); y.type = x.w; y.frequency.setValueAtTime(f * k, t); if (f1 !== f) y.frequency.exponentialRampToValueAtTime(f1 * k, t + dur); y.detune.value = det + (x.fine || 0); y.connect(m); y.start(t); y.stop(end);
+        }
+        break;
+      }
+      case 'kick': osc('sine', 150, 40, 0.18, vol * 1.2, 0.002); osc('square', 60, 20, 0.08, vol * 0.25, 0.002); break;
+      case 'snare': osc('triangle', 190, 120, 0.12, vol * 0.6, 0.002); nz(0.16, vol * 0.7, 1200, 0); break;
+      case 'hat': nz(0.04, vol * 0.5, 7000, 0); break;
+      case 'ohat': nz(0.18, vol * 0.45, 6000, 0); break;
+      case 'tom': osc('sine', f * 2, f * 0.9, 0.22, vol, 0.002); break;
+      case 'clap': for (let i = 0; i < 3; i++) { const s = this.noise(ctx), g = this.env(ctx, out, t + i * 0.012, 0.05, vol * 0.5, 0.002), h = ctx.createBiquadFilter(); h.type = 'bandpass'; h.frequency.value = 1800; h.Q.value = 0.8; s.connect(h); h.connect(g); s.start(t + i * 0.012); s.stop(t + i * 0.012 + 0.1); } nz(0.2, vol * 0.3, 1500, 0); break;
+      case 'cowbell': osc('square', 560, 560, 0.12, vol * 0.4, 0.002); osc('square', 845, 845, 0.12, vol * 0.3, 0.002); break;
+      case 'zap': osc('sawtooth', f * 4, f * 0.25, 0.14, vol * 0.6, 0.002); break;
+      default: osc('square', f, f1, dur, vol, o.atk);
+    }
+  },
+};
+// ---------------------------------------------------------------------------------------------------------
+// SYNTH PATCHES: a track with inst 'synth' carries its own patch (track.syn) and exports it with the song.
+// The presets below are starting points; "save preset" keeps your own in this browser's localStorage.
+// ---------------------------------------------------------------------------------------------------------
+const P3 = (name, a, d, s, r, ...o) => ({ name, osc: o.map(([w, st, fine, lvl]) => ({ w, st, fine, lvl })), a, d, s, r });
+const SYN_PRESETS = [
+  P3('organ', 0.01, 0.1, 0.9, 0.08, ['sine', 0, 0, 1], ['sine', 12, 0, 0.6], ['sine', 19, 0, 0.4]),
+  P3('bell', 0.002, 0.7, 0, 0.9, ['sine', 0, 0, 1], ['sine', 18, -42, 0.45], ['sine', 29, 13, 0.25]),
+  P3('pluck', 0.002, 0.25, 0, 0.15, ['triangle', 0, 0, 1], ['square', 12, 0, 0.25], ['sine', 24, 0, 0.2]),
+  P3('fat bass', 0.005, 0.15, 0.5, 0.05, ['square', -12, 0, 1], ['sawtooth', 0, 7, 0.6], ['sine', -24, 0, 0.6]),
+  P3('supersaw', 0.01, 0.2, 0.7, 0.2, ['sawtooth', 0, -12, 1], ['sawtooth', 0, 12, 1], ['sawtooth', -12, 0, 0.5]),
+  P3('soft pad', 0.4, 0.5, 0.8, 0.8, ['triangle', 0, 0, 1], ['sine', 7, 5, 0.4], ['triangle', 12, -6, 0.5]),
+  P3('breathy flute', 0.06, 0.1, 0.8, 0.1, ['sine', 0, 0, 1], ['noise', 0, 0, 0.12], ['sine', 12, 0, 0.2]),
+  P3('chip brass', 0.03, 0.2, 0.6, 0.1, ['square', 0, 0, 1], ['sawtooth', 12, 5, 0.5], ['off', 0, 0, 0]),
+];
+const SYN_WAVES = ['sine', 'triangle', 'square', 'sawtooth', 'noise', 'off'];
+const synClone = p => JSON.parse(JSON.stringify(p));
+const Presets = {
+  KEY: 'tracker.synthPresets',
+  mine() { try { return JSON.parse(localStorage.getItem(this.KEY) || '[]').filter(p => p && p.name && p.osc); } catch (e) { return []; } },
+  all() { const m = this.mine(), names = new Set(m.map(p => p.name)); return SYN_PRESETS.filter(p => !names.has(p.name)).concat(m); },
+  find(name) { return this.all().find(p => p.name === name); },
+  isMine(name) { return this.mine().some(p => p.name === name); },
+  save(p) { const m = this.mine().filter(x => x.name !== p.name); m.push(synClone(p)); try { localStorage.setItem(this.KEY, JSON.stringify(m)); return true; } catch (e) { return false; } },
+  remove(name) { try { localStorage.setItem(this.KEY, JSON.stringify(this.mine().filter(x => x.name !== name))); } catch (e) { /* storage off */ } },
+};
+const ensureSyn = t => { if (t.inst === 'synth' && !(t.syn && t.syn.osc)) t.syn = synClone(SYN_PRESETS[0]); return t; };
+const instLabel = t => t.inst === 'synth' && t.syn ? 'synth: ' + (t.syn.name || 'custom') : t.inst;
+const trackOpts = t => ({ detune: t.detune, slide: t.slide, cut: t.cut, atk: t.atk, syn: t.inst === 'synth' ? t.syn : undefined });
+// ---------------------------------------------------------------------------------------------------------
+const DRUMS = ['kick', 'snare', 'hat', 'ohat', 'tom', 'clap', 'cowbell', 'zap'];
+const NAMES = ['C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-'];
+const noteName = n => n === -1 ? '===' : n == null ? '···' : NAMES[n % 12] + Math.floor(n / 12 - 1);
+const midiHz = n => 440 * Math.pow(2, (n - 69) / 12);
+// the piano: q a w s e d r f t g y h u j i k o l p, one semitone each from C (the top row and the home row alternate, so
+// it plays like a keyboard laid on its side). z/x octave, c/v volume, b/n transpose the column, m mute, , . instrument.
+const KEYMAP = {}; 'qawsedrftgyhujikolp'.split('').forEach((ch, i) => KEYMAP['Key' + ch.toUpperCase()] = i);
+const INSTS = ['square', 'pulse', 'sawtooth', 'triangle', 'sine', 'noise', 'arp', 'wail', 'synth', 'kick', 'snare', 'hat', 'ohat', 'tom', 'clap', 'cowbell', 'zap'];
+const defaultTrack = (i) => [
+  { name: 'Lead', inst: 'square', vol: 0.3, len: 1, atk: 0.01, detune: 0, slide: 0, cut: 12000, mute: false },
+  { name: 'Lead2', inst: 'pulse', vol: 0.25, len: 1, atk: 0.01, detune: 4, slide: 0, cut: 12000, mute: false },
+  { name: 'Bass', inst: 'sawtooth', vol: 0.45, len: 1, atk: 0.01, detune: 0, slide: 0, cut: 1200, mute: false },
+  { name: 'Pad', inst: 'triangle', vol: 0.25, len: 4, atk: 0.2, detune: 0, slide: 0, cut: 12000, mute: false },
+  { name: 'Kick', inst: 'kick', vol: 0.9, len: 1, atk: 0, detune: 0, slide: 0, cut: 12000, mute: false },
+  { name: 'Snare', inst: 'snare', vol: 0.6, len: 1, atk: 0, detune: 0, slide: 0, cut: 12000, mute: false },
+  { name: 'Hat', inst: 'hat', vol: 0.4, len: 1, atk: 0, detune: 0, slide: 0, cut: 12000, mute: false },
+  { name: 'FX', inst: 'zap', vol: 0.4, len: 1, atk: 0, detune: 0, slide: 0, cut: 12000, mute: false },
+][i];
+const Song = {
+  name: 'untitled', bpm: 140, steps: 32, order: [0], tracks: [], patterns: [],
+  fresh() { this.name = 'untitled'; this.bpm = 140; this.steps = 32; this.order = [0]; this.tracks = [0, 1, 2, 3, 4, 5, 6, 7].map(defaultTrack); this.patterns = [this.blank()]; },
+  blank() { return [...Array(8)].map(() => new Array(64).fill(null)); },
+  demo() { // a small calliope-ish loop so the page is not silent
+    this.fresh(); this.name = 'demo'; this.bpm = 150; const P = this.patterns[0];
+    const lead = [72, null, 71, null, 72, null, 67, null, 72, null, 74, null, 75, null, null, null, 76, null, 72, null, 75, null, 74, null, 72, null, null, null, 67, null, null, null];
+    lead.forEach((n, i) => P[0][i] = n);
+    for (let i = 0; i < 32; i += 2) P[2][i] = i % 8 === 0 ? 48 : i % 8 === 4 ? 55 : 52;
+    [0, 16].forEach(i => { P[3][i] = 60; P[3][i + 8] = 65; });
+    for (let i = 0; i < 32; i += 4) P[4][i] = 60;
+    for (let i = 4; i < 32; i += 8) P[5][i] = 60;
+    for (let i = 2; i < 32; i += 4) P[6][i] = 60;
+    P[7][30] = 72;
+  },
+  toJSON() { return { name: this.name, bpm: this.bpm, steps: this.steps, order: this.order, tracks: this.tracks, patterns: this.patterns }; },
+  load(j) { this.name = j.name || 'untitled'; this.bpm = j.bpm || 140; this.steps = j.steps || 32; this.order = j.order && j.order.length ? j.order : [0]; this.tracks = j.tracks && j.tracks.length === 8 ? j.tracks : [0, 1, 2, 3, 4, 5, 6, 7].map(defaultTrack); this.patterns = j.patterns && j.patterns.length ? j.patterns : [this.blank()]; this.tracks.forEach(ensureSyn); },
+  key() { return (this.name || 'song').replace(/[^a-zA-Z0-9_]/g, '_').replace(/^(\d)/, '_$1'); },
+  // a tracker theme out of music-themes.js back into patterns: the biggest pattern length that divides the song wins
+  fromTheme(key, T) {
+    this.name = key; this.bpm = T.bpm || 140;
+    const total = T.steps || Math.max(...T.tracks.map(t => t.notes.length)); this.steps = [64, 32, 16].find(n => total % n === 0) || 16;
+    const nPat = Math.max(1, Math.ceil(total / this.steps)); this.patterns = [...Array(nPat)].map(() => this.blank()); this.order = [...Array(nPat).keys()];
+    this.tracks = [0, 1, 2, 3, 4, 5, 6, 7].map(defaultTrack);
+    T.tracks.slice(0, 8).forEach((tr, ti) => { Object.assign(this.tracks[ti], { name: tr.name || tr.inst, inst: tr.inst, vol: tr.vol ?? 0.3, len: tr.len ?? 1, atk: tr.atk ?? 0, detune: tr.detune || 0, slide: tr.slide || 0, cut: tr.cut || 12000, mute: false }, tr.syn ? { syn: synClone(tr.syn) } : {}); ensureSyn(this.tracks[ti]); for (let i = 0; i < total; i++) { const n = tr.notes[i]; if (n != null) this.patterns[Math.floor(i / this.steps)][ti][i % this.steps] = n; } });
+  },
+  // the game's hand-written themes (16 eighth-note steps: bass/lead/organ/bell/kick/hat/toms over a root in Hz) as tracker tracks
+  fromClassic(key, T) {
+    const rootMidi = Math.round(69 + 12 * Math.log2((T.root || 55) / 440)), N = (T.bass || T.lead || []).length || 16, total = N * 2;
+    const mk = (name, inst, vol, len, extra) => Object.assign({ name, inst, vol, len, atk: 0.01, detune: 0, slide: 0, cut: 12000, mute: false, notes: new Array(total).fill(null) }, extra || {});
+    const tracks = [];
+    if (T.bass) { const tr = mk('Bass', T.bassWave || 'sawtooth', T.bassVol || 0.5, (T.bassLen || 0.9) * 2, { cut: T.filter && T.filter < 6000 ? T.filter * 2 : 12000 }); T.bass.forEach((n, i) => { if (n != null) tr.notes[i * 2] = rootMidi + n; }); tracks.push(tr); }
+    if (T.lead) { const tr = mk('Lead', T.wail ? 'wail' : (T.leadWave || 'square'), T.leadVol || 0.15, (T.leadLen || 1.6) * 2); T.lead.forEach((n, i) => { if (n != null) tr.notes[i * 2] = rootMidi + 24 + n; }); tracks.push(tr); }
+    if (T.organ) for (let v = 0; v < 3; v++) { const tr = mk('Organ ' + (v + 1), T.warp ? 'square' : 'triangle', T.warp ? 0.08 : 0.16, T.warp ? 1.8 : 15, { atk: T.warp ? 0.01 : 0.25, detune: v * 3 }); T.organ.forEach((ch, i) => { if (ch && ch[v] != null) tr.notes[i * 2] = rootMidi + 12 + ch[v]; }); tracks.push(tr); }
+    if (T.bell) { const tr = mk('Bell', 'sine', 0.5, 8); for (const i of T.bell) tr.notes[i * 2] = rootMidi + 24; tracks.push(tr); }
+    if (T.kick) { const tr = mk('Kick', 'kick', 0.9, 1); for (let i = 0; i < N; i += 4) tr.notes[i * 2] = 60; tracks.push(tr); }
+    if (T.toms) { const tr = mk('Toms', 'tom', 0.5, 1); for (const i of T.toms) tr.notes[i * 2] = i % 8 < 4 ? 57 : 52; tracks.push(tr); }
+    if (T.hat) { const tr = mk('Hat', 'hat', 0.3, 1); for (let i = 2; i < N; i += 4) tr.notes[i * 2] = 60; tracks.push(tr); }
+    return { tracker: true, bpm: T.bpm || 120, steps: total, tracks: tracks.slice(0, 8) };
+  },
+  // the game format: one flat note list per track over the whole order, 16th-note steps
+  exportJS() {
+    const seq = this.order.filter(p => this.patterns[p]), total = seq.length * this.steps, key = this.key();
+    const tracks = this.tracks.map((tr, ti) => {
+      if (tr.mute) return null;
+      const notes = []; for (const p of seq) for (let i = 0; i < this.steps; i++) notes.push(this.patterns[p][ti][i]);
+      if (!notes.some(n => n != null)) return null;
+      const opts = []; if (tr.detune) opts.push(`detune: ${tr.detune}`); if (tr.slide) opts.push(`slide: ${tr.slide}`); if (tr.cut && tr.cut < 12000) opts.push(`cut: ${tr.cut}`); if (tr.atk && !DRUMS.includes(tr.inst) && tr.inst !== 'synth') opts.push(`atk: ${tr.atk}`);
+      if (tr.inst === 'synth' && tr.syn) { const s = tr.syn; opts.push(`syn: { name: '${(s.name || 'custom').replace(/[^\w .-]/g, '')}', osc: [${s.osc.map(x => `{ w: '${x.w}', st: ${x.st}, fine: ${x.fine}, lvl: ${x.lvl} }`).join(', ')}], a: ${s.a}, d: ${s.d}, s: ${s.s}, r: ${s.r} }`); }
+      return `      { name: '${tr.name.replace(/'/g, '')}', inst: '${tr.inst}', vol: ${tr.vol}, len: ${tr.len}${opts.length ? ', ' + opts.join(', ') : ''}, notes: [${notes.map(n => n == null ? '_' : n).join(',')}] },`;
+    }).filter(Boolean);
+    return `    // made in the tracker (${new Date().toISOString().slice(0, 10)}): ${total} steps of 16ths at ${this.bpm} bpm\n    ${key}: { tracker: true, bpm: ${this.bpm}, steps: ${total}, tracks: [\n${tracks.join('\n')}\n    ] },`;
+  },
+};
+// ---------------------------------------------------------------------------------------------------------
+const UI = {
+  pat: 0, cur: { track: 0, row: 0 }, sel: null, drag: null, clip: null, undos: [], octave: 4, ctx: null, master: null, playing: false, pos: 0, nextT: 0, timer: null, orderPos: 0, playRow: -1,
+  init() {
+    const saved = localStorage.getItem('tracker.song');
+    if (saved) { try { Song.load(JSON.parse(saved)); } catch (e) { Song.demo(); } } else Song.demo();
+    this.bindHeader(); this.renderPatterns(); this.renderTrackButtons(); this.renderGrid(); this.loadTrackPanel();
+    document.addEventListener('keydown', e => this.key(e));
+    // a dropdown, a checkbox or a slider lets go of the keyboard once it is used, so the arrows and the piano go back to the grid
+    document.addEventListener('change', e => { const t = e.target; if (t.tagName === 'SELECT' || (t.tagName === 'INPUT' && /^(range|checkbox|radio|color)$/.test(t.type))) t.blur(); });
+    document.addEventListener('pointerup', e => { const t = e.target; if (t.tagName === 'INPUT' && t.type === 'range') setTimeout(() => t.blur(), 0); });
+    document.addEventListener('mousemove', e => this.dragMove(e)); document.addEventListener('mouseup', e => this.dragEnd(e));
+    setInterval(() => this.autosave(), 3000);
+  },
+  audio() { if (!this.ctx) { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); this.master = this.ctx.createGain(); this.master.gain.value = +el('master').value; this.master.connect(this.ctx.destination); } if (this.ctx.state === 'suspended') this.ctx.resume(); return this.ctx; },
+  autosave() { localStorage.setItem('tracker.song', JSON.stringify(Song.toJSON())); },
+  bindHeader() {
+    el('name').value = Song.name; el('bpm').value = Song.bpm; el('steps').value = Song.steps; el('order').value = Song.order.join(' ');
+    el('name').oninput = e => Song.name = e.target.value; el('bpm').oninput = e => Song.bpm = +e.target.value || 140;
+    el('steps').onchange = e => { Song.steps = +e.target.value; this.renderGrid(); };
+    el('order').oninput = e => { const o = e.target.value.split(/[\s,]+/).map(Number).filter(n => !isNaN(n) && Song.patterns[n]); if (o.length) Song.order = o; };
+    el('play').onclick = () => this.toggle('pattern'); el('playSong').onclick = () => this.toggle('song'); el('stop').onclick = () => this.stop();
+    el('master').oninput = e => { if (this.master) this.master.gain.value = +e.target.value; };
+    el('octDown').onclick = () => this.setOct(this.octave - 1); el('octUp').onclick = () => this.setOct(this.octave + 1);
+    el('save').onclick = () => this.saveToMusic();
+    el('exportFile').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(Song.toJSON(), null, 1)], { type: 'application/json' })); a.download = (Song.name || 'song') + '.tracker.json'; a.click(); };
+    el('load').onclick = () => el('file').click();
+    el('file').onchange = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { Song.load(JSON.parse(r.result)); this.pat = 0; this.bindHeader(); this.renderPatterns(); this.renderTrackButtons(); this.renderGrid(); this.loadTrackPanel(); this.say('loaded ' + f.name); } catch (err) { this.say('could not read that file: ' + err.message); } }; r.readAsText(f); e.target.value = ''; };
+    el('export').onclick = () => { el('out').value = Song.exportJS(); this.say('exported: copy it into Music.THEMES in js/music-themes.js'); };
+    el('copy').onclick = () => { navigator.clipboard.writeText(el('out').value || Song.exportJS()).then(() => this.say('copied')); };
+    el('clear').onclick = () => { if (confirm('Clear every note in pattern ' + this.pat + '?')) { Song.patterns[this.pat] = Song.blank(); this.renderGrid(); } };
+    for (const id of ['tName', 'tInst', 'tVol', 'tLen', 'tAtk', 'tDet', 'tSlide', 'tCut', 'tMute']) el(id).oninput = () => this.readTrackPanel();
+    this.bindSynth();
+    el('dlgClose').onclick = () => this.closeDialog(); el('dlgRefresh').onclick = () => this.fillDialog(); el('dlgSave').onclick = () => this.saveToMusic();
+    el('dlg').onclick = e => { if (e.target === el('dlg')) this.closeDialog(); };
+  },
+  // ---- the music-themes.js dialog ("/"): list the tracker songs in the game's music-themes.js, load one, or save the current song ----
+  MUSIC_URLS: ['/games/' + GAME + '/js/music-themes.js'], // the game's own file, from the studio
+  openDialog() { el('dlg').classList.add('open'); el('dlgName').textContent = Song.key(); this.fillDialog(); },
+  closeDialog() { el('dlg').classList.remove('open'); },
+  async fetchMusic() {
+    for (const u of this.MUSIC_URLS) { try { const r = await fetch(u + (u.includes('?') ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store' }); if (r.ok) { const txt = await r.text(); if (txt.includes('THEMES')) return { url: u, text: txt }; } } catch (e) { /* try the next */ } }
+    return null;
+  },
+  // the whole Music.THEMES literal, evaluated with _ = null: tracker songs as they are, the hand-written boss themes converted
+  parseThemes(text) {
+    const a = text.indexOf('THEMES: {'); if (a < 0) return [];
+    let depth = 0, b = -1; for (let i = a + 8; i < text.length; i++) { const ch = text[i]; if (ch === '{') depth++; else if (ch === '}') { depth--; if (depth === 0) { b = i; break; } } }
+    if (b < 0) return [];
+    let themes; try { themes = new Function('_', 'return ' + text.slice(a + 8, b + 1))(null); } catch (e) { return [{ key: 'THEMES', error: e.message }]; }
+    const out = [];
+    for (const key of Object.keys(themes)) { const T = themes[key]; if (!T || typeof T !== 'object') continue; if (T.tracker) out.push({ key, theme: T }); else if (T.bass || T.lead) out.push({ key, theme: Song.fromClassic(key, T), classic: true }); }
+    return out;
+  },
+  async fillDialog() {
+    const list = el('dlgList'); list.innerHTML = '<div class="msg">reading music-themes.js…</div>'; el('dlgMsg').textContent = '';
+    const got = await this.fetchMusic();
+    if (!got) { list.innerHTML = ''; el('dlgFile').textContent = ''; el('dlgMsg').textContent = 'could not read this game\'s js/music-themes.js: open the tracker from the game\'s page in the studio (?game=<slug>).'; return; }
+    this.musicUrl = got.url; el('dlgFile').textContent = got.url;
+    const themes = this.parseThemes(got.text); list.innerHTML = '';
+    if (!themes.length) list.innerHTML = '<div class="msg">no tracker songs in music-themes.js yet. Save one below.</div>';
+    for (const t of themes) {
+      const row = document.createElement('div'); row.className = 'row';
+      if (t.error) { row.innerHTML = `<b>${t.key}</b><span>could not parse: ${t.error}</span>`; list.appendChild(row); continue; }
+      const T = t.theme, secs = (T.steps * 60 / T.bpm / 4).toFixed(1);
+      row.innerHTML = `<b>${t.key}</b><span>${t.classic ? '<i style="color:var(--pink)">classic, converted</i> · ' : ''}${T.bpm} bpm · ${T.steps} steps (${secs}s) · ${T.tracks.length} tracks: ${T.tracks.map(x => x.inst).join(', ')}</span>`;
+      const b = document.createElement('button'); b.textContent = 'load'; b.onclick = () => { if (confirm(`Load '${t.key}' into the editor? The current song is replaced (it is still in autosave until the next save tick).`)) { Song.fromTheme(t.key, T); this.pat = 0; this.cur = { track: 0, row: 0 }; this.bindHeader(); this.renderPatterns(); this.renderTrackButtons(); this.renderGrid(); this.loadTrackPanel(); this.closeDialog(); this.say(`loaded '${t.key}' from music-themes.js`); } }; row.appendChild(b);
+      if (!t.classic) { const d = document.createElement('button'); d.textContent = 'delete'; d.className = 'danger'; d.onclick = () => this.deleteSong(t.key); row.appendChild(d); }
+      list.appendChild(row);
+    }
+  },
+  async deleteSong(key) {
+    if (!confirm(`Delete '${key}' from the game's music-themes.js? (music-themes.js.bak keeps the old file until the next save)`)) return;
+    try {
+      const r = await fetch(apiUrl('musicdelete'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ name: key }) }), j = await r.json().catch(() => ({}));
+      el('dlgMsg').textContent = r.ok && j.ok ? `deleted '${key}' from ${j.file}. Hard-reload the game.` : 'delete failed: ' + (j.error || r.status);
+      if (r.ok && j.ok) this.fillDialog();
+    } catch (e) { el('dlgMsg').textContent = 'delete needs the studio (open the tracker from a game\'s page)'; }
+  },
+  async saveToMusic() {
+    const snippet = Song.exportJS(), key = Song.key(); el('out').value = snippet;
+    try {
+      const r = await fetch(apiUrl('musicsave'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ name: key, snippet }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok) { el('dlgMsg').textContent = `${j.action} '${key}' in ${j.file}. Hard-reload the game to hear it.`; this.say(`saved '${key}' into music-themes.js`); this.toast(`SAVED '${key}' into music-themes.js`); this.fillDialog(); return; }
+      el('dlgMsg').textContent = 'save failed: ' + (j.error || r.status); this.say('save failed: ' + (j.error || r.status)); this.toast('SAVE FAILED: ' + (j.error || r.status), true);
+    } catch (e) {
+      try { await navigator.clipboard.writeText(snippet); } catch (e2) { /* no clipboard */ }
+      el('dlgMsg').textContent = 'no studio here (open the tracker from a game\'s page). The snippet is on the clipboard: paste it into Music.THEMES in js/music-themes.js.'; this.say('no save server: the music-themes.js snippet is on the clipboard instead'); this.toast('NOT SAVED: no save server (the snippet is on the clipboard)', true);
+    }
+  },
+  setOct(o) { this.octave = Math.max(1, Math.min(7, o)); el('octLabel').textContent = this.octave; },
+  say(s) { el('status').textContent = s; },
+  toast(s, bad) { const t = el('toast'); t.textContent = s; t.classList.toggle('bad', !!bad); t.classList.add('show'); clearTimeout(this.toastT); this.toastT = setTimeout(() => t.classList.remove('show'), bad ? 4000 : 2200); },
+  renderPatterns() {
+    const box = el('patterns'); box.innerHTML = '';
+    Song.patterns.forEach((p, i) => { const b = document.createElement('button'); b.textContent = 'pattern ' + i; if (i === this.pat) b.classList.add('on'); b.onclick = () => { this.pat = i; this.renderPatterns(); this.renderGrid(); }; box.appendChild(b); });
+    const add = document.createElement('button'); add.textContent = '+ pattern'; add.onclick = () => { Song.patterns.push(Song.blank()); this.pat = Song.patterns.length - 1; this.renderPatterns(); this.renderGrid(); }; box.appendChild(add);
+    const dup = document.createElement('button'); dup.textContent = 'duplicate'; dup.onclick = () => { Song.patterns.push(Song.patterns[this.pat].map(r => r.slice())); this.pat = Song.patterns.length - 1; this.renderPatterns(); this.renderGrid(); }; box.appendChild(dup);
+    if (Song.patterns.length > 1) { const del = document.createElement('button'); del.textContent = 'delete'; del.className = 'danger'; del.onclick = () => { Song.patterns.splice(this.pat, 1); Song.order = Song.order.filter(o => o < Song.patterns.length); if (!Song.order.length) Song.order = [0]; el('order').value = Song.order.join(' '); this.pat = Math.min(this.pat, Song.patterns.length - 1); this.renderPatterns(); this.renderGrid(); }; box.appendChild(del); }
+  },
+  renderTrackButtons() {
+    const box = el('trackButtons'); box.innerHTML = '';
+    Song.tracks.forEach((t, i) => { const b = document.createElement('button'); b.textContent = (i + 1) + (t.mute ? ' ✕' : ''); if (i === this.cur.track) b.classList.add('on'); b.onclick = () => { this.cur.track = i; this.renderTrackButtons(); this.loadTrackPanel(); this.renderGrid(); }; box.appendChild(b); });
+  },
+  loadTrackPanel() {
+    const t = Song.tracks[this.cur.track]; el('trackNo').textContent = this.cur.track + 1;
+    el('tName').value = t.name; el('tInst').value = t.inst; el('tVol').value = t.vol; el('tLen').value = t.len; el('tAtk').value = t.atk; el('tDet').value = t.detune; el('tSlide').value = t.slide; el('tCut').value = t.cut; el('tMute').checked = !!t.mute;
+    this.showTrackValues(); this.loadSynth();
+  },
+  // ---- the synth panel: shown when the current track's instrument is 'synth'; edits go straight into track.syn ----
+  bindSynth() {
+    const box = el('sOscs'); box.innerHTML = '';
+    for (let i = 0; i < 3; i++) {
+      box.insertAdjacentHTML('beforeend', `<div class="oscHead">OSC ${i + 1} <select data-o="${i}" data-k="w">${SYN_WAVES.map(w => `<option>${w}</option>`).join('')}</select></div>
+        <label>pitch (semitones) <input type="range" data-o="${i}" data-k="st" min="-24" max="36" step="1"><span></span></label>
+        <label>fine (cents) <input type="range" data-o="${i}" data-k="fine" min="-50" max="50" step="1"><span></span></label>
+        <label>level <input type="range" data-o="${i}" data-k="lvl" min="0" max="1" step="0.02"><span></span></label>`);
+    }
+    const synInputs = () => [...el('synBox').querySelectorAll('[data-o]'), el('sA'), el('sD'), el('sS'), el('sR')];
+    for (const inp of synInputs()) {
+      inp.oninput = () => this.readSynth();
+      inp.onchange = () => { this.readSynth(); this.testSynth(); inp.blur(); }; // letting go of a knob plays a note, and hands the keys back to the piano
+    }
+    el('sPreset').onchange = e => { const p = Presets.find(e.target.value), t = Song.tracks[this.cur.track]; if (p) { t.syn = synClone(p); this.loadSynth(); this.renderHeaderRow(); this.testSynth(); } e.target.blur(); };
+    el('sSave').onclick = () => {
+      const t = Song.tracks[this.cur.track], name = el('sName').value.trim().replace(/[^\w .-]/g, '').slice(0, 24); if (!name) { this.say('give the preset a name first'); return; }
+      t.syn.name = name; if (Presets.save(t.syn)) this.say(`saved synth preset '${name}' (in this browser; it also travels inside any song that uses it)`); else this.say('could not save: browser storage is off');
+      this.loadSynth(); this.renderHeaderRow();
+    };
+    el('sDel').onclick = () => { const name = el('sPreset').value; if (!Presets.isMine(name)) { this.say(`'${name}' is a built-in preset; only your own can be deleted`); return; } if (confirm(`Delete your synth preset '${name}'? Tracks already using it keep their sound.`)) { Presets.remove(name); this.loadSynth(); this.say(`deleted preset '${name}'`); } };
+    el('sTest').onclick = () => this.testSynth();
+  },
+  loadSynth() {
+    const t = Song.tracks[this.cur.track], on = t.inst === 'synth'; el('synBox').classList.toggle('on', on); if (!on) return;
+    ensureSyn(t); const s = t.syn; el('synTrack').textContent = this.cur.track + 1;
+    const all = Presets.all(), mine = new Set(Presets.mine().map(p => p.name)), opt = p => `<option value="${p.name}">${p.name}</option>`;
+    el('sPreset').innerHTML = (all.some(p => p.name === s.name) ? '' : `<option value="${s.name || ''}">${s.name || 'custom'} (this track)</option>`)
+      + `<optgroup label="built in">${all.filter(p => !mine.has(p.name)).map(opt).join('')}</optgroup>` + (mine.size ? `<optgroup label="mine">${all.filter(p => mine.has(p.name)).map(opt).join('')}</optgroup>` : '');
+    el('sPreset').value = s.name || ''; el('sName').value = s.name || '';
+    while (s.osc.length < 3) s.osc.push({ w: 'off', st: 0, fine: 0, lvl: 0 });
+    el('synBox').querySelectorAll('[data-o]').forEach(inp => { inp.value = s.osc[+inp.dataset.o][inp.dataset.k]; });
+    el('sA').value = s.a; el('sD').value = s.d; el('sS').value = s.s; el('sR').value = s.r;
+    this.showSynthValues();
+  },
+  readSynth() {
+    const t = Song.tracks[this.cur.track]; if (t.inst !== 'synth') return; ensureSyn(t); const s = t.syn;
+    el('synBox').querySelectorAll('[data-o]').forEach(inp => { const x = s.osc[+inp.dataset.o], k = inp.dataset.k; x[k] = k === 'w' ? inp.value : +inp.value; });
+    s.a = +el('sA').value; s.d = +el('sD').value; s.s = +el('sS').value; s.r = +el('sR').value;
+    this.showSynthValues();
+  },
+  showSynthValues() {
+    el('synBox').querySelectorAll('input[type=range][data-o]').forEach(inp => { const v = +inp.value; inp.nextElementSibling.textContent = inp.dataset.k === 'lvl' ? v.toFixed(2) : (v > 0 ? '+' : '') + v; });
+    el('sAV').textContent = el('sA').value; el('sDV').textContent = el('sD').value; el('sSV').textContent = el('sS').value; el('sRV').textContent = el('sR').value;
+  },
+  testSynth() { if (!this.playing) this.preview(this.cur.track, (this.octave + 1) * 12); },
+  showTrackValues() { el('tVolV').textContent = el('tVol').value; el('tLenV').textContent = el('tLen').value; el('tAtkV').textContent = el('tAtk').value; el('tDetV').textContent = el('tDet').value; el('tSlideV').textContent = el('tSlide').value; el('tCutV').textContent = el('tCut').value >= 12000 ? 'off' : el('tCut').value; },
+  readTrackPanel() {
+    const t = Song.tracks[this.cur.track];
+    t.name = el('tName').value; t.inst = el('tInst').value; t.vol = +el('tVol').value; t.len = +el('tLen').value; t.atk = +el('tAtk').value; t.detune = +el('tDet').value; t.slide = +el('tSlide').value; t.cut = +el('tCut').value; t.mute = el('tMute').checked;
+    ensureSyn(t); this.showTrackValues(); this.renderTrackButtons(); this.renderHeaderRow(); this.loadSynth();
+  },
+  renderHeaderRow() { const ths = el('grid').querySelectorAll('th'); Song.tracks.forEach((t, i) => { const th = ths[i + 1]; if (!th) return; th.innerHTML = `${i + 1} ${t.name}<br><span class="inst">${instLabel(t)}</span>`; th.className = t.mute ? 'mute' : ''; }); },
+  renderGrid() {
+    const g = el('grid'), P = Song.patterns[this.pat]; g.innerHTML = '';
+    const head = document.createElement('tr'); head.innerHTML = '<th>row</th>' + Song.tracks.map((t, i) => `<th class="${t.mute ? 'mute' : ''}">${i + 1} ${t.name}<br><span class="inst">${instLabel(t)}</span></th>`).join(''); g.appendChild(head);
+    for (let r = 0; r < Song.steps; r++) {
+      const tr = document.createElement('tr'); tr.dataset.row = r; if (r % 16 === 0) tr.classList.add('bar'); else if (r % 4 === 0) tr.classList.add('beat');
+      let html = `<td class="row">${String(r).padStart(2, '0')}</td>`;
+      for (let t = 0; t < 8; t++) { const n = P[t][r], drum = DRUMS.includes(Song.tracks[t].inst); html += `<td data-t="${t}" data-r="${r}" class="${n == null ? 'empty' : n === -1 ? 'off' : drum ? 'drum' : 'note'}${t === this.cur.track && r === this.cur.row ? ' cur' : ''}">${n == null ? '···' : n === -1 ? '===' : drum && Song.tracks[t].inst !== 'tom' && Song.tracks[t].inst !== 'zap' ? ' x ' : noteName(n)}</td>`; }
+      tr.innerHTML = html; g.appendChild(tr);
+    }
+    g.onmousedown = e => this.dragStart(e);
+    this.paintSel();
+  },
+  // ---- selecting and moving notes, like a spreadsheet ----
+  // drag a note to move it; drag from an empty cell (or shift+click) to select a block, then drag the block to move it (hold
+  // Ctrl/Alt to copy instead). The block overwrites what it lands on, blanks included; Ctrl+Z undoes
+  rect() { const S = this.sel || { t0: this.cur.track, r0: this.cur.row, t1: this.cur.track, r1: this.cur.row }; return { t0: Math.min(S.t0, S.t1), t1: Math.max(S.t0, S.t1), r0: Math.min(S.r0, S.r1), r1: Math.max(S.r0, S.r1) }; },
+  cellAt(e) { const td = document.elementFromPoint(e.clientX, e.clientY); const c = td && td.closest && td.closest('#grid td[data-t]'); return c ? { t: +c.dataset.t, r: +c.dataset.r } : null; },
+  paintSel(drop) {
+    const g = el('grid'); g.querySelectorAll('td.sel, td.drop').forEach(td => td.classList.remove('sel', 'drop'));
+    const R = this.rect(), multi = R.t0 !== R.t1 || R.r0 !== R.r1;
+    for (let t = R.t0; t <= R.t1; t++) for (let r = R.r0; r <= R.r1; r++) { const td = g.querySelector(`td[data-t="${t}"][data-r="${r}"]`); if (td && (multi || drop)) td.classList.add('sel'); }
+    if (drop) for (let t = R.t0 + drop.dt; t <= R.t1 + drop.dt; t++) for (let r = R.r0 + drop.dr; r <= R.r1 + drop.dr; r++) { const td = g.querySelector(`td[data-t="${t}"][data-r="${r}"]`); if (td) td.classList.add('drop'); }
+  },
+  pickCell(t, r) { const prev = this.cur.track; this.cur = { track: t, row: r }; if (t !== prev) { this.renderTrackButtons(); this.loadTrackPanel(); } this.moveCursor(); },
+  dragStart(e) {
+    const c = this.cellAt(e); if (!c || e.button !== 0) return; e.preventDefault();
+    const R = this.rect(), inside = c.t >= R.t0 && c.t <= R.t1 && c.r >= R.r0 && c.r <= R.r1, P = Song.patterns[this.pat];
+    let notes = false; for (let t = R.t0; t <= R.t1; t++) for (let r = R.r0; r <= R.r1; r++) if (P[t][r] != null) notes = true;
+    if (e.shiftKey) { const a = this.sel ? { t: this.sel.t0, r: this.sel.r0 } : { t: this.cur.track, r: this.cur.row }; this.sel = { t0: a.t, r0: a.r, t1: c.t, r1: c.r }; this.drag = { mode: 'select' }; this.paintSel(); return; }
+    const multi = R.t0 !== R.t1 || R.r0 !== R.r1;
+    if (inside && multi && notes) { this.drag = { mode: 'move', t: c.t, r: c.r, dt: 0, dr: 0 }; el('grid').classList.add('moving'); return; } // inside a selected block: move the block
+    if (P[c.t][c.r] != null) { this.sel = { t0: c.t, r0: c.r, t1: c.t, r1: c.r }; this.pickCell(c.t, c.r); this.drag = { mode: 'move', t: c.t, r: c.r, dt: 0, dr: 0 }; el('grid').classList.add('moving'); return; } // a note: drag it
+
+    this.sel = { t0: c.t, r0: c.r, t1: c.t, r1: c.r }; this.drag = { mode: 'select' }; this.pickCell(c.t, c.r); this.paintSel();
+  },
+  dragMove(e) {
+    const D = this.drag; if (!D) return; const c = this.cellAt(e); if (!c) return;
+    if (D.mode === 'select') { if (this.sel.t1 !== c.t || this.sel.r1 !== c.r) { this.sel.t1 = c.t; this.sel.r1 = c.r; this.paintSel(); } return; }
+    const R = this.rect(), dt = Math.max(-R.t0, Math.min(7 - R.t1, c.t - D.t)), dr = Math.max(-R.r0, Math.min(Song.steps - 1 - R.r1, c.r - D.r)); // the block stays on the grid
+    if (dt !== D.dt || dr !== D.dr) { D.dt = dt; D.dr = dr; this.paintSel(dt || dr ? { dt, dr } : null); }
+  },
+  dragEnd(e) {
+    const D = this.drag; if (!D) return; this.drag = null; el('grid').classList.remove('moving');
+    if (D.mode !== 'move') return;
+    if (!D.dt && !D.dr) { this.sel = { t0: D.t, r0: D.r, t1: D.t, r1: D.r }; this.pickCell(D.t, D.r); this.paintSel(); return; } // a click without a drag: just that cell
+    this.moveBlock(D.dt, D.dr, e.ctrlKey || e.altKey || e.metaKey);
+  },
+  moveBlock(dt, dr, copy) {
+    const R = this.rect(), P = Song.patterns[this.pat]; this.pushUndo();
+    const block = []; for (let t = R.t0; t <= R.t1; t++) block.push(P[t].slice(R.r0, R.r1 + 1));
+    if (!copy) for (let t = R.t0; t <= R.t1; t++) for (let r = R.r0; r <= R.r1; r++) P[t][r] = null;
+    block.forEach((col, i) => col.forEach((n, j) => { P[R.t0 + i + dt][R.r0 + j + dr] = n; }));
+    this.sel = { t0: R.t0 + dt, r0: R.r0 + dr, t1: R.t1 + dt, r1: R.r1 + dr }; this.cur = { track: this.cur.track + dt, row: this.cur.row + dr };
+    this.renderGrid(); this.renderTrackButtons(); this.loadTrackPanel();
+    const n = block.flat().filter(x => x != null).length; this.say(`${copy ? 'copied' : 'moved'} ${n} note${n === 1 ? '' : 's'}${dt ? `, ${Math.abs(dt)} track${Math.abs(dt) > 1 ? 's' : ''} ${dt > 0 ? 'right' : 'left'}` : ''}${dr ? `, ${Math.abs(dr)} row${Math.abs(dr) > 1 ? 's' : ''} ${dr > 0 ? 'down' : 'up'}` : ''}  (Ctrl+Z undoes)`);
+  },
+  pushUndo() { this.undos.push({ pat: this.pat, cols: Song.patterns[this.pat].map(c => c.slice()) }); if (this.undos.length > 200) this.undos.shift(); },
+  undo() { const u = this.undos.pop(); if (!u) { this.say('nothing to undo'); return; } if (Song.patterns[u.pat]) { Song.patterns[u.pat] = u.cols; this.pat = u.pat; this.renderPatterns(); this.renderGrid(); this.say('undone'); } },
+  copySel(cut) {
+    const R = this.rect(), P = Song.patterns[this.pat]; this.clip = []; for (let t = R.t0; t <= R.t1; t++) this.clip.push(P[t].slice(R.r0, R.r1 + 1));
+    if (cut) { this.pushUndo(); for (let t = R.t0; t <= R.t1; t++) for (let r = R.r0; r <= R.r1; r++) P[t][r] = null; this.renderGrid(); }
+    this.say(`${cut ? 'cut' : 'copied'} ${this.clip.length} × ${this.clip[0].length}  (Ctrl+V pastes at the cursor)`);
+  },
+  paste() {
+    if (!this.clip) { this.say('nothing copied yet'); return; } const P = Song.patterns[this.pat]; this.pushUndo();
+    this.clip.forEach((col, i) => { const t = this.cur.track + i; if (t > 7) return; col.forEach((n, j) => { const r = this.cur.row + j; if (r < Song.steps) P[t][r] = n; }); });
+    this.sel = { t0: this.cur.track, r0: this.cur.row, t1: Math.min(7, this.cur.track + this.clip.length - 1), r1: Math.min(Song.steps - 1, this.cur.row + this.clip[0].length - 1) };
+    this.renderGrid(); this.say('pasted');
+  },
+  clearSel() { const R = this.rect(), P = Song.patterns[this.pat]; this.pushUndo(); for (let t = R.t0; t <= R.t1; t++) for (let r = R.r0; r <= R.r1; r++) P[t][r] = null; this.renderGrid(); },
+  moveCursor() { el('grid').querySelectorAll('td.cur').forEach(td => td.classList.remove('cur')); const td = el('grid').querySelector(`td[data-t="${this.cur.track}"][data-r="${this.cur.row}"]`); if (td) { td.classList.add('cur'); td.scrollIntoView({ block: 'nearest' }); } },
+  setCell(n) {
+    const P = Song.patterns[this.pat]; this.pushUndo(); if (this.sel) { this.sel = null; this.paintSel(); } P[this.cur.track][this.cur.row] = n;
+    const td = el('grid').querySelector(`td[data-t="${this.cur.track}"][data-r="${this.cur.row}"]`), tr = Song.tracks[this.cur.track], drum = DRUMS.includes(tr.inst);
+    if (td) { td.className = (n == null ? 'empty' : n === -1 ? 'off' : drum ? 'drum' : 'note') + ' cur'; td.textContent = n == null ? '···' : n === -1 ? '===' : drum && tr.inst !== 'tom' && tr.inst !== 'zap' ? ' x ' : noteName(n); }
+    if (n != null && n !== -1 && !this.playing) this.preview(this.cur.track, n);
+    const step = +el('editStep').value; this.cur.row = (this.cur.row + step) % Song.steps; this.moveCursor();
+  },
+  preview(ti, n) { const ctx = this.audio(), t = Song.tracks[ti], stepLen = 60 / Song.bpm / 4; Synth.inst(ctx, this.master, t.inst, midiHz(n), ctx.currentTime + 0.02, Math.max(0.05, stepLen * t.len), t.vol, trackOpts(t)); },
+  key(e) {
+    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') { e.preventDefault(); this.saveToMusic(); return; } // save into the game's music-themes.js (from anywhere, even a field: never the browser's Save Page)
+    { const t = e.target, choice = t.tagName === 'SELECT' || (t.tagName === 'INPUT' && /^(range|checkbox|radio|color)$/.test(t.type)); // a dropdown (or slider, checkbox): LEFT / RIGHT let go of it and move in the grid
+      if (choice && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { e.preventDefault(); t.blur(); }
+      else if (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA') { if (e.code === 'Escape') t.blur(); return; } }
+    if (e.code === 'Slash') { e.preventDefault(); this.openDialog(); return; }
+    if (e.code === 'Escape') { if (this.sel && !el('dlg').classList.contains('open')) { this.sel = null; this.paintSel(); return; } this.closeDialog(); return; }
+    if (el('dlg').classList.contains('open')) return; // keys stay out of the grid while the dialog is up
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.code === 'KeyZ') { e.preventDefault(); this.undo(); return; }
+    if (mod && (e.code === 'KeyC' || e.code === 'KeyX')) { e.preventDefault(); this.copySel(e.code === 'KeyX'); return; }
+    if (mod && e.code === 'KeyV') { e.preventDefault(); this.paste(); return; }
+    if (mod && e.code === 'KeyA') { e.preventDefault(); this.sel = { t0: 0, r0: 0, t1: 7, r1: Song.steps - 1 }; this.paintSel(); return; }
+    if (e.altKey && /^Arrow/.test(e.code)) { e.preventDefault(); const R = this.rect(), d = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.code]; if (R.t0 + d[0] >= 0 && R.t1 + d[0] <= 7 && R.r0 + d[1] >= 0 && R.r1 + d[1] < Song.steps) { if (!this.sel) this.sel = { t0: R.t0, r0: R.r0, t1: R.t1, r1: R.r1 }; this.moveBlock(d[0], d[1], false); } return; } // Alt+arrows nudge the selection
+    if (e.shiftKey && /^Arrow/.test(e.code)) { e.preventDefault(); if (!this.sel) this.sel = { t0: this.cur.track, r0: this.cur.row, t1: this.cur.track, r1: this.cur.row }; const S = this.sel; if (e.code === 'ArrowUp') S.r1 = Math.max(0, S.r1 - 1); if (e.code === 'ArrowDown') S.r1 = Math.min(Song.steps - 1, S.r1 + 1); if (e.code === 'ArrowLeft') S.t1 = Math.max(0, S.t1 - 1); if (e.code === 'ArrowRight') S.t1 = Math.min(7, S.t1 + 1); this.paintSel(); return; } // Shift+arrows grow the selection
+    if (/^Arrow/.test(e.code) && this.sel) { this.sel = null; this.paintSel(); }
+    if ((e.code === 'Delete' || e.code === 'Backspace') && this.sel) { e.preventDefault(); this.clearSel(); return; }
+    if (e.code === 'Space') { e.preventDefault(); this.toggle(e.shiftKey ? 'song' : 'pattern'); return; } // space loops the pattern you are on; shift+space plays the song order
+    if (e.code === 'ArrowUp') { e.preventDefault(); this.cur.row = (this.cur.row + Song.steps - 1) % Song.steps; this.moveCursor(); return; }
+    if (e.code === 'ArrowDown') { e.preventDefault(); this.cur.row = (this.cur.row + 1) % Song.steps; this.moveCursor(); return; }
+    if (e.code === 'ArrowLeft') { e.preventDefault(); this.cur.track = (this.cur.track + 7) % 8; this.renderTrackButtons(); this.loadTrackPanel(); this.moveCursor(); return; }
+    if (e.code === 'ArrowRight') { e.preventDefault(); this.cur.track = (this.cur.track + 1) % 8; this.renderTrackButtons(); this.loadTrackPanel(); this.moveCursor(); return; }
+    if (e.code === 'PageUp') { this.cur.row = Math.max(0, this.cur.row - 16); this.moveCursor(); return; }
+    if (e.code === 'PageDown') { this.cur.row = Math.min(Song.steps - 1, this.cur.row + 16); this.moveCursor(); return; }
+    if (e.code === 'Home') { this.cur.row = 0; this.moveCursor(); return; }
+    if (e.code === 'End') { this.cur.row = Song.steps - 1; this.moveCursor(); return; }
+    if (e.code === 'BracketLeft' || e.code === 'KeyZ') { this.setOct(this.octave - 1); this.say('octave ' + this.octave); return; }
+    if (e.code === 'BracketRight' || e.code === 'KeyX') { this.setOct(this.octave + 1); this.say('octave ' + this.octave); return; }
+    if (e.code === 'KeyC' || e.code === 'KeyV') { const t = Song.tracks[this.cur.track]; t.vol = Math.round(Math.max(0, Math.min(1, t.vol + (e.code === 'KeyV' ? 0.05 : -0.05))) * 100) / 100; this.loadTrackPanel(); this.say(`track ${this.cur.track + 1} volume ${t.vol}`); return; }
+    if (e.code === 'KeyB' || e.code === 'KeyN') { const d = e.code === 'KeyN' ? 1 : -1, col = Song.patterns[this.pat][this.cur.track]; let n = 0; for (let r = 0; r < col.length; r++) if (col[r] != null && col[r] !== -1) { col[r] = Math.max(0, Math.min(127, col[r] + d)); n++; } this.renderGrid(); this.say(`track ${this.cur.track + 1}: ${n} note${n === 1 ? '' : 's'} transposed ${d > 0 ? 'up' : 'down'} a semitone`); return; }
+    if (e.code === 'Comma' || e.code === 'Period') { const t = Song.tracks[this.cur.track], i = (INSTS.indexOf(t.inst) + (e.code === 'Period' ? 1 : INSTS.length - 1)) % INSTS.length; t.inst = INSTS[i]; ensureSyn(t); this.loadTrackPanel(); this.renderHeaderRow(); this.renderGrid(); this.say(`track ${this.cur.track + 1}: ${t.inst}`); if (!this.playing) this.preview(this.cur.track, 60); return; }
+    if (e.code === 'Delete' || e.code === 'Backspace') { e.preventDefault(); this.setCell(null); return; }
+    if (e.code === 'Digit1') { this.setCell(-1); return; }
+    if (e.code === 'KeyM') { e.preventDefault(); const t = Song.tracks[this.cur.track]; t.mute = !t.mute; el('tMute').checked = t.mute; this.renderTrackButtons(); this.renderHeaderRow(); this.say(`track ${this.cur.track + 1} ${t.mute ? 'MUTED' : 'on'}`); return; }
+    if (/^F[1-8]$/.test(e.code)) { e.preventDefault(); const i = +e.code.slice(1) - 1; Song.tracks[i].mute = !Song.tracks[i].mute; this.renderTrackButtons(); this.renderHeaderRow(); if (i === this.cur.track) el('tMute').checked = Song.tracks[i].mute; return; }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (KEYMAP[e.code] !== undefined) { e.preventDefault(); const n = (this.octave + 1) * 12 + KEYMAP[e.code]; if (n >= 0 && n <= 127) this.setCell(n); }
+  },
+  // ---- playback: a lookahead scheduler, one 16th per step ----
+  toggle(mode) { if (this.playing && (!mode || mode === this.mode)) this.stop(); else { if (this.playing) this.stop(); this.play(mode || 'pattern'); } },
+  // mode 'pattern' loops the pattern on screen (the one you are editing); 'song' plays the order box
+  play(mode) {
+    const ctx = this.audio(); this.playing = true; this.mode = mode; this.seq = mode === 'song' ? Song.order.filter(p => Song.patterns[p]) : [this.pat]; this.pos = 0; this.orderPos = 0; this.nextT = ctx.currentTime + 0.05;
+    el(mode === 'song' ? 'playSong' : 'play').textContent = '❚❚ ' + (mode === 'song' ? 'song' : 'pattern'); this.timer = setInterval(() => this.tick(), 25);
+  },
+  stop() { this.playing = false; clearInterval(this.timer); el('play').textContent = '▶ pattern (space)'; el('playSong').textContent = '▶ song (shift+space)'; el('grid').querySelectorAll('tr.playing').forEach(tr => tr.classList.remove('playing')); },
+  tick() {
+    const ctx = this.ctx, stepLen = 60 / Song.bpm / 4;
+    while (this.playing && this.nextT < ctx.currentTime + 0.1) {
+      const seq = this.mode === 'pattern' ? [this.pat] : this.seq; if (!seq.length || !Song.patterns[seq[0]]) { this.stop(); return; } // (in pattern mode, switching patterns while playing follows you)
+      const pat = Song.patterns[seq[this.orderPos % seq.length]], row = this.pos, t = this.nextT;
+      for (let ti = 0; ti < 8; ti++) {
+        const tr = Song.tracks[ti]; if (tr.mute) continue; const n = pat[ti][row];
+        if (n == null || n === -1) continue;
+        // the note holds for the track length, or until the next note / note-off in this track (so legato lines and cut-offs both work)
+        let hold = tr.len; for (let k = 1; k < tr.len; k++) { const m = pat[ti][(row + k) % Song.steps]; if (m != null) { hold = k; break; } }
+        Synth.inst(ctx, this.master, tr.inst, midiHz(n), t, Math.max(0.05, stepLen * hold), tr.vol, trackOpts(tr));
+      }
+      const showPat = seq[this.orderPos % seq.length]; setTimeout(() => { if (!this.playing) return; if (showPat !== this.pat) { this.pat = showPat; this.renderPatterns(); this.renderGrid(); } el('grid').querySelectorAll('tr.playing').forEach(x => x.classList.remove('playing')); const trEl = el('grid').querySelector(`tr[data-row="${row}"]`); if (trEl) { trEl.classList.add('playing'); if (row % 8 === 0) trEl.scrollIntoView({ block: 'nearest' }); } }, Math.max(0, (t - ctx.currentTime) * 1000));
+      this.nextT += stepLen; this.pos++;
+      if (this.pos >= Song.steps) { this.pos = 0; this.orderPos++; if (this.orderPos >= seq.length) { if (el('loop').checked) this.orderPos = 0; else { setTimeout(() => this.stop(), stepLen * 1000); return; } } }
+    }
+  },
+};
+const el = id => document.getElementById(id);
+UI.init();
+</script>
+</body>
+</html>

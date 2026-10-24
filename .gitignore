@@ -36,3 +36,13 @@ vendor/
 /.claude/todos/
 /.claude/statsig/
 /.claude/.last-cleanup
+
+# VoidLux
+games/*/.studio/
+games/*/dist/
+*.bak
+studio/studio.log
+studio/__pycache__/
+.playwright-mcp/
+games/
+centipede/
