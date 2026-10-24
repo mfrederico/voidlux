@@ -14,8 +14,12 @@
 namespace app;
 
 class GameAgent {
-    public const ALLOWED = ['Bash(node --check:*)', 'Bash(node --version)', 'Bash(git:*)', 'Bash(ls:*)', 'Bash(cat:*)', 'Bash(head:*)', 'Bash(tail:*)', 'Bash(wc:*)', 'Bash(grep:*)', 'Bash(find:*)', 'Bash(diff:*)',
-                           'Bash(for f in js/*.js; do node --check:*)', 'Bash(../../studio/bin/soak:*)', 'Bash(mkdir:*)', 'Bash(cp:*)', 'Bash(mv:*)', 'Bash(python3 -c:*)'];
+    // What an agent may run without asking, by program: checks, git, the soak and the shell's everyday tools, with the
+    // pipes and `timeout` prefixes real work is made of. Edits inside the game's folder are accepted by acceptEdits.
+    public const ALLOWED = ['Bash(node:*)', 'Bash(git:*)', 'Bash(timeout:*)', 'Bash(../../studio/bin/soak:*)', 'Bash(ls:*)', 'Bash(cat:*)', 'Bash(head:*)', 'Bash(tail:*)', 'Bash(wc:*)',
+                           'Bash(grep:*)', 'Bash(find:*)', 'Bash(diff:*)', 'Bash(sed:*)', 'Bash(awk:*)', 'Bash(sort:*)', 'Bash(uniq:*)', 'Bash(cut:*)', 'Bash(tr:*)', 'Bash(echo:*)', 'Bash(printf:*)',
+                           'Bash(test:*)', 'Bash([:*)', 'Bash(true)', 'Bash(false)', 'Bash(for:*)', 'Bash(while:*)', 'Bash(if:*)', 'Bash(mkdir:*)', 'Bash(cp:*)', 'Bash(mv:*)', 'Bash(rm:*)', 'Bash(touch:*)',
+                           'Bash(python3:*)', 'Bash(date:*)', 'Bash(pwd)', 'Bash(sleep:*)', 'Bash(xargs:*)', 'Bash(jq:*)', 'Bash(curl -s http://127.0.0.1:*)', 'Bash(curl -s https://voidlux.com/games/:*)'];
     public const PLAN = "You are the game designer and planner. Read AGENTS.md, ../../kit/AGENTS.md and GAME.md (the Brief). Write GAME.md's Design section (the fantasy, the core loop, how a run ends, what the player collects or builds, the enemies and how each threatens, the levels or waves, the SFX keys and music theme names the game needs, and what sells it: the hook, the screenshot, the price). Then the Acceptance criteria: 6 to 12 checkable claims, each a line starting '- [ ] '. Then Tasks: 4 to 8 ordered build tasks, each a line starting '- [ ] T<n>: ' naming what to build and ending with '(check: <how the reviewer verifies it>)'. Keep the three criteria already there. Do not write game code in this turn. Keep the game buildable on the kit in plain canvas JavaScript, small enough to finish. Commit GAME.md when done.";
     public const BUILD = "Build task {task} from GAME.md: {text}\nFollow AGENTS.md. Work only on this task. When it works: node --check every js file, run `../../studio/bin/soak 60 4` and fix anything it reports until ok is true, tick the task's box in GAME.md, add a line to GAME.md's Log, and commit with a plain-English message.";
     public const FIX = "The headless soak reported problems. Fix them, re-run `../../studio/bin/soak 60 4` until ok is true, and commit.\nReport:\n{report}";
@@ -61,6 +65,8 @@ class GameAgent {
         foreach (['kit', 'studio', 'centipede', 'templates'] as $extra) if (is_dir(GameStore::root() . '/' . $extra)) array_push($cmd, '--add-dir', GameStore::root() . '/' . $extra); // the shared engine, the soak tools and the reference game are readable beyond the game's folder
         $model = (string) GameStore::cfg('model', ''); if ($model !== '') array_push($cmd, '--model', $model);
         if ($resume && $sid) array_push($cmd, '--resume', $sid);
+        $inbox = $this->dir . '/.studio/inbox.txt';
+        if (is_file($inbox) && trim((string) file_get_contents($inbox)) !== '') { $prompt .= "\n\nNotes from the producer since the last run (follow them where they fit this task; keep them in mind otherwise):\n" . trim((string) file_get_contents($inbox)); unlink($inbox); $this->emit('note', ['text' => "the producer's notes go with this run"]); }
         $env['GAME_URL'] = GameStore::soakUrl($this->slug); $env['STUDIO'] = GameStore::root() . '/studio'; $env['VOIDLUX_GAME'] = $this->slug;
         $this->emit('note', ['text' => ($label !== '' ? "{$label}: " : '') . 'agent run starts' . ($resume && $sid ? ' (resumes ' . substr($sid, 0, 8) . ')' : ' (new session)') . " on {$note}"]);
         $desc = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
