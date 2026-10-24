@@ -427,8 +427,19 @@ class GameStore {
             if (!$has && is_file("$dir/sketch.png")) $has = true;
             $refine = ['id' => $pid, 'file' => $pf, 'ext' => $ext];
         }
+        // iteration: the drawing came back from an earlier job; that job's takes come along as earlier-N.<ext>, the liked one first
+        $from = null;
+        if (!empty($b['from']) && is_array($b['from']) && preg_match(self::SKETCH_ID, (string) ($b['from']['id'] ?? ''))) {
+            $fid = (string) $b['from']['id']; $fdir = self::sketchDir($slug, $fid); $liked = basename((string) ($b['from']['liked'] ?? ''));
+            if (is_file("$fdir/result.json")) {
+                $fres = json_decode((string) file_get_contents("$fdir/result.json"), true) ?: []; $files = array_values(array_filter((array) ($fres['files'] ?? []), fn($f) => preg_match('/^out-[0-9]+\.(svg|js|png)$/', (string) $f) && is_file("$fdir/$f")));
+                if ($liked !== '' && in_array($liked, $files, true)) { $files = array_merge([$liked], array_values(array_diff($files, [$liked]))); }
+                $copied = []; foreach ($files as $i => $f) { $ext = pathinfo($f, PATHINFO_EXTENSION); copy("$fdir/$f", "$dir/earlier-" . ($i + 1) . ".$ext"); $copied[] = 'earlier-' . ($i + 1) . ".$ext"; }
+                if ($copied) $from = ['id' => $fid, 'liked' => $liked !== '' && in_array($liked, $files, true) ? 'earlier-1.' . pathinfo($liked, PATHINFO_EXTENSION) : '', 'files' => $copied, 'note' => (string) ($fres['note'] ?? '')];
+            }
+        }
         $saveOnly = !empty($b['save_only']);
-        $req = ['id' => $id, 'note' => $note, 'style' => $style, 'pixel' => $pixel, 'size' => $size, 'key' => $key, 'palette' => $pal, 'sketch' => $has, 'strokes' => count($strokes), 'maker' => $maker, 'refine' => $refine, 'saved' => $saveOnly, 'by' => $memberId, 'at' => time()];
+        $req = ['id' => $id, 'note' => $note, 'style' => $style, 'pixel' => $pixel, 'size' => $size, 'key' => $key, 'palette' => $pal, 'sketch' => $has, 'strokes' => count($strokes), 'maker' => $maker, 'refine' => $refine, 'from' => $from, 'saved' => $saveOnly, 'by' => $memberId, 'at' => time()];
         self::writeAtomic($dir . '/request.json', json_encode($req, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
         if ($saveOnly) return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'saved' => true]; // kept in the gallery, not sent
         $what = $note !== '' ? "\"{$note}\"" : 'nothing written: go by the drawing';
@@ -469,6 +480,11 @@ class GameStore {
                . ($ext === 'png' ? "Use the spritecook skills: upload base.png with spritecook-upload-assets and generate with edit_asset_id = that asset and the instruction as the prompt, variations=2, then download the results. " : "Keep the file's format, size and rules as before (" . ($ext === 'svg' ? "a complete SVG, viewBox 0 0 {$size} {$size}, only shapes, no script, no images, no text" : "exactly one Draw.define('{$key}', " . ($size / 2) . ", (g, f) => { ... }) that only draws, passing node --check") . "). ")
                . "Then write sketches/{$id}/result.json as {\"ok\": true, \"files\": [\"out-1.{$ext}\", \"out-2.{$ext}\"], \"note\": \"<one line on what changed>\"}. Do not add anything to assets/ or assets/sprites.json and do not commit. If something stops you, write result.json as {\"ok\": false, \"error\": \"<why>\"} and stop. Do not run a soak. Reply with one line.";
         }
+        if ($from && !$refine) {
+            $p .= "\nEARLIER ROUNDS. This drawing is the producer's revision of one they sent before. The takes you made then are here: " . implode(', ', array_map(fn($f) => "sketches/{$id}/{$f}", $from['files'])) . ($from['note'] !== '' ? " (your note then: \"{$from['note']}\")" : '') . '. '
+                . ($from['liked'] !== '' ? "They liked {$from['liked']} best: start from its craft, palette and character, " : 'Start from the craft, palette and character of those, ')
+                . "and apply what the new drawing and note change (compare the drawing with what you drew before: what moved, grew, shrank, appeared or vanished is the point of this round). Keep what they did not change.";
+        }
         $r = self::askBuilder($slug, $p, $memberId);
         return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'queued' => !empty($r['queued'])];
     }
@@ -478,7 +494,7 @@ class GameStore {
         foreach (is_dir($root) ? scandir($root, SCANDIR_SORT_DESCENDING) : [] as $id) {
             if (!preg_match(self::SKETCH_ID, $id) || !is_file("$root/$id/request.json")) continue;
             $s = self::sketchStatus($slug, $id); $req = json_decode((string) file_get_contents("$root/$id/request.json"), true) ?: [];
-            $out[] = ['id' => $id, 'at' => (int) ($req['at'] ?? 0), 'note' => (string) ($req['note'] ?? ''), 'key' => $s['key'], 'maker' => (string) ($req['maker'] ?? 'spritecook'), 'size' => (int) ($req['size'] ?? 0), 'sketch' => is_file("$root/$id/sketch.png"), 'strokes' => is_file("$root/$id/strokes.json"), 'refine' => $req['refine'] ?? null, 'saved' => $s['saved'], 'style' => (string) ($req['style'] ?? ''), 'pixel' => !empty($req['pixel']), 'base' => $s['base'], 'result' => $s['result']];
+            $out[] = ['id' => $id, 'at' => (int) ($req['at'] ?? 0), 'note' => (string) ($req['note'] ?? ''), 'key' => $s['key'], 'maker' => (string) ($req['maker'] ?? 'spritecook'), 'size' => (int) ($req['size'] ?? 0), 'sketch' => is_file("$root/$id/sketch.png"), 'strokes' => is_file("$root/$id/strokes.json"), 'refine' => $req['refine'] ?? null, 'from' => $req['from'] ?? null, 'saved' => $s['saved'], 'style' => (string) ($req['style'] ?? ''), 'pixel' => !empty($req['pixel']), 'base' => $s['base'], 'result' => $s['result']];
         }
         return ['jobs' => $out, 'busy' => self::agentState($slug)['busy']];
     }
