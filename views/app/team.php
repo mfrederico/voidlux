@@ -1,6 +1,6 @@
 <?php /* What a team does in the forge: the games shared with it. $team is in scope (the runtime's team page). */
 $__tg = array_values(\app\Bean::find('game', 'team_id = ? ORDER BY title ASC', [(int) $team->id]));
-$__pending = $team->box()->canManage((int) member_id(\Flight::getMember())) ? \app\Bean::find('teaminvitation', 'team_id = ? AND accepted_at IS NULL ORDER BY id DESC', [(int) $team->id]) : [];
+$__pending = $team->box()->canManage((int) member_id(\Flight::getMember())) ? array_filter(\app\Bean::find('teaminvitation', 'team_id = ? ORDER BY id DESC', [(int) $team->id]), fn($i) => empty($i->acceptedAt)) : []; // (accepted_at only exists once someone has accepted: not a column to query on)
 $__base = rtrim((string) \Flight::get('app.baseurl'), '/');
 ?>
 <?php if ($__pending): ?>
