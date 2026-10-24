@@ -62,7 +62,10 @@ class Game extends BaseControls\Control {
     }
     /** GAME.md as a page: the runtime's markdown, with task-list lines as boxes. */
     public static function md(string $text): string {
+        // the planner hard-wraps paragraphs at ~120 columns; joined back so a paragraph reads as one, lists and headings left alone
+        $text = preg_replace('/(?<=\S)\n(?=[A-Za-z(`*_"\'][^\n]*)(?![-*#>|\d]|\s*- )/', ' ', $text);
         $html = \app\MarkdownParser::parseSafe($text);
+        $html = preg_replace('/<(h[1-6]) id="[^"]*">/', '<$1>', $html);  // heading ids would steal the page's tab hashes (#design, #build)
         $html = preg_replace('/<li>\[ \] /', '<li class="todo"><span class="box"></span> ', $html);
         $html = preg_replace('/<li>\[x\] /i', '<li class="done"><span class="box on">✓</span> ', $html);
         return $html;
