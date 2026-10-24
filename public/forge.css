@@ -54,3 +54,10 @@ a.vl-card:hover { border-color: #ff6600; color: #ddd; }
 .vl-note-btns { display: grid; gap: 4px; } .vl-note-btns button { background: #1a1a1a; border: 1px solid #333; color: #bbb; border-radius: 4px; width: 26px; height: 24px; font-size: .75rem; padding: 0; } .vl-note-btns button:hover { border-color: #ff6600; color: #fff; }
 .vl-notes-strip { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; font-size: .78rem; color: #aaa; }
 .vl-chip { display: inline-flex; align-items: center; gap: 6px; background: #111113; border: 1px solid #333; border-radius: 999px; padding: 3px 10px 3px 3px; color: #ddd; font-size: .74rem; } .vl-chip img { width: 28px; height: 20px; object-fit: cover; border-radius: 999px; }
+/* GAME.md as a page */
+.vl-md { background: #0a0a0c; border: 1px solid #222; border-radius: 6px; padding: 18px 22px; font-size: .86rem; line-height: 1.6; color: #ddd; max-width: 980px; }
+.vl-md h1 { font-size: 1.5rem; color: #ffcc00; letter-spacing: 2px; margin: 0 0 10px; } .vl-md h2 { font-size: .85rem; color: #cc6600; letter-spacing: 2px; text-transform: uppercase; border-bottom: 1px solid #333; padding-bottom: 4px; margin: 22px 0 10px; } .vl-md h3 { font-size: .9rem; color: #fff; margin: 14px 0 6px; }
+.vl-md p { margin: 0 0 10px; } .vl-md em { color: #9a9a9a; } .vl-md strong { color: #fff; } .vl-md code { color: #7df9ff; background: #17171a; padding: 0 4px; border-radius: 3px; } .vl-md pre { background: #111113; border: 1px solid #222; padding: 10px; border-radius: 4px; overflow: auto; }
+.vl-md ul, .vl-md ol { padding-left: 22px; margin: 0 0 10px; } .vl-md li { margin: 3px 0; } .vl-md li.todo, .vl-md li.done { list-style: none; margin-left: -22px; padding-left: 0; } .vl-md li.done { color: #7a7a7a; text-decoration: line-through; }
+.vl-md .box { display: inline-block; width: 14px; height: 14px; border: 1px solid #555; border-radius: 3px; vertical-align: -2px; margin-right: 6px; font-size: 11px; line-height: 13px; text-align: center; color: #111; } .vl-md .box.on { background: #00ff66; border-color: #00ff66; }
+.vl-md table { font-size: .8rem; } .vl-md a { color: #ffcc00; } .vl-md hr { border-color: #333; }

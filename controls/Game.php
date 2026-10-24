@@ -57,7 +57,15 @@ class Game extends BaseControls\Control {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
         $p = GameStore::dir($g->slug) . '/GAME.md';
         if (Flight::request()->method === 'POST') { $this->validateCSRF(); GameStore::writeAtomic($p, (string) ($this->body()['text'] ?? '')); $this->jsonSuccess(['ok' => true], 'Saved GAME.md.'); return; }
-        $this->jsonSuccess(['text' => is_file($p) ? file_get_contents($p) : '']);
+        $text = is_file($p) ? (string) file_get_contents($p) : '';
+        $this->jsonSuccess(['text' => $text, 'html' => self::md($text)]);
+    }
+    /** GAME.md as a page: the runtime's markdown, with task-list lines as boxes. */
+    public static function md(string $text): string {
+        $html = \app\MarkdownParser::parseSafe($text);
+        $html = preg_replace('/<li>\[ \] /', '<li class="todo"><span class="box"></span> ', $html);
+        $html = preg_replace('/<li>\[x\] /i', '<li class="done"><span class="box on">✓</span> ', $html);
+        return $html;
     }
     public function soakreport($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;

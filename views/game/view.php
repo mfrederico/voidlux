@@ -6,7 +6,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 <div class="vl-gamebar"><b><?= $e($game['title']) ?></b><span id="metaLine"><?= $e($game['template']) ?> · <?= (int) $game['checkpoints'] ?> checkpoints · <?= $e($game['lastCommit']) ?></span><span class="vl-pill" id="statusPill"><?= $e($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span>
   <a class="btn btn-sm btn-outline-secondary ms-auto" href="/games/<?= $e($slug) ?>/" target="_blank">Play in a tab</a><?php if ($game['publishedUrl']): ?><a class="btn btn-sm btn-outline-primary" href="<?= $e($game['publishedUrl']) ?>" target="_blank">Live</a><?php endif; ?></div>
 <div class="vl-tabs" id="tabs">
-  <button data-tab="play" class="on">Play</button><button data-tab="build">Build</button><button data-tab="test">Test</button><button data-tab="sfx">SFX</button><button data-tab="tracker">Tracker</button><button data-tab="config">Config</button><button data-tab="design">Design</button><button data-tab="history">History</button><button data-tab="ship">Ship</button>
+  <button data-tab="play" class="on">Play</button><button data-tab="build">Build</button><button data-tab="test">Test</button><button data-tab="sfx">SFX</button><button data-tab="tracker">Tracker</button><button data-tab="config">Config</button><button data-tab="design">Concept</button><button data-tab="history">History</button><button data-tab="ship">Ship</button>
 </div>
 
 <section class="vl-pane on" id="pane-play">
@@ -19,7 +19,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
   <div class="vl-build">
     <div>
       <div class="vl-toolbar">
-        <button class="btn btn-sm btn-primary" onclick="startAgent('pipeline')" id="btnPipeline">Run the pipeline</button>
+        <button class="btn btn-sm btn-primary" onclick="startAgent('pipeline')" id="btnPipeline" title="plan what is missing, build every open task, soak, review, checkpoint">Build the game</button>
         <button class="btn btn-sm btn-outline-secondary" onclick="startAgent('review')">Review only</button>
         <button class="btn btn-sm btn-outline-secondary" onclick="startAgent('fix')">Soak &amp; fix</button>
         <button class="btn btn-sm btn-danger" onclick="stopAgent()">Stop</button>
@@ -57,8 +57,9 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 <section class="vl-pane" id="pane-config"><div class="vl-toolbar">Every number in js/config.js with its comment. Changes save to js/tuning.js and apply on reload. <a href="/editor/config/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="configFrame"></iframe></section>
 
 <section class="vl-pane" id="pane-design">
-  <div class="vl-toolbar"><button class="btn btn-sm btn-primary" onclick="saveDoc()">Save GAME.md</button><button class="btn btn-sm btn-outline-secondary" onclick="loadDoc()">Reload</button><span id="docMsg">The contract: brief, design, acceptance criteria, tasks, log. The planner writes it; you can edit it any time.</span></div>
-  <textarea class="vl-doc" id="doc" spellcheck="false"><?= $e($gameMd) ?></textarea>
+  <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="toggleDocEdit()" id="docEditBtn">Edit</button><button class="btn btn-sm btn-primary" onclick="saveDoc()" id="docSaveBtn" style="display:none">Save GAME.md</button><button class="btn btn-sm btn-outline-secondary" onclick="loadDoc()">Reload</button><span id="docMsg">The game's concept: brief, design, acceptance criteria, tasks and log, as the planner and the builders keep it in GAME.md.</span></div>
+  <article class="vl-md" id="docHtml"><?= \app\Game::md($gameMd) ?></article>
+  <textarea class="vl-doc" id="doc" spellcheck="false" style="display:none"><?= $e($gameMd) ?></textarea>
 </section>
 
 <section class="vl-pane" id="pane-history">
@@ -93,6 +94,8 @@ function showTab(name) {
   location.hash = name;
   if (name === 'play' && !loaded.play) { loaded.play = 1; $('playFrame').src = `/games/${slug}/`; }
   if (['sfx', 'tracker', 'config'].includes(name) && !loaded[name]) { loaded[name] = 1; $(name + 'Frame').src = `/editor/${name}/?game=${slug}`; }
+  if (name === 'design') loadDoc();
+  if (name === 'build') { const b = $('stream'); b.scrollTop = b.scrollHeight; } // the timeline opens on the newest event
 }
 $('tabs').onclick = e => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); };
 function reloadPlay() { $('playFrame').src = `/games/${slug}/?r=${Date.now()}`; }
@@ -125,7 +128,7 @@ async function poll() {
   try {
     const r = await Forge.api(`/game/events/${slug}?since=${lastId}`);
     for (const ev of r.events) { addEvent(ev); if (['idle', 'checkpoint', 'soak', 'done'].includes(ev.kind)) refreshDue = true; }
-    lastId = r.last; renderSession(r.agent);
+    const first = lastId === 0; lastId = r.last; renderSession(r.agent); if (first) { const b = $('stream'); b.scrollTop = b.scrollHeight; }
     if (refreshDue) { refreshDue = false; render(await Forge.api(`/game/status/${slug}`)); }
     $('streamNote').textContent = '';
   } catch (e) { $('streamNote').textContent = 'polling: ' + e.message; }
@@ -138,8 +141,10 @@ $('chatForm').onsubmit = async e => { e.preventDefault(); const t = $('chatText'
 async function runSoak() { $('soakBtn').disabled = true; try { await Forge.api(`/game/agent/${slug}`, { mode: 'soak', prompt: `${+$('soakSecs').value} ${+$('soakFast').value}` }); showTab('build'); } catch (e) { alert(e.message); } $('soakBtn').disabled = false; }
 async function makeCheckpoint() { const r = await Forge.api(`/game/checkpoint/${slug}`, { label: $('cpLabel').value }); $('cpLabel').value = ''; renderCps(r.checkpoints); }
 async function rollback(tag) { if (!confirm(`Roll ${slug} back to ${tag}? The current state is checkpointed first.`)) return; try { const r = await Forge.api(`/game/rollback/${slug}`, { ref: tag }); renderCps(r.checkpoints); reloadPlay(); refreshDue = true; } catch (e) { alert(e.message); } }
-async function loadDoc() { const r = await Forge.api(`/game/doc/${slug}`); $('doc').value = r.text; $('docMsg').textContent = 'loaded'; }
-async function saveDoc() { await Forge.api(`/game/doc/${slug}`, { text: $('doc').value }); $('docMsg').textContent = 'saved · ' + new Date().toLocaleTimeString(); refreshDue = true; }
+let docEditing = false;
+function toggleDocEdit() { docEditing = !docEditing; $('doc').style.display = docEditing ? '' : 'none'; $('docHtml').style.display = docEditing ? 'none' : ''; $('docSaveBtn').style.display = docEditing ? '' : 'none'; $('docEditBtn').textContent = docEditing ? 'View' : 'Edit'; }
+async function loadDoc() { const r = await Forge.api(`/game/doc/${slug}`); $('doc').value = r.text; $('docHtml').innerHTML = r.html; $('docMsg').textContent = 'loaded'; }
+async function saveDoc() { await Forge.api(`/game/doc/${slug}`, { text: $('doc').value }); $('docMsg').textContent = 'saved · ' + new Date().toLocaleTimeString(); refreshDue = true; await loadDoc(); if (docEditing) toggleDocEdit(); }
 async function publish() { $('pubBtn').disabled = true; $('pubMsg').textContent = 'building…'; try { const r = await Forge.api(`/game/publish/${slug}`, {}); $('pubMsg').innerHTML = `build ${Forge.esc(r.build)}` + (r.url ? ` · live at <a href="${Forge.esc(r.url)}" target="_blank">${Forge.esc(r.url)}</a>` : ' · dist/ only (no [forge] domain)'); refreshDue = true; } catch (e) { $('pubMsg').textContent = e.message; } $('pubBtn').disabled = false; }
 $('cardForm').onsubmit = async e => { e.preventDefault(); const f = e.target; try { render({ game: await Forge.api(`/game/card/${slug}`, { title: f.title.value, status: f.status.value, price: f.price.value === '' ? null : +f.price.value, tags: f.tags.value.split(',').map(s => s.trim()).filter(Boolean), notes: f.notes.value, team_id: +f.team_id.value }), checkpoints: <?= json_encode($checkpoints) ?>, soaks: <?= json_encode($soaks) ?> }); $('cardMsg').textContent = 'saved'; } catch (err) { $('cardMsg').textContent = err.message; } };
 // ---- the producer's notes: the game (kit-notes.js, in the iframe) posts them here; they batch in the Build sidebar ----

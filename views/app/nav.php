@@ -5,9 +5,4 @@ if ($__loggedIn) {
         ['url' => '/forge', 'label' => 'Games', 'icon' => 'controller'],
         ['url' => '/forge/summon', 'label' => 'Summon a game', 'icon' => 'stars'],
     ];
-    $__sections['Springboards'] = [
-        ['url' => '/centipede/', 'label' => 'Play Centipede', 'icon' => 'bug'],
-        ['url' => '/centipede/README.md', 'label' => 'Centipede features', 'icon' => 'list-check'],
-        ['url' => '/kit/AGENTS.md', 'label' => 'Kit guide', 'icon' => 'book'],
-    ];
 }
