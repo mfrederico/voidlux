@@ -46,7 +46,7 @@ a.ui-nav-link.active, .ui-sidebar .active { color:#111 !important; }
   --bs-light-bg-subtle:#17171a; --bs-light-border-subtle:#333; --bs-light-text-emphasis:#e8e8e8;
   --bs-dark-bg-subtle:#0a0a0c; --bs-dark-border-subtle:#222; --bs-dark-text-emphasis:#e8e8e8;
 }
-.alert { --bs-alert-color: var(--bs-body-color); } .alert a, .alert .alert-link { color: inherit; text-decoration: underline; }
+.alert a, .alert .alert-link { color: inherit; text-decoration: underline; }
 .alert-light { --bs-alert-bg:#17171a; --bs-alert-color:#e8e8e8; --bs-alert-border-color:#333; }
 .ui-notice { background: var(--ui-surface); color: var(--bs-body-color); }
 .badge.text-bg-light, .badge.bg-light { background-color:#2a2a2e !important; color:#e8e8e8 !important; }
