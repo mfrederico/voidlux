@@ -18,7 +18,7 @@
 //   Save.write(obj) / Save.load() / Save.clear()   one saved run per game in localStorage
 const Game = {
   W: 1280, H: 720, WMIN: 960, WMAX: 1600, id: 'game', title: 'Game', state: '', scene: null, scenes: {}, time: 0, score: 0, best: 0, cam: { x: 0, y: 0 }, msgs: [], shake: 0, slowmo: 0,
-  prof: { upd: 0, draw: 0, frame: 16.7, last: 0, slow: 0, frames: 0 }, showProf: false, lastError: null, canvas: null, ctx: null, scale: 1, uiScale: 1, params: {},
+  paused: false, prof: { upd: 0, draw: 0, frame: 16.7, last: 0, slow: 0, frames: 0 }, showProf: false, lastError: null, canvas: null, ctx: null, scale: 1, uiScale: 1, params: {},
   go(name, arg) { const next = this.scenes[name]; if (!next) throw new Error('no scene ' + name); if (this.scene && this.scene.leave) this.scene.leave(); this.state = name; this.scene = next; if (next.enter) next.enter(arg); },
   msg(text, color) { const same = this.msgs.find(m => m.text === text && m.t > 0); if (same) { same.n = (same.n || 1) + 1; same.t = 4; return; } this.msgs.push({ text, color: color || '#fff', t: 4 }); if (this.msgs.length > 6) this.msgs.shift(); },
   drawMsgs(x, y, size) { let yy = y; for (const m of this.msgs) { Draw.ctx.globalAlpha = Math.min(1, m.t); Draw.text(m.text + (m.n > 1 ? ' ×' + m.n : ''), x, yy, size || 18, m.color); yy += (size || 18) * 1.3; } Draw.ctx.globalAlpha = 1; },
@@ -56,7 +56,7 @@ const Game = {
       if (this.slowmo > 0) { this.slowmo -= dt; dt *= 0.35; }
       try {
         const t0 = performance.now();
-        if (Test.fast) { for (let k = 0; k < Test.fast; k++) { step(1 / 60); Input.endFrame(); } } else step(dt);
+        if (this.paused) { /* note mode: the scene draws, nothing moves */ } else if (Test.fast) { for (let k = 0; k < Test.fast; k++) { step(1 / 60); Input.endFrame(); } } else step(dt);
         const t1 = performance.now();
         if (Input.once('Backquote')) this.showProf = !this.showProf;
         const c = this.ctx; c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, this.W, this.H);

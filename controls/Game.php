@@ -13,6 +13,10 @@
  *   POST /game/stop/<slug>  /game/reset/<slug>   stop the runner / forget the session
  *   POST /game/checkpoint/<slug> { label }   /game/rollback/<slug> { ref }
  *   POST /game/publish/<slug>                /game/card/<slug> { title, status, price, tags, notes, team_id }
+ *   GET  /game/notes/<slug>                 the producer's notes;  POST /game/note/<slug> { note } adds one (from the game's note mode)
+ *   POST /game/notestate/<slug> { id, state }   open | sent | done, or state 'delete'
+ *   POST /game/sendnotes/<slug> { ids, text }   hand a batch to the builder (a chat run, or the inbox while one runs)
+ *   GET  /game/noteshot/<slug>?id=          a note's screenshot crop
  */
 namespace app;
 
@@ -101,6 +105,64 @@ class Game extends BaseControls\Control {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
         try { $this->jsonSuccess(GameStore::publish($g), 'Published.'); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 500); }
     }
+    // ---- the producer's notes: made in the game's note mode (kit-notes.js), batched here, sent to the builder ----
+    private function noteRows(object $g): array {
+        $out = [];
+        foreach (Bean::find('gamenote', 'game_id = ? ORDER BY id DESC', [(int) $g->id]) as $n) $out[] = ['id' => (int) $n->id, 'scene' => (string) $n->scene, 'x' => (int) $n->x, 'y' => (int) $n->y, 'what' => json_decode((string) $n->what, true), 'text' => (string) $n->text, 'state' => (string) $n->state, 'shot' => (string) $n->shot !== '', 'createdAt' => (string) $n->createdAt, 'by' => (int) $n->memberId];
+        return $out;
+    }
+    public function notes($params = []): void { if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $this->jsonSuccess(['notes' => $this->noteRows($g)]); }
+    public function note($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        $b = ($this->body()['note'] ?? []); if (!is_array($b) || trim((string) ($b['text'] ?? '')) === '') { $this->jsonError('a note needs words'); return; }
+        $n = Bean::dispense('gamenote');
+        $n->gameId = (int) $g->id; $n->memberId = (int) $this->member->id; $n->scene = mb_substr((string) ($b['scene'] ?? ''), 0, 40); $n->x = (int) ($b['x'] ?? 0); $n->y = (int) ($b['y'] ?? 0);
+        $n->what = mb_substr(json_encode($b['what'] ?? null, JSON_UNESCAPED_SLASHES), 0, 4000); $n->text = mb_substr(trim((string) $b['text']), 0, 4000); $n->state = 'open'; $n->createdAt = date('c'); $n->shot = '';
+        Bean::store($n);
+        $shot = (string) ($b['shot'] ?? '');
+        if (preg_match('#^data:image/jpeg;base64,([A-Za-z0-9+/=]+)$#', $shot, $m) && strlen($shot) < 400000) {
+            $dir = GameStore::studioDir($g->slug) . '/notes'; if (!is_dir($dir)) mkdir($dir, 0775, true);
+            file_put_contents($dir . '/' . (int) $n->id . '.jpg', base64_decode($m[1])); $n->shot = '.studio/notes/' . (int) $n->id . '.jpg'; Bean::store($n);
+        }
+        GameStore::emit($g->slug, 'note', ['text' => 'producer\'s note #' . (int) $n->id . ' (' . $n->scene . ' at ' . $n->x . ',' . $n->y . '): ' . mb_substr($n->text, 0, 160)]);
+        if (!empty($b['build'])) { $this->sendBatch($g, [(int) $n->id], ''); }
+        $this->jsonSuccess(['id' => (int) $n->id, 'notes' => $this->noteRows($g)], !empty($b['build']) ? 'Sent to the build.' : 'Note saved.');
+    }
+    public function notestate($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        $b = $this->body(); $n = Bean::load('gamenote', (int) ($b['id'] ?? 0));
+        if (!$n->id || (int) $n->gameId !== (int) $g->id) { $this->jsonError('no such note', 404); return; }
+        if (($b['state'] ?? '') === 'delete') { $f = GameStore::dir($g->slug) . '/' . $n->shot; if ((string) $n->shot !== '' && is_file($f)) @unlink($f); Bean::trash($n); }
+        else { $n->state = (string) ($b['state'] ?? 'open'); Bean::store($n); }
+        $this->jsonSuccess(['notes' => $this->noteRows($g)], 'Saved.');
+    }
+    public function sendnotes($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        $b = $this->body(); $ids = array_map('intval', (array) ($b['ids'] ?? []));
+        if (!$ids) { $this->jsonError('pick at least one note'); return; }
+        try { $r = $this->sendBatch($g, $ids, trim((string) ($b['text'] ?? ''))); $this->jsonSuccess(['notes' => $this->noteRows($g)] + $r, $r['queued'] ? 'Queued for the next run.' : 'Sent to the builder.'); }
+        catch (\Throwable $e) { $this->jsonError($e->getMessage()); }
+    }
+    /** The batch as one message to the builder: a chat run now, or the inbox while a run is going. Marks the notes sent. */
+    private function sendBatch(object $g, array $ids, string $intro): array {
+        $lines = []; $n = 0; $rows = [];
+        foreach ($ids as $id) { $row = Bean::load('gamenote', $id); if ($row->id && (int) $row->gameId === (int) $g->id) { $rows[] = $row; $lines[] = $row->box()->line(++$n); } }
+        if (!$lines) throw new \RuntimeException('none of those notes belong to this game');
+        $prompt = "The producer paused the game and pointed at things on the screen. Each note names the scene, the position (logical canvas coordinates) and what the kit found there; a screenshot crop path is relative to this folder and you can look at it with Read. Do what each note asks (ask nothing; make the best call), node --check, soak, update GAME.md's Log, commit.\n"
+                . ($intro !== '' ? "The producer adds: {$intro}\n" : '') . "\n" . implode("\n", $lines);
+        $queued = GameStore::agentState($g->slug)['busy'];
+        if ($queued) { file_put_contents(GameStore::studioDir($g->slug) . '/inbox.txt', $prompt . "\n", FILE_APPEND); GameStore::emit($g->slug, 'note', ['text' => count($lines) . ' producer note(s) queued for the next run']); }
+        else GameStore::startRunner($g->slug, 'chat', $prompt, (int) $this->member->id);
+        foreach ($rows as $row) { $row->state = 'sent'; $row->sentAt = date('c'); Bean::store($row); }
+        return ['sent' => count($rows), 'queued' => $queued];
+    }
+    public function noteshot($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
+        $n = Bean::load('gamenote', (int) $this->getParam('id', 0)); $f = ($n->id && (int) $n->gameId === (int) $g->id && (string) $n->shot !== '') ? GameStore::dir($g->slug) . '/' . $n->shot : '';
+        if ($f === '' || !is_file($f)) { Flight::notFound(); return; }
+        header('Content-Type: image/jpeg'); header('Cache-Control: private, max-age=3600'); readfile($f); exit;
+    }
+
     public function card($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
         $b = $this->body();

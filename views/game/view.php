@@ -10,8 +10,9 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 </div>
 
 <section class="vl-pane on" id="pane-play">
-  <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="reloadPlay()">Reload</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('fps=1')">Profiler</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('bot=1')">Autopilot</button><span>The game as a player sees it, straight from its folder. Edits land on reload.</span></div>
+  <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="reloadPlay()">Reload</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('fps=1')">Profiler</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('bot=1')">Autopilot</button><button class="btn btn-sm btn-primary" onclick="noteMode()" id="noteBtn">Note mode (Alt+P)</button><span>The game as a player sees it, straight from its folder. Note mode pauses it: click anything, say what should change.</span></div>
   <iframe class="vl-frame" id="playFrame" allow="autoplay; fullscreen"></iframe>
+  <div class="vl-notes-strip" id="notesStrip"></div>
 </section>
 
 <section class="vl-pane" id="pane-build">
@@ -33,6 +34,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
     </div>
     <aside class="vl-side">
       <div class="vl-card"><h3>Pipeline</h3><div id="stage" class="vl-kv">idle</div></div>
+      <div class="vl-card"><h3>Producer's notes <span id="notesCount"></span></h3><div id="notesBox" class="vl-notes-list"></div><div class="vl-toolbar mt-2"><input id="notesIntro" placeholder="a word for the builder (optional)" style="flex:1;min-width:120px"><button class="btn btn-sm btn-primary" onclick="sendNotes()" id="sendNotesBtn">Send checked to build</button></div></div>
       <div class="vl-card"><h3>Tasks</h3><ul class="vl-tasks" id="tasks"></ul></div>
       <div class="vl-card"><h3>Session</h3><div class="vl-kv" id="session"></div><div class="vl-kv mt-2 small">Agents sign in on <a href="/agents">AI agents</a> when [forge] agent_login is app; today: <?= $e($agentNote) ?>.</div></div>
     </aside>
@@ -140,6 +142,25 @@ async function loadDoc() { const r = await Forge.api(`/game/doc/${slug}`); $('do
 async function saveDoc() { await Forge.api(`/game/doc/${slug}`, { text: $('doc').value }); $('docMsg').textContent = 'saved · ' + new Date().toLocaleTimeString(); refreshDue = true; }
 async function publish() { $('pubBtn').disabled = true; $('pubMsg').textContent = 'building…'; try { const r = await Forge.api(`/game/publish/${slug}`, {}); $('pubMsg').innerHTML = `build ${Forge.esc(r.build)}` + (r.url ? ` · live at <a href="${Forge.esc(r.url)}" target="_blank">${Forge.esc(r.url)}</a>` : ' · dist/ only (no [forge] domain)'); refreshDue = true; } catch (e) { $('pubMsg').textContent = e.message; } $('pubBtn').disabled = false; }
 $('cardForm').onsubmit = async e => { e.preventDefault(); const f = e.target; try { render({ game: await Forge.api(`/game/card/${slug}`, { title: f.title.value, status: f.status.value, price: f.price.value === '' ? null : +f.price.value, tags: f.tags.value.split(',').map(s => s.trim()).filter(Boolean), notes: f.notes.value, team_id: +f.team_id.value }), checkpoints: <?= json_encode($checkpoints) ?>, soaks: <?= json_encode($soaks) ?> }); $('cardMsg').textContent = 'saved'; } catch (err) { $('cardMsg').textContent = err.message; } };
+// ---- the producer's notes: the game (kit-notes.js, in the iframe) posts them here; they batch in the Build sidebar ----
+let NOTES = [];
+function noteMode() { const f = $('playFrame'); if (!f.contentWindow) return; f.contentWindow.postMessage({ type: 'forge:notes', on: true }, '*'); f.focus(); }
+window.addEventListener('message', async e => {
+  const m = e.data || {}; if (m.type !== 'forge:note' || !m.note) return;
+  try { const r = await Forge.api(`/game/note/${slug}`, { note: m.note }); NOTES = r.notes; renderNotes(); if (m.note.build) refreshDue = true; } catch (err) { alert('note not saved: ' + err.message); }
+});
+function renderNotes() {
+  const open = NOTES.filter(n => n.state === 'open'), rest = NOTES.filter(n => n.state !== 'open').slice(0, 6);
+  $('notesCount').textContent = open.length ? `(${open.length} open)` : '';
+  const row = n => `<div class="vl-note ${n.state}"><label><input type="checkbox" data-id="${n.id}" ${n.state === 'open' ? 'checked' : 'disabled'}>${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="">` : ''}<div><div class="vl-note-text">${Forge.esc(n.text)}</div><div class="vl-note-meta">${Forge.esc(n.scene)} · (${n.x}, ${n.y})${n.what && n.what.label ? ' · ' + Forge.esc(n.what.label) : ''} · ${n.state}</div></div></label><div class="vl-note-btns">${n.state !== 'done' ? `<button title="done" onclick="noteState(${n.id}, 'done')">✓</button>` : ''}${n.state !== 'open' ? `<button title="reopen" onclick="noteState(${n.id}, 'open')">↺</button>` : ''}<button title="delete" onclick="noteState(${n.id}, 'delete')">✕</button></div></div>`;
+  $('notesBox').innerHTML = (open.length ? open.map(row).join('') : '<div class="vl-kv">No open notes. In Play, press Note mode (or Alt+P in the game), click a thing, say what should change.</div>') + (rest.length ? '<div class="vl-note-meta mt-2">recent</div>' + rest.map(row).join('') : '');
+  $('sendNotesBtn').disabled = !open.length;
+  $('notesStrip').innerHTML = open.length ? open.slice(0, 8).map(n => `<span class="vl-chip" title="${Forge.esc(n.text)}">${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="">` : ''}${Forge.esc(n.text.slice(0, 40))}</span>`).join('') + ` <a href="#build" onclick="showTab('build')">${open.length} open note${open.length === 1 ? '' : 's'} → Build</a>` : '';
+}
+async function noteState(id, state) { if (state === 'delete' && !confirm('Delete this note?')) return; try { NOTES = (await Forge.api(`/game/notestate/${slug}`, { id, state })).notes; renderNotes(); } catch (e) { alert(e.message); } }
+async function sendNotes() { const ids = [...document.querySelectorAll('#notesBox input[type=checkbox]:checked')].map(c => +c.dataset.id); if (!ids.length) return; try { const r = await Forge.api(`/game/sendnotes/${slug}`, { ids, text: $('notesIntro').value.trim() }); NOTES = r.notes; renderNotes(); $('notesIntro').value = ''; refreshDue = true; } catch (e) { alert(e.message); } }
+async function loadNotes() { try { NOTES = (await Forge.api(`/game/notes/${slug}`)).notes; renderNotes(); } catch (e) {} }
+loadNotes();
 render({ game: G, checkpoints: <?= json_encode($checkpoints) ?>, soaks: <?= json_encode($soaks) ?> });
 showTab(location.hash.slice(1) || 'play'); poll();
 </script>

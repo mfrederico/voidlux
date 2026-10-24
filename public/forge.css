@@ -46,3 +46,11 @@ a.vl-card:hover { border-color: #ff6600; color: #ddd; }
 .vl-form label { display: grid; gap: 4px; font-size: 0.75rem; color: #888; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
 .vl-form input, .vl-form textarea, .vl-form select { background: #1a1a1a; border: 1px solid #333; color: #fff; padding: 8px 12px; border-radius: 4px; font-family: inherit; font-size: 0.9rem; width: 100%; }
 .vl-anatomy .vl-card { cursor: default; }
+/* the producer's notes */
+.vl-notes-list { display: grid; gap: 6px; max-height: 46vh; overflow-y: auto; }
+.vl-note { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: start; background: #0a0a0c; border: 1px solid #222; border-radius: 6px; padding: 6px; } .vl-note.sent { opacity: .7; } .vl-note.done { opacity: .45; }
+.vl-note label { display: grid; grid-template-columns: auto auto 1fr; gap: 8px; align-items: start; cursor: pointer; } .vl-note img { width: 72px; height: 48px; object-fit: cover; border-radius: 3px; border: 1px solid #333; }
+.vl-note-text { font-size: .8rem; color: #e8e8e8; } .vl-note-meta { font-size: .68rem; color: #777; }
+.vl-note-btns { display: grid; gap: 4px; } .vl-note-btns button { background: #1a1a1a; border: 1px solid #333; color: #bbb; border-radius: 4px; width: 26px; height: 24px; font-size: .75rem; padding: 0; } .vl-note-btns button:hover { border-color: #ff6600; color: #fff; }
+.vl-notes-strip { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; font-size: .78rem; color: #aaa; }
+.vl-chip { display: inline-flex; align-items: center; gap: 6px; background: #111113; border: 1px solid #333; border-radius: 999px; padding: 3px 10px 3px 3px; color: #ddd; font-size: .74rem; } .vl-chip img { width: 28px; height: 20px; object-fit: cover; border-radius: 999px; }
