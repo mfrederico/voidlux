@@ -51,6 +51,8 @@ const Notes = {
     if (hook) { try { const r = hook(x, y); if (r && r.length) return Object.assign({ at: { x, y } }, r[0]); } catch (e) {} }
     return this.scan(x, y);
   },
+  // a game's systems are top-level `const`s of classic scripts: in the global lexical scope, not on window, so by name
+  global(name) { try { return new Function('try { return ' + name + '; } catch (e) { return undefined; }')(); } catch (e) { return undefined; } },
   ROOTS: ['World', 'Enemies', 'Player', 'Combat', 'Minions', 'Deck', 'Dungeon', 'Game', 'G'],
   scan(x, y) {
     const cam = this.cam(), pts = [{ x, y, space: 'screen' }, { x: x + cam.x, y: y + cam.y, space: 'world' }];
@@ -61,7 +63,7 @@ const Notes = {
       if (d < 40 && (!best || d < best.d)) best = { d, label, obj: o, r, space: p.space, at: p.space === 'world' ? { x: o.x - cam.x, y: o.y - cam.y } : { x: o.x, y: o.y } };
     };
     for (const name of this.ROOTS) {
-      const root = window[name]; if (!root || typeof root !== 'object') continue;
+      const root = this.global(name); if (!root || typeof root !== 'object') continue;
       for (const p of pts) {
         consider(root, name, p);
         for (const k of Object.keys(root)) {
