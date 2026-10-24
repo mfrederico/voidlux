@@ -10,12 +10,12 @@
 //   Player, Combat ...), in screen space and in world space (the point plus the camera). A game may give a better answer
 //   with Game.describe = (x, y) => [{ label, fields }] (or G.describe for Centipede-style games).
 const Notes = {
-  open: false, picking: false, hover: null, picked: null, el: null, dlg: null, canvas: null, KEY: 'voidlux.notes.queue', slug: '',
+  known: [], open: false, picking: false, hover: null, picked: null, el: null, dlg: null, canvas: null, KEY: 'voidlux.notes.queue', slug: '',
   init() {
     this.canvas = document.getElementById('game'); if (!this.canvas) return;
     this.slug = (location.pathname.match(/\/games\/([a-z0-9-]+)\//) || [])[1] || (typeof Game !== 'undefined' ? Game.id : 'game');
     window.addEventListener('keydown', e => { if (e.altKey && e.code === 'KeyP') { e.preventDefault(); this.toggle(); } else if (e.code === 'Escape' && this.open) { e.preventDefault(); this.close(); } }, true);
-    window.addEventListener('message', e => { const m = e.data || {}; if (m.type === 'forge:notes') { if (m.on) this.start(); else this.close(); } });
+    window.addEventListener('message', e => { const m = e.data || {}; if (m.type === 'forge:notes') { if (m.on) this.start(); else this.close(); } else if (m.type === 'forge:notes-list') { this.known = Array.isArray(m.notes) ? m.notes : []; if (this.open) this.pins(); } });
     this.style(); this.flushQueue();
   },
   // ---- pause: a kit game has Game.paused; a Centipede-style game gets its G.update wrapped ----
@@ -36,7 +36,20 @@ const Notes = {
     this._move = e => { if (!this.picking) return; const p = this.logical(e.clientX, e.clientY); this.hover = this.describe(p.x, p.y); this.ring(this.hover ? this.hover.at : p, !!this.hover); };
     this._click = e => { if (!this.picking) return; const t = e.target; if (this.dlg && this.dlg.contains(t)) return; if (!this.canvas.contains(t) && t !== this.el && !t.classList.contains('vl-notes-ring')) return; e.preventDefault(); e.stopPropagation(); const p = this.logical(e.clientX, e.clientY); this.pick(p); };
     window.addEventListener('mousemove', this._move, true); window.addEventListener('click', this._click, true);
-    document.body.classList.add('vl-notes-on');
+    document.body.classList.add('vl-notes-on'); this.pins();
+  },
+  // the notes already on this scene, as pins where they were made: a teammate sees what is spoken for before adding to it
+  pins() {
+    if (!this.el) return; for (const old of this.el.querySelectorAll('.vl-notes-pin')) old.remove();
+    const scene = this.scene(), s = this.canvas.getBoundingClientRect().width / this.canvas.width;
+    for (const n of this.known.filter(n => n.scene === scene)) { const c = this.css(n.x, n.y), pin = document.createElement('div'); pin.className = 'vl-notes-pin ' + (n.state || 'open'); pin.style.left = (c.x - 9) + 'px'; pin.style.top = (c.y - 9) + 'px'; pin.title = (n.by ? n.by + ': ' : '') + n.text; pin.innerHTML = '<span>' + this.esc((n.by || '?').slice(0, 1).toUpperCase()) + '</span>'; this.el.appendChild(pin); }
+  },
+  // notes about the same thing: the same object by label (ignoring an array index, which changes between runs) and its
+  // naming fields (kind, name, type, id), or, with nothing named, within 60 px in the same scene
+  about(what, p) {
+    const scene = this.scene(), base = what && what.label ? what.label.replace(/\[\d+\]|#\d+/g, '') : '', f = what && what.fields || {};
+    const sig = o => ['kind', 'name', 'type', 'id'].map(k => o && o[k] !== undefined ? k + '=' + o[k] : '').join('|');
+    return this.known.filter(n => n.scene === scene && (base && n.what && n.what.label && n.what.label.replace(/\[\d+\]|#\d+/g, '') === base && sig(n.what.fields) === sig(f) || (!base && Math.hypot(n.x - p.x, n.y - p.y) < 60)));
   },
   close() {
     if (!this.open) return; this.open = false; this.picking = false; this.pause(false);
@@ -86,7 +99,8 @@ const Notes = {
     if (this.dlg) this.dlg.remove();
     const d = this.dlg = document.createElement('div'); d.className = 'vl-notes-dlg';
     const where = what ? `<b>${this.esc(what.label)}</b> ${this.esc(JSON.stringify(what.fields || {}))}` : `nothing the game names here: the spot <b>(${this.picked.x}, ${this.picked.y})</b>`;
-    d.innerHTML = `<div class="vl-notes-what">${where}<div class="vl-notes-meta">scene ${this.esc(this.picked.scene)} · (${this.picked.x}, ${this.picked.y})</div></div><img class="vl-notes-shot" src="${this.picked.shot}" alt=""><textarea placeholder="What about it? 'too fast', 'make this gold and bigger', 'this should drop a shield'…"></textarea><div class="vl-notes-btns"><button data-act="note">Save note</button><button data-act="build" class="hot">Send to build</button><button data-act="again">Pick again</button><button data-act="close">Resume</button></div>`;
+    const prior = this.about(what, p), priorHtml = prior.length ? `<div class="vl-notes-prior"><b>already noted here</b>${prior.slice(0, 4).map(n => `<div><i>${this.esc(n.by || 'someone')}</i> · ${this.esc(n.state)}: ${this.esc(n.text)}</div>`).join('')}${prior.length > 4 ? `<div>…and ${prior.length - 4} more</div>` : ''}</div>` : '';
+    d.innerHTML = `<div class="vl-notes-what">${where}<div class="vl-notes-meta">scene ${this.esc(this.picked.scene)} · (${this.picked.x}, ${this.picked.y})</div></div>${priorHtml}<img class="vl-notes-shot" src="${this.picked.shot}" alt=""><textarea placeholder="What about it? 'too fast', 'make this gold and bigger', 'this should drop a shield'…"></textarea><div class="vl-notes-btns"><button data-act="note">Save note</button><button data-act="build" class="hot">Send to build</button><button data-act="again">Pick again</button><button data-act="close">Resume</button></div>`;
     document.body.appendChild(d); this.place(what ? what.at : p); this._place = () => { if (this.picked) this.place(what ? what.at : p); }; window.addEventListener('resize', this._place); const ta = d.querySelector('textarea'); setTimeout(() => ta.focus(), 50);
     d.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; e.stopPropagation(); const act = b.dataset.act; if (act === 'close') this.close(); else if (act === 'again') { d.remove(); this.dlg = null; this.picking = true; this.wireOff(); } else this.send(act === 'build', ta.value.trim()); });
     ta.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); this.send(true, ta.value.trim()); } e.stopPropagation(); });
@@ -126,6 +140,8 @@ const Notes = {
       .vl-notes-shot { display: block; width: 100%; height: auto; margin: 8px 0; border: 1px solid #333; border-radius: 4px; }
       .vl-notes-dlg textarea { width: 100%; min-height: 64px; background: #1a1a1a; color: #fff; border: 1px solid #333; border-radius: 4px; padding: 6px 8px; font: inherit; resize: vertical; } .vl-notes-dlg textarea:focus { outline: none; border-color: #ff6600; }
       .vl-notes-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; } .vl-notes-btns button { font: inherit; font-size: 12px; background: #1a1a1a; color: #ddd; border: 1px solid #444; border-radius: 4px; padding: 5px 10px; cursor: pointer; } .vl-notes-btns button:hover { border-color: #ff6600; color: #fff; } .vl-notes-btns button.hot { background: #ff6600; color: #111; border-color: #ff6600; font-weight: bold; }
+      .vl-notes-pin { position: fixed; width: 18px; height: 18px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: #ffcc00; border: 2px solid #111; box-shadow: 0 0 8px rgba(255,204,0,0.7); pointer-events: auto; z-index: 9000; cursor: help; } .vl-notes-pin.sent { background: #7df9ff; } .vl-notes-pin span { display: block; transform: rotate(45deg); font: bold 10px/14px monospace; color: #111; text-align: center; }
+      .vl-notes-prior { margin-top: 8px; padding: 6px 8px; background: #17171a; border: 1px solid #333; border-radius: 4px; font-size: 11.5px; color: #ccc; max-height: 7em; overflow: auto; } .vl-notes-prior b { color: #ffcc00; display: block; margin-bottom: 2px; } .vl-notes-prior i { color: #7df9ff; font-style: normal; }
       .vl-notes-toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 9002; background: #111; color: #ffcc00; border: 1px solid #333; border-radius: 999px; padding: 6px 14px; font: 13px "IBM Plex Mono", monospace; }`;
     document.head.appendChild(s);
   },

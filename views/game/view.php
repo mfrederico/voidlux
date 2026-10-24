@@ -147,11 +147,13 @@ let NOTES = [];
 function noteMode() { const f = $('playFrame'); if (!f.contentWindow) return; f.contentWindow.postMessage({ type: 'forge:notes', on: true }, '*'); f.focus(); }
 window.addEventListener('message', async e => {
   const m = e.data || {};
-  if (m.type === 'forge:notes-open') { $('playFrame').scrollIntoView({ block: 'center', behavior: 'smooth' }); return; } // the game is in note mode: keep the whole frame in view
+  if (m.type === 'forge:notes-open') { $('playFrame').scrollIntoView({ block: 'center', behavior: 'smooth' }); sendNotesToGame(); return; } // the game is in note mode: keep the whole frame in view, show it the notes so far
   if (m.type !== 'forge:note' || !m.note) return;
   try { const r = await Forge.api(`/game/note/${slug}`, { note: m.note }); NOTES = r.notes; renderNotes(); if (m.note.build) refreshDue = true; } catch (err) { alert('note not saved: ' + err.message); }
 });
+function sendNotesToGame() { const f = $('playFrame'); if (f.contentWindow) f.contentWindow.postMessage({ type: 'forge:notes-list', notes: NOTES.filter(n => n.state !== 'done').map(n => ({ id: n.id, scene: n.scene, x: n.x, y: n.y, what: n.what, text: n.text, state: n.state, by: n.byName })) }, '*'); }
 function renderNotes() {
+  sendNotesToGame();
   const open = NOTES.filter(n => n.state === 'open'), rest = NOTES.filter(n => n.state !== 'open').slice(0, 6);
   $('notesCount').textContent = open.length ? `(${open.length} open)` : '';
   const row = n => `<div class="vl-note ${n.state}"><label><input type="checkbox" data-id="${n.id}" ${n.state === 'open' ? 'checked' : 'disabled'}>${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="">` : ''}<div><div class="vl-note-text">${Forge.esc(n.text)}</div><div class="vl-note-meta">${Forge.esc(n.scene)} · (${n.x}, ${n.y})${n.what && n.what.label ? ' · ' + Forge.esc(n.what.label) : ''} · ${n.state}</div></div></label><div class="vl-note-btns">${n.state !== 'done' ? `<button title="done" onclick="noteState(${n.id}, 'done')">✓</button>` : ''}${n.state !== 'open' ? `<button title="reopen" onclick="noteState(${n.id}, 'open')">↺</button>` : ''}<button title="delete" onclick="noteState(${n.id}, 'delete')">✕</button></div></div>`;
