@@ -1,10 +1,10 @@
 <?php /* One game: play, build (the agent stream), test (soaks), the three editors, the design doc, history, ship.
          The page polls /game/events and /game/status; every action is a JSON POST with the CSRF token. */
-$slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
+$slug = $game['slug']; 
 ?>
-<meta name="csrf-token" content="<?= $e(csrf_token()) ?>">
-<div class="vl-gamebar"><span class="vl-pill" id="statusPill"><?= $e($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span>
-  <?php if ($game['publishedUrl']): ?><a class="btn btn-sm btn-outline-primary ms-auto" href="<?= $e($game['publishedUrl']) ?>" target="_blank">Live</a><?php endif; ?></div>
+<meta name="csrf-token" content="<?= h(csrf_token()) ?>">
+<div class="vl-gamebar"><span class="vl-pill" id="statusPill"><?= h($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span>
+  <?php if ($game['publishedUrl']): ?><a class="btn btn-sm btn-outline-primary ms-auto" href="<?= h($game['publishedUrl']) ?>" target="_blank">Live</a><?php endif; ?></div>
 <div class="vl-tabs" id="tabs">
   <button data-tab="play" class="on">Play</button><button data-tab="build">Build</button><button data-tab="notes">Notes <span id="notesTab"></span></button><button data-tab="test">Test</button><button data-tab="media">Media</button><button data-tab="ship">Ship</button>
   <span class="vl-tab-menu"><button data-tab="advanced" type="button">Advanced ▾</button><span class="vl-tab-menu-list"><button data-tab="design">Concept</button><button data-tab="status">Status</button><button data-tab="config">Config</button><button data-tab="history">History</button></span></span>
@@ -15,7 +15,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
   <div class="vl-cols">
     <div class="vl-card"><h3 class="vl-h2 mt-0">Pipeline</h3><div id="stage" class="vl-kv">idle</div><div class="vl-kv mt-2" id="metaLine"></div></div>
     <div class="vl-card"><h3 class="vl-h2 mt-0">Tasks</h3><ul class="vl-tasks" id="tasks"></ul></div>
-    <div class="vl-card"><h3 class="vl-h2 mt-0">Session</h3><div class="vl-kv" id="session"></div><div class="vl-toolbar mt-2"><button class="btn btn-sm btn-outline-secondary" onclick="resetSession()" title="The next run starts with a clean memory and reads the game fresh. Use it when the builder seems stuck on an old idea.">Clear the builder's memory</button></div><div class="vl-kv mt-2 small">Agents sign in on <a href="/agents">AI agents</a>; today: <?= $e($agentNote) ?>.</div></div>
+    <div class="vl-card"><h3 class="vl-h2 mt-0">Session</h3><div class="vl-kv" id="session"></div><div class="vl-toolbar mt-2"><button class="btn btn-sm btn-outline-secondary" onclick="resetSession()" title="The next run starts with a clean memory and reads the game fresh. Use it when the builder seems stuck on an old idea.">Clear the builder's memory</button></div><div class="vl-kv mt-2 small">Agents sign in on <a href="/agents">AI agents</a>; today: <?= h($agentNote) ?>.</div></div>
   </div>
 </section>
 
@@ -30,12 +30,12 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 
 <section class="vl-pane" id="pane-assets">
   <div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>The game's picture files. Tell the builder which to use, in a note or a message.</span></div>
-  <form class="vl-toolbar" method="post" action="/game/assetupload/<?= $e($slug) ?>" enctype="multipart/form-data"><?= csrf_field() ?><input type="file" name="file" accept=".svg,.png,.jpg,.jpeg,.gif,.webp" required><button class="btn btn-sm btn-primary" type="submit">Upload</button><span>SVG, PNG, JPG, GIF or WebP, up to 5 MB.</span></form>
+  <form class="vl-toolbar" method="post" action="/game/assetupload/<?= h($slug) ?>" enctype="multipart/form-data"><?= csrf_field() ?><input type="file" name="file" accept=".svg,.png,.jpg,.jpeg,.gif,.webp" required><button class="btn btn-sm btn-primary" type="submit">Upload</button><span>SVG, PNG, JPG, GIF or WebP, up to 5 MB.</span></form>
   <div class="vl-assets" id="assets"></div>
 </section>
 
 <section class="vl-pane on" id="pane-play">
-  <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="reloadPlay()">Reload</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('fps=1')">Profiler</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('bot=1')">Autopilot</button><button class="btn btn-sm btn-primary" onclick="noteMode()" id="noteBtn" title="pause the game and point at what should change (Alt+P inside the game)">Note mode</button><a class="btn btn-sm btn-outline-secondary" href="/games/<?= $e($slug) ?>/" target="_blank" onclick="playTab = window.open(this.href, 'play-<?= $e($slug) ?>'); return false;" title="full screen in its own tab; notes made there still reach this page (on a phone: a three-finger tap opens note mode)">Play in a tab</a></div>
+  <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="reloadPlay()">Reload</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('fps=1')">Profiler</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('bot=1')">Autopilot</button><button class="btn btn-sm btn-primary" onclick="noteMode()" id="noteBtn" title="pause the game and point at what should change (Alt+P inside the game)">Note mode</button><a class="btn btn-sm btn-outline-secondary" href="/games/<?= h($slug) ?>/" target="_blank" onclick="playTab = window.open(this.href, 'play-<?= h($slug) ?>'); return false;" title="full screen in its own tab; notes made there still reach this page (on a phone: a three-finger tap opens note mode)">Play in a tab</a></div>
   <iframe class="vl-frame" id="playFrame" allow="autoplay; fullscreen"></iframe>
   <div class="vl-notes-strip" id="notesStrip"></div>
   <form class="vl-compose vl-compose-play" data-chat><textarea placeholder="Tell the builder what to do…"></textarea><div class="btns"><button type="submit" class="btn btn-primary">Send</button></div></form>
@@ -48,7 +48,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
         <button class="btn btn-sm btn-primary" onclick="startAgent('pipeline')" id="btnPipeline" title="The whole loop: plan what the Concept still lacks, build every open task, playtest, review against the acceptance criteria, rework what fails, checkpoint along the way.">Build the game</button>
         <button class="btn btn-sm btn-outline-secondary" onclick="startAgent('review')" title="An independent reviewer (a fresh agent that never saw the build) checks every acceptance criterion in the Concept, with evidence, and reports pass or fail. Builds nothing.">Review</button>
         <button class="btn btn-sm btn-danger" onclick="stopAgent()" title="Stops the agent that is running now. Whatever it had committed stays; a checkpoint marks where it stopped.">Stop</button>
-        <span id="streamNote"><?= $e($agentNote) ?></span>
+        <span id="streamNote"><?= h($agentNote) ?></span>
       </div>
       <div class="vl-stageline" id="stageline"></div>
       <div class="vl-stream" id="stream"></div>
@@ -62,7 +62,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
 
 <section class="vl-pane" id="pane-test">
   <div class="vl-card mb-3">
-    <div class="vl-kv"><span class="vl-pill live" id="attachedPill">● this browser is attached</span> While this page is open, playtests for <b><?= $e($game['title']) ?></b> run here: a small game window pops up in the corner, the bots play, every error is caught, and the report goes to the builder. Any computer, any browser, nothing to install. With nobody's page open, a playtest waits a minute and then reports that no browser was attached.</div>
+    <div class="vl-kv"><span class="vl-pill live" id="attachedPill">● this browser is attached</span> While this page is open, playtests for <b><?= h($game['title']) ?></b> run here: a small game window pops up in the corner, the bots play, every error is caught, and the report goes to the builder. Any computer, any browser, nothing to install. With nobody's page open, a playtest waits a minute and then reports that no browser was attached.</div>
     <div class="vl-kv mt-2"><b>Playtests run in this browser:</b> <span id="hereCount">0</span> · last: <span id="hereLast">none yet</span></div>
   </div>
   <div class="vl-toolbar">
@@ -83,14 +83,14 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
   <div class="vl-notes-big" id="notesBig"></div>
 </section>
 <div class="vl-lightbox" id="lightbox" onclick="this.classList.remove('on')"><img alt=""><div class="vl-lightbox-cap"></div></div>
-<section class="vl-pane" id="pane-sfx"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>Sound effects. Save writes them into the game; reload the game to hear them.</span><a href="/editor/sfx/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="sfxFrame"></iframe></section>
-<section class="vl-pane" id="pane-tracker"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>The chip tracker. Press / to load or save a song into the game; name songs after where they play (title, play, boss).</span><a href="/editor/tracker/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="trackerFrame"></iframe></section>
-<section class="vl-pane" id="pane-config"><div class="vl-toolbar"><span>Every tuning number in the game, with its comment. Changes apply when the game reloads.</span><a href="/editor/config/?game=<?= $e($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="configFrame"></iframe></section>
+<section class="vl-pane" id="pane-sfx"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>Sound effects. Save writes them into the game; reload the game to hear them.</span><a href="/editor/sfx/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="sfxFrame"></iframe></section>
+<section class="vl-pane" id="pane-tracker"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>The chip tracker. Press / to load or save a song into the game; name songs after where they play (title, play, boss).</span><a href="/editor/tracker/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="trackerFrame"></iframe></section>
+<section class="vl-pane" id="pane-config"><div class="vl-toolbar"><span>Every tuning number in the game, with its comment. Changes apply when the game reloads.</span><a href="/editor/config/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="configFrame"></iframe></section>
 
 <section class="vl-pane" id="pane-design">
   <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="toggleDocEdit()" id="docEditBtn">Edit</button><button class="btn btn-sm btn-primary" onclick="saveDoc()" id="docSaveBtn" style="display:none">Save GAME.md</button><button class="btn btn-sm btn-outline-secondary" onclick="loadDoc()">Reload</button><span id="docMsg">The game's concept: brief, design, acceptance criteria, tasks and log, as the planner and the builders keep it in GAME.md.</span></div>
   <article class="vl-md" id="docHtml"><?= \app\Game::md($gameMd) ?></article>
-  <textarea class="vl-doc" id="doc" spellcheck="false" style="display:none"><?= $e($gameMd) ?></textarea>
+  <textarea class="vl-doc" id="doc" spellcheck="false" style="display:none"><?= h($gameMd) ?></textarea>
 </section>
 
 <section class="vl-pane" id="pane-history">
@@ -107,7 +107,7 @@ $slug = $game['slug']; $e = fn($s) => htmlspecialchars((string) $s);
         <label>Status <select name="status"><option>new</option><option>designed</option><option>building</option><option>playable</option><option>polished</option><option>published</option></select></label>
         <label>Price (USD) <input name="price" type="number" step="0.01" min="0" placeholder="2.99"></label>
         <label>Tags <input name="tags" placeholder="arcade, shooter, mobile"></label>
-        <label>Team <select name="team_id"><option value="0">Just me</option><?php foreach ($teams as $t): ?><option value="<?= (int) $t['id'] ?>"><?= $e($t['name']) ?></option><?php endforeach; ?></select></label>
+        <label>Team <select name="team_id"><option value="0">Just me</option><?php foreach ($teams as $t): ?><option value="<?= (int) $t['id'] ?>"><?= h($t['name']) ?></option><?php endforeach; ?></select></label>
         <label>Notes <textarea name="notes" rows="3" placeholder="store blurb, what to screenshot, what is missing before launch"></textarea></label>
         <button type="submit" class="btn btn-sm btn-primary">Save card</button> <span class="vl-msg" id="cardMsg"></span>
       </form>

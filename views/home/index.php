@@ -581,10 +581,10 @@ body {
         <?php if (!empty($games)): ?>
         <div class="card-grid">
             <?php foreach ($games as $g): ?>
-            <a class="card" href="<?= htmlspecialchars($g['url']) ?>" target="_blank" style="text-decoration:none">
+            <a class="card" href="<?= h($g['url']) ?>" target="_blank" style="text-decoration:none">
                 <div class="card-glyph">&#9654;</div>
-                <div class="card-title"><?= htmlspecialchars($g['title']) ?></div>
-                <div class="card-desc"><?= htmlspecialchars($g['brief']) ?><?php if ($g['price'] !== null): ?><br><strong>$<?= number_format((float) $g['price'], 2) ?></strong><?php endif; ?></div>
+                <div class="card-title"><?= h($g['title']) ?></div>
+                <div class="card-desc"><?= h($g['brief']) ?><?php if ($g['price'] !== null): ?><br><strong>$<?= number_format((float) $g['price'], 2) ?></strong><?php endif; ?></div>
             </a>
             <?php endforeach; ?>
         </div>

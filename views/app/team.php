@@ -9,11 +9,11 @@ $__base = rtrim((string) \Flight::get('app.baseurl'), '/');
     <div class="ui-panel-body">
         <p class="text-secondary small">Each invite is a link. If this install sends no email, pass the link along yourself (a text, a chat message): opening it, signed in or not, puts them on the team.</p>
         <?php foreach ($__pending as $__i): $__link = $__base . '/teams/join?token=' . urlencode((string) $__i->token); ?>
-        <div class="d-flex flex-wrap align-items-center gap-2 mb-2"><b><?= htmlspecialchars((string) $__i->email) ?></b><span class="text-secondary small">· <?= htmlspecialchars((string) $__i->role) ?> · until <?= htmlspecialchars(substr((string) $__i->expiresAt, 0, 10)) ?></span>
-            <input class="form-control form-control-sm" style="max-width:520px" readonly value="<?= htmlspecialchars($__link) ?>" onclick="this.select()"><button class="btn btn-sm btn-outline-secondary" type="button" onclick="var i = this.previousElementSibling, b = this; i.select(); (navigator.clipboard ? navigator.clipboard.writeText(i.value) : Promise.reject()).then(function () { b.textContent = 'copied'; }, function () { document.execCommand('copy'); b.textContent = 'copied'; })">copy link</button>
-            <button class="btn btn-sm btn-outline-primary" type="button" onclick="vlInvite(this, 'resend', <?= (int) $__i->id ?>, <?= (int) $team->id ?>, <?= htmlspecialchars(json_encode((string) $__i->email)) ?>, <?= htmlspecialchars(json_encode((string) $__i->role)) ?>)" title="send the same link again by email">Resend email</button>
-            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="vlInvite(this, 'renew', <?= (int) $__i->id ?>, <?= (int) $team->id ?>, <?= htmlspecialchars(json_encode((string) $__i->email)) ?>, <?= htmlspecialchars(json_encode((string) $__i->role)) ?>)" title="withdraw this link and send a fresh one by email">Revoke &amp; re-send</button>
-            <button class="btn btn-sm btn-outline-danger" type="button" onclick="vlInvite(this, 'revoke', <?= (int) $__i->id ?>, <?= (int) $team->id ?>, <?= htmlspecialchars(json_encode((string) $__i->email)) ?>, <?= htmlspecialchars(json_encode((string) $__i->role)) ?>)" title="withdraw this link; nothing is sent">Revoke</button></div>
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2"><b><?= h($__i->email) ?></b><span class="text-secondary small">· <?= h($__i->role) ?> · until <?= h(substr((string) $__i->expiresAt, 0, 10)) ?></span>
+            <input class="form-control form-control-sm" style="max-width:520px" readonly value="<?= h($__link) ?>" onclick="this.select()"><button class="btn btn-sm btn-outline-secondary" type="button" onclick="var i = this.previousElementSibling, b = this; i.select(); (navigator.clipboard ? navigator.clipboard.writeText(i.value) : Promise.reject()).then(function () { b.textContent = 'copied'; }, function () { document.execCommand('copy'); b.textContent = 'copied'; })">copy link</button>
+            <button class="btn btn-sm btn-outline-primary" type="button" onclick="vlInvite(this, 'resend', <?= (int) $__i->id ?>, <?= (int) $team->id ?>, <?= h(json_encode((string) $__i->email)) ?>, <?= h(json_encode((string) $__i->role)) ?>)" title="send the same link again by email">Resend email</button>
+            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="vlInvite(this, 'renew', <?= (int) $__i->id ?>, <?= (int) $team->id ?>, <?= h(json_encode((string) $__i->email)) ?>, <?= h(json_encode((string) $__i->role)) ?>)" title="withdraw this link and send a fresh one by email">Revoke &amp; re-send</button>
+            <button class="btn btn-sm btn-outline-danger" type="button" onclick="vlInvite(this, 'revoke', <?= (int) $__i->id ?>, <?= (int) $team->id ?>, <?= h(json_encode((string) $__i->email)) ?>, <?= h(json_encode((string) $__i->role)) ?>)" title="withdraw this link; nothing is sent">Revoke</button></div>
         <?php endforeach; ?>
         <script>
         // the three invite actions: resend (the runtime's route, same link), revoke (the forge's route), renew (revoke, then invite afresh through the runtime)
@@ -39,7 +39,7 @@ $__base = rtrim((string) \Flight::get('app.baseurl'), '/');
         <?php if (!$__tg): ?><p class="text-secondary mb-0">No game is shared with this team yet. On a game's Ship tab, set its team.</p>
         <?php else: ?><div class="vl-grid">
             <?php foreach ($__tg as $__g): $__m = \app\GameStore::meta($__g); ?>
-            <a class="vl-card" href="/game/view/<?= htmlspecialchars($__m['slug']) ?>"><div class="vl-card-title"><?= htmlspecialchars($__m['title']) ?></div><div class="vl-meta"><?= htmlspecialchars($__m['status']) ?> · <?= htmlspecialchars($__m['lastCommit']) ?></div></a>
+            <a class="vl-card" href="/game/view/<?= h($__m['slug']) ?>"><div class="vl-card-title"><?= h($__m['title']) ?></div><div class="vl-meta"><?= h($__m['status']) ?> · <?= h($__m['lastCommit']) ?></div></a>
             <?php endforeach; ?>
         </div><?php endif; ?>
     </div>
