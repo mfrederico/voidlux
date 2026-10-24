@@ -1,6 +1,20 @@
 <?php /* What a team does in the forge: the games shared with it. $team is in scope (the runtime's team page). */
 $__tg = array_values(\app\Bean::find('game', 'team_id = ? ORDER BY title ASC', [(int) $team->id]));
+$__pending = $team->box()->canManage((int) member_id(\Flight::getMember())) ? \app\Bean::find('teaminvitation', 'team_id = ? AND accepted_at IS NULL ORDER BY id DESC', [(int) $team->id]) : [];
+$__base = rtrim((string) \Flight::get('app.baseurl'), '/');
 ?>
+<?php if ($__pending): ?>
+<div class="ui-panel mb-3">
+    <div class="ui-panel-header"><h3><i class="bi bi-envelope-paper text-primary me-2"></i>Invites waiting</h3></div>
+    <div class="ui-panel-body">
+        <p class="text-secondary small">Each invite is a link. If this install sends no email, pass the link along yourself (a text, a chat message): opening it, signed in or not, puts them on the team.</p>
+        <?php foreach ($__pending as $__i): $__link = $__base . '/teams/join?token=' . urlencode((string) $__i->token); ?>
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2"><b><?= htmlspecialchars((string) $__i->email) ?></b><span class="text-secondary small">· <?= htmlspecialchars((string) $__i->role) ?> · until <?= htmlspecialchars(substr((string) $__i->expiresAt, 0, 10)) ?></span>
+            <input class="form-control form-control-sm" style="max-width:520px" readonly value="<?= htmlspecialchars($__link) ?>" onclick="this.select()"><button class="btn btn-sm btn-outline-secondary" type="button" onclick="navigator.clipboard && navigator.clipboard.writeText(<?= json_encode($__link) ?>); this.textContent = 'copied'">copy link</button></div>
+        <?php endforeach; ?>
+    </div>
+</div>
+<?php endif; ?>
 <div class="ui-panel mb-3">
     <div class="ui-panel-header"><h3><i class="bi bi-controller text-primary me-2"></i>Games this team builds</h3></div>
     <div class="ui-panel-body">
