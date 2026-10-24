@@ -34,7 +34,7 @@ const Notes = {
     try { window.parent.postMessage({ type: 'forge:notes-open' }, '*'); } catch (e) {} // the forge scrolls the game into view
     document.body.appendChild(el);
     this._move = e => { if (!this.picking) return; const p = this.logical(e.clientX, e.clientY); this.hover = this.describe(p.x, p.y); this.ring(this.hover ? this.hover.at : p, !!this.hover); };
-    this._click = e => { if (!this.picking) return; const t = e.target; if (this.dlg && this.dlg.contains(t)) return; if (!this.canvas.contains(t) && t !== this.el && !t.classList.contains('vl-notes-ring') && !t.closest('.vl-notes-pin')) return; // a pin is a pick too: it sits on the thing it is about e.preventDefault(); e.stopPropagation(); const p = this.logical(e.clientX, e.clientY); this.pick(p); };
+    this._click = e => { if (!this.picking) return; const t = e.target; if (this.dlg && this.dlg.contains(t)) return; if (!this.canvas.contains(t) && t !== this.el && !t.classList.contains('vl-notes-ring') && !t.closest('.vl-notes-pin')) return; /* a pin is a pick too: it sits on the thing it is about */ e.preventDefault(); e.stopPropagation(); const p = this.logical(e.clientX, e.clientY); this.pick(p); };
     window.addEventListener('mousemove', this._move, true); window.addEventListener('click', this._click, true);
     document.body.classList.add('vl-notes-on'); this.pins();
   },
