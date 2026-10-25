@@ -306,6 +306,7 @@ class Game extends BaseControls\Control {
         if (isset($b['title'])) $g->title = mb_substr(trim((string) $b['title']), 0, 60) ?: $g->title;
         if (isset($b['status']) && in_array($b['status'], ['new', 'designed', 'building', 'playable', 'polished', 'published'], true)) $g->status = $b['status'];
         if (array_key_exists('price', $b)) $g->price = ($b['price'] === null || $b['price'] === '') ? null : round((float) $b['price'], 2);
+        if (array_key_exists('is_public', $b)) $g->isPublic = !empty($b['is_public']) ? 1 : 0; // listed on the landing page once published
         if (isset($b['tags'])) $g->tags = json_encode(array_values(array_filter(array_map(fn($t) => mb_substr(trim((string) $t), 0, 30), (array) $b['tags']))));
         if (isset($b['notes'])) $g->notes = mb_substr((string) $b['notes'], 0, 4000);
         if (array_key_exists('team_id', $b)) {

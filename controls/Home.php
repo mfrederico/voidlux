@@ -10,8 +10,25 @@ use \Flight as Flight;
 class Home extends BaseControls\Control {
     // nav: none — it IS the front door
     public function index($params = []): void {
+        $this->render('home/index', ['loggedIn' => Flight::isLoggedIn(), 'games' => self::publicGames()], false);
+    }
+    /** Published games their owners made public, newest first: what the world may play. */
+    public static function publicGames(): array {
         $games = [];
-        foreach (\app\Bean::find('game', "published_url <> '' ORDER BY published_at DESC") as $g) $games[] = ['title' => (string) $g->title, 'url' => (string) $g->publishedUrl, 'brief' => mb_substr((string) $g->brief, 0, 160), 'price' => $g->price === null || $g->price === '' ? null : (float) $g->price];
-        $this->render('home/index', ['loggedIn' => Flight::isLoggedIn(), 'games' => $games], false);
+        foreach (\app\Bean::find('game', "published_url <> '' AND is_public = 1 ORDER BY published_at DESC") as $g) {
+            $games[] = ['slug' => (string) $g->slug, 'title' => (string) $g->title, 'url' => (string) $g->publishedUrl, 'brief' => mb_substr((string) $g->brief, 0, 140), 'price' => $g->price === null ? null : (float) $g->price,
+                        'tags' => json_decode((string) $g->tags, true) ?: [], 'cover' => GameStore::cover((string) $g->slug) !== '', 'at' => (string) $g->publishedAt];
+        }
+        return $games;
+    }
+    /** A public game's cover picture (its latest playtest shot) for the landing page: no sign-in, public games only. */
+    public function cover($params = []): void {
+        $slug = (string) ($params['operation']->name ?? '');
+        $g = preg_match(GameStore::SLUG, $slug) ? \app\Bean::findOne('game', 'slug = ? AND is_public = 1 AND published_url <> ?', [$slug, '']) : null;
+        $id = $g ? GameStore::cover($slug) : '';
+        $base = $id !== '' ? GameStore::dir($slug) . '/.studio/soaks/' . $id : '';
+        $f = $base !== '' && is_file($base . '.png') ? $base . '.png' : ($base !== '' && is_file($base . '.jpg') ? $base . '.jpg' : '');
+        if ($f === '') { Flight::notFound(); return; }
+        header('Content-Type: ' . (str_ends_with($f, '.png') ? 'image/png' : 'image/jpeg')); header('Cache-Control: public, max-age=600'); readfile($f); exit;
     }
 }

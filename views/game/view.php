@@ -114,6 +114,7 @@ $slug = $game['slug'];
         <label>Title <input name="title"></label>
         <label>Status <select name="status"><option>new</option><option>designed</option><option>building</option><option>playable</option><option>polished</option><option>published</option></select></label>
         <label>Price (USD) <input name="price" type="number" step="0.01" min="0" placeholder="2.99"></label>
+        <label class="vl-check"><input name="is_public" type="checkbox"> Public: listed on voidlux.com for anyone to play, once published</label>
         <label>Tags <input name="tags" placeholder="arcade, shooter, mobile"></label>
         <label>Team <select name="team_id"><option value="0">Just me</option><?php foreach ($teams as $t): ?><option value="<?= (int) $t['id'] ?>"><?= h($t['name']) ?></option><?php endforeach; ?></select></label>
         <label>Notes <textarea name="notes" rows="3" placeholder="store blurb, what to screenshot, what is missing before launch"></textarea></label>
@@ -152,7 +153,7 @@ function playWith(q) { $('playFrame').src = `/games/${slug}/?${q}&r=${Date.now()
 function render(d) {
   G = d.game; $('statusPill').textContent = G.status; $('metaLine').textContent = `${G.template} template · ${G.checkpoints} checkpoints · last commit ${G.lastCommit || 'none'}`;
   renderTasks(G.taskList || []); renderSession(G.agent); renderCps(d.checkpoints); renderSoaks(d.soaks);
-  const f = $('cardForm'); if (document.activeElement && f.contains(document.activeElement)) {} else { f.title.value = G.title || ''; f.status.value = G.status || 'new'; f.price.value = G.price == null ? '' : G.price; f.tags.value = (G.tags || []).join(', '); f.notes.value = G.notes || ''; f.team_id.value = String(G.teamId || 0); }
+  const f = $('cardForm'); if (document.activeElement && f.contains(document.activeElement)) {} else { f.title.value = G.title || ''; f.status.value = G.status || 'new'; f.price.value = G.price == null ? '' : G.price; f.is_public.checked = !!G.isPublic; f.tags.value = (G.tags || []).join(', '); f.notes.value = G.notes || ''; f.team_id.value = String(G.teamId || 0); }
   $('shipInfo').innerHTML = `<b>last commit</b> ${Forge.esc(G.lastCommit || 'none')}<br><b>published</b> ${G.publishedAt ? Forge.esc(G.publishedAt) + (G.publishedUrl ? ' · <a href="' + Forge.esc(G.publishedUrl) + '" target="_blank">' + Forge.esc(G.publishedUrl) + '</a>' : ' · dist/ only') : 'never'}<br><b>last soak</b> ${G.lastSoak ? (G.lastSoak.ok ? '<span class="ok">ok</span>' : '<span class="bad">failing</span>') : 'none'}`;
 }
 function renderTasks(list) { $('tasks').innerHTML = list.length ? list.map(t => `<li class="${t.done ? 'done' : ''}">${t.done ? '✓' : '○'} ${Forge.esc(t.id)}: ${Forge.esc(t.text)}</li>`).join('') : '<li>no plan yet: run the pipeline</li>'; }
@@ -224,7 +225,7 @@ function toggleDocEdit() { docEditing = !docEditing; $('doc').style.display = do
 async function loadDoc() { const r = await Forge.api(`/game/doc/${slug}`); $('doc').value = r.text; $('docHtml').innerHTML = r.html; $('docMsg').textContent = 'loaded'; }
 async function saveDoc() { await Forge.api(`/game/doc/${slug}`, { text: $('doc').value }); $('docMsg').textContent = 'saved · ' + new Date().toLocaleTimeString(); refreshDue = true; await loadDoc(); if (docEditing) toggleDocEdit(); }
 async function publish() { $('pubBtn').disabled = true; $('pubMsg').textContent = 'building…'; try { const r = await Forge.api(`/game/publish/${slug}`, {}); $('pubMsg').innerHTML = `build ${Forge.esc(r.build)}` + (r.url ? ` · live at <a href="${Forge.esc(r.url)}" target="_blank">${Forge.esc(r.url)}</a>` : ' · dist/ only (no [forge] domain)'); refreshDue = true; } catch (e) { $('pubMsg').textContent = e.message; } $('pubBtn').disabled = false; }
-$('cardForm').onsubmit = async e => { e.preventDefault(); const f = e.target; try { render({ game: await Forge.api(`/game/card/${slug}`, { title: f.title.value, status: f.status.value, price: f.price.value === '' ? null : +f.price.value, tags: f.tags.value.split(',').map(s => s.trim()).filter(Boolean), notes: f.notes.value, team_id: +f.team_id.value }), checkpoints: <?= json_encode($checkpoints) ?>, soaks: <?= json_encode($soaks) ?> }); $('cardMsg').textContent = 'saved'; } catch (err) { $('cardMsg').textContent = err.message; } };
+$('cardForm').onsubmit = async e => { e.preventDefault(); const f = e.target; try { render({ game: await Forge.api(`/game/card/${slug}`, { title: f.title.value, status: f.status.value, price: f.price.value === '' ? null : +f.price.value, is_public: f.is_public.checked ? 1 : 0, tags: f.tags.value.split(',').map(s => s.trim()).filter(Boolean), notes: f.notes.value, team_id: +f.team_id.value }), checkpoints: <?= json_encode($checkpoints) ?>, soaks: <?= json_encode($soaks) ?> }); $('cardMsg').textContent = 'saved'; } catch (err) { $('cardMsg').textContent = err.message; } };
 // ---- the producer's notes: the game (kit-notes.js, in the iframe) posts them here; they batch in the Build sidebar ----
 let NOTES = [], notesFolder = 'open';
 const FOLDER = { open: 'awaiting verdict', sent: '✓ sent to build', done: 'scrapyard' };
