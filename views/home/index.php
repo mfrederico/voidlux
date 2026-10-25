@@ -96,7 +96,7 @@ a { color: inherit; }
         <?php foreach ($games as $g): ?>
         <a class="game" href="<?= h($g['url']) ?>" target="_blank" rel="noopener">
             <div class="cover">
-                <?php if ($g['cover']): ?><img src="/home/cover/<?= h($g['slug']) ?>" alt="" loading="lazy"><?php else: ?><span class="no">no cover yet</span><?php endif; ?>
+                <?php if ($g['cover']): ?><img src="/home/cover/<?= h($g['slug']) ?>" alt="" loading="lazy"<?php if ($g['gif']): ?> data-anim="/home/cover/<?= h($g['slug']) ?>?anim=1"<?php endif; ?>><?php else: ?><span class="no">no cover yet</span><?php endif; ?>
                 <div class="play"><span>&#9654; Play</span></div>
             </div>
             <div class="meta">
@@ -139,6 +139,8 @@ a { color: inherit; }
     }
     draw();
 })();
+// a cover with an animation plays its first seconds of gameplay while the pointer rests on it, and only then
+for (const im of document.querySelectorAll('img[data-anim]')) { const still = im.src; const card = im.closest('.game'); card.addEventListener('mouseenter', () => { im.src = im.dataset.anim; }); card.addEventListener('mouseleave', () => { im.src = still; }); }
 document.querySelectorAll('a[href^="#"]').forEach(a => a.addEventListener('click', e => { const t = document.querySelector(a.getAttribute('href')); if (t) { e.preventDefault(); t.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }));
 </script>
 </body>

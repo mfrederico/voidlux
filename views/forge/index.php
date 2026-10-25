@@ -7,7 +7,7 @@
 <div class="vl-grid">
 <?php foreach ($games as $g): $soak = $g['lastSoak']; $a = $g['agent']; $t = $g['tasks']; ?>
     <div class="vl-card vl-game">
-        <a class="vl-cover" href="/game/view/<?= h($g['slug']) ?>#play" title="play <?= h($g['title']) ?>"><?php if (!empty($g['cover'])): ?><img src="/game/soakshot/<?= h($g['slug']) ?>?id=<?= h($g['cover']) ?>" alt="" loading="lazy"><?php else: ?><span><?= h($g['title']) ?></span><?php endif; ?><b class="vl-play-badge">▶ PLAY</b></a>
+        <a class="vl-cover" href="/game/view/<?= h($g['slug']) ?>#play" title="play <?= h($g['title']) ?>"><?php if (!empty($g['cover'])): ?><img src="/game/soakshot/<?= h($g['slug']) ?>?id=<?= h($g['cover']) ?>" alt="" loading="lazy"<?php if (!empty($g['gif'])): ?> data-anim="/game/soakshot/<?= h($g['slug']) ?>?id=<?= h($g['gif']) ?>&gif=1"<?php endif; ?>><?php else: ?><span><?= h($g['title']) ?></span><?php endif; ?><b class="vl-play-badge">▶ PLAY</b></a>
         <a class="vl-card-title" href="/game/view/<?= h($g['slug']) ?>#play"><?= h($g['title']) ?> <?php if (!empty($a['busy'])): ?><span class="vl-pill live">● <?= h($a['mode']) ?></span><?php endif; ?></a>
         <div class="vl-brief"><?= h($g['brief']) ?></div>
         <div class="vl-meta"><?= h($g['template']) ?> · <?= h($g['status']) ?> · <?= $t['total'] ? 'tasks ' . $t['done'] . '/' . $t['total'] : 'no plan yet' ?> · <?= (int) $g['checkpoints'] ?> checkpoints<?php if ($soak): ?> · playtest <?= $soak['ok'] ? '<b class="ok">ok</b>' : '<b class="bad">' . h(($soak['errors'] ?: $soak['status'])) . '</b>' ?><?= $soak['fps'] ? ' ' . $soak['fps'] . ' fps' : '' ?><?php endif; ?></div>
@@ -28,3 +28,4 @@
         <a class="vl-card" href="<?= $games ? '/game/view/' . h($games[0]['slug']) . '#ship' : '/forge/summon' ?>"><div class="vl-card-title">&#9813; Checkpoints &amp; Ship</div>Every run is bracketed by a git tag; roll back any time. Publish builds the game and serves it at its own subdomain.<div class="vl-meta">Advanced → History · Ship tab</div></a>
     </div>
 </details>
+<script>for (const im of document.querySelectorAll('.vl-cover img[data-anim]')) { const still = im.src, a = im.closest('.vl-cover'); a.addEventListener('mouseenter', () => { im.src = im.dataset.anim; }); a.addEventListener('mouseleave', () => { im.src = still; }); }</script>

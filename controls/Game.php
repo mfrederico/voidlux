@@ -93,9 +93,9 @@ class Game extends BaseControls\Control {
     public function soakshot($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
         $id = (string) $this->getParam('id'); $base = preg_match('/^[0-9a-f-]+$/', $id) ? GameStore::dir($g->slug) . '/.studio/soaks/' . $id : '';
-        $f = $base !== '' && is_file($base . '.png') ? $base . '.png' : ($base !== '' && is_file($base . '.jpg') ? $base . '.jpg' : '');
+        $f = (string) $this->getParam('gif', '') === '1' ? ($base !== '' && is_file($base . '.gif') ? $base . '.gif' : '') : ($base !== '' && is_file($base . '.png') ? $base . '.png' : ($base !== '' && is_file($base . '.jpg') ? $base . '.jpg' : ''));
         if ($f === '') { Flight::notFound(); return; }
-        header('Content-Type: ' . (str_ends_with($f, '.png') ? 'image/png' : 'image/jpeg')); header('Cache-Control: no-store'); readfile($f); exit;
+        header('Content-Type: ' . (str_ends_with($f, '.png') ? 'image/png' : (str_ends_with($f, '.gif') ? 'image/gif' : 'image/jpeg'))); header('Cache-Control: no-store'); readfile($f); exit;
     }
 
     public function agent($params = []): void {

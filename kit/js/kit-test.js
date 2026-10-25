@@ -10,6 +10,7 @@
 // Test.assert(cond, what) records a failed check without throwing (the game goes on; the report lists it).
 const Test = {
   soak: 0, fast: 0, errors: [], checks: [], t: 0, scenes: {}, done: false, game: null,
+  gif: [], gifAt: -1, gifDrawn: -1, // the cover's animation: 25 frames, one every 0.2 game-seconds, from the first second of play
   init(game) {
     this.game = game; const p = game.params;
     if (p.seed) Rng.seed(+p.seed);
@@ -22,7 +23,12 @@ const Test = {
   error(err) { const s = String(err && err.stack || err && err.message || err); if (!this.errors.some(e => e.text === s)) this.errors.push({ text: s, at: +this.t.toFixed(1), scene: Game.state, score: Game.score }); },
   note(s) { if (!this.errors.some(e => e.text === s)) this.errors.push({ text: s, at: +this.t.toFixed(1), scene: Game.state, console: true }); },
   assert(ok, what) { if (!ok && !this.checks.some(c => c.what === what)) this.checks.push({ what, at: +this.t.toFixed(1), scene: Game.state }); return !!ok; },
-  tick(dt) { if (!this.soak || this.done) return; this.t += dt; this.scenes[Game.state] = (this.scenes[Game.state] || 0) + dt; if (this.t >= this.soak) this.finish(); },
+  tick(dt) { if (!this.soak || this.done) return; this.t += dt; this.scenes[Game.state] = (this.scenes[Game.state] || 0) + dt; this.snap(); if (this.t >= this.soak) this.finish(); },
+  snap() { // only once the game has left its title, only after a new frame was drawn, 0.2 game-seconds apart, 25 in all
+    if (this.gif.length >= 25 || Game.state === 'title' || !Game.prof || Game.prof.frames === this.gifDrawn) return;
+    if (this.gifAt >= 0 && this.t - this.gifAt < 0.2) return;
+    try { const c = document.createElement('canvas'); c.width = 320; c.height = 180; c.getContext('2d').drawImage(Game.canvas, 0, 0, 320, 180); this.gif.push(c.toDataURL('image/jpeg', 0.55)); this.gifAt = this.t; this.gifDrawn = Game.prof.frames; } catch (e) { this.gif.length = 25; }
+  },
   pump(step) {
     const orig = step; this.step = step;
     if (!this.soak) return;
@@ -40,7 +46,7 @@ const Test = {
   report() {
     const p = Game.prof, mem = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null;
     let shot = ''; try { const c = document.createElement('canvas'); c.width = 320; c.height = 180; c.getContext('2d').drawImage(Game.canvas, 0, 0, 320, 180); shot = c.toDataURL('image/jpeg', 0.6); } catch (e) {}
-    return { game: Game.id, seconds: +this.t.toFixed(1), fast: this.fast, shot, errors: this.errors, checks: this.checks, fps: +(1000 / p.frame).toFixed(1), updateMs: +p.upd.toFixed(2), drawMs: +p.draw.toFixed(2), slowFrames: p.slow, frames: p.frames, scenes: Object.fromEntries(Object.entries(this.scenes).map(([k, v]) => [k, +v.toFixed(1)])), score: Game.score, best: Game.best, heapMB: mem, ok: !this.errors.length && !this.checks.length };
+    return { game: Game.id, seconds: +this.t.toFixed(1), fast: this.fast, shot, gif: this.gif.length >= 5 ? this.gif : [], errors: this.errors, checks: this.checks, fps: +(1000 / p.frame).toFixed(1), updateMs: +p.upd.toFixed(2), drawMs: +p.draw.toFixed(2), slowFrames: p.slow, frames: p.frames, scenes: Object.fromEntries(Object.entries(this.scenes).map(([k, v]) => [k, +v.toFixed(1)])), score: Game.score, best: Game.best, heapMB: mem, ok: !this.errors.length && !this.checks.length };
   },
   finish() {
     if (this.done) return; this.done = true; const r = this.report(); window.__SOAK = r; console.log('SOAK ' + JSON.stringify(r));

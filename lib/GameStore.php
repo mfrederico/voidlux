@@ -125,7 +125,7 @@ class GameStore {
             'memberId' => (int) $g->memberId, 'teamId' => (int) $g->teamId, 'createdAt' => (string) $g->createdAt, 'publishedAt' => (string) $g->publishedAt, 'publishedUrl' => (string) $g->publishedUrl,
             'lastSoak' => $soaks[0] ?? null, 'checkpoints' => count(self::checkpoints($slug)), 'lastCommit' => mb_substr(trim($log), 0, 140),
             'tasks' => ['done' => count(array_filter($tasks, fn($t) => $t['done'])), 'total' => count($tasks)], 'taskList' => $tasks,
-            'agent' => self::agentState($slug), 'playUrl' => '/games/' . $slug . '/', 'cover' => self::cover($slug),
+            'agent' => self::agentState($slug), 'playUrl' => '/games/' . $slug . '/', 'cover' => self::cover($slug), 'gif' => self::gif($slug),
         ];
     }
     public static function tasks(string $slug): array {
@@ -234,6 +234,19 @@ class GameStore {
     }
     /** The newest playtest picture: a mid-game view of the game as it is now, or '' when none was taken yet. */
     public static function cover(string $slug): string { foreach (self::soaks($slug) as $k) if (!empty($k['shot'])) return (string) $k['id']; return ''; }
+    /** The latest playtest that left an animation (<id>.gif: the first seconds of play at 5 fps), or ''. */
+    public static function gif(string $slug): string { foreach (self::soaks($slug) as $k) if (is_file(self::dir($slug) . '/.studio/soaks/' . $k['id'] . '.gif')) return (string) $k['id']; return ''; }
+    /** A report's frames (data: URLs, 5 a second) stitched into <id>.gif with ImageMagick; a report without frames leaves no gif. */
+    public static function saveGif(string $sd, string $id, array $rep): void {
+        $frames = $rep['gif'] ?? null; if (!is_array($frames) || count($frames) < 5) return;
+        $tmp = sys_get_temp_dir() . '/vl-gif-' . bin2hex(random_bytes(4)); mkdir($tmp, 0700); $files = [];
+        foreach (array_slice($frames, 0, 30) as $i => $f) { if (!preg_match('#^data:image/(jpeg|png);base64,([A-Za-z0-9+/=]+)$#', (string) $f, $m)) continue; $p = sprintf('%s/f%02d.%s', $tmp, $i, $m[1] === 'png' ? 'png' : 'jpg'); file_put_contents($p, base64_decode($m[2])); $files[] = $p; }
+        if (count($files) >= 5) {
+            $cmd = 'timeout 60 convert -delay 20 -loop 0 ' . implode(' ', array_map('escapeshellarg', $files)) . ' -resize 320x180 -colors 128 -layers Optimize ' . escapeshellarg("$sd/$id.gif") . ' 2>&1';
+            exec($cmd, $out, $rc); if ($rc !== 0) error_log('ERROR soak gif: convert failed: ' . implode(' ', $out));
+        }
+        foreach ($files as $p) @unlink($p); @rmdir($tmp);
+    }
     public static function soak(string $slug): array { return json_decode((string) file_get_contents(self::dir($slug) . '/.studio/soaks/' . basename($slug) . '.json'), true) ?: []; }
     public static function soakUrl(string $slug): string { return (string) self::cfg('soak_url', self::baseUrl()) . '/games/' . $slug . '/'; }
     // ---- a soak in a viewer's own browser: the game page, while open, is a test machine. A request is a file in .studio/
@@ -256,7 +269,8 @@ class GameStore {
         $r = self::soakRequest($slug); if (!$r || $r['id'] !== $id) throw new \RuntimeException('no such soak request');
         $sd = self::studioDir($slug) . '/soaks'; if (!is_dir($sd)) mkdir($sd, 0775, true);
         if (preg_match('#^data:image/jpeg;base64,([A-Za-z0-9+/=]+)$#', (string) ($rep['shot'] ?? ''), $m)) file_put_contents($sd . '/' . $id . '.jpg', base64_decode($m[1]));
-        unset($rep['shot']); $rep['id'] = $id; $rep['secs'] = (int) $r['secs']; $rep['fast'] = (int) $r['fast']; $rep['runner'] = 'browser'; $rep['status'] = $rep['status'] ?? 'ok';
+        self::saveGif($sd, $id, $rep);
+        unset($rep['shot'], $rep['gif']); $rep['id'] = $id; $rep['secs'] = (int) $r['secs']; $rep['fast'] = (int) $r['fast']; $rep['runner'] = 'browser'; $rep['status'] = $rep['status'] ?? 'ok';
         $rep['ok'] = empty($rep['errors']) && empty($rep['checks']) && ($rep['status'] === 'ok');
         self::writeAtomic($sd . '/' . $id . '.json', json_encode($rep, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         @unlink(self::dir($slug) . '/.studio/soak-request.json');
@@ -294,7 +308,7 @@ class GameStore {
         exec($cmd, $out, $rc);
         $json = null; foreach (array_reverse($out) as $line) if (str_starts_with($line, '{')) { $json = json_decode($line, true); break; }
         $rep = is_array($json) ? $json : ['ok' => false, 'status' => $rc === 124 ? 'timeout' : 'crashed', 'browserErrors' => [['kind' => 'runner', 'text' => substr(implode("\n", $out), -1500)]]];
-        $rep['id'] = $id; $rep['secs'] = $secs; $rep['fast'] = $fast; unset($rep['notes']); if (!empty($rep['shot'])) { if (preg_match('#^data:image/jpeg;base64,([A-Za-z0-9+/=]+)$#', (string) $rep['shot'], $m) && !is_file($shot)) file_put_contents($sd . '/' . $id . '.jpg', base64_decode($m[1])); unset($rep['shot']); }
+        $rep['id'] = $id; $rep['secs'] = $secs; $rep['fast'] = $fast; unset($rep['notes']); self::saveGif($sd, $id, $rep); unset($rep['gif']); if (!empty($rep['shot'])) { if (preg_match('#^data:image/jpeg;base64,([A-Za-z0-9+/=]+)$#', (string) $rep['shot'], $m) && !is_file($shot)) file_put_contents($sd . '/' . $id . '.jpg', base64_decode($m[1])); unset($rep['shot']); }
         self::writeAtomic($sd . '/' . $id . '.json', json_encode($rep, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         $be = array_values(array_filter($rep['browserErrors'] ?? [], fn($e) => ($e['kind'] ?? '') !== 'network'));
         self::emit($slug, 'soak', ['id' => $id, 'ok' => (bool) ($rep['ok'] ?? false), 'status' => $rep['status'] ?? '', 'errors' => array_slice($rep['errors'] ?? [], 0, 10), 'browserErrors' => array_slice($be, 0, 10), 'checks' => $rep['checks'] ?? [], 'fps' => $rep['fps'] ?? null, 'slowFrames' => $rep['slowFrames'] ?? null, 'scenes' => $rep['scenes'] ?? [], 'score' => $rep['score'] ?? null, 'seconds' => $rep['seconds'] ?? null]);
@@ -623,6 +637,8 @@ class GameStore {
         foreach (glob(self::root() . '/kit/js/*.js') as $f) if (basename($f) !== 'kit-notes.js') copy($f, $dist . '/js/' . basename($f));
         if (is_dir($d . '/icons')) self::copyTree($d . '/icons', $dist . '/icons');
         if (is_dir($d . '/assets')) self::copyTree($d . '/assets', $dist . '/assets'); // sprites and pictures the game draws
+        $cv = self::cover($slug); foreach (['jpg', 'png'] as $x) if ($cv !== '' && is_file("$d/.studio/soaks/$cv.$x")) copy("$d/.studio/soaks/$cv.$x", "$dist/cover.$x"); // the store card's pictures ship with the game
+        $gf = self::gif($slug); if ($gf !== '') copy("$d/.studio/soaks/$gf.gif", "$dist/cover.gif");
         if (is_file($d . '/manifest.webmanifest')) copy($d . '/manifest.webmanifest', $dist . '/manifest.webmanifest');
         self::writeAtomic($dist . '/js/version.js', 'const BUILD = ' . json_encode(['id' => $bid, 'date' => date('Y-m-d'), 'channel' => 'stable']) . ";\n");
         $html = str_replace('../../kit/js/', 'js/', (string) file_get_contents($d . '/index.html'));
