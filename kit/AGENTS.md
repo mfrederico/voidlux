@@ -79,7 +79,8 @@ will not load is a console error, which the soak reports.
 - An SVG in the manifest draws like any picture (scaled smoothly, set `"smooth": true`); pixel art stays crisp by default.
 - A **code sprite** is `assets/<key>.js` with `"kind": "code"` in the manifest: one `Draw.define('<key>', half, (g, f) => { ... })`
   that draws at (0, 0), facing right, within radius `half` (plain canvas calls on `g`, `Draw.circle` and friends, `f` the
-  frame; `{ frames, fps }` as a fourth argument for a little life). The manifest loads the script; `Draw.pic` paints it
+  frame; `{ frames, fps }` as a fourth argument for a little life, or a whole cycle: a run, an idle, a jump, rigged as
+  parts posed per frame; `Draw.anim(key, Game.time, x, y, w, 0, 0, flip)` plays it, flip facing it left). The manifest loads the script; `Draw.pic` paints it
   once per frame into the atlas and stamps it scaled, so it costs what a picture costs. The sprite page can make these
   from a sketch (maker "drawing code"), and you may write one yourself the same way instead of a stroke-by-stroke
   drawer in render.js.

@@ -121,17 +121,23 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
       <div class="out">
         <h3>What the AI makes of it</h3>
         <div class="outbox" id="outbox"><span class="muted small">Draw something on the left, say what it is below, and press &gt;&gt;. The builder takes your strokes as the shape and draws a clean sprite from them, two takes: as SVG, or as drawing code the game runs, or through SpriteCook. Keep one into the game as it is or as pixels, or edit it first.</span></div>
-        <div class="row"><label>key <input id="aiKey" placeholder="bee" pattern="[a-z][a-z0-9_\-]{0,40}" style="width:120px"></label><button id="keepBtn" disabled>Keep as a sprite</button><button id="keepPxBtn" disabled class="hidden">Keep as pixels</button><button id="editBtn" disabled>Edit</button><button id="overBtn" disabled title="lay this take on the drawing pad and mark it up">✎ Draw over it</button></div>
+        <div class="row"><label>key <input id="aiKey" placeholder="bee" pattern="[a-z][a-z0-9_\-]{0,40}" style="width:120px"></label><button id="keepBtn" disabled>Keep as a sprite</button><button id="keepPxBtn" disabled class="hidden">Keep as pixels</button><button id="editBtn" disabled>Edit</button><button id="overBtn" disabled title="lay this take on the drawing pad and mark it up">✎ Draw over it</button><button id="animBtn" disabled title="rig this character into a run, idle, jump… as a code sprite">⟳ Animate…</button></div>
       </div>
     </div>
     <div id="aiStatus" class="muted small"></div>
+    <div id="animBox" class="hidden" style="display:grid;gap:8px;border:1px dashed var(--line);border-radius:10px;padding:10px">
+      <div class="lbl">Animate <span class="mono" id="animWhat"></span> — a cycle rigged in code: the character split into parts that move each frame</div>
+      <div class="row"><label>cycle <select id="animName"><option value="run">run</option><option value="walk">walk</option><option value="idle">idle</option><option value="jump">jump</option><option value="attack">attack</option><option value="hurt">hurt</option><option value="death">death</option><option value="fly">fly</option><option value="swim">swim</option></select></label><label>frames <input type="number" id="animFrames" min="2" max="24" value="8"></label><label>fps <input type="number" id="animFps" min="2" max="30" value="12"></label><label>key <input id="animKey" style="width:140px" pattern="[a-z][a-z0-9_\-]{0,40}"></label></div>
+      <textarea id="animNotes" rows="2" placeholder="style notes, e.g. “ninja style: low crouching run, arms trailing behind, scarf streaming; it is a side-scroller, facing right”"></textarea>
+      <div class="row"><button class="primary" id="animGo">Animate &gt;&gt;</button><button id="animCancel">cancel</button><span class="muted small">facing right; the game flips it to run left (Draw.anim(key, Game.time, x, y, w, 0, 0, flip))</span></div>
+    </div>
     <details id="jobsBox"><summary class="lbl" style="cursor:pointer">Everything the builder has made from your sketches <span id="jobsN" class="muted"></span></summary>
       <p class="muted small">Every job, newest first, with its takes. Click a take to choose it, set the key, then Keep or Edit above. A job is scratch: nothing here is in the game until you keep it.</p>
       <div id="jobs" class="jobs"></div></details>
   </section>
   <div id="askSave" role="dialog" aria-label="unsaved drawing"><div class="ask"><p>You changed the drawing. Save it before loading another?</p><div class="row"><button class="primary" id="askYes">Save it</button><button id="askNo">Don't save</button><button id="askStay">Stay here</button></div></div></div>
   <div id="viewer" role="dialog" aria-label="a take, full screen">
-    <div class="vhead"><span class="mono" id="vTitle"></span><div class="row"><button id="vKeep" class="primary">Keep</button><button id="vKeepPx">Keep as pixels</button><button id="vEdit">Edit</button><button id="vOver" title="lay this take on the drawing pad and mark it up">✎ Draw over this</button><button id="vClose">✕ close</button></div></div>
+    <div class="vhead"><span class="mono" id="vTitle"></span><div class="row"><button id="vKeep" class="primary">Keep</button><button id="vKeepPx">Keep as pixels</button><button id="vEdit">Edit</button><button id="vOver" title="lay this take on the drawing pad and mark it up">✎ Draw over this</button><button id="vAnim" title="rig this character into a run, idle, jump… as a code sprite">⟳ Animate…</button><button id="vClose">✕ close</button></div></div>
     <div class="vstage" id="vStage"></div>
     <div class="vfoot"><div class="muted small" id="vNote"></div><div class="refine"><textarea id="vRefine" rows="2" placeholder="refine this: e.g. “make the snout longer and add a cream stripe along the back”"></textarea><button id="vGo" class="primary">Refine this &gt;&gt;</button></div><div class="small" id="vStatus"></div></div>
   </div>
@@ -144,7 +150,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
       <h3>Files not in the game</h3><div id="listLoose" class="muted small"></div>
     </aside>
     <section class="panel" id="editor">
-      <div class="head"><div><h2 id="title">no sprite</h2><div class="meta" id="meta"></div></div><div class="row"><button id="useBtn">Use in game</button><button id="dlBtn">Download</button><button class="danger" id="delBtn">Delete</button><button class="primary" id="saveBtn">Save</button></div></div>
+      <div class="head"><div><h2 id="title">no sprite</h2><div class="meta" id="meta"></div></div><div class="row"><button id="useBtn">Use in game</button><button id="animCurBtn" title="rig this sprite into a run, idle, jump… as a new code sprite">⟳ Animate…</button><button id="dlBtn">Download</button><button class="danger" id="delBtn">Delete</button><button class="primary" id="saveBtn">Save</button></div></div>
       <div id="empty" class="muted">Pick a sprite on the left, make a new one, or ask the builder for one.</div>
       <div id="pix" class="hidden" style="display: grid; gap: 12px;">
         <div class="row tools" id="tools">
@@ -351,9 +357,11 @@ function renderCode(text, size, frame) {
   const key = 'take:' + (++takeN); Draw.setPx(Math.max(1, Math.min(4, Math.ceil(size / (def.half * 2))))); Draw.define(key, def.half, def.paint, def.o);
   Draw.pic(key, size / 2, size / 2, size * 0.9, size * 0.9, 0, frame || 0); Draw.painters.delete(key); return { canvas: c, def };
 }
-async function takeThumb(img, url) { // a .js take shows as its rendering; anything else is the file itself
-  if (!/\.js$/i.test(url)) { img.src = url; return; }
-  try { const text = await (await fetch(url, { cache: 'no-store' })).text(); img.src = renderCode(text, 144).canvas.toDataURL(); } catch (e) { img.alt = 'code take: ' + e.message; img.title = e.message; }
+async function takeThumb(img, url) { // a .js take shows as its rendering, and moves if it has frames; anything else is the file itself
+  if (!/\.js(\?|$)/i.test(url)) { img.src = url; return; }
+  try { const text = await (await fetch(url, { cache: 'no-store' })).text(); const r = renderCode(text, 144, 0); img.src = r.canvas.toDataURL();
+    if (r.def.o && r.def.o.frames > 1) { let f = 0; const t = setInterval(() => { if (!img.isConnected) { clearInterval(t); return; } f = (f + 1) % r.def.o.frames; try { img.src = renderCode(text, 144, f).canvas.toDataURL(); } catch (e) { clearInterval(t); } }, 1000 / (r.def.o.fps || 8)); } }
+  catch (e) { img.alt = 'code take: ' + e.message; img.title = e.message; }
 }
 let codeT = null, codeFrame = 0, codeAnim = null;
 function codePreview() { clearInterval(codeAnim); const cv = el('codeCv'), g = cv.getContext('2d'); g.clearRect(0, 0, cv.width, cv.height); el('codeErr').textContent = '';
@@ -364,18 +372,19 @@ function codeSet(text) { el('codeSrc').value = text; show('code'); codePreview()
 el('codeSrc').oninput = () => { dirty = true; clearTimeout(codeT); codeT = setTimeout(codePreview, 250); };
 
 // ---- the viewer: one take, full screen; Keep / Edit act on it; "refine this" sends it back to the builder with an instruction ----
-let V = null; // { job, file, url }
+let V = null, vAnimT = null; // { job, file, url }; the viewer's frame timer for a code animation
 async function openViewer(job, file, url, note) {
   V = { job, file, url }; const st = el('vStage'); st.innerHTML = ''; el('vTitle').textContent = `${file} · ${el('aiKey').value || 'no key yet'}`; el('vNote').textContent = note || ''; el('vStatus').textContent = ''; el('vRefine').value = '';
   const isCode = /\.js(\?|$)/i.test(url), isSvg = /\.svg(\?|$)/i.test(url);
   try {
-    if (isCode) { const text = await (await fetch(url, { cache: 'no-store' })).text(); const r = renderCode(text, Math.min(768, Math.floor(Math.min(innerWidth, innerHeight) * 0.9)), 0); st.appendChild(r.canvas); }
+    if (isCode) { const text = await (await fetch(url, { cache: 'no-store' })).text(); const n = Math.min(768, Math.floor(Math.min(innerWidth, innerHeight) * 0.66)), r = renderCode(text, n, 0); st.appendChild(r.canvas);
+      clearInterval(vAnimT); if (r.def.o && r.def.o.frames > 1) { let f = 0; const cv = r.canvas, g = cv.getContext('2d'); vAnimT = setInterval(() => { f = (f + 1) % r.def.o.frames; try { g.clearRect(0, 0, n, n); g.drawImage(renderCode(text, n, f).canvas, 0, 0); } catch (e) {} }, 1000 / (r.def.o.fps || 8)); el('vNote').textContent = (note || '') + ` · ${r.def.o.frames} frames at ${r.def.o.fps || 8} fps`; } }
     else { const im = document.createElement('img'); im.alt = file; im.className = isSvg ? '' : 'px'; const n = Math.max(160, Math.floor(Math.min(innerWidth * 0.92, innerHeight * 0.66))); im.width = im.height = n; im.style.width = im.style.height = n + 'px'; im.onerror = () => { st.innerHTML = `<div class="msg err">could not load ${esc(file)}</div>`; }; im.src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(); st.appendChild(im); }
   } catch (e) { st.innerHTML = `<div class="msg err">${esc(e.message)}</div>`; }
   el('vKeep').textContent = isSvg ? 'Keep as SVG' : isCode ? 'Keep as code' : 'Keep as a sprite'; el('vKeepPx').classList.toggle('hidden', !(isSvg || isCode)); el('vEdit').textContent = isSvg ? 'Edit the SVG' : isCode ? 'Edit the code' : 'Edit its pixels';
   el('viewer').classList.add('open'); el('vRefine').focus();
 }
-function closeViewer() { el('viewer').classList.remove('open'); V = null; }
+function closeViewer() { el('viewer').classList.remove('open'); V = null; clearInterval(vAnimT); }
 el('vClose').onclick = closeViewer; el('viewer').addEventListener('click', e => { if (e.target === el('viewer') || e.target === el('vStage')) closeViewer(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && V) closeViewer(); });
 el('vKeep').onclick = () => { closeViewer(); el('keepBtn').click(); }; el('vKeepPx').onclick = () => { closeViewer(); el('keepPxBtn').click(); }; el('vEdit').onclick = () => { closeViewer(); el('editBtn').click(); };
@@ -485,6 +494,23 @@ async function drawOver(jobId, file, url, note, at) {
 }
 el('overBtn').onclick = () => { if (!cand) return; const sk = SK || {}; drawOver(sk.id, cand.replace(/^.*\//, ''), cand, '', sk.at); };
 el('vOver').onclick = () => { if (V) drawOver(V.job, V.file, V.url, el('vNote').textContent, (SK && SK.id === V.job) ? SK.at : 0); };
+// ---- animate: a take (refine: the job and the file) or a kept sprite (asset: its key) becomes a code sprite with frames ----
+let animTarget = null;
+function openAnim(target, label) { animTarget = target; el('animWhat').textContent = label; const base = (el('aiKey').value.trim() || (target.asset || 'sprite')).replace(/-(run|walk|idle|jump|attack|hurt|death|fly|swim)$/, ''); el('animKey').value = `${base}-${el('animName').value}`; el('animKey').dataset.base = base; el('animBox').classList.remove('hidden'); el('animNotes').focus(); el('animBox').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+el('animName').onchange = () => { const b = el('animKey').dataset.base; if (b) el('animKey').value = `${b}-${el('animName').value}`; };
+el('animCancel').onclick = () => { el('animBox').classList.add('hidden'); animTarget = null; };
+el('animBtn').onclick = () => { if (!cand) return; const sk = SK || {}; openAnim({ refine: { id: sk.id, file: cand.replace(/^.*\//, '').replace(/\?.*$/, '') } }, cand.replace(/^.*\//, '').replace(/\?.*$/, '')); };
+el('vAnim').onclick = () => { if (!V) return; const t = { refine: { id: V.job, file: V.file.replace(/\?.*$/, '') } }; closeViewer(); openAnim(t, t.refine.file); };
+el('animCurBtn').onclick = () => { if (!cur || !entry) { say('save the sprite first, then animate it', 'err'); return; } openAnim({ asset: cur }, cur); };
+el('animGo').onclick = async () => {
+  if (!animTarget) return; const key = el('animKey').value.trim(); if (!KEY_RE.test(key)) { say('the key is lowercase letters, digits, - and _, starting with a letter', 'err'); el('animKey').focus(); return; }
+  el('animGo').disabled = true; el('aiStatus').textContent = 'sending the character to the builder to rig…';
+  try {
+    const body = Object.assign({ animate: { name: el('animName').value, frames: parseInt(el('animFrames').value, 10) || 8, fps: parseInt(el('animFps').value, 10) || 12, notes: el('animNotes').value.trim() }, note: el('animNotes').value.trim(), size: parseInt(el('aiSize').value, 10), key, style: STYLE[el('aiStyle').value], pixel: el('aiStyle').value !== 'hd' }, animTarget);
+    const r = await fetch(apiUrl('sketch'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+    SK = j; remember(); el('animBox').classList.add('hidden'); showOut(null); el('aiKey').value = key; el('aiStatus').textContent = (j.queued ? 'the builder is busy: the animation waits for its next run. ' : 'the builder is rigging it. ') + 'Two cycles appear on the right when it is done; click one to watch it move.'; clearInterval(skT); skT = setInterval(pollSketch, 4000); el('outbox').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (e) { el('aiStatus').textContent = 'not sent: ' + e.message; } finally { el('animGo').disabled = false; }
+};
 function askThenLoad(job) {
   if (!padDirty) { loadJob(job); return; }
   const box = el('askSave'); box.classList.add('open'); const done = () => { box.classList.remove('open'); for (const id of ['askYes', 'askNo', 'askStay']) el(id).onclick = null; };
@@ -512,7 +538,7 @@ function showOut(j) {
   cand = j.base + files[0]; pickCand(); if (!el('aiKey').value) el('aiKey').value = j.key || '';
 }
 const candIsSvg = () => /\.svg(\?|$)/i.test(cand || ''), candIsCode = () => /\.js(\?|$)/i.test(cand || '');
-function pickCand() { const svg = candIsSvg(), code = candIsCode(); el('keepBtn').disabled = el('editBtn').disabled = el('keepPxBtn').disabled = el('overBtn').disabled = !cand; el('keepBtn').textContent = svg ? 'Keep as SVG' : code ? 'Keep as code' : 'Keep as a sprite'; el('keepPxBtn').classList.toggle('hidden', !(svg || code)); el('editBtn').textContent = svg ? 'Edit the SVG' : code ? 'Edit the code' : 'Edit its pixels'; }
+function pickCand() { const svg = candIsSvg(), code = candIsCode(); el('keepBtn').disabled = el('editBtn').disabled = el('keepPxBtn').disabled = el('overBtn').disabled = el('animBtn').disabled = !cand; el('keepBtn').textContent = svg ? 'Keep as SVG' : code ? 'Keep as code' : 'Keep as a sprite'; el('keepPxBtn').classList.toggle('hidden', !(svg || code)); el('editBtn').textContent = svg ? 'Edit the SVG' : code ? 'Edit the code' : 'Edit its pixels'; }
 el('goBtn').onclick = async () => {
   const subj = el('aiSubject').value.trim(), n = parseInt(el('aiSize').value, 10), st = el('aiStyle').value;
   if (!subj && !padStrokes.length && !padImg) { el('aiSubject').focus(); say('draw something, or say what you want, or both', 'err'); return; }
@@ -532,7 +558,7 @@ async function loadJobs() {
   try { const j = await (await fetch(apiUrl('sketches'), { cache: 'no-store' })).json(); const box = el('jobs'); box.innerHTML = ''; const jobs = j.jobs; el('jobsN').textContent = j.jobs.length ? `(${j.jobs.length})` : '(none yet)';
     for (const job of j.jobs) {
       const d = document.createElement('div'); d.className = 'job'; const when = new Date(job.at * 1000).toLocaleString(), files = (job.result && job.result.files) || [];
-      d.innerHTML = `${job.sketch ? `<img class="sk" alt="" title="load this drawing into the pad" src="${esc(job.base)}sketch.png">` : '<div class="sk muted small" style="display:grid;place-items:center;cursor:pointer" title="load its description into the pad">no drawing</div>'}<div><div><b>${esc(job.note || '(no description)')}</b> <span class="muted small">· ${esc(when)} · ${esc(job.maker === 'svg' ? 'drawn by the builder as SVG' : job.maker === 'code' ? 'drawing code by the builder' : 'SpriteCook')}${job.refine ? ' · refines ' + esc(job.refine.file) + ' of an earlier job' : ''}${job.from ? (job.from.over ? ' · marks drawn over ' + esc(job.from.liked) + ' of an earlier job' : ' · a revision, the builder saw its earlier takes') : ''} · key ${esc(job.key)}</span> <button class="small" data-job-rm="${esc(job.id)}" style="float:right">remove</button></div>
+      d.innerHTML = `${job.sketch ? `<img class="sk" alt="" title="load this drawing into the pad" src="${esc(job.base)}sketch.png">` : '<div class="sk muted small" style="display:grid;place-items:center;cursor:pointer" title="load its description into the pad">no drawing</div>'}<div><div><b>${esc(job.note || '(no description)')}</b> <span class="muted small">· ${esc(when)} · ${esc(job.maker === 'svg' ? 'drawn by the builder as SVG' : job.maker === 'code' ? 'drawing code by the builder' : 'SpriteCook')}${job.refine ? ' · refines ' + esc(job.refine.file) + ' of an earlier job' : ''}${job.from ? (job.from.over ? ' · marks drawn over ' + esc(job.from.liked) + ' of an earlier job' : ' · a revision, the builder saw its earlier takes') : ''}${job.animate ? ' · ' + esc(job.animate.name) + ' cycle, ' + job.animate.frames + ' frames at ' + job.animate.fps + ' fps' : ''} · key ${esc(job.key)}</span> <button class="small" data-job-rm="${esc(job.id)}" style="float:right">remove</button></div>
         ${job.result ? (job.result.ok === false ? `<div class="msg err">${esc(job.result.error || 'failed')}</div>` : `<div class="muted small">${esc(job.result.note || '')}</div><div class="takes">${files.map(f => `<img alt="" title="${esc(f)}" data-take="${esc(job.base + f)}" data-key="${esc(job.key)}" data-size="${job.size}" data-job="${esc(job.id)}" data-i="${jobs.indexOf(job)}" data-note="${esc(job.result.note || '')}">`).join('')}</div>`) : `<div class="muted small">${job.saved ? 'a saved drawing, not sent: load it into the pad and press >> when it is ready' : j.busy ? 'the builder is working on it…' : 'no result yet'}</div>`}</div>`;
       d.querySelector('.sk').onclick = () => askThenLoad(job);
       box.appendChild(d);
