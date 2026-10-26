@@ -447,7 +447,7 @@ class GameStore {
         if (!empty($b['refine']) && is_array($b['refine'])) {
             $pid = (string) ($b['refine']['id'] ?? ''); $pf = basename((string) ($b['refine']['file'] ?? '')); $pdir = self::sketchDir($slug, $pid);
             if (!preg_match(self::SKETCH_ID, $pid) || !preg_match('/^out-[0-9]+\.(svg|js|png)$/', $pf) || !is_file("$pdir/$pf")) throw new \InvalidArgumentException('the take to refine does not exist');
-            if ($note === '') throw new \InvalidArgumentException('say what to change');
+            if ($note === '' && !$anim) throw new \InvalidArgumentException('say what to change'); // an animation needs no instruction beyond its cycle
             $ext = pathinfo($pf, PATHINFO_EXTENSION); $maker = $ext === 'svg' ? 'svg' : ($ext === 'js' ? 'code' : 'spritecook');
             copy("$pdir/$pf", "$dir/base.$ext"); foreach (['sketch.png', 'sketch.svg', 'base.svg', 'base.js', 'base.png'] as $f) if ($f !== "base.$ext" && is_file("$pdir/$f") && !is_file("$dir/$f")) copy("$pdir/$f", "$dir/" . (str_starts_with($f, 'base.') ? 'earlier-' . $f : $f));
             if (!$has && is_file("$dir/sketch.png")) $has = true;
