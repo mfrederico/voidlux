@@ -37,6 +37,7 @@ const Move = {
     el('mDup').onclick = () => this.dupMotion(); el('mRename').onclick = () => this.renameMotion(); el('mAsk').onclick = () => { if (cur && entry) openAnim({ asset: cur }, cur); };
     for (const id of ['mSecs', 'mFps', 'mLoop']) el(id).onchange = () => { const M = this.M(); if (!M) return; this.snapshot(); M.secs = Math.max(0.1, +el('mSecs').value || 1); M.fps = Math.max(2, Math.min(30, +el('mFps').value || 12)); M.loop = el('mLoop').checked; this.tlUI(); this.draw(); };
     el('mBones').onchange = () => this.draw(); el('mOnion').onchange = () => this.draw(); el('mGround').onchange = () => this.draw(); el('kHold').onclick = () => this.holdPrev();
+    el('mGroundBottom').onclick = () => this.setGround(this.half); el('mGroundFeet').onclick = () => this.setGround(this.feetY);
     el('mPlay').onclick = () => this.play(); el('kFlip').onclick = () => this.flipBend(); el('kAdd').onclick = () => this.addKey(); el('kDup').onclick = () => this.dupKey(); el('kDel').onclick = () => this.delKey(); el('kMirror').onclick = () => this.mirrorKey();
     el('kT').onchange = () => { const K = this.K(); if (!K) return; this.snapshot(); K.t = Math.max(0, Math.min(1, +el('kT').value || 0)); this.M().keys.sort((a, b) => a.t - b.t); this.keyI = this.M().keys.indexOf(K); this.tlUI(); this.draw(); };
     el('kEase').onchange = () => { const K = this.K(); if (K) { this.snapshot(); K.ease = el('kEase').value; } };
@@ -74,7 +75,7 @@ const Move = {
       if (this.kind === 'rig') {
         this.text = await (await fetch(ASSET(entry.file) + '?t=' + Date.now(), { cache: 'no-store' })).text();
         this.R = this.evalRig(this.text); this.half = this.R.half; const names = Object.keys(this.R.motions);
-        { const W = Rig.solve(this.R, { pose: {}, root: { x: 0, y: 0 }, ik: {} }); let gy = -Infinity; for (const [cn, ch] of Object.entries(this.R.chains)) if (/leg|foot/i.test(cn + ch.bones[1])) gy = Math.max(gy, W[ch.bones[1]].ty); if (gy === -Infinity) for (const w of Object.values(W)) gy = Math.max(gy, w.ty); this.groundY = gy; } // the ground: where the feet stand at rest
+        this.feetY = this.restFeet(); this.groundY = this.R.ground !== null ? this.R.ground : this.feetY; // the ground: the rig's own, else where the feet stand at rest
         el('moveSub').textContent = `a rig: ${Object.keys(this.R.bones).length} bones, ${Object.keys(this.R.chains).length} IK chains, ${this.R.parts.length} parts`;
         el('mMotion').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join(''); this.pickMotion(names[0] || '');
       } else {
@@ -89,6 +90,8 @@ const Move = {
     } catch (e) { el('moveSub').textContent = 'could not load it: ' + e.message; }
     this.draw();
   },
+  restFeet() { const W = Rig.solve(this.R, { pose: {}, root: { x: 0, y: 0 }, ik: {} }); let gy = -Infinity; for (const [cn, ch] of Object.entries(this.R.chains)) if (/leg|foot/i.test(cn + ch.bones[1])) gy = Math.max(gy, W[ch.bones[1]].ty); if (gy === -Infinity) for (const w of Object.values(W)) gy = Math.max(gy, w.ty); return gy; },
+  setGround(y) { this.groundY = Math.round(y * 10) / 10; this.R.ground = this.groundY; this.groundDirty = true; this.draw(); el('rigMsg').textContent = `ground at ${this.groundY} (${this.groundY >= this.half - 0.05 ? 'the bottom of the box' : 'inside the box'}); Save the rig to keep it`; },
   evalRig(text) { let def = null, name = ''; const real = Rig.define; Rig.define = (k, r) => { def = r; name = k; }; try { new Function('Rig', 'Draw', 'TAU', 'U', text)(Rig, Draw, TAU, U); } finally { Rig.define = real; } if (!def) throw new Error('no Rig.define in the file'); const key = 'move:' + cur, R = Rig.define(key, def); R.realKey = name; if (name && name !== key) Rig.rigs.set(name, R); return R; },
   names() { el('boneNames').innerHTML = (this.PLANS[this.plan] || []).map(n => `<option value="${n}">`).join(''); },
   // ---- the stage ----
@@ -133,7 +136,7 @@ const Move = {
       this.joints.push({ name, x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, parent, note: '' }); this.sel = this.joints.length - 1; this.hintsUI(); this.draw();
       const nextName = (this.PLANS[this.plan] || []).find(n => !this.joints.some(j => j.name === n)); el('hintMsg').textContent = nextName ? `placed ${name}${parent ? ' from ' + parent : ' (root)'} · next: ${nextName}${(this.TREE[this.plan] || {})[nextName] ? ' from ' + this.TREE[this.plan][nextName] : ''}` : `placed ${name}`; return;
     }
-    if (this.kind === 'rig') { const hit = this.hitBone(p); if (!hit) return; if (!this.K()) { if (!this.M()) { say('make a motion first', 'err'); return; } this.addKey(); say('a key was made at the cursor for this pose', 'ok'); } this.drag = this.hitBone(p); if (this.drag) { this.snapshot(); if (this.drag.chain) { const W = Rig.solve(this.R, this.poseNow()), ch = this.R.chains[this.drag.chain]; this.drag.elbow = [W[ch.bones[0]].tx, W[ch.bones[0]].ty]; } el('tlInfo').textContent = 'dragging ' + this.drag.name; this.draw(); } }
+    if (this.kind === 'rig') { const hit = this.hitBone(p); if (!hit && el('mGround').checked && this.groundY !== undefined && Math.abs(p.y - this.groundY) < 8 / this.k) { this.drag = { ground: true, name: 'ground' }; el('tlInfo').textContent = 'dragging the ground line'; return; } if (!hit) return; if (!this.K()) { if (!this.M()) { say('make a motion first', 'err'); return; } this.addKey(); say('a key was made at the cursor for this pose', 'ok'); } this.drag = this.hitBone(p); if (this.drag) { this.snapshot(); if (this.drag.chain) { const W = Rig.solve(this.R, this.poseNow()), ch = this.R.chains[this.drag.chain]; this.drag.elbow = [W[ch.bones[0]].tx, W[ch.bones[0]].ty]; } el('tlInfo').textContent = 'dragging ' + this.drag.name; this.draw(); } }
   },
   move(e) {
     if (!this.drag) { if (this.kind !== 'rig' || !this.R) return; const h = this.hitBone(this.world(e)), was = this.hover && this.hover.name; this.hover = h; if ((h && h.name) !== was) this.draw(); return; } const p = this.world(e);

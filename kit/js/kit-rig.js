@@ -4,6 +4,8 @@
 //
 //   Rig.define('ninja', {
 //     half: 24,                                   the radius the drawn figure fits in, like a code sprite
+//     ground: 24,                                 where the feet stand, in the rig's space (y down; half = the box's bottom);
+//                                                 Draw.rig(…) with a stand=true last argument puts that line at (x, y)
 //     bones: {                                    name → { parent, x, y, len, angle }: the origin sits at the parent's tip
 //       hips:   { parent: null, x: 0, y: 2, len: 6, angle: -1.5708 },      plus (x, y) in the parent's space; the root's
 //       spine:  { parent: 'hips', len: 10, angle: 0 },                     (x, y) is where the figure's hips sit; angle is
@@ -32,7 +34,7 @@
 const Rig = {
   rigs: new Map(),
   define(key, r) {
-    const rig = { key, half: r.half || 24, bones: {}, order: [], chains: r.chains || {}, parts: (r.parts || []).slice().sort((a, b) => (a.z || 0) - (b.z || 0)), motions: r.motions || {} };
+    const rig = { key, half: r.half || 24, ground: typeof r.ground === 'number' ? r.ground : null, bones: {}, order: [], chains: r.chains || {}, parts: (r.parts || []).slice().sort((a, b) => (a.z || 0) - (b.z || 0)), motions: r.motions || {} };
     for (const [n, b] of Object.entries(r.bones || {})) rig.bones[n] = { name: n, parent: b.parent || null, x: b.x || 0, y: b.y || 0, len: b.len || 0, angle: b.angle || 0 };
     // parents before children, whatever the order written
     const seen = new Set(); const visit = n => { if (seen.has(n)) return; const b = rig.bones[n]; if (!b) throw new Error(`rig ${key}: bone ${n} is missing`); if (b.parent) visit(b.parent); seen.add(n); rig.order.push(n); };
