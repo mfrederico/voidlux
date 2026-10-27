@@ -130,6 +130,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
     <aside class="list">
       <div class="row"><button class="primary" id="newBtn">+ New</button><button id="importBtn">Import…</button><input type="file" id="importFile" accept=".png,.svg,.gif,.webp,.jpg,.jpeg" hidden></div>
       <form class="newform" id="newForm"><input id="newKey" placeholder="key, e.g. cow" pattern="[a-z][a-z0-9_\-]{0,40}" required><div class="row"><label>size <select id="newSize"><option>8</option><option>16</option><option>24</option><option selected>32</option><option>48</option><option>64</option><option>96</option><option>128</option></select></label><button class="primary">Create</button></div></form>
+      <div id="moveJobs" class="hidden" style="display:grid;gap:6px;padding:8px;border:1px dashed var(--line);border-radius:10px"><div class="lbl">Takes from the artist for <span id="moveJobsFor" class="mono"></span></div><div id="moveJobsList" style="display:grid;gap:6px"></div></div>
       <input type="search" id="q" placeholder="find a sprite">
       <h3>In the game</h3><div id="listIn" class="muted small">loading…</div>
       <h3>Files not in the game</h3><div id="listLoose" class="muted small"></div>
@@ -219,7 +220,6 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
             <div class="row" id="kFields"><label>key at <input type="number" id="kT" step="0.01" min="0" max="1" style="width:64px"></label><label>ease <select id="kEase"><option value="io">in-out</option><option value="lin">linear</option></select></label><span class="muted small" id="kInfo"></span></div>
             <p class="muted small" style="margin:0">Just grab the figure: drag a hand or foot and the limb follows (its elbow or knee folds the natural way as you go); drag another joint to turn its bone; drag the hips to move the body. Dragging between keys makes a key there. Drag on the bar to scrub, drag a diamond to retime it. Feet snap to the ground line when near it; drag the line itself to put the ground where the game has it (or press ground = bottom); knees and elbows stop at their limits. Hold Shift to turn a bone in 15° steps or to move the hips along one axis. Onion skins show the keys before (blue) and after (orange). Keys: space plays, ← → step, [ ] jump keys, K adds a key, D duplicates, H holds the previous pose, M mirrors, F flips the selected joint, Delete removes. Click a joint to select it (it stays highlighted); click empty stage to clear.</p>
             <div class="row"><button class="primary" id="rigSave">Save the rig</button><span class="muted small" id="rigMsg"></span></div>
-            <div id="moveJobs" class="hidden" style="display:grid;gap:6px"><div class="lbl">Takes from the artist for this rig</div><div id="moveJobsList" style="display:grid;gap:6px"></div></div>
           </div>
         </aside>
       </div>
@@ -239,7 +239,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
 <script>
 const el = id => document.getElementById(id);
 const LEDE = { make: "Draw a rough sketch, say what it is, press >>: the artist draws two takes. Keep one and it is in the game as Draw.pic('key', x, y, size).", draw: 'Edit a kept sprite: its pixels frame by frame, its SVG source, or its drawing code, with a live preview.', move: 'Give a kept sprite motion. Today: the artist animates it as code frames. Next: a skeleton rig with keyframes and inverse kinematics.' };
-function showTab(name) { if (!['make', 'draw', 'move'].includes(name)) name = 'make'; for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('on', a.dataset.tab === name); for (const s of document.querySelectorAll('.tab')) s.classList.toggle('hidden', s.id !== 'tab-' + name); el('lede').textContent = LEDE[name]; if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name); if (name === 'move') moveRefresh(); }
+function showTab(name) { if (!['make', 'draw', 'move'].includes(name)) name = 'make'; for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('on', a.dataset.tab === name); for (const s of document.querySelectorAll('.tab')) s.classList.toggle('hidden', s.id !== 'tab-' + name); el('lede').textContent = LEDE[name]; if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name); if (name === 'move') moveRefresh(); else el('moveJobs').classList.add('hidden'); }
 for (const a of document.querySelectorAll('#tabs a')) a.onclick = e => { e.preventDefault(); showTab(a.dataset.tab); };
 window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
 function moveRefresh() { if (typeof Move !== 'undefined') Move.refresh(); }
