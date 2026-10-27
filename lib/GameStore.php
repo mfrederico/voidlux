@@ -57,11 +57,20 @@ class GameStore {
     }
     /** The games a member may open: their own, and their teams'. */
     public static function forMember(int $memberId, bool $all = false): array {
-        if ($all) return array_values(Bean::findAll('game', ' ORDER BY title ASC'));
-        $teamIds = \app\Teammates::teamIds($memberId);
-        $where = 'member_id = ?'; $args = [$memberId];
-        if ($teamIds) { $where .= ' OR team_id IN (' . implode(',', array_fill(0, count($teamIds), '?')) . ')'; $args = array_merge($args, array_values($teamIds)); }
-        return array_values(Bean::find('game', $where . ' ORDER BY title ASC', $args));
+        if ($all) $rows = array_values(Bean::findAll('game', ' ORDER BY title ASC'));
+        else { $teamIds = \app\Teammates::teamIds($memberId);
+          $where = 'member_id = ?'; $args = [$memberId];
+          if ($teamIds) { $where .= ' OR team_id IN (' . implode(',', array_fill(0, count($teamIds), '?')) . ')'; $args = array_merge($args, array_values($teamIds)); }
+          $rows = array_values(Bean::find('game', $where . ' ORDER BY title ASC', $args)); }
+        $t = []; foreach ($rows as $g) $t[(string) $g->slug] = self::lastTouched((string) $g->slug);
+        usort($rows, fn($a, $b) => $t[(string) $b->slug] <=> $t[(string) $a->slug]); // the game worked on most recently first
+        return $rows;
+    }
+    /** When a game was last worked on: its newest event (runs, notes, sprite jobs), commit or asset save. */
+    public static function lastTouched(string $slug): int {
+        $d = self::gamesDir() . '/' . $slug; $m = 0;
+        foreach (['/.studio/events.jsonl', '/.git/index', '/.git/logs/HEAD', '/assets/sprites.json', '/GAME.md'] as $f) if (is_file($d . $f)) $m = max($m, (int) filemtime($d . $f));
+        return $m;
     }
     public static function canOpen(object $g, int $memberId, int $level): bool {
         if ($level <= LEVELS['ADMIN']) return true;
