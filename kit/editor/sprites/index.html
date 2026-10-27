@@ -206,6 +206,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
             <textarea id="rigNotes" rows="2" placeholder="notes for the whole rig, e.g. “side-scroller; the scarf trails; the sword stays in the right hand”"></textarea>
             <div class="row"><button id="hintSave">Save marks</button><button class="primary gobtn small" id="rigGoBtn" disabled>Rig this character GO!</button></div>
             <div class="muted small" id="hintMsg"></div>
+            <div id="moveOut" class="hidden" style="display:grid;gap:8px;border:1px dashed var(--line);border-radius:10px;padding:10px"><div class="lbl">The rigger's take</div><div class="muted small" id="moveOutStatus"></div><div class="cand hidden" id="moveOutCand"><img alt=""><div><div class="muted small" id="moveOutNote"></div><div class="row" style="margin-top:6px"><button class="primary" id="moveKeep">Keep as rig</button><button id="moveView">View it large</button></div></div></div></div>
           </div>
           <div id="rigPanel" class="hidden" style="display:grid;gap:8px">
             <div class="lbl">Motions</div>
@@ -369,7 +370,7 @@ function show(m) { mode = m; el('empty').classList.toggle('hidden', m !== 'none'
 function loadImage(url) { return new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error('could not load ' + url)); im.src = url; }); }
 function docFromImage(im, fw) { const w = im.naturalWidth, h = im.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.drawImage(im, 0, 0); const all = g.getImageData(0, 0, w, h).data; fw = fw && w % fw === 0 ? fw : w; const n = w / fw, d = { w: fw, h, frames: [], fps: 8 }; for (let k = 0; k < n; k++) { const f = blank(fw, h); for (let y = 0; y < h; y++) f.set(all.subarray((y * w + k * fw) * 4, (y * w + k * fw + fw) * 4), y * fw * 4); d.frames.push(f); } return d; }
 async function open(k) {
-  if (!leaveOk()) return; const s = M.sprites[k]; cur = k; entry = s; undo = []; redo = []; dirty = false; fi = 0; el('title').textContent = k; drawList(); if (location.hash !== '#move') showTab('draw'); else moveRefresh();
+  if (!leaveOk()) return; const s = M.sprites[k]; cur = k; entry = s; undo = []; redo = []; dirty = false; fi = 0; el('title').textContent = k; drawList(); if (location.hash === '#move' || s.kind === 'rig') { showTab('move'); } else showTab('draw');
   if (s.kind === 'code' || s.kind === 'rig' || /\.js$/i.test(s.file)) { try { codeSet(await (await fetch(ASSET(s.file) + '?t=' + Date.now(), { cache: 'no-store' })).text()); say(''); } catch (e) { say(e.message, 'err'); } return; }
   if (/\.svg$/i.test(s.file)) { try { svgSet(await (await fetch(ASSET(s.file) + '?t=' + Date.now(), { cache: 'no-store' })).text(), s); } catch (e) { say(e.message, 'err'); } return; }
   try { const im = await loadImage(ASSET(s.file) + '?t=' + Date.now()); doc = docFromImage(im, s.frames > 1 ? s.w : im.naturalWidth); doc.fps = s.fps || 8; el('splitW').value = doc.w; show('pix'); fitZoom(); render(); drawSwatches(); el('aiKey').value = ''; say(''); }

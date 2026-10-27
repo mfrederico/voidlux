@@ -149,8 +149,23 @@ const Move = {
     try {
       const r = await fetch(apiUrl('sketch'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ rigjob: Object.assign({ notes: el('rigNotes').value.trim() }, this.joints.length ? { hints: this.hints() } : {}), asset: cur, note: el('rigNotes').value.trim(), size: Math.max(32, entry.w || 48), key: cur, style: STYLE[el('aiStyle').value], pixel: el('aiStyle').value !== 'hd' }) });
       const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
-      SK = j; remember(); showOut(null); el('aiKey').value = cur; showTab('make'); el('aiStatus').textContent = (j.queued ? 'another sprite job is running: the rig is next. ' : 'the rigger is on it. ') + 'The rig appears on the right when it is done; click it to watch it move, then Keep as rig and come back to Move to pose it.'; clearInterval(skT); skT = setInterval(pollSketch, 4000); el('outbox').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } catch (e) { el('aiStatus').textContent = 'not sent: ' + e.message; } finally { el('rigGoBtn').disabled = false; }
+      SK = j; remember(); showOut(null); el('aiKey').value = cur; clearInterval(skT); skT = setInterval(pollSketch, 4000); // Make's panel follows too, for whoever looks there
+      this.watch(j.id, cur, (j.queued ? 'another sprite job is running: the rig is next. ' : 'the rigger is on it: ') + 'a minute or two; it appears here when it is done.');
+    } catch (e) { el('hintMsg').textContent = 'not sent: ' + e.message; } finally { el('rigGoBtn').disabled = false; }
+  },
+  // the rig job followed here on Move: status while it runs, the take moving when it lands, Keep beside it
+  watch(id, key, status) {
+    clearInterval(this.jobT); el('moveOut').classList.remove('hidden'); el('moveOutCand').classList.add('hidden'); el('moveOutStatus').textContent = status; el('moveOut').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const tick = async () => { try { const j = await (await fetch(apiUrl('sketch') + '?id=' + encodeURIComponent(id), { cache: 'no-store' })).json();
+      if (!j.result) { el('moveOutStatus').textContent = j.status || 'working…'; return; } clearInterval(this.jobT);
+      if (j.result.ok === false) { el('moveOutStatus').textContent = 'the rigger could not do it: ' + (j.result.error || ''); return; }
+      const f = (j.result.files || [])[0]; if (!f) { el('moveOutStatus').textContent = 'no file came back'; return; } const url = j.base + f;
+      el('moveOutStatus').textContent = 'done: watch it move, then keep it'; el('moveOutNote').textContent = j.result.note || ''; const c = el('moveOutCand'); c.classList.remove('hidden'); takeThumb(c.querySelector('img'), url + '?t=' + Date.now());
+      cand = url; pickCand(); el('aiKey').value = key;
+      el('moveKeep').onclick = async () => { el('moveKeep').disabled = true; try { await keep(false); } finally { el('moveKeep').disabled = false; } el('moveOut').classList.add('hidden'); this.refresh(); };
+      el('moveView').onclick = () => openViewer(id, f, url, j.result.note || '');
+    } catch (e) {} };
+    this.jobT = setInterval(tick, 4000); tick();
   },
   // ---- the rig's motions and keys ----
   M() { return this.R && this.R.motions[this.motion] || null; }, K() { const M = this.M(); return M && this.keyI >= 0 ? M.keys[this.keyI] : null; },
