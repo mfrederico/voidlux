@@ -175,3 +175,7 @@ a.vl-cover:hover .vl-play-badge, a.vl-cover:focus .vl-play-badge { opacity: 1; t
 .vl-note-card { align-content: start; align-items: start; grid-template-rows: auto 1fr; }
 .vl-note-card > img, .vl-note-card > .vl-note-noshot { align-self: start; }
 .vl-note-body { align-self: start; }
+/* the producer's own words in the Build timeline: a bubble of their own, so the answer reads after the question */
+.ev.you { background: rgba(255,102,0,.08); border-left: 3px solid #e07700; border-radius: 6px; padding: 8px 10px; margin: 8px 0; }
+.ev.you .vl-you-head { font-size: .72rem; letter-spacing: 1px; text-transform: uppercase; color: #e07700; margin-bottom: 4px; }
+.ev.you .vl-you-text { white-space: pre-wrap; color: #eee; }

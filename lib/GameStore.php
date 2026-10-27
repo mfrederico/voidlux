@@ -199,6 +199,7 @@ class GameStore {
         if ($s['busy']) throw new \RuntimeException('an agent run is already going for this game');
         $sd = self::studioDir($slug);
         file_put_contents($sd . '/prompt.txt', $prompt);
+        if (in_array($mode, ['chat', 'pipeline'], true) && trim($prompt) !== '') self::emit($slug, 'prompt', ['text' => mb_substr($prompt, 0, 4000), 'mode' => $mode, 'by' => self::memberName($memberId)]); // what the producer said, in the timeline where the answer follows
         $log = $sd . '/runner.log';
         $cmd = 'setsid nohup php ' . escapeshellarg(self::root() . '/scripts/game-agent.php') . ' ' . escapeshellarg($slug) . ' ' . escapeshellarg($mode) . ' ' . escapeshellarg((string) $memberId) . ' >> ' . escapeshellarg($log) . ' 2>&1 & echo $!';
         $pid = (int) trim((string) shell_exec($cmd));
@@ -422,7 +423,8 @@ class GameStore {
                 self::emit($slug, 'note', ['text' => 'queued as a run of its own, right after this one: ' . mb_substr($prompt, 0, 160)]);
             } else {
                 file_put_contents(self::studioDir($slug) . '/inbox.txt', $prompt . "\n", FILE_APPEND);
-                self::emit($slug, 'note', ['text' => 'queued for the next run: ' . mb_substr($prompt, 0, 200)]);
+                self::emit($slug, 'prompt', ['text' => mb_substr($prompt, 0, 4000), 'mode' => 'inbox', 'by' => self::memberName($memberId)]);
+                self::emit($slug, 'note', ['text' => 'the builder is mid-run: this goes to it with its next run']);
             }
             return self::agentState($slug) + ['queued' => true];
         }
@@ -461,6 +463,7 @@ class GameStore {
         try { self::startArt($slug, (string) $next['prompt'], (int) ($next['memberId'] ?? 0)); return true; }
         catch (\Throwable $e) { self::emit($slug, 'error', ['text' => 'art: the queued job could not start: ' . $e->getMessage()]); return false; }
     }
+    public static function memberName(int $id): string { if ($id <= 0) return 'the forge'; $m = Bean::load('member', $id); return (string) ($m->username ?: $m->email ?: 'member ' . $id); }
     /** The runner, as it ends: the next queued run of its own, if any, starts now. */
     public static function startQueued(string $slug): bool {
         $q = self::studioDir($slug) . '/queue.jsonl'; if (!is_file($q)) return false;
@@ -637,6 +640,8 @@ class GameStore {
                 . (!empty($from['over']) ? "and this time they drew DIRECTLY ON TOP of {$from['liked']}: sketch.png shows your take, faded, with their marks over it, and sketch.svg holds only their marks (in the take's 512-grid frame; the take fills the middle of it). Read each mark as an edit of that spot: lines drawn over a part of the take are the NEW shape of that part and REPLACE it (new arms drawn over the old arms means: these arms instead of those, not both); lines where the take had nothing add a part there; a scribble over something means remove or rework it; the note says the rest. Everything they did not mark stays exactly as it was in the take, down to the colours."
                    : "and apply what the new drawing and note change (compare the drawing with what you drew before: what moved, grew, shrank, appeared or vanished is the point of this round). Keep what they did not change.");
         }
+        $facts = self::jobFacts($req); $what = $facts['kind'] === 'rig' ? 'rig the character ' . ($facts['asset'] ?: $key) : ($facts['kind'] === 'animate' ? "a {$facts['cycle']} motion for " . ($facts['asset'] ?: $key) : ($facts['kind'] === 'refine' ? "refine {$key}" : ($facts['kind'] === 'revision' ? "a revision of {$key}" : "a sprite: {$key}")));
+        self::emit($slug, 'prompt', ['text' => "Sprite job: {$what}" . ($note !== '' ? "\n{$note}" : '') . ($has ? "\n(with a drawing)" : ''), 'mode' => 'art', 'by' => self::memberName($memberId), 'job' => $id]);
         $r = self::startArt($slug, $p, $memberId); // the art lane: beside the builder, never inside its run
         return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'queued' => !empty($r['queued']), 'rig' => (bool) $rigjob, 'animate' => (bool) $anim];
     }

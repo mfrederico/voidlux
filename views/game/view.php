@@ -171,6 +171,7 @@ function addEvent(ev) {
   if (ev.kind === 'checkpoint') text = `⚑ checkpoint ${ev.tag}: ${ev.label || ''}`;
   if (ev.kind === 'idle') text = '— idle —';
   if (ev.kind === 'artdone') text = '◆ sprite job ' + (ev.text || 'finished') + ' (the art lane, beside the builder)';
+  if (ev.kind === 'prompt') { d.classList.add('you'); d.innerHTML = `<time>${Forge.time(ev.t)}</time><div class="vl-you-head">${Forge.esc(ev.by || 'you')} · ${Forge.esc({ chat: 'to the builder', pipeline: 'the brief for a build', inbox: 'to the builder, for its next run', art: 'to the artist' }[ev.mode] || ev.mode || '')}</div><div class="vl-you-text">${Forge.esc(ev.text || '')}</div>`; const stick0 = box.scrollTop + box.clientHeight >= box.scrollHeight - 40; box.appendChild(d); if (stick0) box.scrollTop = box.scrollHeight; return; }
   const stamp = `<time>${Forge.time(ev.t)}</time>`;
   if (ev.kind === 'text') d.innerHTML = stamp + '<div class="vl-md-ev">' + Forge.md(text) + '</div>';
   else if (ev.kind === 'done') d.innerHTML = stamp + `<div class="vl-done-head">■ ${Forge.esc(ev.label || 'run')} ${ev.ok ? 'finished' : 'failed'} · ${ev.turns} turns · $${(+ev.cost || 0).toFixed(3)}</div>` + (ev.text ? '<div class="vl-md-ev">' + Forge.md(ev.text) + '</div>' : '');
