@@ -31,8 +31,10 @@ input, select, textarea { font: inherit; font-size: 13px; padding: 5px 8px; bord
 input[type=number] { width: 64px; } textarea { width: 100%; resize: vertical; }
 label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.main { display: grid; grid-template-columns: 250px 1fr 300px; gap: 16px; align-items: start; }
-@media (max-width: 1100px) { .main { grid-template-columns: 250px 1fr; } .ai { grid-column: 1 / -1; } }
+.main { display: grid; grid-template-columns: 250px 1fr; gap: 16px; align-items: start; } #work { min-width: 0; }
+.top { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; } .tabs { display: flex; gap: 4px; } .tabs a { text-decoration: none; color: var(--muted); font-family: var(--display); font-weight: 700; font-size: 16px; padding: 6px 14px; border-radius: 999px; border: 1px solid transparent; } .tabs a:hover { color: var(--ink); } .tabs a.on { color: var(--ink); border-color: var(--accent); background: var(--surface); }
+.tab.hidden { display: none !important; } .cards2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; } .card2 { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 6px; align-content: start; } .card2.soon { border-style: dashed; } .card2 p { margin: 0; }
+.more { border-top: 1px solid var(--line); padding-top: 10px; }
 @media (max-width: 760px) { .main { grid-template-columns: 1fr; } .list { position: static; max-height: none; } }
 /* nothing may be wider than the phone: grid children shrink, selects and inputs cap at their box, long words break */
 .wrap > *, .main > *, .panel > *, .sketch > *, .pad > *, .out > *, .note > * { min-width: 0; }
@@ -105,9 +107,25 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
 </style></head><body>
 <div class="wrap">
   <div class="crumbs"><a href="/forge">Forge</a> / <a id="crumbGame" href="#">game</a> / Sprites</div>
-  <div><h1>Sprites</h1><p class="lede">Pixel art and SVG for the game. A sprite saved here lands in <code>assets/</code> and in <code>assets/sprites.json</code>, and the game draws it with <code>Draw.pic('key', x, y, size)</code>. The builder can make sprites too, through its AI plugins, from the panel on the right; they show up in the list when its run ends.</p></div>
+  <div class="top"><h1>Sprites</h1><nav class="tabs" id="tabs"><a href="#make" data-tab="make" class="on">Make</a><a href="#draw" data-tab="draw">Draw</a><a href="#move" data-tab="move">Move</a></nav></div>
+  <p class="lede" id="lede">Draw a rough sketch, say what it is, press &gt;&gt;: the artist draws two takes. Keep one and it is in the game as <code>Draw.pic('key', x, y, size)</code>.</p>
   <div id="msg" class="msg"></div>
-  <section class="panel">
+  <div id="askSave" role="dialog" aria-label="unsaved drawing"><div class="ask"><p>You changed the drawing. Save it before loading another?</p><div class="row"><button class="primary" id="askYes">Save it</button><button id="askNo">Don't save</button><button id="askStay">Stay here</button></div></div></div>
+  <div id="viewer" role="dialog" aria-label="a take, full screen">
+    <div class="vhead"><span class="mono" id="vTitle"></span><div class="row"><button id="vKeep" class="primary">Keep</button><button id="vKeepPx">Keep as pixels</button><button id="vEdit">Edit</button><button id="vOver" title="lay this take on the drawing pad and mark it up">✎ Draw over this</button><button id="vAnim" title="rig this character into a run, idle, jump… as a code sprite">⟳ Animate…</button><button id="vClose">✕ close</button></div></div>
+    <div class="vstage" id="vStage"></div>
+    <div class="vfoot"><div class="muted small" id="vNote"></div><div class="refine"><textarea id="vRefine" rows="2" placeholder="refine this: e.g. “make the snout longer and add a cream stripe along the back”"></textarea><button id="vGo" class="primary">Refine this &gt;&gt;</button></div><div class="small" id="vStatus"></div></div>
+  </div>
+  <div class="main">
+    <aside class="list">
+      <div class="row"><button class="primary" id="newBtn">+ New</button><button id="importBtn">Import…</button><input type="file" id="importFile" accept=".png,.svg,.gif,.webp,.jpg,.jpeg" hidden></div>
+      <form class="newform" id="newForm"><input id="newKey" placeholder="key, e.g. cow" pattern="[a-z][a-z0-9_\-]{0,40}" required><div class="row"><label>size <select id="newSize"><option>8</option><option>16</option><option>24</option><option selected>32</option><option>48</option><option>64</option><option>96</option><option>128</option></select></label><button class="primary">Create</button></div></form>
+      <input type="search" id="q" placeholder="find a sprite">
+      <h3>In the game</h3><div id="listIn" class="muted small">loading…</div>
+      <h3>Files not in the game</h3><div id="listLoose" class="muted small"></div>
+    </aside>
+    <div id="work">
+    <section class="tab panel" id="tab-make">
     <div class="sketch">
       <div class="pad">
         <h3>Drawing pad — roughly what you mean</h3>
@@ -125,30 +143,21 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
       </div>
     </div>
     <div id="aiStatus" class="muted small"></div>
-    <div id="animBox" class="hidden" style="display:grid;gap:8px;border:1px dashed var(--line);border-radius:10px;padding:10px">
-      <div class="lbl">Animate <span class="mono" id="animWhat"></span> — a cycle rigged in code: the character split into parts that move each frame</div>
-      <div class="row"><label>cycle <select id="animName"><option value="run">run</option><option value="walk">walk</option><option value="idle">idle</option><option value="jump">jump</option><option value="attack">attack</option><option value="hurt">hurt</option><option value="death">death</option><option value="fly">fly</option><option value="swim">swim</option></select></label><label>frames <input type="number" id="animFrames" min="2" max="24" value="8"></label><label>fps <input type="number" id="animFps" min="2" max="30" value="12"></label><label>key <input id="animKey" style="width:140px" pattern="[a-z][a-z0-9_\-]{0,40}"></label></div>
-      <textarea id="animNotes" rows="2" placeholder="style notes, e.g. “ninja style: low crouching run, arms trailing behind, scarf streaming; it is a side-scroller, facing right”"></textarea>
-      <div class="row"><button class="primary" id="animGo">Animate &gt;&gt;</button><button id="animCancel">cancel</button><span class="muted small">facing right; the game flips it to run left (Draw.anim(key, Game.time, x, y, w, 0, 0, flip))</span></div>
-    </div>
     <details id="jobsBox"><summary class="lbl" style="cursor:pointer">Everything the builder has made from your sketches <span id="jobsN" class="muted"></span></summary>
       <p class="muted small">Every job, newest first, with its takes. Click a take to choose it, set the key, then Keep or Edit above. A job is scratch: nothing here is in the game until you keep it.</p>
       <div id="jobs" class="jobs"></div></details>
-  </section>
-  <div id="askSave" role="dialog" aria-label="unsaved drawing"><div class="ask"><p>You changed the drawing. Save it before loading another?</p><div class="row"><button class="primary" id="askYes">Save it</button><button id="askNo">Don't save</button><button id="askStay">Stay here</button></div></div></div>
-  <div id="viewer" role="dialog" aria-label="a take, full screen">
-    <div class="vhead"><span class="mono" id="vTitle"></span><div class="row"><button id="vKeep" class="primary">Keep</button><button id="vKeepPx">Keep as pixels</button><button id="vEdit">Edit</button><button id="vOver" title="lay this take on the drawing pad and mark it up">✎ Draw over this</button><button id="vAnim" title="rig this character into a run, idle, jump… as a code sprite">⟳ Animate…</button><button id="vClose">✕ close</button></div></div>
-    <div class="vstage" id="vStage"></div>
-    <div class="vfoot"><div class="muted small" id="vNote"></div><div class="refine"><textarea id="vRefine" rows="2" placeholder="refine this: e.g. “make the snout longer and add a cream stripe along the back”"></textarea><button id="vGo" class="primary">Refine this &gt;&gt;</button></div><div class="small" id="vStatus"></div></div>
-  </div>
-  <div class="main">
-    <aside class="list">
-      <div class="row"><button class="primary" id="newBtn">+ New</button><button id="importBtn">Import…</button><input type="file" id="importFile" accept=".png,.svg,.gif,.webp,.jpg,.jpeg" hidden></div>
-      <form class="newform" id="newForm"><input id="newKey" placeholder="key, e.g. cow" pattern="[a-z][a-z0-9_\-]{0,40}" required><div class="row"><label>size <select id="newSize"><option>8</option><option>16</option><option>24</option><option selected>32</option><option>48</option><option>64</option><option>96</option><option>128</option></select></label><button class="primary">Create</button></div></form>
-      <input type="search" id="q" placeholder="find a sprite">
-      <h3>In the game</h3><div id="listIn" class="muted small">loading…</div>
-      <h3>Files not in the game</h3><div id="listLoose" class="muted small"></div>
-    </aside>
+      <details class="more"><summary class="lbl" style="cursor:pointer">More from the AI: a set in one style, variations, a background removed</summary><div style="display:grid;gap:10px;margin-top:8px">
+      <h2>More from the builder's AI</h2>
+      <p class="muted small" style="margin:0">Messages to the game's builder, which uses its SpriteCook plugin (pixel art) and CellCog plugin (sets in one style). Generation spends the account's credits. Results land in the list when the run ends; the style and size above apply.</p>
+      <label>A set in one style<textarea id="setSubject" rows="3" placeholder="a honey bee, a wasp, a hornet and a ladybird, all side view"></textarea></label>
+      <div class="row"><button id="aiSet">Make the set (CellCog)</button></div>
+      <h3>From the current sprite</h3>
+      <div class="row"><button id="aiVar">Variations</button><button id="aiBg">Remove background</button></div>
+      <div class="row"><select id="aiAnim"><option value="idle">idle</option><option value="walk">walk</option><option value="run">run</option><option value="jump">jump</option><option value="attack">attack</option><option value="hurt">hurt</option><option value="death">death</option></select><button id="aiAnimBtn">Animate it</button></div>
+      <div id="setStatus" class="muted small"></div>
+      </div></details>
+    </section>
+    <section class="tab hidden" id="tab-draw">
     <section class="panel" id="editor">
       <div class="head"><div><h2 id="title">no sprite</h2><div class="meta" id="meta"></div></div><div class="row"><button id="useBtn">Use in game</button><button id="animCurBtn" title="rig this sprite into a run, idle, jump… as a new code sprite">⟳ Animate…</button><button id="dlBtn">Download</button><button class="danger" id="delBtn">Delete</button><button class="primary" id="saveBtn">Save</button></div></div>
       <div id="empty" class="muted">Pick a sprite on the left, make a new one, or ask the builder for one.</div>
@@ -173,22 +182,32 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
         <div class="row"><label>draw size <input type="number" id="svgW" min="1" max="1024" value="64"> × <input type="number" id="svgH" min="1" max="1024" value="64"></label><label><input type="checkbox" id="svgSmooth" checked> smooth (off = crisp pixels)</label><span class="sep"></span><label>rasterize at <input type="number" id="rasW" value="32" min="4" max="256"> × <input type="number" id="rasH" value="32" min="4" max="256"></label><button id="rasBtn">make a pixel sprite from it</button></div>
       </div>
     </section>
-    <aside class="panel ai">
-      <h2>More from the builder's AI</h2>
-      <p class="muted small" style="margin:0">Messages to the game's builder, which uses its SpriteCook plugin (pixel art) and CellCog plugin (sets in one style). Generation spends the account's credits. Results land in the list when the run ends; the style and size above apply.</p>
-      <label>A set in one style<textarea id="setSubject" rows="3" placeholder="a honey bee, a wasp, a hornet and a ladybird, all side view"></textarea></label>
-      <div class="row"><button id="aiSet">Make the set (CellCog)</button></div>
-      <h3>From the current sprite</h3>
-      <div class="row"><button id="aiVar">Variations</button><button id="aiBg">Remove background</button></div>
-      <div class="row"><select id="aiAnim"><option value="idle">idle</option><option value="walk">walk</option><option value="run">run</option><option value="jump">jump</option><option value="attack">attack</option><option value="hurt">hurt</option><option value="death">death</option></select><button id="aiAnimBtn">Animate it</button></div>
-      <div id="setStatus" class="muted small"></div>
-    </aside>
+    </section>
+    <section class="tab panel hidden" id="tab-move">
+      <div class="head"><div><h2 id="moveTitle">no sprite chosen</h2><div class="meta muted small">pick a kept sprite on the left, or a take in Make, to give it motion</div></div><div class="row"><button class="primary" id="moveAnimBtn" disabled>⟳ Let the artist animate it…</button></div></div>
+      <div class="cards2">
+        <div class="card2"><div class="lbl">Animate as code frames</div><p class="muted small">Quick and ready today: the artist rigs the character in drawing code, a run, an idle, a jump, and the game plays it with <code>Draw.anim</code>. Good for a cycle that will not change much.</p></div>
+        <div class="card2 soon"><div class="lbl">Skeleton rig <span class="muted">· coming next</span></div><p class="muted small">Bones fitted to the body (biped, quadruped, winged, serpent), parts bound to them, keyframes you drag with inverse kinematics, motions saved as data any character of the same plan can play.</p></div>
+      </div>
+    <div id="animBox" class="hidden" style="display:grid;gap:8px;border:1px dashed var(--line);border-radius:10px;padding:10px">
+      <div class="lbl">Animate <span class="mono" id="animWhat"></span> — a cycle rigged in code: the character split into parts that move each frame</div>
+      <div class="row"><label>cycle <select id="animName"><option value="run">run</option><option value="walk">walk</option><option value="idle">idle</option><option value="jump">jump</option><option value="attack">attack</option><option value="hurt">hurt</option><option value="death">death</option><option value="fly">fly</option><option value="swim">swim</option></select></label><label>frames <input type="number" id="animFrames" min="2" max="24" value="8"></label><label>fps <input type="number" id="animFps" min="2" max="30" value="12"></label><label>key <input id="animKey" style="width:140px" pattern="[a-z][a-z0-9_\-]{0,40}"></label></div>
+      <textarea id="animNotes" rows="2" placeholder="style notes, e.g. “ninja style: low crouching run, arms trailing behind, scarf streaming; it is a side-scroller, facing right”"></textarea>
+      <div class="row"><button class="primary" id="animGo">Animate &gt;&gt;</button><button id="animCancel">cancel</button><span class="muted small">facing right; the game flips it to run left (Draw.anim(key, Game.time, x, y, w, 0, 0, flip))</span></div>
+    </div>
+    </section>
+    </div>
   </div>
 </div>
 <script src="/kit/js/kit-util.js"></script>
 <script src="/kit/js/kit-draw.js"></script>
 <script>
 const el = id => document.getElementById(id);
+const LEDE = { make: "Draw a rough sketch, say what it is, press >>: the artist draws two takes. Keep one and it is in the game as Draw.pic('key', x, y, size).", draw: 'Edit a kept sprite: its pixels frame by frame, its SVG source, or its drawing code, with a live preview.', move: 'Give a kept sprite motion. Today: the artist animates it as code frames. Next: a skeleton rig with keyframes and inverse kinematics.' };
+function showTab(name) { if (!['make', 'draw', 'move'].includes(name)) name = 'make'; for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('on', a.dataset.tab === name); for (const s of document.querySelectorAll('.tab')) s.classList.toggle('hidden', s.id !== 'tab-' + name); el('lede').textContent = LEDE[name]; if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name); if (name === 'move') moveRefresh(); }
+for (const a of document.querySelectorAll('#tabs a')) a.onclick = e => { e.preventDefault(); showTab(a.dataset.tab); };
+window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
+function moveRefresh() { const has = !!(cur && entry); el('moveTitle').textContent = has ? cur : 'no sprite chosen'; el('moveAnimBtn').disabled = !has; }
 const API = '/gameapi', GAME = new URLSearchParams(location.search).get('game') || ''; let CSRF = ''; // the forge's API for this game: /gameapi/<verb>/<slug>, writes with X-CSRF-TOKEN
 const apiUrl = verb => `${API}/${verb}/${GAME}`; const apiHeaders = () => ({ 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest' });
 async function apiToken() { try { const r = await fetch(apiUrl('token'), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); if (r.ok) { CSRF = (await r.json()).token || ''; return true; } } catch (e) {} return false; }
@@ -320,7 +339,7 @@ function show(m) { mode = m; el('empty').classList.toggle('hidden', m !== 'none'
 function loadImage(url) { return new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error('could not load ' + url)); im.src = url; }); }
 function docFromImage(im, fw) { const w = im.naturalWidth, h = im.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.drawImage(im, 0, 0); const all = g.getImageData(0, 0, w, h).data; fw = fw && w % fw === 0 ? fw : w; const n = w / fw, d = { w: fw, h, frames: [], fps: 8 }; for (let k = 0; k < n; k++) { const f = blank(fw, h); for (let y = 0; y < h; y++) f.set(all.subarray((y * w + k * fw) * 4, (y * w + k * fw + fw) * 4), y * fw * 4); d.frames.push(f); } return d; }
 async function open(k) {
-  if (!leaveOk()) return; const s = M.sprites[k]; cur = k; entry = s; undo = []; redo = []; dirty = false; fi = 0; el('title').textContent = k; drawList();
+  if (!leaveOk()) return; const s = M.sprites[k]; cur = k; entry = s; undo = []; redo = []; dirty = false; fi = 0; el('title').textContent = k; drawList(); if (location.hash !== '#move') showTab('draw'); else moveRefresh();
   if (s.kind === 'code' || /\.js$/i.test(s.file)) { try { codeSet(await (await fetch(ASSET(s.file) + '?t=' + Date.now(), { cache: 'no-store' })).text()); say(''); } catch (e) { say(e.message, 'err'); } return; }
   if (/\.svg$/i.test(s.file)) { try { svgSet(await (await fetch(ASSET(s.file) + '?t=' + Date.now(), { cache: 'no-store' })).text(), s); } catch (e) { say(e.message, 'err'); } return; }
   try { const im = await loadImage(ASSET(s.file) + '?t=' + Date.now()); doc = docFromImage(im, s.frames > 1 ? s.w : im.naturalWidth); doc.fps = s.fps || 8; el('splitW').value = doc.w; show('pix'); fitZoom(); render(); drawSwatches(); el('aiKey').value = ''; say(''); }
@@ -336,12 +355,12 @@ el('newBtn').onclick = () => el('newForm').classList.toggle('open');
 el('newForm').onsubmit = e => {
   e.preventDefault(); const key = el('newKey').value.trim(), n = parseInt(el('newSize').value, 10); if (!KEY_RE.test(key)) { say('a key is lowercase letters, digits, - and _, starting with a letter', 'err'); return; }
   if (M.sprites[key] && !confirm(`${key} exists. Start it over blank?`)) return; if (!leaveOk()) return;
-  cur = key; entry = null; doc = newDoc(n, n); undo = []; redo = []; dirty = true; fi = 0; el('title').textContent = key; el('splitW').value = n; el('newForm').classList.remove('open'); el('newKey').value = ''; show('pix'); fitZoom(); render(); drawSwatches(); drawList(); say(`new ${n}×${n} sprite ${key}: draw, then Save`);
+  cur = key; entry = null; doc = newDoc(n, n); undo = []; redo = []; dirty = true; fi = 0; el('title').textContent = key; el('splitW').value = n; el('newForm').classList.remove('open'); el('newKey').value = ''; showTab('draw'); show('pix'); fitZoom(); render(); drawSwatches(); drawList(); say(`new ${n}×${n} sprite ${key}: draw, then Save`);
 };
 el('importBtn').onclick = () => el('importFile').click();
 el('importFile').onchange = async () => {
   const f = el('importFile').files[0]; el('importFile').value = ''; if (!f || !leaveOk()) return;
-  const key = f.name.replace(/\.[a-z0-9]+$/i, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[^a-z]+/, '') || 'sprite'; cur = key; entry = null; undo = []; redo = []; dirty = true; fi = 0; el('title').textContent = key;
+  const key = f.name.replace(/\.[a-z0-9]+$/i, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[^a-z]+/, '') || 'sprite'; cur = key; entry = null; undo = []; redo = []; dirty = true; fi = 0; el('title').textContent = key; showTab('draw');
   if (/\.svg$/i.test(f.name)) { svgSet(await f.text(), null); say(`${f.name} as SVG: edit, then Save`); return; }
   try { const url = URL.createObjectURL(f), im = await loadImage(url); URL.revokeObjectURL(url); doc = docFromImage(im, 0); el('splitW').value = Math.min(doc.w, 32); show('pix'); fitZoom(); render(); drawSwatches(); drawList(); say(`${f.name} is in: ${doc.w}×${doc.h}. A strip? cut it into frames below. Then Save.`); }
   catch (e) { say(e.message, 'err'); }
@@ -496,12 +515,13 @@ el('overBtn').onclick = () => { if (!cand) return; const sk = SK || {}; drawOver
 el('vOver').onclick = () => { if (V) drawOver(V.job, V.file, V.url, el('vNote').textContent, (SK && SK.id === V.job) ? SK.at : 0); };
 // ---- animate: a take (refine: the job and the file) or a kept sprite (asset: its key) becomes a code sprite with frames ----
 let animTarget = null;
-function openAnim(target, label) { animTarget = target; el('animWhat').textContent = label; const base = (el('aiKey').value.trim() || (target.asset || 'sprite')).replace(/-(run|walk|idle|jump|attack|hurt|death|fly|swim)$/, ''); el('animKey').value = `${base}-${el('animName').value}`; el('animKey').dataset.base = base; el('animBox').classList.remove('hidden'); el('animNotes').focus(); el('animBox').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+function openAnim(target, label) { showTab('move'); animTarget = target; el('animWhat').textContent = label; const base = (el('aiKey').value.trim() || (target.asset || 'sprite')).replace(/-(run|walk|idle|jump|attack|hurt|death|fly|swim)$/, ''); el('animKey').value = `${base}-${el('animName').value}`; el('animKey').dataset.base = base; el('animBox').classList.remove('hidden'); el('animNotes').focus(); el('animBox').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
 el('animName').onchange = () => { const b = el('animKey').dataset.base; if (b) el('animKey').value = `${b}-${el('animName').value}`; };
 el('animCancel').onclick = () => { el('animBox').classList.add('hidden'); animTarget = null; };
 el('animBtn').onclick = () => { if (!cand) return; const sk = SK || {}; openAnim({ refine: { id: sk.id, file: cand.replace(/^.*\//, '').replace(/\?.*$/, '') } }, cand.replace(/^.*\//, '').replace(/\?.*$/, '')); };
 el('vAnim').onclick = () => { if (!V) return; const t = { refine: { id: V.job, file: V.file.replace(/\?.*$/, '') } }; closeViewer(); openAnim(t, t.refine.file); };
 el('animCurBtn').onclick = () => { if (!cur || !entry) { say('save the sprite first, then animate it', 'err'); return; } openAnim({ asset: cur }, cur); };
+el('moveAnimBtn').onclick = () => { if (cur && entry) openAnim({ asset: cur }, cur); };
 el('animGo').onclick = async () => {
   if (!animTarget) return; const key = el('animKey').value.trim(); if (!KEY_RE.test(key)) { say('the key is lowercase letters, digits, - and _, starting with a letter', 'err'); el('animKey').focus(); return; }
   el('animGo').disabled = true; el('aiStatus').textContent = 'sending the character to the builder to rig…';
@@ -576,9 +596,9 @@ async function candidateDoc() { // an svg or code take is drawn at the target si
   const im = await loadImage(cand + '?t=' + Date.now()); return docFromImage(im, 0); }
 async function candidateSvg() { const r = await fetch(cand + '?t=' + Date.now(), { cache: 'no-store' }); if (!r.ok) throw new Error('could not read the take'); return r.text(); }
 el('editBtn').onclick = async () => { if (!cand || !leaveOk()) return; const key = el('aiKey').value.trim(); if (!KEY_RE.test(key)) { say('give the sprite a key first', 'err'); return; }
-  if (candIsCode()) { try { cur = key; entry = null; undo = []; redo = []; dirty = true; el('title').textContent = key; codeSet((await candidateSvg()).replace(/Draw\.define\(\s*(['"])[^'"]*\1/, `Draw.define('${key}'`)); drawList(); say(`${key}: the builder's drawing code. Change numbers and colours, watch the preview, then Save.`); el('editor').scrollIntoView({ behavior: 'smooth' }); } catch (e) { say(e.message, 'err'); } return; }
-  if (candIsSvg()) { try { cur = key; entry = null; undo = []; redo = []; dirty = true; el('title').textContent = key; svgSet(await candidateSvg(), null); el('svgW').value = el('svgH').value = parseInt(el('aiSize').value, 10); drawList(); say(`${key}: the builder's SVG. Edit the source, then Save (or make a pixel sprite from it).`); el('editor').scrollIntoView({ behavior: 'smooth' }); } catch (e) { say(e.message, 'err'); } return; }
-  try { cur = key; entry = null; doc = await candidateDoc(); undo = []; redo = []; dirty = true; fi = 0; el('title').textContent = key; el('splitW').value = doc.w; show('pix'); fitZoom(); render(); drawSwatches(); drawList(); say(`${key}: the AI's take as pixels. Tidy it, then Save.`); el('editor').scrollIntoView({ behavior: 'smooth' }); } catch (e) { say(e.message, 'err'); } };
+  if (candIsCode()) { try { cur = key; entry = null; undo = []; redo = []; dirty = true; el('title').textContent = key; codeSet((await candidateSvg()).replace(/Draw\.define\(\s*(['"])[^'"]*\1/, `Draw.define('${key}'`)); drawList(); say(`${key}: the builder's drawing code. Change numbers and colours, watch the preview, then Save.`); showTab('draw'); } catch (e) { say(e.message, 'err'); } return; }
+  if (candIsSvg()) { try { cur = key; entry = null; undo = []; redo = []; dirty = true; el('title').textContent = key; svgSet(await candidateSvg(), null); el('svgW').value = el('svgH').value = parseInt(el('aiSize').value, 10); drawList(); say(`${key}: the builder's SVG. Edit the source, then Save (or make a pixel sprite from it).`); showTab('draw'); } catch (e) { say(e.message, 'err'); } return; }
+  try { cur = key; entry = null; doc = await candidateDoc(); undo = []; redo = []; dirty = true; fi = 0; el('title').textContent = key; el('splitW').value = doc.w; show('pix'); fitZoom(); render(); drawSwatches(); drawList(); say(`${key}: the AI's take as pixels. Tidy it, then Save.`); showTab('draw'); } catch (e) { say(e.message, 'err'); } };
 async function keep(asPixels) {
   if (!cand) return; const key = el('aiKey').value.trim(); if (!KEY_RE.test(key)) { say('give the sprite a key first', 'err'); return; }
   if (M.sprites[key] && !confirm(`${key} exists. Replace it with this take?`)) return;
@@ -602,6 +622,6 @@ el('aiAnimBtn').onclick = () => { if (!cur || !entry) { say('save the sprite fir
 // ---- boot ----
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 window.addEventListener('resize', () => { if (doc && mode === 'pix') { fitZoom(); render(); } });
-(async () => { drawSwatches(); show('none'); recall(); await apiToken(); await load(); await loadJobs(); if (el('jobs').children.length) el('jobsBox').open = true; })();
+(async () => { drawSwatches(); show('none'); showTab(location.hash.slice(1) || 'make'); recall(); await apiToken(); await load(); await loadJobs(); if (el('jobs').children.length) el('jobsBox').open = true; })();
 </script>
 </body></html>
