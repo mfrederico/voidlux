@@ -180,7 +180,7 @@ const Move = {
   },
   // ---- the rig's motions and keys ----
   M() { return this.R && this.R.motions[this.motion] || null; }, K() { const M = this.M(); return M && this.keyI >= 0 ? M.keys[this.keyI] : null; },
-  poseNow() { const M = this.M(); if (!M) return { pose: {}, root: { x: 0, y: 0 }, ik: {} }; const K = this.K(); if (K) return { pose: K.pose || {}, root: K.root || { x: 0, y: 0 }, ik: K.ik || {} }; return Rig.pose(M, this.scrub); },
+  poseNow() { const M = this.M(); if (!M) return { pose: {}, root: { x: 0, y: 0 }, ik: {} }; const K = this.K(); if (K) return { pose: K.pose || {}, root: K.root || { x: 0, y: 0 }, ik: K.ik || {} }; return Rig.pose(M, this.scrub, this.R); },
   pickMotion(name) { this.stop(); this.motion = name; const M = this.M(); if (!M) { this.keyI = -1; this.tlUI(); this.draw(); return; } if (!M.keys) M.keys = []; M.keys.sort((a, b) => a.t - b.t); el('mSecs').value = M.secs || 1; el('mFps').value = M.fps || 12; el('mLoop').checked = M.loop !== false; this.keyI = M.keys.length ? 0 : -1; this.scrub = this.keyI >= 0 ? M.keys[0].t : 0; el('tlScrub').value = Math.round(this.scrub * 1000); this.tlUI(); this.draw(); },
   tlUI() {
     const M = this.M(), bar = el('tlBar'); for (const k of bar.querySelectorAll('.tlkey')) k.remove(); el('tlCursor').style.left = (this.scrub * 100) + '%';
@@ -189,7 +189,7 @@ const Move = {
     const K = this.K(); el('kFields').style.visibility = K ? 'visible' : 'hidden'; if (K) { el('kT').value = K.t; el('kEase').value = K.ease || 'io'; el('kInfo').textContent = `key ${this.keyI + 1} of ${M.keys.length}`; }
     el('tlInfo').textContent = `${this.motion}: ${M.keys.length} key${M.keys.length === 1 ? '' : 's'} · ${Rig.frames(M)} frames · cursor at ${this.scrub.toFixed(2)}${K ? '' : ' (tween)'}`;
   },
-  addKey() { const M = this.M(); if (!M) { say('make a motion first', 'err'); return; } this.snapshot(); const P = Rig.pose(M, this.scrub); const K = { t: Math.round(this.scrub * 100) / 100, pose: Object.assign({}, P.pose), root: Object.assign({}, P.root), ik: JSON.parse(JSON.stringify(P.ik)) }; M.keys.push(K); M.keys.sort((a, b) => a.t - b.t); this.keyI = M.keys.indexOf(K); this.tlUI(); this.draw(); },
+  addKey() { const M = this.M(); if (!M) { say('make a motion first', 'err'); return; } this.snapshot(); const P = Rig.pose(M, this.scrub, this.R); const K = { t: Math.round(this.scrub * 100) / 100, pose: Object.assign({}, P.pose), root: Object.assign({}, P.root), ik: JSON.parse(JSON.stringify(P.ik)) }; M.keys.push(K); M.keys.sort((a, b) => a.t - b.t); this.keyI = M.keys.indexOf(K); this.tlUI(); this.draw(); },
   dupKey() { const M = this.M(), K = this.K(); if (!K) return; this.snapshot(); const t = Math.min(1, Math.round((K.t + 0.1) * 100) / 100), C = JSON.parse(JSON.stringify(K)); C.t = t; M.keys.push(C); M.keys.sort((a, b) => a.t - b.t); this.keyI = M.keys.indexOf(C); this.scrub = t; el('tlScrub').value = Math.round(t * 1000); this.tlUI(); this.draw(); },
   delKey() { const M = this.M(); if (!M || this.keyI < 0) return; this.snapshot(); M.keys.splice(this.keyI, 1); this.keyI = Math.min(this.keyI, M.keys.length - 1); this.tlUI(); this.draw(); },
   mirrorKey() { // left and right limbs trade places: bones and chains named …L / …R

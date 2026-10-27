@@ -37,8 +37,9 @@ const Rig = {
     this.rigs.set(key, rig); if (typeof Draw !== 'undefined') for (const id of [...Draw.sprites.keys()]) if (id.startsWith(key + '#')) Draw.sprites.delete(id);
     return rig;
   },
-  // the keyframes around a phase, blended: angles by shortest arc, root and ik targets by straight lerp
-  pose(motion, phase) {
+  // the keyframes around a phase, blended: angles by shortest arc, root and ik targets by straight lerp. A chain with a target
+  // in one key and none in the other blends toward where the posed limb ends in that other key (given the rig to solve it).
+  pose(motion, phase, rig) {
     const K = motion.keys || []; if (!K.length) return { pose: {}, root: { x: 0, y: 0 }, ik: {} };
     const loop = motion.loop !== false; let p = loop ? phase - Math.floor(phase) : Math.min(1, Math.max(0, phase));
     let a = K[K.length - 1], b = K[0], span = 1 - a.t + b.t, u = 0;
@@ -47,7 +48,9 @@ const Rig = {
     const out = { pose: {}, root: { x: 0, y: 0 }, ik: {} }, pa = a.pose || {}, pb = b.pose || {};
     for (const n of new Set([...Object.keys(pa), ...Object.keys(pb)])) { const x = pa[n] || 0, y = pb[n] || 0; let d = y - x; while (d > Math.PI) d -= TAU; while (d < -Math.PI) d += TAU; out.pose[n] = x + d * ease; }
     const ra = a.root || { x: 0, y: 0 }, rb = b.root || { x: 0, y: 0 }; out.root = { x: (ra.x || 0) + ((rb.x || 0) - (ra.x || 0)) * ease, y: (ra.y || 0) + ((rb.y || 0) - (ra.y || 0)) * ease };
-    const ia = a.ik || {}, ib = b.ik || {}; for (const c of new Set([...Object.keys(ia), ...Object.keys(ib)])) { const s = ia[c] || ib[c], t = ib[c] || ia[c]; out.ik[c] = { x: s.x + (t.x - s.x) * ease, y: s.y + (t.y - s.y) * ease }; }
+    const ia = a.ik || {}, ib = b.ik || {};
+    const fkEnd = (key, c) => { const r = key.root || { x: 0, y: 0 }, W = this.solve(rig, { pose: key.pose || {}, root: r, ik: {} }), e = W[rig.chains[c].bones[1]]; return { x: e.tx - r.x, y: e.ty - r.y }; };
+    for (const c of new Set([...Object.keys(ia), ...Object.keys(ib)])) { let s = ia[c], t = ib[c]; if (rig && rig.chains[c]) { if (!s) s = fkEnd(a, c); if (!t) t = fkEnd(b, c); } else { s = s || t; t = t || s; } out.ik[c] = { x: s.x + (t.x - s.x) * ease, y: s.y + (t.y - s.y) * ease }; }
     return out;
   },
   // world transforms for a pose: each bone's origin, world angle and tip; then IK bends the chains that have targets
@@ -72,10 +75,10 @@ const Rig = {
   // paint the figure at a phase of a motion on g, (0, 0) its centre, as a code sprite's paint would
   paint(rig, motionName, phase, g) {
     const motion = rig.motions[motionName] || rig.motions[Object.keys(rig.motions)[0]] || { keys: [] };
-    const P = this.pose(motion, phase), W = this.solve(rig, P);
+    const P = this.pose(motion, phase, rig), W = this.solve(rig, P);
     for (const part of rig.parts) { const w = W[part.bone]; if (!w) continue; g.save(); g.translate(w.x, w.y); g.rotate(w.angle); part.draw(g, w, P); g.restore(); }
   },
   // the skeleton itself, for editors: joints and bones over the figure
-  bones(rig, motionName, phase) { return this.solve(rig, this.pose(rig.motions[motionName] || { keys: [] }, phase)); },
+  bones(rig, motionName, phase) { return this.solve(rig, this.pose(rig.motions[motionName] || { keys: [] }, phase, rig)); },
   frames(motion) { return Math.max(2, Math.round((motion.secs || 1) * (motion.fps || 12))); },
 };
