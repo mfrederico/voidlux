@@ -138,7 +138,8 @@ const Move = {
     const K = this.K(); if (!K) return; const d = this.drag;
     d.at = [p.x, p.y];
     if (d.root) { K.root = { x: Math.round((p.x - d.ox) * 10) / 10, y: Math.round((p.y - d.oy) * 10) / 10 }; }
-    else if (d.chain) { const r = K.root || { x: 0, y: 0 }; K.ik = K.ik || {}; K.ik[d.chain] = { x: Math.round((p.x - r.x) * 10) / 10, y: Math.round((p.y - r.y) * 10) / 10 }; this.lastChain = d.chain;
+    else if (d.chain) { const r = K.root || { x: 0, y: 0 }; K.ik = K.ik || {}; const ch = this.R.chains[d.chain], W0 = Rig.solve(this.R, this.poseNow()), O = W0[ch.bones[0]], reach = (this.R.bones[ch.bones[0]].len + this.R.bones[ch.bones[1]].len) * 0.995; let tx = p.x, ty = p.y; const dist = Math.hypot(tx - O.x, ty - O.y); if (dist > reach) { tx = O.x + (tx - O.x) * reach / dist; ty = O.y + (ty - O.y) * reach / dist; }
+      K.ik[d.chain] = { x: Math.round((tx - r.x) * 10) / 10, y: Math.round((ty - r.y) * 10) / 10 }; this.lastChain = d.chain;
       if (d.elbow) { // of the two folds, keep the one whose elbow stays nearer where it just was: the joint swings round on its own when the limb passes through straight
         const ch = this.R.chains[d.chain], cur = Rig.bendAt(this.M(), this.keyI, d.chain, ch.bend || 1), e = s => { K.bend = K.bend || {}; const was = K.bend[d.chain]; K.bend[d.chain] = s; const W = Rig.solve(this.R, this.poseNow()); if (was === undefined) delete K.bend[d.chain]; else K.bend[d.chain] = was; const b = W[ch.bones[0]]; return [b.tx, b.ty]; };
         const e1 = e(cur), e2 = e(-cur), d1 = Math.hypot(e1[0] - d.elbow[0], e1[1] - d.elbow[1]), d2 = Math.hypot(e2[0] - d.elbow[0], e2[1] - d.elbow[1]);
