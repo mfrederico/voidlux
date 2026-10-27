@@ -13,7 +13,7 @@
 //                                 by code into the atlas, the way Centipede draws its creatures.
 //   Draw.define(key, half, (g, f) => {...}, { frames, fps })  a code sprite: paint draws at (0, 0), facing right, within radius half;
 //                                 f is the frame. Draw.pic / Draw.anim draw it like any other key, scaled to the w asked for.
-//   Draw.rig(key, motion, t, x, y, w, flip)  a skeleton rig (assets/<key>.rig.js, "kind": "rig", see kit-rig.js): the motion's
+//   Draw.rig(key, motion, t, x, y, w, flip, stand)  a skeleton rig (assets/<key>.rig.js, "kind": "rig", see kit-rig.js): the motion's
 //                                 frame at time t, painted once into the atlas like a code sprite. kit-rig.js loads itself from
 //                                 the kit's folder the first time a manifest names a rig.
 //   Draw.pic(key, x, y, w, h, angle, frame, flip)  draws a sprite centred, crisp (nothing, and false, until its file has arrived; a file
@@ -74,8 +74,9 @@ const Draw = {
     const t = c.getTransform(); c.translate(x, y); if (flip) c.scale(-1, 1); c.rotate(flip ? -(a || 0) : (a || 0)); c.drawImage(im, f * fw, 0, fw, fh, -w / 2, -h / 2, w, h); c.setTransform(t.a, t.b, t.c, t.d, t.e, t.f); c.imageSmoothingEnabled = sm; return true;
   },
   anim(key, t, x, y, w, h, a, flip) { if (typeof Rig !== 'undefined' && Rig.rigs.has(key)) return this.rig(key, null, t, x, y, w, flip); const m = this.painters.get(key) || this.meta.get(key); return this.pic(key, x, y, w, h, a, m ? Math.floor(t * (m.fps || 8)) : 0, flip); },
-  rig(key, motion, t, x, y, w, flip) { // a rig's motion at time t: one atlas sprite per frame, stamped scaled like a code sprite
+  rig(key, motion, t, x, y, w, flip, stand) { // a rig's motion at time t: one atlas sprite per frame, stamped scaled like a code sprite; stand: (x, y) is where the feet stand (the rig's ground line), not the centre
     if (typeof Rig === 'undefined') return false; const R = Rig.rigs.get(key); if (!R) return false;
+    if (stand && R.ground !== null && R.ground !== undefined) y -= R.ground * (w ? w / (R.half * 2) : 1);
     const name = motion && R.motions[motion] ? motion : Object.keys(R.motions)[0]; if (!name) return false; const M = R.motions[name], n = Rig.frames(M), f = ((Math.floor(t * (M.fps || 12)) % n) + n) % n;
     const S = this.sprite(`${key}#${name}#${f}`, R.half, g => Rig.paint(R, name, M.loop === false ? Math.min(1, f / Math.max(1, n - 1)) : f / n, g)), c = this.ctx, k = w ? w / (R.half * 2) : 1;
     if (k === 1 && !flip) { this.stamp(S, x, y, 0); return true; }

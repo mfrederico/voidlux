@@ -86,7 +86,9 @@ will not load is a console error, which the soak reports.
   drawer in render.js.
 - A **rig** is `assets/<key>.rig.js` with `"kind": "rig"`: one `Rig.define('<key>', { half, bones, chains, parts, motions })`
   (the format is at the top of kit-rig.js): bones with rest angles, two-bone IK chains for arms and legs, parts drawn in
-  bone space, and motions as keyframes tweened. `Draw.rig(key, 'run', Game.time, x, y, w, flip)` plays one; `Draw.anim`
+  bone space, and motions as keyframes tweened. `Draw.rig(key, 'run', Game.time, x, y, w, flip)` plays one centred at
+  (x, y); with a final `true` (stand) the rig's ground line, where its feet stand, is put at (x, y) instead, which is what
+  a platformer wants. `Draw.anim`
   on a rig key plays its first motion. Motions are data: a motion made for one biped fits any other. The same safety
   rules as a code sprite apply (only drawing, node --check).
 - Publishing copies `assets/` with the game.
