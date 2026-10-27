@@ -42,6 +42,10 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
 #tlScrub { width: 100%; }
 .moveside { display: grid; gap: 10px; min-width: 0; } .hintlist { display: grid; gap: 4px; max-height: 300px; overflow: auto; } .hint { display: grid; grid-template-columns: 1fr 1fr auto; gap: 4px; align-items: center; padding: 4px; border-radius: 6px; } .hint.on { background: var(--bg); outline: 1px solid var(--accent); } .hint input, .hint select { width: 100%; min-width: 0; } .hint .note { grid-column: 1 / -1; } .hint .x { padding: 2px 8px; }
 .gobtn.small { font-size: 14px; padding: 6px 14px; border-radius: 999px; }
+/* the artist at work: a pill at the bottom that blinks while a job runs, whatever tab is up */
+#artBusy { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 40; display: none; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 999px; background: var(--surface); border: 1px solid var(--accent); box-shadow: 0 8px 24px rgba(0,0,0,.25); font-size: 13px; max-width: 92vw; }
+#artBusy.on { display: flex; } #artBusy .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: artblink 1s ease-in-out infinite; flex: none; } #artBusy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes artblink { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .25; transform: scale(.7); } }
 @media (max-width: 760px) { .main { grid-template-columns: 1fr; } .list { position: static; max-height: none; } }
 /* nothing may be wider than the phone: grid children shrink, selects and inputs cap at their box, long words break */
 .wrap > *, .main > *, .panel > *, .sketch > *, .pad > *, .out > *, .note > * { min-width: 0; }
@@ -121,6 +125,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
   <div id="msg" class="msg"></div>
   <div id="fresh" class="hidden" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 12px;border:1px solid var(--accent);border-radius:10px;background:var(--surface)"><span>This page was updated behind you.</span><button class="primary" id="freshBtn">Reload it</button><span class="muted small" id="freshWhy"></span></div>
   <div id="askSave" role="dialog" aria-label="unsaved drawing"><div class="ask"><p>You changed the drawing. Save it before loading another?</p><div class="row"><button class="primary" id="askYes">Save it</button><button id="askNo">Don't save</button><button id="askStay">Stay here</button></div></div></div>
+  <div id="artBusy" role="status"><div class="dot"></div><span id="artBusyText">the artist is working…</span></div>
   <div id="viewer" role="dialog" aria-label="a take, full screen">
     <div class="vhead"><span class="mono" id="vTitle"></span><div class="row"><button id="vKeep" class="primary">Keep</button><button id="vKeepPx">Keep as pixels</button><button id="vEdit">Edit</button><button id="vOver" title="lay this take on the drawing pad and mark it up">✎ Draw over this</button><button id="vAnim" title="rig this character into a run, idle, jump… as a code sprite">⟳ Animate…</button><button id="vClose">✕ close</button></div></div>
     <div class="vstage" id="vStage"></div>
@@ -369,6 +374,7 @@ function drawList() {
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function jobTitle(j) { const who = j.asset || j.key || 'sprite'; if (j.kind === 'rig') return `skeleton rig of ${who}`; if (j.kind === 'animate') return `${j.cycle || 'motion'} cycle of ${who}`; if (j.kind === 'vector') return `${who} as vector`; if (j.note) return j.note; if (j.kind === 'refine') return `refinement of ${j.key}`; if (j.kind === 'revision') return `revision of ${j.key}`; return j.key || '(no description)'; }
 const takeLabel = (j, i) => `${j.key || 'sprite'} · take ${i + 1}`;
+const artBusy = text => { el('artBusy').classList.add('on'); el('artBusyText').textContent = text || 'the artist is working…'; }, artIdle = () => el('artBusy').classList.remove('on');
 el('q').oninput = drawList;
 
 function leaveOk() { return !dirty || confirm('This sprite has unsaved changes. Leave them behind?'); }
@@ -648,7 +654,7 @@ el('goBtn').onclick = async () => {
   } catch (e) { el('aiStatus').textContent = 'not sent: ' + e.message; } finally { el('goBtn').disabled = false; }
 };
 async function pollSketch() {
-  if (!SK) return; try { const j = await (await fetch(apiUrl('sketch') + '?id=' + encodeURIComponent(SK.id), { cache: 'no-store' })).json(); if (j.result) { clearInterval(skT); loadJobs(); el('aiStatus').textContent = j.result.ok === false ? 'the builder could not do it: ' + (j.result.error || '') : 'done: pick a take, then Keep it (or edit its pixels first).'; } else if (!j.busy && Date.now() - SK.at * 1000 > 20 * 60 * 1000) { clearInterval(skT); el('aiStatus').textContent = 'the artist stopped without writing a result; the Build tab on the game page says what happened.'; } showOut(j); } catch (e) {}
+  if (!SK) return; try { const j = await (await fetch(apiUrl('sketch') + '?id=' + encodeURIComponent(SK.id), { cache: 'no-store' })).json(); if (!j.result && !j.saved) artBusy((j.status || 'the artist is working…') + ' · ' + jobTitle(j)); if (j.result) { artIdle(); clearInterval(skT); loadJobs(); el('aiStatus').textContent = j.result.ok === false ? 'the builder could not do it: ' + (j.result.error || '') : 'done: pick a take, then Keep it (or edit its pixels first).'; } else if (!j.busy && Date.now() - SK.at * 1000 > 20 * 60 * 1000) { artIdle(); clearInterval(skT); el('aiStatus').textContent = 'the artist stopped without writing a result; the Build tab on the game page says what happened.'; } showOut(j); } catch (e) {}
 }
 async function loadJobs() {
   try { const j = await (await fetch(apiUrl('sketches'), { cache: 'no-store' })).json(); const box = el('jobs'); box.innerHTML = ''; const jobs = j.jobs; el('jobsN').textContent = j.jobs.length ? `(${j.jobs.length})` : '(none yet)';
