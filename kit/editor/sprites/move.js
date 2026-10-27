@@ -79,6 +79,7 @@ const Move = {
         el('moveSub').textContent = `a rig: ${Object.keys(this.R.bones).length} bones, ${Object.keys(this.R.chains).length} IK chains, ${this.R.parts.length} parts`;
         el('mMotion').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join(''); this.pickMotion(names[0] || '');
         { let rj = null; try { rj = JSON.parse(localStorage.getItem('vl.sprites.' + GAME + '.rigjob') || 'null'); } catch (e) {} if (rj && rj.key === cur) this.watch(rj.id, rj.key, 'picking the job up again…'); else el('moveOut').classList.add('hidden'); }
+        this.listJobs();
       } else {
         this.half = Math.max(8, (entry.w || 48) / 2); const px = Math.round(this.N * 0.9);
         if (entry.kind === 'code' || /\.js$/i.test(entry.file)) { const t = await (await fetch(ASSET(entry.file) + '?t=' + Date.now(), { cache: 'no-store' })).text(); this.base = renderCode(t, px, 0).canvas; }
@@ -211,16 +212,29 @@ const Move = {
       el('moveKeep').textContent = (j.kind === 'animate' && this.R) ? `Add the ${j.cycle || 'new'} motion to ${key}` : 'Keep as rig';
       el('moveKeep').onclick = async () => { el('moveKeep').disabled = true;
         try {
-          if (j.kind === 'animate' && this.R && cur === key) { // merge: only the new motion joins the rig as it is now; the rest of the take (a copy of the rig as it was) is dropped
-            const text = await (await fetch(url, { cache: 'no-store' })).text(); let def = null; const real = Rig.define; Rig.define = (k, r) => { def = r; }; try { new Function('Rig', 'Draw', 'TAU', 'U', text)(Rig, Draw, TAU, U); } finally { Rig.define = real; }
-            const name = j.cycle && def && def.motions && def.motions[j.cycle] ? j.cycle : (def && def.motions ? Object.keys(def.motions).find(n => !this.R.motions[n]) || Object.keys(def.motions)[0] : null); if (!name) throw new Error('the take has no motion to add');
-            this.snapshot(); this.R.motions[name] = def.motions[name]; this.motionList(name); await this.saveRig(); say(`the motion ${name} is in ${key} now; everything else in the rig stayed as you had it`, 'ok'); }
+          if (j.kind === 'animate' && this.R && cur === key) { await this.addMotionFrom(url, j.cycle); this.listJobs(); } // merge: only the new motion joins the rig as it is now
           else { el('aiKey').value = key; await keep(false); if (M.sprites[key]) open(key); else this.refresh(); }
         } catch (e) { say('not kept: ' + e.message, 'err'); } finally { el('moveKeep').disabled = false; }
         el('moveOut').classList.add('hidden'); };
       el('moveView').onclick = () => openViewer(id, f, url, j.result.note || '', `${key} · rig`);
     } catch (e) {} };
     this.jobT = setInterval(tick, 4000); tick();
+  },
+  // a motion from an artist's take (a copy of the rig with the motion added) merged into the rig as it is now
+  async addMotionFrom(url, cycle) {
+    const text = await (await fetch(url, { cache: 'no-store' })).text(); let def = null; const real = Rig.define; Rig.define = (k, r) => { def = r; }; try { new Function('Rig', 'Draw', 'TAU', 'U', text)(Rig, Draw, TAU, U); } finally { Rig.define = real; }
+    const name = cycle && def && def.motions && def.motions[cycle] ? cycle : (def && def.motions ? Object.keys(def.motions).find(n => !this.R.motions[n]) || Object.keys(def.motions)[0] : null); if (!name) throw new Error('the take has no motion to add');
+    if (this.R.motions[name] && !confirm(`${cur} already has a motion named ${name}. Replace it with the artist's?`)) return null;
+    this.snapshot(); this.R.motions[name] = def.motions[name]; this.motionList(name); await this.saveRig(); say(`the motion ${name} is in ${cur} now; everything else in the rig stayed as you had it`, 'ok'); return name;
+  },
+  async listJobs() { // the artist's finished motion and rig takes for this rig, to add from
+    const box = el('moveJobs'), L = el('moveJobsList'); if (!this.R) { box.classList.add('hidden'); return; }
+    try { const j = await (await fetch(apiUrl('sketches'), { cache: 'no-store' })).json(); const jobs = j.jobs.filter(o => o.key === cur && o.result && o.result.ok && (o.kind === 'animate' || o.kind === 'rig') && (o.result.files || []).length).slice(0, 8);
+      box.classList.toggle('hidden', !jobs.length); L.innerHTML = '';
+      for (const o of jobs) { const d = document.createElement('div'); d.className = 'row'; const url = o.base + o.result.files[0]; d.innerHTML = `<img alt="" style="width:40px;height:40px;object-fit:contain;image-rendering:pixelated;border-radius:6px;background:repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 10px 10px"><span class="small"><b>${esc(o.kind === 'animate' ? (o.cycle || 'motion') + ' motion' : 'a rig')}</b> <span class="muted">· ${esc(new Date(o.at * 1000).toLocaleString())}${o.result.note ? ' · ' + esc(o.result.note.slice(0, 80)) : ''}</span></span><button class="primary small" data-add="${esc(url)}" data-cycle="${esc(o.cycle || '')}">${o.kind === 'animate' ? 'Add this motion' : 'Replace the rig with this'}</button><button data-view="${esc(url)}" data-label="${esc(cur + ' · ' + (o.cycle || 'rig'))}">view</button>`;
+        takeThumb(d.querySelector('img'), url); d.querySelector('[data-add]').onclick = async ev => { const b = ev.currentTarget; b.disabled = true; try { if (o.kind === 'animate') await this.addMotionFrom(url, o.cycle); else { cand = url; el('aiKey').value = cur; await keep(false); open(cur); } } catch (e) { say('not added: ' + e.message, 'err'); } finally { b.disabled = false; } };
+        d.querySelector('[data-view]').onclick = () => openViewer(o.id, o.result.files[0], url, o.result.note || '', cur + ' · ' + (o.cycle || 'rig')); L.appendChild(d); }
+    } catch (e) { box.classList.add('hidden'); }
   },
   // ---- the rig's motions and keys ----
   M() { return this.R && this.R.motions[this.motion] || null; }, K() { const M = this.M(); return M && this.keyI >= 0 ? M.keys[this.keyI] : null; },
