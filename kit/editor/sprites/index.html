@@ -451,21 +451,22 @@ el('codeSrc').oninput = () => { dirty = true; clearTimeout(codeT); codeT = setTi
 
 // ---- the viewer: one take, full screen; Keep / Edit act on it; "refine this" sends it back to the builder with an instruction ----
 let V = null, vAnimT = null; // { job, file, url }; the viewer's frame timer for a code animation
-async function openViewer(job, file, url, note, label, motion) {
-  V = { job, file, url, motion }; const st = el('vStage'); st.innerHTML = ''; el('vTitle').textContent = `${label || file} · key ${el('aiKey').value || 'not set yet'}`; el('vTitle').title = file; el('vNote').textContent = note || ''; el('vStatus').textContent = ''; el('vRefine').value = '';
+async function openViewer(job, file, url, note, label, motion, keyHint) {
+  V = { job, file, url, motion, key: keyHint || el('aiKey').value.trim() || cur || '', rig: false }; const st = el('vStage'); st.innerHTML = ''; el('vTitle').textContent = `${label || file} · key ${el('aiKey').value || 'not set yet'}`; el('vTitle').title = file; el('vNote').textContent = note || ''; el('vStatus').textContent = ''; el('vRefine').value = '';
   const isCode = /\.js(\?|$)/i.test(url), isSvg = /\.svg(\?|$)/i.test(url);
   try {
-    if (isCode) { const text = await (await fetch(url, { cache: 'no-store' })).text(); const n = Math.min(768, Math.floor(Math.min(innerWidth, innerHeight) * 0.66)), vo = { motion: motion || undefined }, r = renderCode(text, n, 0, vo); st.appendChild(r.canvas);
+    if (isCode) { const text = await (await fetch(url, { cache: 'no-store' })).text(); const n = Math.min(768, Math.floor(Math.min(innerWidth, innerHeight) * 0.66)), vo = { motion: motion || undefined }, r = renderCode(text, n, 0, vo); st.appendChild(r.canvas); V.rig = !!(r.def && r.def.rig);
       clearInterval(vAnimT); if (r.def.o && r.def.o.frames > 1) { let f = 0; const cv = r.canvas, g = cv.getContext('2d'); vAnimT = setInterval(() => { f = (f + 1) % r.def.o.frames; try { g.clearRect(0, 0, n, n); g.drawImage(renderCode(text, n, f, vo).canvas, 0, 0); } catch (e) {} }, 1000 / (r.def.o.fps || 8)); el('vNote').textContent = (note || '') + ` · ${r.def.o.frames} frames at ${r.def.o.fps || 8} fps`; } }
     else { const im = document.createElement('img'); im.alt = file; im.className = isSvg ? '' : 'px'; const n = Math.max(160, Math.floor(Math.min(innerWidth * 0.92, innerHeight * 0.66))); im.width = im.height = n; im.style.width = im.style.height = n + 'px'; im.onerror = () => { st.innerHTML = `<div class="msg err">could not load ${esc(file)}</div>`; }; im.src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(); st.appendChild(im); }
   } catch (e) { st.innerHTML = `<div class="msg err">${esc(e.message)}</div>`; }
-  el('vKeep').textContent = isSvg ? 'Keep as SVG' : isCode ? 'Keep as code' : 'Keep as a sprite'; el('vKeepPx').classList.toggle('hidden', !(isSvg || isCode)); el('vEdit').textContent = isSvg ? 'Edit the SVG' : isCode ? 'Edit the code' : 'Edit its pixels';
+  el('vKeep').textContent = isSvg ? 'Keep as SVG' : V.rig ? `Keep as the rig (${V.key})` : isCode ? 'Keep as code' : 'Keep as a sprite'; el('vKeepPx').classList.toggle('hidden', !(isSvg || isCode)); el('vEdit').textContent = isSvg ? 'Edit the SVG' : isCode ? 'Edit the code' : 'Edit its pixels';
+  el('vAnim').textContent = V.rig ? '⛶ Keep & pose it' : '⟳ Animate…'; el('vAnim').title = V.rig ? 'keep this rig in the game and open it on Move with the timeline and posing' : 'rig this character into a run, idle, jump… as a code sprite';
   el('viewer').classList.add('open'); el('vRefine').focus();
 }
 function closeViewer() { el('viewer').classList.remove('open'); V = null; clearInterval(vAnimT); }
 el('vClose').onclick = closeViewer; el('viewer').addEventListener('click', e => { if (e.target === el('viewer') || e.target === el('vStage')) closeViewer(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && V) closeViewer(); });
-el('vKeep').onclick = () => { closeViewer(); el('keepBtn').click(); }; el('vKeepPx').onclick = () => { closeViewer(); el('keepPxBtn').click(); }; el('vEdit').onclick = () => { closeViewer(); el('editBtn').click(); };
+el('vKeep').onclick = () => { if (V && V.rig && V.key) el('aiKey').value = V.key; closeViewer(); el('keepBtn').click(); }; el('vKeepPx').onclick = () => { closeViewer(); el('keepPxBtn').click(); }; el('vEdit').onclick = () => { closeViewer(); el('editBtn').click(); };
 el('vGo').onclick = async () => {
   if (!V) return; const ins = el('vRefine').value.trim(); if (!ins) { el('vRefine').focus(); return; }
   el('vGo').disabled = true; el('vStatus').textContent = 'sending the take and your instruction to the builder…';
@@ -600,7 +601,11 @@ function openAnim(target, label) { showTab('move'); animTarget = target; const o
 el('animName').onchange = () => { const b = el('animKey').dataset.base; if (b) el('animKey').value = `${b}-${el('animName').value}`; };
 el('animCancel').onclick = () => { el('animBox').classList.add('hidden'); animTarget = null; };
 el('animBtn').onclick = () => { if (!cand) return; const sk = SK || {}; openAnim({ refine: { id: sk.id, file: cand.replace(/^.*\//, '').replace(/\?.*$/, '') } }, cand.replace(/^.*\//, '').replace(/\?.*$/, '')); };
-el('vAnim').onclick = () => { if (!V) return; const t = { refine: { id: V.job, file: V.file.replace(/\?.*$/, '') } }; closeViewer(); openAnim(t, t.refine.file); };
+el('vAnim').onclick = async () => { if (!V) return;
+  if (V.rig) { // keep the rig under its key and go straight to posing it
+    const key = V.key || cur; if (!KEY_RE.test(key)) { say('give the rig a key first', 'err'); return; } if (M.sprites[key] && M.sprites[key].kind !== 'rig' && !confirm(`The rig takes the place of ${key} in the game (its file stays in assets). Keep it as ${key}?`)) return;
+    cand = V.url; el('aiKey').value = key; closeViewer(); await keep(false); if (M.sprites[key]) { await open(key); showTab('move'); } return; }
+  const t = { refine: { id: V.job, file: V.file.replace(/\?.*$/, '') } }; closeViewer(); openAnim(t, t.refine.file); };
 el('animCurBtn').onclick = () => { if (!cur || !entry) { say('save the sprite first, then animate it', 'err'); return; } openAnim({ asset: cur }, cur); };
 el('moveAnimBtn').onclick = () => { if (cur && entry) openAnim({ asset: cur }, cur); };
 el('animGo').onclick = async () => {

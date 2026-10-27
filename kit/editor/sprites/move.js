@@ -217,7 +217,7 @@ const Move = {
           else { el('aiKey').value = key; await keep(false); if (M.sprites[key]) open(key); else this.refresh(); }
         } catch (e) { say('not kept: ' + e.message, 'err'); } finally { el('moveKeep').disabled = false; }
         el('moveOut').classList.add('hidden'); };
-      el('moveView').onclick = () => openViewer(id, f, url, j.result.note || '', `${key} · ${j.cycle || 'rig'}`, j.cycle || undefined);
+      el('moveView').onclick = () => openViewer(id, f, url, j.result.note || '', `${key} · ${j.cycle || 'rig'}`, j.cycle || undefined, key);
     } catch (e) {} };
     this.jobT = setInterval(tick, 4000); tick();
   },
@@ -235,7 +235,7 @@ const Move = {
       for (const o of jobs) { const d = document.createElement('div'); d.className = 'row'; const url = o.base + o.result.files[0]; d.innerHTML = `<img alt="" style="width:40px;height:40px;object-fit:contain;image-rendering:pixelated;border-radius:6px;background:repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 10px 10px"><span class="small"><b>${esc(o.kind === 'animate' ? (o.cycle || 'motion') + ' motion' : 'a rig')}</b> <span class="muted">· ${esc(new Date(o.at * 1000).toLocaleString())}${o.result.note ? ' · ' + esc(o.result.note.slice(0, 80)) : ''}</span></span><button class="primary small" data-add="${esc(url)}" data-cycle="${esc(o.cycle || '')}">${o.kind === 'animate' ? 'Add this motion' : this.R ? 'Replace the rig with this' : `Keep as the rig (${esc(o.key)})`}</button><button data-view="${esc(url)}" data-label="${esc(cur + ' · ' + (o.cycle || 'rig'))}">view</button>`;
         d.style.cssText = 'display:grid;grid-template-columns:40px 1fr;gap:6px;align-items:center'; d.querySelector('span.small').style.cssText = 'overflow-wrap:anywhere'; const btns = document.createElement('div'); btns.className = 'row'; btns.style.gridColumn = '1 / -1'; btns.append(d.querySelector('[data-add]'), d.querySelector('[data-view]')); d.appendChild(btns);
         takeThumb(d.querySelector('img'), url, o.cycle || undefined); d.querySelector('[data-add]').onclick = async ev => { const b = ev.currentTarget; b.disabled = true; try { if (o.kind === 'animate' && this.R) await this.addMotionFrom(url, o.cycle); else { if (!this.R && o.key === cur && !confirm(`The rig takes the place of the drawing ${cur} in the game (the SVG file stays in assets). Keep it as ${cur}?`)) return; cand = url; el('aiKey').value = o.key; await keep(false); open(o.key); } } catch (e) { say('not added: ' + e.message, 'err'); } finally { b.disabled = false; } };
-        d.querySelector('[data-view]').onclick = () => openViewer(o.id, o.result.files[0], url, o.result.note || '', cur + ' · ' + (o.cycle || 'rig'), o.cycle || undefined); L.appendChild(d); }
+        d.querySelector('[data-view]').onclick = () => openViewer(o.id, o.result.files[0], url, o.result.note || '', cur + ' · ' + (o.cycle || 'rig'), o.cycle || undefined, o.key); L.appendChild(d); }
     } catch (e) { box.classList.add('hidden'); }
   },
   // ---- the rig's motions and keys ----
