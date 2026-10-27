@@ -61,6 +61,7 @@ const Move = {
         else { const im = await loadImage(ASSET(entry.file) + '?t=' + Date.now()); const c = document.createElement('canvas'); c.width = c.height = px; const g = c.getContext('2d'); g.imageSmoothingEnabled = !/\.png$/i.test(entry.file); const s = Math.min(px / im.naturalWidth, px / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s; g.drawImage(im, (px - w) / 2, (px - h) / 2, w, h); this.base = c; }
         el('moveSub').textContent = 'mark its bones for the rigger on the right, or let the artist animate it as code frames';
         const h = await (await fetch(apiUrl('spritehints') + '?key=' + encodeURIComponent(cur), { cache: 'no-store' })).json(); this.plan = h.plan || 'biped'; this.joints = Array.isArray(h.joints) ? h.joints : []; el('hintPlan').value = this.plan; el('rigNotes').value = h.notes || ''; this.names(); this.hintsUI();
+        let rj = null; try { rj = JSON.parse(localStorage.getItem('vl.sprites.' + GAME + '.rigjob') || 'null'); } catch (e) {} if (rj && rj.key === cur) this.watch(rj.id, rj.key, 'picking the rig job up again…'); else el('moveOut').classList.add('hidden');
       }
     } catch (e) { el('moveSub').textContent = 'could not load it: ' + e.message; }
     this.draw();
@@ -155,9 +156,9 @@ const Move = {
   },
   // the rig job followed here on Move: status while it runs, the take moving when it lands, Keep beside it
   watch(id, key, status) {
-    clearInterval(this.jobT); el('moveOut').classList.remove('hidden'); el('moveOutCand').classList.add('hidden'); el('moveOutStatus').textContent = status; el('moveOut').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    clearInterval(this.jobT); try { localStorage.setItem('vl.sprites.' + GAME + '.rigjob', JSON.stringify({ id, key })); } catch (e) {} el('moveOut').classList.remove('hidden'); el('moveOutCand').classList.add('hidden'); el('moveOutStatus').textContent = status; el('moveOut').scrollIntoView({ behavior: 'smooth', block: 'center' });
     const tick = async () => { try { const j = await (await fetch(apiUrl('sketch') + '?id=' + encodeURIComponent(id), { cache: 'no-store' })).json();
-      if (!j.result) { el('moveOutStatus').textContent = j.status || 'working…'; return; } clearInterval(this.jobT);
+      if (!j.result) { el('moveOutStatus').textContent = j.status || 'working…'; return; } clearInterval(this.jobT); try { localStorage.removeItem('vl.sprites.' + GAME + '.rigjob'); } catch (e) {}
       if (j.result.ok === false) { el('moveOutStatus').textContent = 'the rigger could not do it: ' + (j.result.error || ''); return; }
       const f = (j.result.files || [])[0]; if (!f) { el('moveOutStatus').textContent = 'no file came back'; return; } const url = j.base + f;
       el('moveOutStatus').textContent = 'done: watch it move, then keep it'; el('moveOutNote').textContent = j.result.note || ''; const c = el('moveOutCand'); c.classList.remove('hidden'); takeThumb(c.querySelector('img'), url + '?t=' + Date.now());

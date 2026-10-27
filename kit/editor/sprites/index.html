@@ -119,6 +119,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
   <div class="top"><h1>Sprites</h1><nav class="tabs" id="tabs"><a href="#make" data-tab="make" class="on">Make</a><a href="#draw" data-tab="draw">Draw</a><a href="#move" data-tab="move">Move</a></nav></div>
   <p class="lede" id="lede">Draw a rough sketch, say what it is, press &gt;&gt;: the artist draws two takes. Keep one and it is in the game as <code>Draw.pic('key', x, y, size)</code>.</p>
   <div id="msg" class="msg"></div>
+  <div id="fresh" class="hidden" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 12px;border:1px solid var(--accent);border-radius:10px;background:var(--surface)"><span>This page was updated behind you.</span><button class="primary" id="freshBtn">Reload it</button><span class="muted small" id="freshWhy"></span></div>
   <div id="askSave" role="dialog" aria-label="unsaved drawing"><div class="ask"><p>You changed the drawing. Save it before loading another?</p><div class="row"><button class="primary" id="askYes">Save it</button><button id="askNo">Don't save</button><button id="askStay">Stay here</button></div></div></div>
   <div id="viewer" role="dialog" aria-label="a take, full screen">
     <div class="vhead"><span class="mono" id="vTitle"></span><div class="row"><button id="vKeep" class="primary">Keep</button><button id="vKeepPx">Keep as pixels</button><button id="vEdit">Edit</button><button id="vOver" title="lay this take on the drawing pad and mark it up">✎ Draw over this</button><button id="vAnim" title="rig this character into a run, idle, jump… as a code sprite">⟳ Animate…</button><button id="vClose">✕ close</button></div></div>
@@ -660,6 +661,21 @@ el('aiAnimBtn').onclick = () => { if (!cur || !entry) { say('save the sprite fir
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 window.addEventListener('resize', () => { if (doc && mode === 'pix') { fitZoom(); render(); } });
 (async () => { drawSwatches(); show('none'); showTab(location.hash.slice(1) || 'make'); recall(); await apiToken(); await load(); await loadJobs(); if (el('jobs').children.length) el('jobsBox').open = true; })();
+// ---- a newer version of this page: noticed every 20 s by the files' Last-Modified; reloaded by hand, or by itself after a
+//      minute without unsaved work or a touch, so a fix lands without anyone having to refresh the game page ----
+(() => {
+  const FILES = [location.pathname, '/kit/editor/sprites/move.js', '/kit/js/kit-draw.js', '/kit/js/kit-rig.js']; let stamp = null, since = 0, lastTouch = Date.now();
+  for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, () => { lastTouch = Date.now(); }, true);
+  async function fingerprint() { const parts = []; for (const f of FILES) { try { const r = await fetch(f, { method: 'HEAD', cache: 'no-store' }); parts.push(r.headers.get('last-modified') || r.headers.get('etag') || ''); } catch (e) { parts.push('?'); } } return parts.join('|'); }
+  async function check() {
+    const now = await fingerprint(); if (stamp === null) { stamp = now; return; } if (now === stamp) return;
+    const busyHands = dirty || padDirty || (typeof Move !== 'undefined' && Move.drag) || (Date.now() - lastTouch < 60000);
+    el('fresh').classList.remove('hidden'); el('freshWhy').textContent = busyHands ? 'it reloads itself once you have saved and stepped away for a minute; your drawing, jobs and marks are kept' : 'reloading…';
+    if (!busyHands) { since++; if (since >= 1) { remember(); location.reload(); } }
+  }
+  el('freshBtn').onclick = () => { remember(); location.reload(); };
+  setInterval(check, 20000); check();
+})();
 </script>
 <script src="/kit/editor/sprites/move.js"></script>
 </body></html>
