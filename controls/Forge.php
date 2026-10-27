@@ -19,6 +19,12 @@ class Forge extends BaseControls\Control {
         $this->render('forge/index', ['title' => 'The forge', 'games' => $games]);
     }
 
+    /** The retrospective's ledger: every hour's measures, findings, note and proposals, newest first (lib/Retro.php). */
+    public function retro($params = []): void {
+        if (!$this->requireLogin()) return; if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/forge'); return; }
+        $this->render('forge/retro', ['title' => 'The forge, hour by hour', 'entries' => Retro::entries(72)]);
+    }
+
     /** POST /forge/revokeinvite { id }: withdraw a pending team invitation (the team's owner or an admin of it). JSON. */
     public function revokeinvite($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF();
