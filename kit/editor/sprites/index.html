@@ -403,23 +403,30 @@ el('importFile').onchange = async () => {
 // ---- code sprites: a Draw.define(...) evaluated with the kit's own Draw, painted into a canvas ----
 let takeN = 0; const scratch = document.createElement('canvas'); scratch.width = scratch.height = 8; Draw.init(scratch);
 function renderCode(text, size, frame, opts) {
-  const c = document.createElement('canvas'); c.width = c.height = size; Draw.ctx = c.getContext('2d'); let def = null, rigDef = null; const real = Draw.define, realRig = Rig.define;
+  const c = document.createElement('canvas'); c.width = c.height = size; Draw.ctx = c.getContext('2d'); let def = null, rigDef = null; const real = Draw.define, realRig = Rig.define, stable = opts && opts.key;
+  if (stable && (Draw.painters.has(stable) || Rig.rigs.has(stable))) { // rendered before under this key: no re-evaluation, the atlas has its frames
+    const R = Rig.rigs.get(stable); if (opts.px) Draw.setPx(opts.px);
+    if (R) { const names = Object.keys(R.motions), name = (opts.motion && R.motions[opts.motion]) ? opts.motion : names[0]; if (name) { const M = R.motions[name], n = Rig.frames(M); Draw.rig(stable, name, ((frame || 0) % n) / (M.fps || 12), size / 2, size / 2, size * 0.9); } const o = name ? { frames: Rig.frames(R.motions[name]), fps: R.motions[name].fps || 12 } : null; return { canvas: c, def: { k: stable, half: R.half, o, rig: R, motions: names } }; }
+    const Pn = Draw.painters.get(stable); Draw.pic(stable, size / 2, size / 2, size * 0.9, size * 0.9, 0, frame || 0); return { canvas: c, def: { k: stable, half: Pn.half, o: { frames: Pn.frames, fps: Pn.fps } } };
+  }
   Draw.define = (k, half, paint, o) => { def = { k, half, paint, o }; }; Rig.define = (k, r) => { rigDef = r; };
   try { new Function('Draw', 'Rig', 'TAU', 'U', text)(Draw, Rig, TAU, U); } finally { Draw.define = real; Rig.define = realRig; }
   if (rigDef) { // a rig: its first motion (or the one asked for in opts), one frame
-    const key = 'take:' + (++takeN), R = Rig.define(key, rigDef), names = Object.keys(R.motions), name = (opts && opts.motion && R.motions[opts.motion]) ? opts.motion : names[0]; Draw.setPx(Math.max(1, Math.min(4, Math.ceil(size / (R.half * 2)))));
+    const key = stable || ('take:' + (++takeN)), R = Rig.define(key, rigDef), names = Object.keys(R.motions), name = (opts && opts.motion && R.motions[opts.motion]) ? opts.motion : names[0]; Draw.setPx((opts && opts.px) || Math.max(1, Math.min(4, Math.ceil(size / (R.half * 2)))));
     if (name) { const M = R.motions[name], n = Rig.frames(M); Draw.rig(key, name, ((frame || 0) % n) / (M.fps || 12), size / 2, size / 2, size * 0.9); } else Draw.sprite(key + '#rest', R.half, g => Rig.paint(R, '', 0, g)) && Draw.pic(key, size / 2, size / 2, size * 0.9);
     if (opts && opts.bones) { const g = c.getContext('2d'), k = size * 0.9 / (R.half * 2), W = Rig.bones(R, name || '', name ? (((frame || 0) % Rig.frames(R.motions[name])) / Rig.frames(R.motions[name])) : 0); g.save(); g.translate(size / 2, size / 2); g.scale(k, k); g.lineWidth = 1.2 / k; g.strokeStyle = 'rgba(255,64,160,.9)'; g.fillStyle = 'rgba(255,64,160,.9)'; for (const w of Object.values(W)) { g.beginPath(); g.moveTo(w.x, w.y); g.lineTo(w.tx, w.ty); g.stroke(); g.beginPath(); g.arc(w.x, w.y, 2 / k, 0, TAU); g.fill(); } g.restore(); }
-    const o = name ? { frames: Rig.frames(R.motions[name]), fps: R.motions[name].fps || 12 } : null; Rig.rigs.delete(key); return { canvas: c, def: { k: key, half: R.half, o, rig: R, motions: names } };
+    const o = name ? { frames: Rig.frames(R.motions[name]), fps: R.motions[name].fps || 12 } : null; if (!stable) Rig.rigs.delete(key); return { canvas: c, def: { k: key, half: R.half, o, rig: R, motions: names } };
   }
   if (!def) throw new Error("the code never calls Draw.define('key', half, (g, f) => { ... }) or Rig.define('key', { ... })"); if (!(def.half > 0)) throw new Error('half must be a number above 0');
-  const key = 'take:' + (++takeN); Draw.setPx(Math.max(1, Math.min(4, Math.ceil(size / (def.half * 2))))); Draw.define(key, def.half, def.paint, def.o);
-  Draw.pic(key, size / 2, size / 2, size * 0.9, size * 0.9, 0, frame || 0); Draw.painters.delete(key); return { canvas: c, def };
+  const key = stable || ('take:' + (++takeN)); Draw.setPx((opts && opts.px) || Math.max(1, Math.min(4, Math.ceil(size / (def.half * 2))))); Draw.define(key, def.half, def.paint, def.o);
+  Draw.pic(key, size / 2, size / 2, size * 0.9, size * 0.9, 0, frame || 0); if (!stable) Draw.painters.delete(key); return { canvas: c, def };
 }
-async function takeThumb(img, url) { // a .js take shows as its rendering, and moves if it has frames; anything else is the file itself
+async function takeThumb(img, url) { // a .js take shows as its rendering, still; with frames it plays while the pointer rests on it; anything else is the file itself
   if (!/\.js(\?|$)/i.test(url)) { img.src = url; return; }
-  try { const text = await (await fetch(url, { cache: 'no-store' })).text(); const r = renderCode(text, 144, 0); img.src = r.canvas.toDataURL();
-    if (r.def.o && r.def.o.frames > 1) { let f = 0; const t = setInterval(() => { if (!img.isConnected) { clearInterval(t); return; } f = (f + 1) % r.def.o.frames; try { img.src = renderCode(text, 144, f).canvas.toDataURL(); } catch (e) { clearInterval(t); } }, 1000 / (r.def.o.fps || 8)); } }
+  try { const text = await (await fetch(url, { cache: 'no-store' })).text(), key = 'thumb:' + url.replace(/\?.*$/, ''), opts = { key, px: 2 }; const r = renderCode(text, 144, 0, opts); img.src = r.canvas.toDataURL();
+    if (r.def.o && r.def.o.frames > 1) { let t = null, f = 0; const host = img.closest('.slot, .cand, .takes, .job') || img; img.title = (img.title ? img.title + ' · ' : '') + 'moves while the pointer rests on it';
+      host.addEventListener('mouseenter', () => { clearInterval(t); t = setInterval(() => { if (!img.isConnected) { clearInterval(t); return; } f = (f + 1) % r.def.o.frames; try { img.src = renderCode(text, 144, f, opts).canvas.toDataURL(); } catch (e) { clearInterval(t); } }, 1000 / (r.def.o.fps || 8)); });
+      host.addEventListener('mouseleave', () => { clearInterval(t); t = null; f = 0; try { img.src = renderCode(text, 144, 0, opts).canvas.toDataURL(); } catch (e) {} }); } }
   catch (e) { img.alt = 'code take: ' + e.message; img.title = e.message; }
 }
 let codeT = null, codeFrame = 0, codeAnim = null;
