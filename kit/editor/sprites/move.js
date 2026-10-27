@@ -26,6 +26,7 @@ const Move = {
   parentFor(name) { const want = (this.TREE[this.plan] || {})[name]; if (want && this.joints.some(j => j.name === want)) return want; if (this.sel >= 0 && this.joints[this.sel]) return this.joints[this.sel].name; return this.joints.length ? this.joints[this.joints.length - 1].name : ''; },
   init() {
     this.cv = el('moveCv'); this.g = this.cv.getContext('2d');
+    this.cv.addEventListener('dblclick', e => { if (this.kind !== 'rig') return; const h = this.hitBone(this.world(e)); if (!h) return; const c = h.chain || h.chainOf; if (!c) return; this.lastChain = c; this.flipBend(); });
     this.cv.addEventListener('pointerdown', e => this.down(e)); this.cv.addEventListener('pointermove', e => this.move(e)); const up = () => { if (this.drag && this.kind === 'rig') { this.drag = null; this.tlUI(); this.draw(); } else this.drag = null; }; this.cv.addEventListener('pointerup', up); this.cv.addEventListener('pointercancel', up); this.cv.addEventListener('pointerleave', () => { if (!this.drag && this.hover) { this.hover = null; this.draw(); } });
     el('hintPlan').onchange = () => { this.plan = el('hintPlan').value; this.names(); this.draw(); };
     el('hintAdd').onclick = () => { this.adding = !this.adding; el('hintAdd').classList.toggle('on', this.adding); el('hintMsg').textContent = this.adding ? 'click the figure to place a joint; click a joint to select it; drag to move' : ''; };
@@ -40,8 +41,20 @@ const Move = {
     el('kT').onchange = () => { const K = this.K(); if (!K) return; this.snapshot(); K.t = Math.max(0, Math.min(1, +el('kT').value || 0)); this.M().keys.sort((a, b) => a.t - b.t); this.keyI = this.M().keys.indexOf(K); this.tlUI(); this.draw(); };
     el('kEase').onchange = () => { const K = this.K(); if (K) { this.snapshot(); K.ease = el('kEase').value; } };
     el('tlScrub').oninput = () => { this.scrub = +el('tlScrub').value / 1000; this.keyI = -1; this.tlUI(); this.draw(); };
+    const bar = el('tlBar'), frac = e => { const r = bar.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); };
+    bar.addEventListener('pointerdown', e => { bar.setPointerCapture(e.pointerId); const M = this.M(); if (!M) return; const key = e.target.closest('.tlkey'); this.tlDrag = key ? { i: +key.dataset.i, moved: false, t0: frac(e) } : { scrub: true };
+      if (!key) { this.scrub = frac(e); this.keyI = -1; this.tlUI(); this.draw(); } });
+    bar.addEventListener('pointermove', e => { const D = this.tlDrag; if (!D) return; const M = this.M(); if (!M) return; const f = frac(e);
+      if (D.scrub) { this.scrub = f; this.tlUI(); this.draw(); return; }
+      if (!D.moved && Math.abs(f - D.t0) < 0.01) return; if (!D.moved) { this.snapshot(); D.moved = true; D.key = M.keys[D.i]; } D.key.t = Math.round(f * 100) / 100; this.keyI = D.i; this.scrub = D.key.t; this.tlUI(); this.draw(); });
+    const barUp = () => { const D = this.tlDrag; this.tlDrag = null; if (!D || D.scrub) return; const M = this.M(); if (!M) return; if (D.moved) { M.keys.sort((a, b) => a.t - b.t); this.keyI = M.keys.indexOf(D.key); } else { this.keyI = D.i; this.scrub = M.keys[D.i].t; } el('tlScrub').value = Math.round(this.scrub * 1000); this.tlUI(); this.draw(); };
+    bar.addEventListener('pointerup', barUp); bar.addEventListener('pointercancel', barUp);
     el('rigSave').onclick = () => this.saveRig(); el('mUndo').onclick = () => this.undo(); el('mRedo').onclick = () => this.redo();
-    document.addEventListener('keydown', e => { if (el('tab-move').classList.contains('hidden') || e.target.matches('input, textarea, select')) return; const k = e.key.toLowerCase(); if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? this.redo() : this.undo(); } else if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); this.redo(); } });
+    document.addEventListener('keydown', e => { if (el('tab-move').classList.contains('hidden') || e.target.matches('input, textarea, select')) return; const k = e.key.toLowerCase(); if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? this.redo() : this.undo(); return; } if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); this.redo(); return; }
+      if (this.kind !== 'rig' || !this.M()) return; const M = this.M(), n = Rig.frames(M);
+      if (e.key === ' ') { e.preventDefault(); this.play(); } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); this.stop(); this.scrub = ((Math.round(this.scrub * n) + (e.key === 'ArrowRight' ? 1 : -1)) % n + n) % n / n; this.keyI = M.keys.findIndex(K => Math.abs(K.t - this.scrub) < 0.5 / n); el('tlScrub').value = Math.round(this.scrub * 1000); this.tlUI(); this.draw(); }
+      else if (e.key === ']' || e.key === '[') { e.preventDefault(); if (!M.keys.length) return; const i = this.keyI >= 0 ? this.keyI : (e.key === ']' ? M.keys.findIndex(K => K.t > this.scrub) - 1 : M.keys.findIndex(K => K.t >= this.scrub)); this.keyI = ((i + (e.key === ']' ? 1 : -1)) % M.keys.length + M.keys.length) % M.keys.length; this.scrub = M.keys[this.keyI].t; el('tlScrub').value = Math.round(this.scrub * 1000); this.tlUI(); this.draw(); }
+      else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); this.delKey(); } else if (k === 'd') { this.dupKey(); } else if (k === 'm') { this.mirrorKey(); } else if (k === 'f') { this.flipBend(); } else if (k === 'k') { this.addKey(); } });
     window.addEventListener('resize', () => this.draw());
   },
   // ---- undo: a snapshot of the motions (or the marks) before every change; Ctrl+Z back, Ctrl+Y forward ----
@@ -117,7 +130,7 @@ const Move = {
       this.joints.push({ name, x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, parent, note: '' }); this.sel = this.joints.length - 1; this.hintsUI(); this.draw();
       const nextName = (this.PLANS[this.plan] || []).find(n => !this.joints.some(j => j.name === n)); el('hintMsg').textContent = nextName ? `placed ${name}${parent ? ' from ' + parent : ' (root)'} · next: ${nextName}${(this.TREE[this.plan] || {})[nextName] ? ' from ' + this.TREE[this.plan][nextName] : ''}` : `placed ${name}`; return;
     }
-    if (this.kind === 'rig') { const K = this.K(); if (!K) { say('select a key on the timeline first (or add one at the cursor) to pose it', 'err'); return; } this.drag = this.hitBone(p); if (this.drag) { this.snapshot(); el('tlInfo').textContent = 'dragging ' + this.drag.name; this.draw(); } }
+    if (this.kind === 'rig') { const hit = this.hitBone(p); if (!hit) return; if (!this.K()) { if (!this.M()) { say('make a motion first', 'err'); return; } this.addKey(); say('a key was made at the cursor for this pose', 'ok'); } this.drag = this.hitBone(p); if (this.drag) { this.snapshot(); if (this.drag.chain) { const W = Rig.solve(this.R, this.poseNow()), ch = this.R.chains[this.drag.chain]; this.drag.elbow = [W[ch.bones[0]].tx, W[ch.bones[0]].ty]; } el('tlInfo').textContent = 'dragging ' + this.drag.name; this.draw(); } }
   },
   move(e) {
     if (!this.drag) { if (this.kind !== 'rig' || !this.R) return; const h = this.hitBone(this.world(e)), was = this.hover && this.hover.name; this.hover = h; if ((h && h.name) !== was) this.draw(); return; } const p = this.world(e);
@@ -125,7 +138,11 @@ const Move = {
     const K = this.K(); if (!K) return; const d = this.drag;
     d.at = [p.x, p.y];
     if (d.root) { K.root = { x: Math.round((p.x - d.ox) * 10) / 10, y: Math.round((p.y - d.oy) * 10) / 10 }; }
-    else if (d.chain) { const r = K.root || { x: 0, y: 0 }; K.ik = K.ik || {}; K.ik[d.chain] = { x: Math.round((p.x - r.x) * 10) / 10, y: Math.round((p.y - r.y) * 10) / 10 }; this.lastChain = d.chain; }
+    else if (d.chain) { const r = K.root || { x: 0, y: 0 }; K.ik = K.ik || {}; K.ik[d.chain] = { x: Math.round((p.x - r.x) * 10) / 10, y: Math.round((p.y - r.y) * 10) / 10 }; this.lastChain = d.chain;
+      if (d.elbow) { // of the two folds, keep the one whose elbow stays nearer where it just was: the joint swings round on its own when the limb passes through straight
+        const ch = this.R.chains[d.chain], cur = Rig.bendAt(this.M(), this.keyI, d.chain, ch.bend || 1), e = s => { K.bend = K.bend || {}; const was = K.bend[d.chain]; K.bend[d.chain] = s; const W = Rig.solve(this.R, this.poseNow()); if (was === undefined) delete K.bend[d.chain]; else K.bend[d.chain] = was; const b = W[ch.bones[0]]; return [b.tx, b.ty]; };
+        const e1 = e(cur), e2 = e(-cur), d1 = Math.hypot(e1[0] - d.elbow[0], e1[1] - d.elbow[1]), d2 = Math.hypot(e2[0] - d.elbow[0], e2[1] - d.elbow[1]);
+        if (d2 + 0.5 < d1) { K.bend = K.bend || {}; K.bend[d.chain] = -cur; d.elbow = e2; } else d.elbow = e1; } }
     else if (d.bone) { const W = Rig.solve(this.R, this.poseNow()), w = W[d.bone], b = this.R.bones[d.bone], par = b.parent ? W[b.parent].angle : 0; K.pose = K.pose || {}; K.pose[d.bone] = Math.round((Math.atan2(p.y - w.y, p.x - w.x) - par - b.angle) * 1000) / 1000; if (K.ik && d.chainOf) delete K.ik[d.chainOf]; }
     this.draw();
   },
@@ -188,7 +205,7 @@ const Move = {
   tlUI() {
     const M = this.M(), bar = el('tlBar'); for (const k of bar.querySelectorAll('.tlkey')) k.remove(); el('tlCursor').style.left = (this.scrub * 100) + '%';
     if (!M) { el('tlInfo').textContent = 'no motion: make one'; el('kInfo').textContent = ''; return; }
-    M.keys.forEach((K, i) => { const d = document.createElement('div'); d.className = 'tlkey' + (i === this.keyI ? ' on' : ''); d.style.left = (K.t * 100) + '%'; d.title = `key at ${K.t}`; d.onclick = () => { this.keyI = i; this.scrub = K.t; el('tlScrub').value = Math.round(K.t * 1000); this.tlUI(); this.draw(); }; bar.appendChild(d); });
+    M.keys.forEach((K, i) => { const d = document.createElement('div'); d.className = 'tlkey' + (i === this.keyI ? ' on' : ''); d.style.left = (K.t * 100) + '%'; d.title = `key at ${K.t} — click to select, drag to retime`; d.dataset.i = i; bar.appendChild(d); });
     const K = this.K(); el('kFields').style.visibility = K ? 'visible' : 'hidden'; if (K) { el('kT').value = K.t; el('kEase').value = K.ease || 'io'; el('kInfo').textContent = `key ${this.keyI + 1} of ${M.keys.length}`; }
     el('tlInfo').textContent = `${this.motion}: ${M.keys.length} key${M.keys.length === 1 ? '' : 's'} · ${Rig.frames(M)} frames · cursor at ${this.scrub.toFixed(2)}${K ? '' : ' (tween)'}`;
   },
