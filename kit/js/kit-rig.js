@@ -18,7 +18,8 @@
 //     motions: {
 //       run: { secs: 0.6, fps: 12, loop: true, keys: [                      keys at t in 0..1; between them angles tween
 //         { t: 0, pose: { thighL: 0.6, shinL: -0.4, armL: -0.5 }, root: { x: 0, y: -1 }, ik: { legR: { x: 4, y: 20 } }, bend: { armL: 1 } },
-//                                                                          bend: a key may fold a chain the other way (an arm overhead)
+//                                                                          bend: a key may fold a chain the other way (an arm overhead); it
+//                                                                          holds for the keys after it until one sets it back
 //         { t: 0.5, pose: { … }, root: { … } } ] },
 //       idle: { … } },
 //   });
@@ -47,8 +48,9 @@ const Rig = {
     for (let i = 0; i < K.length; i++) { const k = K[i], nx = K[i + 1]; if (p >= k.t && (!nx || p < nx.t)) { a = k; b = nx || (loop ? K[0] : k); span = nx ? nx.t - k.t : (loop ? 1 - k.t + K[0].t : 1); u = span > 0 ? (p - k.t) / span : 0; break; } }
     const ease = (a.ease || motion.ease || 'io') === 'lin' ? u : (u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2);
     const out = { pose: {}, root: { x: 0, y: 0 }, ik: {}, bend: {}, bendMix: {} }, pa = a.pose || {}, pb = b.pose || {};
-    // a fold that differs between the two keys swings the joint round through a straight limb (solve() blends the elbow point)
-    for (const c of new Set([...Object.keys(a.bend || {}), ...Object.keys(b.bend || {}), ...(rig ? Object.keys(rig.chains) : [])])) { const d = rig && rig.chains[c] ? (rig.chains[c].bend || 1) : 1, fa = (a.bend || {})[c] || d, fb = (b.bend || {})[c] || d; if (fa === fb) { if (fa !== d) out.bend[c] = fa; } else out.bendMix[c] = { from: fa, to: fb, u: ease }; }
+    // a fold holds from the key that set it; one that differs between the two keys swings the joint round through a straight limb (solve() blends the elbow point)
+    const ia0 = K.indexOf(a), ib0 = K.indexOf(b), chains = new Set([...(rig ? Object.keys(rig.chains) : [])]); for (const k of K) for (const c of Object.keys(k.bend || {})) chains.add(c);
+    for (const c of chains) { const d = rig && rig.chains[c] ? (rig.chains[c].bend || 1) : 1, fa = this.bendAt(motion, ia0, c, d), fb = this.bendAt(motion, ib0, c, d); if (fa === fb) { if (fa !== d) out.bend[c] = fa; } else out.bendMix[c] = { from: fa, to: fb, u: ease }; }
     for (const n of new Set([...Object.keys(pa), ...Object.keys(pb)])) { const x = pa[n] || 0, y = pb[n] || 0; let d = y - x; while (d > Math.PI) d -= TAU; while (d < -Math.PI) d += TAU; out.pose[n] = x + d * ease; }
     const ra = a.root || { x: 0, y: 0 }, rb = b.root || { x: 0, y: 0 }; out.root = { x: (ra.x || 0) + ((rb.x || 0) - (ra.x || 0)) * ease, y: (ra.y || 0) + ((rb.y || 0) - (ra.y || 0)) * ease };
     const ia = a.ik || {}, ib = b.ik || {};
@@ -56,6 +58,9 @@ const Rig = {
     for (const c of new Set([...Object.keys(ia), ...Object.keys(ib)])) { let s = ia[c], t = ib[c]; if (rig && rig.chains[c]) { if (!s) s = fkEnd(a, c); if (!t) t = fkEnd(b, c); } else { s = s || t; t = t || s; } out.ik[c] = { x: s.x + (t.x - s.x) * ease, y: s.y + (t.y - s.y) * ease }; }
     return out;
   },
+  // the fold of a chain at key i: the latest key at or before it that set one (round the loop if the motion loops), else the rig's
+  bendAt(motion, i, c, d) { const K = motion.keys || [], n = K.length; if (i < 0 || !n) return d; for (let s = 0; s < n; s++) { const j = i - s; if (j < 0 && motion.loop === false) break; const k = K[(j % n + n) % n]; if (k.bend && k.bend[c]) return k.bend[c]; } return d; },
+  keyBend(motion, i, rig) { const out = {}; for (const c of Object.keys(rig.chains)) { const d = rig.chains[c].bend || 1, v = this.bendAt(motion, i, c, d); if (v !== d) out[c] = v; } return out; },
   // world transforms for a pose: each bone's origin, world angle and tip; then IK bends the chains that have targets
   solve(rig, P) {
     const W = {};
