@@ -36,4 +36,5 @@ try {
     if ((int) $s['pid'] === getmypid() || !\app\GameStore::alive((int) $s['pid'])) { $s['busy'] = false; $s['mode'] = ''; $s['pid'] = 0; \app\GameStore::saveAgentState($slug, $s); } // only my own lock: a runner started after a Stop must not be cleared by the one dying
     \app\GameStore::emit($slug, 'idle', []);
     if ($mode !== 'soak') \app\GameNotices::finished($slug, $mode, $outcome, $memberId);
+    \app\GameStore::startQueued($slug); // a sprite job (or another run of its own) that waited for this one
 }
