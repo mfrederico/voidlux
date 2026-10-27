@@ -7,7 +7,7 @@
 // posing on the stage with IK for hands and feet; Save writes the motions back into the rig's file.
 const Move = {
   N: 448, half: 24, k: 1, kind: 'none', base: null, joints: [], sel: -1, adding: false, drag: null,
-  R: null, text: '', motion: '', keyI: -1, scrub: 0, playing: null,
+  R: null, text: '', motion: '', keyI: -1, scrub: 0, playing: null, hist: [], redoS: [],
   PLANS: {
     biped: ['hips', 'spine', 'neck', 'head', 'shoulderL', 'elbowL', 'handL', 'shoulderR', 'elbowR', 'handR', 'kneeL', 'footL', 'kneeR', 'footR', 'scarf1', 'scarf2', 'tail1', 'tail2'],
     quadruped: ['hips', 'spine', 'shoulders', 'neck', 'head', 'frontKneeL', 'frontFootL', 'frontKneeR', 'frontFootR', 'backKneeL', 'backFootL', 'backKneeR', 'backFootR', 'tail1', 'tail2', 'tail3'],
@@ -29,26 +29,33 @@ const Move = {
     this.cv.addEventListener('pointerdown', e => this.down(e)); this.cv.addEventListener('pointermove', e => this.move(e)); const up = () => { this.drag = null; }; this.cv.addEventListener('pointerup', up); this.cv.addEventListener('pointercancel', up);
     el('hintPlan').onchange = () => { this.plan = el('hintPlan').value; this.names(); this.draw(); };
     el('hintAdd').onclick = () => { this.adding = !this.adding; el('hintAdd').classList.toggle('on', this.adding); el('hintMsg').textContent = this.adding ? 'click the figure to place a joint; click a joint to select it; drag to move' : ''; };
-    el('hintClear').onclick = () => { if (!this.joints.length || confirm('Clear every mark?')) { this.joints = []; this.sel = -1; this.hintsUI(); this.draw(); } };
+    el('hintClear').onclick = () => { if (!this.joints.length || confirm('Clear every mark?')) { this.snapshot(); this.joints = []; this.sel = -1; this.hintsUI(); this.draw(); } };
     el('hintSave').onclick = () => this.saveHints(true);
     el('rigGoBtn').onclick = () => this.rigGo();
     el('mMotion').onchange = () => this.pickMotion(el('mMotion').value); el('mNew').onclick = () => this.newMotion(); el('mDel').onclick = () => this.delMotion();
     el('mDup').onclick = () => this.dupMotion(); el('mRename').onclick = () => this.renameMotion(); el('mAsk').onclick = () => { if (cur && entry) openAnim({ asset: cur }, cur); };
-    for (const id of ['mSecs', 'mFps', 'mLoop']) el(id).onchange = () => { const M = this.M(); if (!M) return; M.secs = Math.max(0.1, +el('mSecs').value || 1); M.fps = Math.max(2, Math.min(30, +el('mFps').value || 12)); M.loop = el('mLoop').checked; this.tlUI(); this.draw(); };
+    for (const id of ['mSecs', 'mFps', 'mLoop']) el(id).onchange = () => { const M = this.M(); if (!M) return; this.snapshot(); M.secs = Math.max(0.1, +el('mSecs').value || 1); M.fps = Math.max(2, Math.min(30, +el('mFps').value || 12)); M.loop = el('mLoop').checked; this.tlUI(); this.draw(); };
     el('mBones').onchange = () => this.draw();
     el('mPlay').onclick = () => this.play(); el('kAdd').onclick = () => this.addKey(); el('kDup').onclick = () => this.dupKey(); el('kDel').onclick = () => this.delKey(); el('kMirror').onclick = () => this.mirrorKey();
-    el('kT').onchange = () => { const K = this.K(); if (!K) return; K.t = Math.max(0, Math.min(1, +el('kT').value || 0)); this.M().keys.sort((a, b) => a.t - b.t); this.keyI = this.M().keys.indexOf(K); this.tlUI(); this.draw(); };
-    el('kEase').onchange = () => { const K = this.K(); if (K) K.ease = el('kEase').value; };
+    el('kT').onchange = () => { const K = this.K(); if (!K) return; this.snapshot(); K.t = Math.max(0, Math.min(1, +el('kT').value || 0)); this.M().keys.sort((a, b) => a.t - b.t); this.keyI = this.M().keys.indexOf(K); this.tlUI(); this.draw(); };
+    el('kEase').onchange = () => { const K = this.K(); if (K) { this.snapshot(); K.ease = el('kEase').value; } };
     el('tlScrub').oninput = () => { this.scrub = +el('tlScrub').value / 1000; this.keyI = -1; this.tlUI(); this.draw(); };
-    el('rigSave').onclick = () => this.saveRig();
+    el('rigSave').onclick = () => this.saveRig(); el('mUndo').onclick = () => this.undo(); el('mRedo').onclick = () => this.redo();
+    document.addEventListener('keydown', e => { if (el('tab-move').classList.contains('hidden') || e.target.matches('input, textarea, select')) return; const k = e.key.toLowerCase(); if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? this.redo() : this.undo(); } else if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); this.redo(); } });
     window.addEventListener('resize', () => this.draw());
   },
+  // ---- undo: a snapshot of the motions (or the marks) before every change; Ctrl+Z back, Ctrl+Y forward ----
+  snapshot() { const s = JSON.stringify({ motions: this.R ? this.R.motions : null, motion: this.motion, keyI: this.keyI, joints: this.joints, plan: this.plan }); if (this.hist[this.hist.length - 1] === s) return; this.hist.push(s); if (this.hist.length > 100) this.hist.shift(); this.redoS = []; },
+  current() { return JSON.stringify({ motions: this.R ? this.R.motions : null, motion: this.motion, keyI: this.keyI, joints: this.joints, plan: this.plan }); },
+  restore(s) { const d = JSON.parse(s); this.stop(); if (this.R && d.motions) { this.R.motions = d.motions; this.motionList(d.motions[d.motion] ? d.motion : Object.keys(d.motions)[0] || ''); this.keyI = Math.min(d.keyI, (this.M() ? this.M().keys.length : 0) - 1); if (this.keyI >= 0) { this.scrub = this.M().keys[this.keyI].t; el('tlScrub').value = Math.round(this.scrub * 1000); } this.tlUI(); } if (this.kind === 'pic') { this.joints = d.joints || []; this.plan = d.plan || this.plan; el('hintPlan').value = this.plan; this.names(); this.hintsUI(); } this.draw(); },
+  undo() { if (!this.hist.length) { say('nothing to undo on Move', ''); return; } this.redoS.push(this.current()); this.restore(this.hist.pop()); say('undone', 'ok'); },
+  redo() { if (!this.redoS.length) return; this.hist.push(this.current()); this.restore(this.redoS.pop()); say('redone', 'ok'); },
   // ---- what is on the stage ----
   async refresh() {
     if (!this.cv) this.init(); this.stop();
     const has = !!(cur && entry); el('moveTitle').textContent = has ? cur : 'no sprite chosen'; el('moveAnimBtn').disabled = !has; el('rigGoBtn').disabled = !has;
     el('hintsPanel').classList.toggle('hidden', !has || entry.kind === 'rig'); el('rigPanel').classList.toggle('hidden', !(has && entry.kind === 'rig')); el('moveTl').classList.toggle('hidden', !(has && entry.kind === 'rig'));
-    this.kind = !has ? 'none' : (entry.kind === 'rig' ? 'rig' : 'pic'); this.base = null; this.R = null; this.joints = []; this.sel = -1;
+    this.kind = !has ? 'none' : (entry.kind === 'rig' ? 'rig' : 'pic'); this.base = null; this.R = null; this.joints = []; this.sel = -1; this.hist = []; this.redoS = [];
     if (!has) { el('moveSub').textContent = 'pick a kept sprite on the left to give it motion'; this.draw(); return; }
     try {
       if (this.kind === 'rig') {
@@ -101,14 +108,14 @@ const Move = {
     this.cv.setPointerCapture(e.pointerId); const p = this.world(e);
     if (this.kind === 'pic') {
       const h = this.hitJoint(p);
-      if (h >= 0) { this.sel = h; this.drag = { joint: h }; this.hintsUI(); this.draw(); return; }
+      if (h >= 0) { this.sel = h; this.snapshot(); this.drag = { joint: h }; this.hintsUI(); this.draw(); return; }
       if (!this.adding) return;
       const used = new Set(this.joints.map(j => j.name)), name = (this.PLANS[this.plan] || []).find(n => !used.has(n)) || ('joint' + (this.joints.length + 1));
-      const parent = this.joints.length ? this.parentFor(name) : '';
+      this.snapshot(); const parent = this.joints.length ? this.parentFor(name) : '';
       this.joints.push({ name, x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, parent, note: '' }); this.sel = this.joints.length - 1; this.hintsUI(); this.draw();
       const nextName = (this.PLANS[this.plan] || []).find(n => !this.joints.some(j => j.name === n)); el('hintMsg').textContent = nextName ? `placed ${name}${parent ? ' from ' + parent : ' (root)'} · next: ${nextName}${(this.TREE[this.plan] || {})[nextName] ? ' from ' + this.TREE[this.plan][nextName] : ''}` : `placed ${name}`; return;
     }
-    if (this.kind === 'rig') { const K = this.K(); if (!K) { say('select a key on the timeline first (or add one at the cursor) to pose it', 'err'); return; } this.drag = this.hitBone(p); }
+    if (this.kind === 'rig') { const K = this.K(); if (!K) { say('select a key on the timeline first (or add one at the cursor) to pose it', 'err'); return; } this.drag = this.hitBone(p); if (this.drag) this.snapshot(); }
   },
   move(e) {
     if (!this.drag) return; const p = this.world(e);
@@ -180,18 +187,18 @@ const Move = {
     const K = this.K(); el('kFields').style.visibility = K ? 'visible' : 'hidden'; if (K) { el('kT').value = K.t; el('kEase').value = K.ease || 'io'; el('kInfo').textContent = `key ${this.keyI + 1} of ${M.keys.length}`; }
     el('tlInfo').textContent = `${this.motion}: ${M.keys.length} key${M.keys.length === 1 ? '' : 's'} · ${Rig.frames(M)} frames · cursor at ${this.scrub.toFixed(2)}${K ? '' : ' (tween)'}`;
   },
-  addKey() { const M = this.M(); if (!M) { say('make a motion first', 'err'); return; } const P = Rig.pose(M, this.scrub); const K = { t: Math.round(this.scrub * 100) / 100, pose: Object.assign({}, P.pose), root: Object.assign({}, P.root), ik: JSON.parse(JSON.stringify(P.ik)) }; M.keys.push(K); M.keys.sort((a, b) => a.t - b.t); this.keyI = M.keys.indexOf(K); this.tlUI(); this.draw(); },
-  dupKey() { const M = this.M(), K = this.K(); if (!K) return; const t = Math.min(1, Math.round((K.t + 0.1) * 100) / 100), C = JSON.parse(JSON.stringify(K)); C.t = t; M.keys.push(C); M.keys.sort((a, b) => a.t - b.t); this.keyI = M.keys.indexOf(C); this.scrub = t; el('tlScrub').value = Math.round(t * 1000); this.tlUI(); this.draw(); },
-  delKey() { const M = this.M(); if (!M || this.keyI < 0) return; M.keys.splice(this.keyI, 1); this.keyI = Math.min(this.keyI, M.keys.length - 1); this.tlUI(); this.draw(); },
+  addKey() { const M = this.M(); if (!M) { say('make a motion first', 'err'); return; } this.snapshot(); const P = Rig.pose(M, this.scrub); const K = { t: Math.round(this.scrub * 100) / 100, pose: Object.assign({}, P.pose), root: Object.assign({}, P.root), ik: JSON.parse(JSON.stringify(P.ik)) }; M.keys.push(K); M.keys.sort((a, b) => a.t - b.t); this.keyI = M.keys.indexOf(K); this.tlUI(); this.draw(); },
+  dupKey() { const M = this.M(), K = this.K(); if (!K) return; this.snapshot(); const t = Math.min(1, Math.round((K.t + 0.1) * 100) / 100), C = JSON.parse(JSON.stringify(K)); C.t = t; M.keys.push(C); M.keys.sort((a, b) => a.t - b.t); this.keyI = M.keys.indexOf(C); this.scrub = t; el('tlScrub').value = Math.round(t * 1000); this.tlUI(); this.draw(); },
+  delKey() { const M = this.M(); if (!M || this.keyI < 0) return; this.snapshot(); M.keys.splice(this.keyI, 1); this.keyI = Math.min(this.keyI, M.keys.length - 1); this.tlUI(); this.draw(); },
   mirrorKey() { // left and right limbs trade places: bones and chains named …L / …R
-    const K = this.K(); if (!K) return; const swap = n => /L$/.test(n) ? n.slice(0, -1) + 'R' : /R$/.test(n) ? n.slice(0, -1) + 'L' : n;
+    const K = this.K(); if (!K) return; this.snapshot(); const swap = n => /L$/.test(n) ? n.slice(0, -1) + 'R' : /R$/.test(n) ? n.slice(0, -1) + 'L' : n;
     const pose = {}; for (const [n, a] of Object.entries(K.pose || {})) pose[swap(n)] = a; K.pose = pose; const ik = {}; for (const [c, t] of Object.entries(K.ik || {})) ik[swap(c)] = t; K.ik = ik; this.draw();
   },
-  newMotion() { const name = prompt('Name of the new motion (letters, digits, dashes):', 'idle'); if (!name || !/^[a-z][a-z0-9-]{0,20}$/.test(name)) return; if (this.R.motions[name] && !confirm(`${name} exists. Start it over?`)) return; this.R.motions[name] = { secs: 1, fps: 12, loop: true, keys: [{ t: 0, pose: {}, root: { x: 0, y: 0 }, ik: {} }] }; el('mMotion').innerHTML = Object.keys(this.R.motions).map(n => `<option>${esc(n)}</option>`).join(''); el('mMotion').value = name; this.pickMotion(name); },
+  newMotion() { const name = prompt('Name of the new motion (letters, digits, dashes):', 'idle'); if (!name || !/^[a-z][a-z0-9-]{0,20}$/.test(name)) return; if (this.R.motions[name] && !confirm(`${name} exists. Start it over?`)) return; this.snapshot(); this.R.motions[name] = { secs: 1, fps: 12, loop: true, keys: [{ t: 0, pose: {}, root: { x: 0, y: 0 }, ik: {} }] }; el('mMotion').innerHTML = Object.keys(this.R.motions).map(n => `<option>${esc(n)}</option>`).join(''); el('mMotion').value = name; this.pickMotion(name); },
   motionList(select) { el('mMotion').innerHTML = Object.keys(this.R.motions).map(n => `<option>${esc(n)}</option>`).join(''); el('mMotion').value = select; this.pickMotion(select); },
-  dupMotion() { const M = this.M(); if (!M) return; const name = prompt('Name for the copy:', this.motion === 'run' ? 'attack' : this.motion + '-2'); if (!name || !/^[a-z][a-z0-9-]{0,20}$/.test(name)) return; if (this.R.motions[name] && !confirm(`${name} exists. Replace it?`)) return; this.R.motions[name] = JSON.parse(JSON.stringify(M)); this.motionList(name); el('rigMsg').textContent = `${name} is a copy of ${this.motion === name ? 'the motion' : this.motion}: pose it, then Save the rig`; },
-  renameMotion() { const M = this.M(); if (!M) return; const name = prompt('New name for ' + this.motion + ':', this.motion); if (!name || name === this.motion || !/^[a-z][a-z0-9-]{0,20}$/.test(name)) return; if (this.R.motions[name] && !confirm(`${name} exists. Replace it?`)) return; this.R.motions[name] = M; delete this.R.motions[this.motion]; this.motionList(name); el('rigMsg').textContent = `renamed to ${name}: Save the rig to keep it (the game then calls Draw.rig('${cur}', '${name}', …))`; },
-  delMotion() { if (!this.M() || !confirm(`Remove the motion ${this.motion}?`)) return; delete this.R.motions[this.motion]; const names = Object.keys(this.R.motions); el('mMotion').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join(''); this.pickMotion(names[0] || ''); },
+  dupMotion() { const M = this.M(); if (!M) return; const name = prompt('Name for the copy:', this.motion === 'run' ? 'attack' : this.motion + '-2'); if (!name || !/^[a-z][a-z0-9-]{0,20}$/.test(name)) return; if (this.R.motions[name] && !confirm(`${name} exists. Replace it?`)) return; this.snapshot(); this.R.motions[name] = JSON.parse(JSON.stringify(M)); this.motionList(name); el('rigMsg').textContent = `${name} is a copy of ${this.motion === name ? 'the motion' : this.motion}: pose it, then Save the rig`; },
+  renameMotion() { const M = this.M(); if (!M) return; const name = prompt('New name for ' + this.motion + ':', this.motion); if (!name || name === this.motion || !/^[a-z][a-z0-9-]{0,20}$/.test(name)) return; if (this.R.motions[name] && !confirm(`${name} exists. Replace it?`)) return; this.snapshot(); this.R.motions[name] = M; delete this.R.motions[this.motion]; this.motionList(name); el('rigMsg').textContent = `renamed to ${name}: Save the rig to keep it (the game then calls Draw.rig('${cur}', '${name}', …))`; },
+  delMotion() { if (!this.M() || !confirm(`Remove the motion ${this.motion}?`)) return; this.snapshot(); delete this.R.motions[this.motion]; const names = Object.keys(this.R.motions); el('mMotion').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join(''); this.pickMotion(names[0] || ''); },
   play() { if (this.playing) { this.stop(); return; } const M = this.M(); if (!M) return; this.keyI = -1; el('mPlay').textContent = '■ stop'; let f = 0; const n = Rig.frames(M); this.playing = setInterval(() => { f = (f + 1) % n; this.scrub = f / n; el('tlScrub').value = Math.round(this.scrub * 1000); this.tlUI(); this.draw(); }, 1000 / (M.fps || 12)); },
   stop() { clearInterval(this.playing); this.playing = null; if (el('mPlay')) el('mPlay').textContent = '▶ play'; },
   // the motions written back into the rig's source: the `motions: { … }` block replaced, the rest untouched
