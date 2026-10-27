@@ -51,9 +51,9 @@ const Move = {
     const barUp = () => { const D = this.tlDrag; this.tlDrag = null; if (!D || D.scrub) return; const M = this.M(); if (!M) return; if (D.moved) { M.keys.sort((a, b) => a.t - b.t); this.keyI = M.keys.indexOf(D.key); } else { this.keyI = D.i; this.scrub = M.keys[D.i].t; } el('tlScrub').value = Math.round(this.scrub * 1000); this.tlUI(); this.draw(); };
     bar.addEventListener('pointerup', barUp); bar.addEventListener('pointercancel', barUp);
     el('rigSave').onclick = () => this.saveRig(); el('skinGo').onclick = () => this.reskinGo();
-    el('skinDl').onclick = () => { const k = el('skinFrom').value, s = M.sprites[k]; if (!s) return; const a = document.createElement('a'); a.href = ASSET(s.file) + '?t=' + Date.now(); a.download = s.file; document.body.appendChild(a); a.click(); a.remove(); };
+    el('skinDl').onclick = () => { const v = el('skinFrom').value, file = v.startsWith('file:') ? v.slice(5) : (M.sprites[v] || {}).file; if (!file) { el('rigMsg').textContent = 'pick a drawing first'; return; } const a = document.createElement('a'); a.href = ASSET(file) + '?t=' + Date.now(); a.download = file; document.body.appendChild(a); a.click(); a.remove(); el('rigMsg').textContent = `downloading ${file}`; };
     el('skinUp').onclick = () => { if (el('skinFrom').value) el('skinFile').click(); };
-    el('skinFile').onchange = async () => { const f = el('skinFile').files[0], k = el('skinFrom').value; el('skinFile').value = ''; if (!f || !k) return; const s = M.sprites[k];
+    el('skinFile').onchange = async () => { const f = el('skinFile').files[0]; el('skinFile').value = ''; if (!f) return; let k; try { k = await this.skinKey(); } catch (e) { el('rigMsg').textContent = e.message; return; } const s = M.sprites[k];
       try { const text = await f.text(); if (!/<svg[\s>]/i.test(text)) throw new Error('that file is not an SVG'); if (!confirm(`Replace the drawing ${k} with ${f.name}?`)) return;
         const r = await fetch(apiUrl('spritesave'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: k, svg: text, w: s ? s.w : 64, h: s ? s.h : 64, smooth: true, source: 'inkscape' }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
         M = { sprites: j.sprites, files: j.files }; drawList(); el('rigMsg').textContent = `${k} updated from ${f.name}: now press Re-skin GO!`; }
@@ -85,7 +85,10 @@ const Move = {
         this.feetY = this.restFeet(); this.groundY = this.R.ground !== null ? this.R.ground : this.feetY; // the ground: the rig's own, else where the feet stand at rest
         el('moveSub').textContent = `a rig: ${Object.keys(this.R.bones).length} bones, ${Object.keys(this.R.chains).length} IK chains, ${this.R.parts.length} parts`;
         el('mMotion').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join(''); this.pickMotion(names[0] || '');
-        { const stem = cur.replace(/-rig$/, ''), opts = Object.entries(M.sprites).filter(([, s]) => /\.(svg|png)$/i.test(s.file)).map(([k]) => k).sort((a, b) => (b.startsWith(stem) - a.startsWith(stem)) || a.localeCompare(b)); el('skinFrom').innerHTML = opts.length ? opts.map(k => `<option>${esc(k)}</option>`).join('') : '<option value="">no SVG or picture sprites yet</option>'; el('skinGo').disabled = !opts.length; }
+        { const stem = cur.replace(/-rig$/, ''), first = (a, b) => (b.startsWith(stem) - a.startsWith(stem)) || a.localeCompare(b);
+          const keys = Object.entries(M.sprites).filter(([, s]) => /\.(svg|png)$/i.test(s.file)).map(([k]) => k).sort(first), loose = (M.files || []).filter(f => /\.(svg|png)$/i.test(f)).sort(first);
+          el('skinFrom').innerHTML = (keys.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('') + loose.map(f => `<option value="file:${esc(f)}">${esc(f)} (file)</option>`).join('')) || '<option value="">no SVG or picture sprites yet</option>';
+          const best = [...el('skinFrom').options].find(o => o.value.replace(/^file:/, '').startsWith(stem)); if (best) el('skinFrom').value = best.value; el('skinGo').disabled = !(keys.length || loose.length); }
         { let rj = null; try { rj = JSON.parse(localStorage.getItem('vl.sprites.' + GAME + '.rigjob') || 'null'); } catch (e) {} if (rj && rj.key === cur) this.watch(rj.id, rj.key, 'picking the job up again…'); else el('moveOut').classList.add('hidden'); }
         this.listJobs();
       } else {
@@ -247,8 +250,12 @@ const Move = {
         d.querySelector('[data-view]').onclick = () => openViewer(o.id, o.result.files[0], url, o.result.note || '', cur + ' · ' + (o.cycle || 'rig'), o.cycle || undefined, o.key); L.appendChild(d); }
     } catch (e) { box.classList.add('hidden'); }
   },
+  // the drawing chosen for a re-skin, as a key: a loose file is first listed as <stem>-drawing
+  async skinKey() { const v = el('skinFrom').value; if (!v) throw new Error('pick a drawing first'); if (!v.startsWith('file:')) return v; const file = v.slice(5), key = file.replace(/\.[a-z0-9]+$/i, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-') + '-drawing';
+    if (!M.sprites[key]) { const r = await fetch(apiUrl('spritesave'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key, file, source: 'upload' }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); M = { sprites: j.sprites, files: j.files }; drawList(); }
+    const o = document.createElement('option'); o.value = key; o.textContent = key; el('skinFrom').prepend(o); el('skinFrom').value = key; return key; },
   async reskinGo() {
-    const skin = el('skinFrom').value; if (!cur || !this.R || !skin) return; el('skinGo').disabled = true;
+    let skin; try { skin = await this.skinKey(); } catch (e) { el('rigMsg').textContent = e.message; return; } if (!cur || !this.R) return; el('skinGo').disabled = true;
     try { const r = await fetch(apiUrl('sketch'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ reskin: true, asset: cur, skin, key: cur, size: Math.round(this.half * 2) }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
       this.watch(j.id, cur, (j.queued ? 'another sprite job is running: the re-skin is next. ' : 'the artist is re-skinning it: ') + `${cur} from ${skin}; the new look appears here, and keeping it changes only the parts.`); }
     catch (e) { el('rigMsg').textContent = 'not sent: ' + e.message; } finally { el('skinGo').disabled = false; }

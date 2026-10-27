@@ -391,6 +391,7 @@ class GameStore {
             if ($w < 1 || $h < 1) { $sz = @getimagesize("$dir/$file"); $w = $sz ? (int) ($sz[0] / $frames) : 64; $h = $sz ? (int) $sz[1] : 64; }
         } else throw new \InvalidArgumentException('a sprite needs png, svg or file');
         $all = self::readSprites($slug); $sprites = (array) $all['sprites'];
+        if (($kind ?? '') === 'rig' && isset($sprites[$key])) { $old = (array) $sprites[$key]; if (preg_match('/\.(svg|png|gif|webp|jpe?g)$/i', (string) $old['file']) && !isset($sprites["$key-drawing"])) $sprites["$key-drawing"] = $old; } // the drawing the rig came from stays listed
         $entry = ['file' => $file, 'w' => $w, 'h' => $h, 'frames' => $frames, 'fps' => $fps, 'source' => preg_replace('/[^a-z-]/', '', (string) ($b['source'] ?? 'editor')) ?: 'editor'];
         if (!empty($b['smooth'])) $entry['smooth'] = true; if (!empty($kind)) $entry['kind'] = $kind;
         $sprites[$key] = $entry; ksort($sprites);
