@@ -170,6 +170,7 @@ function addEvent(ev) {
   if (ev.kind === 'soak') text = `⚗ soak ${ev.ok ? 'ok' : 'FAILED (' + ev.status + ')'} · ${ev.seconds || 0} s · ${ev.fps || '?'} fps · scenes ${Object.keys(ev.scenes || {}).join(', ')}` + ((ev.errors || []).concat(ev.browserErrors || []).map(e => '\n  ! ' + String(e.text || '').split('\n')[0]).join(''));
   if (ev.kind === 'checkpoint') text = `⚑ checkpoint ${ev.tag}: ${ev.label || ''}`;
   if (ev.kind === 'idle') text = '— idle —';
+  if (ev.kind === 'artdone') text = '◆ sprite job ' + (ev.text || 'finished') + ' (the art lane, beside the builder)';
   const stamp = `<time>${Forge.time(ev.t)}</time>`;
   if (ev.kind === 'text') d.innerHTML = stamp + '<div class="vl-md-ev">' + Forge.md(text) + '</div>';
   else if (ev.kind === 'done') d.innerHTML = stamp + `<div class="vl-done-head">■ ${Forge.esc(ev.label || 'run')} ${ev.ok ? 'finished' : 'failed'} · ${ev.turns} turns · $${(+ev.cost || 0).toFixed(3)}</div>` + (ev.text ? '<div class="vl-md-ev">' + Forge.md(ev.text) + '</div>' : '');
