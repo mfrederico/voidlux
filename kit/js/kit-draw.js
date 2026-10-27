@@ -54,9 +54,12 @@ const Draw = {
     return fetch(url, { cache: 'no-store' }).then(r => { if (r.status === 404) return null; if (!r.ok) throw new Error(url + ': HTTP ' + r.status); return r.json(); })
       .then(j => {
         const S = Object.entries((j && j.sprites) || {}), addScript = (src, what) => { const s = document.createElement('script'); s.src = src; s.onerror = () => console.error(`Draw.loadManifest: ${src} did not load (${what})`); document.head.appendChild(s); return s; };
+        // a code sprite or rig runs in a scope of its own (fetched, then run as a function body), so helpers two files both declare
+        // at top level (const limb, const parts) do not collide the way plain <script> tags would
+        const runFile = (src, what) => fetch(src, { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); }).then(t => { new Function(t + '\n//# sourceURL=' + src)(); }).catch(e => console.error(`Draw.loadManifest: ${src} (${what}): ${e.message}`));
         const rigs = S.filter(([, m]) => m.kind === 'rig'); let n = 0;
-        for (const [k, m] of S) { n++; this.meta.set(k, m); if (m.kind === 'code') addScript(dir + m.file, 'code sprite ' + k); else if (m.kind !== 'rig') this.load(k, dir + m.file, m); }
-        if (rigs.length) { const go = () => { for (const [k, m] of rigs) addScript(dir + m.file, 'rig ' + k); }; if (typeof Rig !== 'undefined') go(); else addScript(KIT_JS + 'kit-rig.js', 'the rig module').onload = go; } // the rig module first, then the rigs
+        for (const [k, m] of S) { n++; this.meta.set(k, m); if (m.kind === 'code') runFile(dir + m.file, 'code sprite ' + k); else if (m.kind !== 'rig') this.load(k, dir + m.file, m); }
+        if (rigs.length) { const go = () => { for (const [k, m] of rigs) runFile(dir + m.file, 'rig ' + k); }; if (typeof Rig !== 'undefined') go(); else addScript(KIT_JS + 'kit-rig.js', 'the rig module').onload = go; } // the rig module first, then the rigs
         return n; })
       .catch(e => { console.error('Draw.loadManifest: ' + e.message); return 0; });
   },

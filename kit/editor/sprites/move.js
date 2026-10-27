@@ -109,7 +109,7 @@ const Move = {
       const px = g.getImageData(0, 0, n, n).data; for (let y = n - 1; y >= 0; y--) for (let x = 0; x < n; x++) if (px[(y * n + x) * 4 + 3] > 40) return Math.round(((y + 1) - n / 2) / k * 10) / 10; } catch (e) {}
     const W = Rig.solve(this.R, { pose: {}, root: { x: 0, y: 0 }, ik: {} }); let gy = -Infinity; for (const w of Object.values(W)) gy = Math.max(gy, w.ty, w.y); return gy; },
   setGround(y) { this.groundY = Math.round(y * 10) / 10; this.R.ground = this.groundY; this.groundDirty = true; this.draw(); el('rigMsg').textContent = `ground at ${this.groundY} (${this.groundY >= this.half - 0.05 ? 'the bottom of the box' : 'inside the box'}); Save the rig to keep it`; },
-  evalRig(text) { let def = null, name = ''; const real = Rig.define; Rig.define = (k, r) => { def = r; name = k; }; try { new Function('Rig', 'Draw', 'TAU', 'U', text)(Rig, Draw, TAU, U); } finally { Rig.define = real; } if (!def) throw new Error('no Rig.define in the file'); const key = 'move:' + cur, R = Rig.define(key, def); R.realKey = name; if (name && name !== key) Rig.rigs.set(name, R); return R; },
+  evalRig(text) { let def = null, name = ''; const real = Rig.define; Rig.define = (k, r) => { def = r; name = k; this.def = r; }; try { new Function('Rig', 'Draw', 'TAU', 'U', text)(Rig, Draw, TAU, U); } finally { Rig.define = real; } if (!def) throw new Error('no Rig.define in the file'); const key = 'move:' + cur, R = Rig.define(key, def); R.realKey = name; if (name && name !== key) Rig.rigs.set(name, R); return R; },
   names() { el('boneNames').innerHTML = (this.PLANS[this.plan] || []).map(n => `<option value="${n}">`).join(''); },
   // ---- the stage ----
   sx(x) { return this.N / 2 + x * this.k; }, sy(y) { return this.N / 2 + y * this.k; },
@@ -263,11 +263,18 @@ const Move = {
   // the parts block of a take's source spliced into the rig's source, nothing else touched (parts are code, so this is done on the text)
   block(text, name, open) { const m = new RegExp('\\b' + name + '\\s*:\\s*\\' + open).exec(text); if (!m) return null; const close = open === '[' ? ']' : '}'; let i = m.index + m[0].length - 1, depth = 0, q = null;
     for (let j = i; j < text.length; j++) { const ch = text[j], nx = text[j + 1]; if (q) { if (ch === '\\') { j++; continue; } if (ch === q) q = null; continue; } if (ch === '/' && nx === '/') { j = text.indexOf('\n', j); if (j < 0) return null; continue; } if (ch === '/' && nx === '*') { j = text.indexOf('*/', j + 2) + 1; if (j <= 0) return null; continue; } if (ch === '"' || ch === "'" || ch === '`') { q = ch; continue; } if (ch === open) depth++; else if (ch === close) { depth--; if (depth === 0) return { start: m.index, end: j + 1, body: text.slice(m.index, j + 1) }; } } return null; },
+  // the Rig.define(…) call in a source: where it starts, where its second argument starts and ends (strings and comments skipped)
+  defineCall(text) { const at = text.search(/Rig\.define\s*\(/); if (at < 0) return null; let i = text.indexOf('(', at), depth = 0, q = null, comma = -1;
+    for (let j = i; j < text.length; j++) { const ch = text[j], nx = text[j + 1]; if (q) { if (ch === '\\') { j++; continue; } if (ch === q) q = null; continue; } if (ch === '/' && nx === '/') { j = text.indexOf('\n', j); if (j < 0) return null; continue; } if (ch === '/' && nx === '*') { j = text.indexOf('*/', j + 2) + 1; if (j <= 0) return null; continue; } if (ch === '"' || ch === "'" || ch === '`') { q = ch; continue; }
+      if ('([{'.includes(ch)) depth++; else if (')]}'.includes(ch)) { depth--; if (depth === 0) return comma < 0 ? null : { start: at, argStart: comma + 1, argEnd: j, end: j + 1 }; } else if (ch === ',' && depth === 1 && comma < 0) comma = j; } return null; },
   async reskinFrom(url) {
-    const take = await (await fetch(url, { cache: 'no-store' })).text(), src = this.block(take, 'parts', '['), dst = this.block(this.text, 'parts', '[');
-    if (!src) throw new Error('the take has no parts block'); if (!dst) throw new Error('this rig has no parts block to replace');
-    const text = this.text.slice(0, dst.start) + src.body + this.text.slice(dst.end); renderCode(text, 32, 0); // it must still render
-    this.text = text; const R = this.evalRig(text); R.motions = this.R.motions; R.ground = this.R.ground; this.R = R; // the new parts; the motions as they are in the editor
+    const take = await (await fetch(url, { cache: 'no-store' })).text(), call = this.defineCall(take); if (!call) throw new Error('the take has no Rig.define(key, { … }) call');
+    const raw = this.def || {}, lit = o => JSON.stringify(o, (k, v) => typeof v === 'number' ? Math.round(v * 1000) / 1000 : v, 2).replace(/"([a-zA-Z_][a-zA-Z0-9_]*)":/g, '$1:');
+    const kept = { half: raw.half || this.R.half, ground: this.R.ground !== null && this.R.ground !== undefined ? this.R.ground : undefined, bones: raw.bones, chains: raw.chains, motions: this.R.motions };
+    const out = `// the look: the artist's re-skin from a drawing; the skeleton, limits, ground and motions are the rig's own, kept here as data\nconst __kept = ${lit(kept)};\n`
+      + take.slice(0, call.start) + `Rig.define('${cur}', Object.assign(${take.slice(call.argStart, call.argEnd).trim()}, __kept))` + take.slice(call.end);
+    renderCode(out, 32, 0); // it must still render
+    this.text = out; const R = this.evalRig(out); R.motions = this.R.motions; R.ground = this.R.ground; this.R = R; // the new look; the motions as they are in the editor
     await this.saveRig(); this.draw(); say(`${cur} has its new look; bones, limits, ground and motions are as they were`, 'ok');
   },
   // ---- the rig's motions and keys ----
