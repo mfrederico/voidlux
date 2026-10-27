@@ -170,7 +170,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
     </section>
     <section class="tab hidden" id="tab-draw">
     <section class="panel" id="editor">
-      <div class="head"><div><h2 id="title">no sprite</h2><div class="meta" id="meta"></div></div><div class="row"><button id="useBtn">Use in game</button><button id="animCurBtn" title="rig this sprite into a run, idle, jump… as a new code sprite">⟳ Animate…</button><button id="dupBtn" title="a copy of this sprite under a new key">Duplicate…</button><button id="dlBtn">Download</button><button class="danger" id="delBtn">Delete</button><button class="primary" id="saveBtn">Save</button></div></div>
+      <div class="head"><div><h2 id="title">no sprite</h2><div class="meta" id="meta"></div></div><div class="row"><button id="useBtn">Use in game</button><button id="animCurBtn" title="rig this sprite into a run, idle, jump… as a new code sprite">⟳ Animate…</button><button id="vecBtn" title="the artist redraws this picture as SVG, under a new key">Make it vector…</button><button id="dupBtn" title="a copy of this sprite under a new key">Duplicate…</button><button id="dlBtn">Download</button><button class="danger" id="delBtn">Delete</button><button class="primary" id="saveBtn">Save</button></div></div>
       <div id="empty" class="muted">Pick a sprite on the left, make a new one, or ask the builder for one.</div>
       <div id="pix" class="hidden" style="display: grid; gap: 12px;">
         <div class="row tools" id="tools">
@@ -367,7 +367,7 @@ function drawList() {
   for (const f of files) { const b = document.createElement('button'); b.className = 'slot'; b.innerHTML = `<img class="th" src="${ASSET(f)}" alt=""><span><div class="k">${esc(f)}</div><div class="d">click to add it as a sprite</div></span>`; b.onclick = () => adopt(f); L.appendChild(b); }
 }
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-function jobTitle(j) { const who = j.asset || j.key || 'sprite'; if (j.kind === 'rig') return `skeleton rig of ${who}`; if (j.kind === 'animate') return `${j.cycle || 'motion'} cycle of ${who}`; if (j.note) return j.note; if (j.kind === 'refine') return `refinement of ${j.key}`; if (j.kind === 'revision') return `revision of ${j.key}`; return j.key || '(no description)'; }
+function jobTitle(j) { const who = j.asset || j.key || 'sprite'; if (j.kind === 'rig') return `skeleton rig of ${who}`; if (j.kind === 'animate') return `${j.cycle || 'motion'} cycle of ${who}`; if (j.kind === 'vector') return `${who} as vector`; if (j.note) return j.note; if (j.kind === 'refine') return `refinement of ${j.key}`; if (j.kind === 'revision') return `revision of ${j.key}`; return j.key || '(no description)'; }
 const takeLabel = (j, i) => `${j.key || 'sprite'} · take ${i + 1}`;
 el('q').oninput = drawList;
 
@@ -496,6 +496,14 @@ el('delBtn').onclick = async () => {
   catch (e) { say(e.message, 'err'); }
 };
 el('dlBtn').onclick = () => { const a = document.createElement('a'); if (mode === 'code') { a.href = 'data:text/javascript;charset=utf-8,' + encodeURIComponent(el('codeSrc').value); a.download = cur + '.js'; } else if (mode === 'svg') { a.href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(el('svgSrc').value); a.download = cur + '.svg'; } else { a.href = stripDataUrl(); a.download = cur + '.png'; } a.click(); };
+el('vecBtn').onclick = async () => { // the artist redraws a kept picture as SVG, kept under a new key
+  if (!cur || !entry) { say('save the sprite first', 'err'); return; } if (entry.kind === 'code' || entry.kind === 'rig' || /\.js$/i.test(entry.file)) { say('that is code, not a picture: the artist traces pictures (pixels or SVG)', 'err'); return; }
+  const key = prompt(`The artist redraws ${cur} as SVG. Keep the vector as (a new key):`, cur.replace(/-px$/, '') + '-vector'); if (!key) return; if (!KEY_RE.test(key)) { say('a key is lowercase letters, digits, - and _, starting with a letter', 'err'); return; }
+  const note = prompt('Anything the artist should know? (what it is, what to tidy; blank is fine)', '') || '';
+  try { const r = await fetch(apiUrl('sketch'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ vectorize: true, asset: cur, note, key, size: Math.max(32, entry.w || 48), style: STYLE[el('aiStyle').value], pixel: false }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+    SK = j; remember(); showOut(null); el('aiKey').value = key; showTab('make'); el('aiStatus').textContent = (j.queued ? 'another sprite job is running: the vector is next. ' : 'the artist is tracing it. ') + 'Two SVG takes appear on the right; Keep as SVG puts one in the game under ' + key + '.'; clearInterval(skT); skT = setInterval(pollSketch, 4000); el('outbox').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  catch (e) { say('not sent: ' + e.message, 'err'); }
+};
 el('dupBtn').onclick = async () => { // a copy under a new key: file, manifest entry, marks
   if (!cur || !entry) { say('save the sprite first', 'err'); return; } const key = prompt(`Copy ${cur} as (a new key):`, cur + '-2'); if (!key) return; if (!KEY_RE.test(key)) { say('a key is lowercase letters, digits, - and _, starting with a letter', 'err'); return; } if (M.sprites[key] && !confirm(`${key} exists. Replace it with the copy?`)) return;
   try { const r = await fetch(apiUrl('spritesave'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key, copyOf: cur }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); M = { sprites: j.sprites, files: j.files }; drawList(); say(`${key} is a copy of ${cur}`, 'ok'); open(key); }
