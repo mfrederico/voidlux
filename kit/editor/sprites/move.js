@@ -180,7 +180,7 @@ const Move = {
   },
   // ---- the rig's motions and keys ----
   M() { return this.R && this.R.motions[this.motion] || null; }, K() { const M = this.M(); return M && this.keyI >= 0 ? M.keys[this.keyI] : null; },
-  poseNow() { const M = this.M(); if (!M) return { pose: {}, root: { x: 0, y: 0 }, ik: {} }; const K = this.K(); if (K) return { pose: K.pose || {}, root: K.root || { x: 0, y: 0 }, ik: K.ik || {}, bend: K.bend || {} }; return Rig.pose(M, this.scrub, this.R); },
+  poseNow() { const M = this.M(); if (!M) return { pose: {}, root: { x: 0, y: 0 }, ik: {} }; const K = this.K(); if (K) return { pose: K.pose || {}, root: K.root || { x: 0, y: 0 }, ik: K.ik || {}, bend: K.bend || {}, bendMix: {} }; return Rig.pose(M, this.scrub, this.R); },
   flipBend() { const K = this.K(); if (!K) { say('select a key first', 'err'); return; } const c = this.lastChain || Object.keys(this.R.chains)[0]; if (!c) return; this.snapshot(); K.bend = K.bend || {}; const now = K.bend[c] || this.R.chains[c].bend || 1; K.bend[c] = -now; if (K.bend[c] === (this.R.chains[c].bend || 1)) delete K.bend[c]; this.draw(); say(`${c} folds ${now > 0 ? 'back' : 'forward'} in this key`, 'ok'); },
   pickMotion(name) { this.stop(); this.motion = name; const M = this.M(); if (!M) { this.keyI = -1; this.tlUI(); this.draw(); return; } if (!M.keys) M.keys = []; M.keys.sort((a, b) => a.t - b.t); el('mSecs').value = M.secs || 1; el('mFps').value = M.fps || 12; el('mLoop').checked = M.loop !== false; this.keyI = M.keys.length ? 0 : -1; this.scrub = this.keyI >= 0 ? M.keys[0].t : 0; el('tlScrub').value = Math.round(this.scrub * 1000); this.tlUI(); this.draw(); },
   tlUI() {

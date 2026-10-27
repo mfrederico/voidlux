@@ -46,7 +46,9 @@ const Rig = {
     let a = K[K.length - 1], b = K[0], span = 1 - a.t + b.t, u = 0;
     for (let i = 0; i < K.length; i++) { const k = K[i], nx = K[i + 1]; if (p >= k.t && (!nx || p < nx.t)) { a = k; b = nx || (loop ? K[0] : k); span = nx ? nx.t - k.t : (loop ? 1 - k.t + K[0].t : 1); u = span > 0 ? (p - k.t) / span : 0; break; } }
     const ease = (a.ease || motion.ease || 'io') === 'lin' ? u : (u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2);
-    const out = { pose: {}, root: { x: 0, y: 0 }, ik: {}, bend: Object.assign({}, a.bend || {}, u >= 0.5 ? (b.bend || {}) : {}) }, pa = a.pose || {}, pb = b.pose || {}; // a fold direction switches halfway to the next key
+    const out = { pose: {}, root: { x: 0, y: 0 }, ik: {}, bend: {}, bendMix: {} }, pa = a.pose || {}, pb = b.pose || {};
+    // a fold that differs between the two keys swings the joint round through a straight limb (solve() blends the elbow point)
+    for (const c of new Set([...Object.keys(a.bend || {}), ...Object.keys(b.bend || {}), ...(rig ? Object.keys(rig.chains) : [])])) { const d = rig && rig.chains[c] ? (rig.chains[c].bend || 1) : 1, fa = (a.bend || {})[c] || d, fb = (b.bend || {})[c] || d; if (fa === fb) { if (fa !== d) out.bend[c] = fa; } else out.bendMix[c] = { from: fa, to: fb, u: ease }; }
     for (const n of new Set([...Object.keys(pa), ...Object.keys(pb)])) { const x = pa[n] || 0, y = pb[n] || 0; let d = y - x; while (d > Math.PI) d -= TAU; while (d < -Math.PI) d += TAU; out.pose[n] = x + d * ease; }
     const ra = a.root || { x: 0, y: 0 }, rb = b.root || { x: 0, y: 0 }; out.root = { x: (ra.x || 0) + ((rb.x || 0) - (ra.x || 0)) * ease, y: (ra.y || 0) + ((rb.y || 0) - (ra.y || 0)) * ease };
     const ia = a.ik || {}, ib = b.ik || {};
@@ -65,7 +67,11 @@ const Rig = {
       const T = P.ik[cn]; if (!T) continue; const [an, bn] = ch.bones, A = W[an], B = W[bn], l1 = A.len, l2 = B.len;
       const tx = T.x + P.root.x, ty = T.y + P.root.y, dx = tx - A.x, dy = ty - A.y, d = Math.max(1e-6, Math.min(l1 + l2 - 1e-4, Math.hypot(dx, dy)));
       const cosK = (l1 * l1 + l2 * l2 - d * d) / (2 * l1 * l2), knee = Math.acos(Math.max(-1, Math.min(1, cosK))), cosA = (l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), alpha = Math.acos(Math.max(-1, Math.min(1, cosA)));
-      const bend = (P.bend && P.bend[cn]) || ch.bend || 1, a1 = Math.atan2(dy, dx) - bend * alpha, a2 = a1 + bend * (Math.PI - knee);
+      const mix = P.bendMix && P.bendMix[cn], base = Math.atan2(dy, dx); let a1, a2;
+      if (mix) { // between two folds: the elbow travels from one solution's elbow to the other's, so the limb straightens and re-bends instead of jumping
+        const e = s => { const q = base - s * alpha; return [A.x + Math.cos(q) * l1, A.y + Math.sin(q) * l1]; }, [x1, y1] = e(mix.from), [x2, y2] = e(mix.to), ex = x1 + (x2 - x1) * mix.u, ey = y1 + (y2 - y1) * mix.u;
+        a1 = Math.atan2(ey - A.y, ex - A.x); const jx = A.x + Math.cos(a1) * l1, jy = A.y + Math.sin(a1) * l1; a2 = Math.atan2(ty - jy, tx - jx);
+      } else { const bend = (P.bend && P.bend[cn]) || ch.bend || 1; a1 = base - bend * alpha; a2 = a1 + bend * (Math.PI - knee); }
       A.angle = a1; A.tx = A.x + Math.cos(a1) * l1; A.ty = A.y + Math.sin(a1) * l1; B.x = A.tx; B.y = A.ty; B.angle = a2; B.tx = B.x + Math.cos(a2) * l2; B.ty = B.y + Math.sin(a2) * l2;
       // the children of the chain's end (a foot, a hand) follow the new angle
       const fix = pn => { for (const n of rig.order) { const b = rig.bones[n]; if (b.parent !== pn) continue; const par = W[pn], cs = Math.cos(par.angle), sn = Math.sin(par.angle), w = W[n]; w.x = par.tx + b.x * cs - b.y * sn; w.y = par.ty + b.x * sn + b.y * cs; w.angle = par.angle + b.angle + (P.pose[n] || 0); w.tx = w.x + Math.cos(w.angle) * b.len; w.ty = w.y + Math.sin(w.angle) * b.len; fix(n); } };
