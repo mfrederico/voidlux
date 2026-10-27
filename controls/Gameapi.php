@@ -7,7 +7,7 @@
  *   GET  token      GET/POST sfx      GET sounds      GET/POST tuning      POST musicsave { name, snippet }     POST musicdelete { name }
  *   GET  sprites    POST spritesave { key, png|svg|file, w, h, frames, fps, source }    POST spritedelete { key, file }
  *   POST sketch { png, note, style, pixel, size, key, palette } → { id }      GET sketch?id= → { result, base, busy }
- *   GET  sketches → { jobs }      POST sketchdelete { id }
+ *   GET  sketches → { jobs }      POST sketchdelete { id }      GET spritehints?key=   POST spritehints { key, plan, joints, notes }
  */
 namespace app;
 
@@ -69,6 +69,13 @@ class Gameapi extends BaseControls\Control {
             $this->raw(GameStore::sketchStatus($g->slug, (string) $this->getParam('id', '')));
         } catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
         catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 409); }
+    }
+    public function spritehints($params = []): void { // the rigger's marks for one sprite: GET ?key=, POST { key, plan, half, joints, notes }
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
+        try {
+            if ($this->post()) { $b = $this->getJsonInput() ?? []; $this->raw(['ok' => true] + GameStore::saveHints($g->slug, (string) ($b['key'] ?? ''), $b)); }
+            $this->raw(GameStore::readHints($g->slug, (string) $this->getParam('key', '')));
+        } catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); } catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 500); }
     }
     public function sketches($params = []): void { if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $this->raw(GameStore::listSketches($g->slug)); }
     public function sketchdelete($params = []): void {

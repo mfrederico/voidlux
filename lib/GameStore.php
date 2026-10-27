@@ -382,6 +382,23 @@ class GameStore {
         exec('timeout 10 ' . escapeshellarg($node) . ' --check ' . escapeshellarg($tmp) . ' 2>&1', $out, $rc); @unlink($tmp);
         if ($rc !== 0) throw new \InvalidArgumentException('the code does not parse: ' . mb_substr(trim(implode("\n", $out)), 0, 300));
     }
+    /** The producer's bone marks for a sprite: assets/<key>.rig-hints.json ({ plan, half, joints: [{ name, x, y, parent, note }], notes }). */
+    public static function readHints(string $slug, string $key): array {
+        if (!preg_match(self::SPRITE_KEY, $key)) throw new \InvalidArgumentException('not a sprite key');
+        $f = self::dir($slug) . "/assets/$key.rig-hints.json"; if (!is_file($f)) return ['plan' => 'biped', 'joints' => [], 'notes' => ''];
+        $h = json_decode((string) file_get_contents($f), true); if (!is_array($h)) throw new \RuntimeException("assets/$key.rig-hints.json is not JSON; fix or remove it"); return $h;
+    }
+    public static function saveHints(string $slug, string $key, array $b): array {
+        if (!preg_match(self::SPRITE_KEY, $key)) throw new \InvalidArgumentException('not a sprite key');
+        $h = self::cleanHints($b); $dir = self::dir($slug) . '/assets'; if (!is_dir($dir)) mkdir($dir, 0775, true);
+        self::writeAtomic("$dir/$key.rig-hints.json", json_encode($h, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"); self::git(self::dir($slug), ['add', "assets/$key.rig-hints.json"]); return $h;
+    }
+    public static function cleanHints(array $b): array {
+        $plan = in_array($b['plan'] ?? '', ['biped', 'quadruped', 'winged', 'serpent', 'other'], true) ? (string) $b['plan'] : 'biped'; $joints = [];
+        foreach (array_slice((array) ($b['joints'] ?? []), 0, 60) as $j) { if (!is_array($j)) continue; $n = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($j['name'] ?? '')); if ($n === '') continue;
+            $joints[] = ['name' => mb_substr($n, 0, 24), 'x' => round((float) ($j['x'] ?? 0), 1), 'y' => round((float) ($j['y'] ?? 0), 1), 'parent' => mb_substr(preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($j['parent'] ?? '')), 0, 24), 'note' => trim(mb_substr((string) ($j['note'] ?? ''), 0, 160))]; }
+        return ['plan' => $plan, 'half' => max(4, (float) ($b['half'] ?? 24)), 'joints' => $joints, 'notes' => trim(mb_substr((string) ($b['notes'] ?? ''), 0, 400))];
+    }
     public static function deleteSprite(string $slug, string $key, bool $withFile): void {
         if (!preg_match(self::SPRITE_KEY, $key)) throw new \InvalidArgumentException('not a sprite key');
         $dir = self::dir($slug) . '/assets'; $all = self::readSprites($slug); $sprites = (array) $all['sprites'];
@@ -490,6 +507,8 @@ class GameStore {
         $rigjob = null;
         if (!empty($b['rigjob']) && is_array($b['rigjob'])) {
             $rigjob = ['notes' => trim(mb_substr((string) ($b['rigjob']['notes'] ?? ''), 0, 400))];
+            if (!empty($b['rigjob']['hints']) && is_array($b['rigjob']['hints'])) $rigjob['hints'] = self::cleanHints($b['rigjob']['hints']);
+            elseif (!empty($b['asset']) && is_file(self::dir($slug) . '/assets/' . preg_replace('/[^a-z0-9_-]/', '', (string) $b['asset']) . '.rig-hints.json')) { $hh = self::readHints($slug, (string) $b['asset']); if (!empty($hh['joints'])) $rigjob['hints'] = self::cleanHints($hh); }
             if (!empty($b['asset'])) {
                 $all = self::readSprites($slug); $ak = (string) $b['asset']; $e = ((array) $all['sprites'])[$ak] ?? null; if (!$e) throw new \InvalidArgumentException("no sprite named {$ak} in the game");
                 $af = basename((string) ((array) $e)['file']); $ext = pathinfo($af, PATHINFO_EXTENSION); if (!in_array($ext, ['svg', 'js', 'png'], true)) throw new \InvalidArgumentException('only an svg, code or png sprite can be rigged');
@@ -574,7 +593,8 @@ class GameStore {
             $half = $size / 2; $base = $rigjob['base']; $bext = pathinfo($base, PATHINFO_EXTENSION);
             $p = "RIG. The producer wants the character in sketches/{$id}/{$base} turned into a skeleton rig: bones fitted to its body, its drawing split into parts bound to the bones, and two motions, so that any motion made for this body plan can play on it. " . ($bext === 'png' ? 'Look at the picture with Read. ' : 'Read the file: it is the character, its shapes and its palette. ') . ($rigjob['notes'] !== '' ? "Their notes: \"{$rigjob['notes']}\". " : '')
                . "Read ../../kit/js/kit-rig.js first: its header is the exact format (Rig.define, bones with rest angles, two-bone IK chains with bend, parts drawn in bone space, motions as keyframes) and ../../kit/AGENTS.md's Sprites section the rules. Read GAME.md's Design so the motion suits the game.\n"
-               . "1. Decide the BODY PLAN from the form, and say which in the header comment: biped (spine, head, two arms, two legs; IK chains for arms and legs; feet are the ground contacts), quadruped (spine with hips and shoulders, neck and head, four legs with IK, a tail as a chain of two or three bones), winged (a biped or quadruped plus wing chains), serpent (one spine chain, no IK), or none (a vehicle, a blob, a projectile: then write result.json as {\"ok\": false, \"error\": \"no skeleton suits this form: animate it as code frames instead\"} and stop).\n"
+               . (!empty($rigjob['hints']['joints']) ? "THE PRODUCER MARKED THE SKELETON on the drawing. Body plan: {$rigjob['hints']['plan']}. Joints, in the rig's own space (centre (0, 0), y down, the figure fitting radius " . round((float) $rigjob['hints']['half'], 1) . "; scale them by " . round($half / max(1, (float) $rigjob['hints']['half']), 3) . " to this rig's half {$half}), each named for the bone that ENDS at it and attached to its parent joint:\n" . implode("\n", array_map(fn($j) => "  - {$j['name']} at ({$j['x']}, {$j['y']})" . ($j['parent'] !== '' ? " from {$j['parent']}" : ' (root)') . ($j['note'] !== '' ? " — \"{$j['note']}\"" : ''), $rigjob['hints']['joints'])) . "\nFit the bones to THESE positions (lengths and rest angles follow from them, bone names from the marks, parent links as marked; a joint named like a knee or elbow with a foot or hand beyond it is a two-bone IK chain) and follow each joint's note. Marks win over your own reading of the drawing.\n" : '')
+               . "1. Decide the BODY PLAN from the form" . (!empty($rigjob['hints']['joints']) ? ' (the producer said: ' . $rigjob['hints']['plan'] . ')' : '') . ", and say which in the header comment: biped (spine, head, two arms, two legs; IK chains for arms and legs; feet are the ground contacts), quadruped (spine with hips and shoulders, neck and head, four legs with IK, a tail as a chain of two or three bones), winged (a biped or quadruped plus wing chains), serpent (one spine chain, no IK), or none (a vehicle, a blob, a projectile: then write result.json as {\"ok\": false, \"error\": \"no skeleton suits this form: animate it as code frames instead\"} and stop).\n"
                . "2. Fit the bones to the drawing: the root at the hips (or the body's centre of mass), lengths and rest angles so the skeleton's rest pose lies on the drawn figure, facing RIGHT, the whole figure within radius {$half} with the feet near the bottom. Chains: bend 1 for a knee (forward), -1 for an elbow (back); a quadruped's rear legs bend the other way from its front legs.\n"
                . "3. Split the drawing into parts bound to bones, drawn in bone space ((0, 0) the joint, the bone along +x to (b.len, 0)) with plain canvas calls in the character's own palette and outline weight; z orders back to front (far limbs behind the torso, near limbs and the head in front). Keep the character's look exactly: colours, proportions, details (eyes, mask, scarf, weapon).\n"
                . "4. Motions: an idle (slow breath, a small bob) and a locomotion matching the plan: run for a biped, trot for a quadruped, fly for winged, slither for a serpent; legs by IK foot targets placed within reach (the chain's two lengths), loops seamless, arms counter-swinging, root bobbing. Keys at t in 0..1 with pose, root and ik.\n"

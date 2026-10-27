@@ -35,6 +35,13 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
 .top { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; } .tabs { display: flex; gap: 4px; } .tabs a { text-decoration: none; color: var(--muted); font-family: var(--display); font-weight: 700; font-size: 16px; padding: 6px 14px; border-radius: 999px; border: 1px solid transparent; } .tabs a:hover { color: var(--ink); } .tabs a.on { color: var(--ink); border-color: var(--accent); background: var(--surface); }
 .tab.hidden { display: none !important; } .cards2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; } .card2 { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 6px; align-content: start; } .card2.soon { border-style: dashed; } .card2 p { margin: 0; }
 .more { border-top: 1px solid var(--line); padding-top: 10px; }
+/* Move: the stage with the figure large, the panel beside it (under it on a phone), the timeline under the stage */
+.movegrid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; } @media (max-width: 900px) { .movegrid { grid-template-columns: 1fr; } }
+.movestage { display: grid; gap: 8px; } #moveCv { width: 100%; max-width: 560px; aspect-ratio: 1; height: auto; display: block; border: 1px solid var(--line); border-radius: 10px; background: repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 24px 24px; touch-action: none; cursor: crosshair; }
+.tl { display: grid; gap: 4px; max-width: 560px; } .tlbar { position: relative; height: 28px; border: 1px solid var(--line); border-radius: 8px; background: var(--plot); } .tlkey { position: absolute; top: 50%; width: 14px; height: 14px; transform: translate(-50%, -50%) rotate(45deg); background: var(--surface); border: 2px solid var(--muted); cursor: pointer; } .tlkey.on { border-color: var(--accent); background: var(--accent); } .tlcursor { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--focus); transform: translateX(-1px); pointer-events: none; }
+#tlScrub { width: 100%; }
+.moveside { display: grid; gap: 10px; min-width: 0; } .hintlist { display: grid; gap: 4px; max-height: 300px; overflow: auto; } .hint { display: grid; grid-template-columns: 1fr 1fr auto; gap: 4px; align-items: center; padding: 4px; border-radius: 6px; } .hint.on { background: var(--bg); outline: 1px solid var(--accent); } .hint input, .hint select { width: 100%; min-width: 0; } .hint .note { grid-column: 1 / -1; } .hint .x { padding: 2px 8px; }
+.gobtn.small { font-size: 14px; padding: 6px 14px; border-radius: 999px; }
 @media (max-width: 760px) { .main { grid-template-columns: 1fr; } .list { position: static; max-height: none; } }
 /* nothing may be wider than the phone: grid children shrink, selects and inputs cap at their box, long words break */
 .wrap > *, .main > *, .panel > *, .sketch > *, .pad > *, .out > *, .note > * { min-width: 0; }
@@ -186,14 +193,30 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
     </section>
     </section>
     <section class="tab panel hidden" id="tab-move">
-      <div class="head"><div><h2 id="moveTitle">no sprite chosen</h2><div class="meta muted small">pick a kept sprite on the left, or a take in Make, to give it motion</div></div><div class="row"><button class="primary" id="moveAnimBtn" disabled>⟳ Let the artist animate it…</button></div></div>
-      <div id="rigPlay" class="hidden" style="display:grid;gap:8px">
-        <div class="row"><label>motion <select id="rigMotion"></select></label><button id="rigPlayBtn">▶ play</button><label><input type="checkbox" id="rigBones" checked> show the bones</label><span class="muted small" id="rigInfo"></span></div>
-        <div class="stage"><canvas id="rigCv" width="384" height="384" style="image-rendering:auto;max-width:100%"></canvas></div>
-      </div>
-      <div class="cards2">
-        <div class="card2"><div class="lbl">Animate as code frames</div><p class="muted small">Quick and ready today: the artist rigs the character in drawing code, a run, an idle, a jump, and the game plays it with <code>Draw.anim</code>. Good for a cycle that will not change much.</p></div>
-        <div class="card2"><div class="lbl">Skeleton rig</div><p class="muted small">The artist reads the body and picks the plan (biped, quadruped, winged, serpent), fits bones to it, splits the drawing into parts on the bones, and writes an idle and a run. Keep the rig and the game plays it with <code>Draw.rig</code>; motions are data any character of the same plan can share.</p><textarea id="rigNotes" rows="2" placeholder="notes for the rigger, e.g. “the scarf is its own chain; the sword stays in the right hand”"></textarea><div class="row"><button class="primary" id="rigGoBtn" disabled>⛶ Rig this character &gt;&gt;</button><span class="muted small">a bigger job than a drawing: a minute or two</span></div></div>
+      <div class="head"><div><h2 id="moveTitle">no sprite chosen</h2><div class="meta muted small" id="moveSub">pick a kept sprite on the left to give it motion</div></div><div class="row"><button id="moveAnimBtn" disabled title="the artist animates it as code frames, no rig">⟳ Let the artist animate it…</button></div></div>
+      <div class="movegrid">
+        <div class="movestage"><canvas id="moveCv" width="448" height="448"></canvas><div class="tl hidden" id="moveTl"><div class="tlbar" id="tlBar"><div class="tlcursor" id="tlCursor"></div></div><input type="range" id="tlScrub" min="0" max="1000" value="0"><div class="row small"><span class="muted" id="tlInfo"></span></div></div></div>
+        <aside class="moveside" id="moveSide">
+          <div id="hintsPanel" class="hidden" style="display:grid;gap:8px">
+            <div class="lbl">Mark the bones for the rigger</div>
+            <p class="muted small" style="margin:0">Click the figure to place joints: the hips first, then down each limb. Name each one, say what it is for, and the rigger fits the skeleton to your marks instead of guessing.</p>
+            <div class="row"><label>body plan <select id="hintPlan"><option value="biped">biped</option><option value="quadruped">quadruped</option><option value="winged">winged</option><option value="serpent">serpent</option><option value="other">other</option></select></label><button id="hintAdd" class="primary">+ place joints</button><button id="hintClear">clear</button></div>
+            <div id="hintList" class="hintlist"></div>
+            <datalist id="boneNames"></datalist>
+            <textarea id="rigNotes" rows="2" placeholder="notes for the whole rig, e.g. “side-scroller; the scarf trails; the sword stays in the right hand”"></textarea>
+            <div class="row"><button id="hintSave">Save marks</button><button class="primary gobtn small" id="rigGoBtn" disabled>Rig this character GO!</button></div>
+            <div class="muted small" id="hintMsg"></div>
+          </div>
+          <div id="rigPanel" class="hidden" style="display:grid;gap:8px">
+            <div class="lbl">Motions</div>
+            <div class="row"><select id="mMotion"></select><button id="mNew" title="a new motion">+ new</button><button id="mDel" class="danger" title="remove this motion">remove</button></div>
+            <div class="row"><label>secs <input type="number" id="mSecs" step="0.1" min="0.1" max="10" style="width:64px"></label><label>fps <input type="number" id="mFps" min="2" max="30" style="width:56px"></label><label><input type="checkbox" id="mLoop"> loop</label><label><input type="checkbox" id="mBones" checked> bones</label></div>
+            <div class="row"><button id="mPlay">▶ play</button><button id="kAdd">+ key at cursor</button><button id="kDup">duplicate</button><button id="kMirror" title="swap left and right limbs in this key">mirror L/R</button><button id="kDel" class="danger">delete key</button></div>
+            <div class="row" id="kFields"><label>key at <input type="number" id="kT" step="0.01" min="0" max="1" style="width:64px"></label><label>ease <select id="kEase"><option value="io">in-out</option><option value="lin">linear</option></select></label><span class="muted small" id="kInfo"></span></div>
+            <p class="muted small" style="margin:0">Pose the key on the stage: drag a hand or a foot and the limb bends to reach it (IK); drag another joint to turn its bone; drag the hips to move the body. The cursor between keys shows the tween.</p>
+            <div class="row"><button class="primary" id="rigSave">Save the rig</button><span class="muted small" id="rigMsg"></span></div>
+          </div>
+        </aside>
       </div>
     <div id="animBox" class="hidden" style="display:grid;gap:8px;border:1px dashed var(--line);border-radius:10px;padding:10px">
       <div class="lbl">Animate <span class="mono" id="animWhat"></span> — a cycle rigged in code: the character split into parts that move each frame</div>
@@ -214,14 +237,7 @@ const LEDE = { make: "Draw a rough sketch, say what it is, press >>: the artist 
 function showTab(name) { if (!['make', 'draw', 'move'].includes(name)) name = 'make'; for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('on', a.dataset.tab === name); for (const s of document.querySelectorAll('.tab')) s.classList.toggle('hidden', s.id !== 'tab-' + name); el('lede').textContent = LEDE[name]; if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name); if (name === 'move') moveRefresh(); }
 for (const a of document.querySelectorAll('#tabs a')) a.onclick = e => { e.preventDefault(); showTab(a.dataset.tab); };
 window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
-let rigT = null, rigText = '';
-function moveRefresh() { const has = !!(cur && entry); el('moveTitle').textContent = has ? cur : 'no sprite chosen'; el('moveAnimBtn').disabled = !has; el('rigGoBtn').disabled = !has || entry.kind === 'rig'; clearInterval(rigT);
-  const isRig = has && entry.kind === 'rig'; el('rigPlay').classList.toggle('hidden', !isRig); if (!isRig) return;
-  fetch(ASSET(entry.file) + '?t=' + Date.now(), { cache: 'no-store' }).then(r => r.text()).then(t => { rigText = t; const r = renderCode(t, 384, 0, { bones: el('rigBones').checked }); const sel = el('rigMotion'); sel.innerHTML = r.def.motions.map(m => `<option>${esc(m)}</option>`).join(''); el('rigInfo').textContent = `${Object.keys(r.def.rig.bones).length} bones · ${Object.keys(r.def.rig.chains).length} IK chains · ${r.def.rig.parts.length} parts · ${r.def.motions.length} motion${r.def.motions.length === 1 ? '' : 's'}`; rigDraw(0); }).catch(e => { el('rigInfo').textContent = 'the rig does not load: ' + e.message; });
-}
-function rigDraw(f) { const cv = el('rigCv'), g = cv.getContext('2d'); try { const r = renderCode(rigText, cv.width, f, { motion: el('rigMotion').value, bones: el('rigBones').checked }); g.clearRect(0, 0, cv.width, cv.height); g.drawImage(r.canvas, 0, 0); return r.def.o; } catch (e) { el('rigInfo').textContent = e.message; return null; } }
-el('rigPlayBtn').onclick = () => { if (rigT) { clearInterval(rigT); rigT = null; el('rigPlayBtn').textContent = '▶ play'; return; } const o = rigDraw(0); if (!o) return; let f = 0; el('rigPlayBtn').textContent = '■ stop'; rigT = setInterval(() => { f = (f + 1) % o.frames; rigDraw(f); }, 1000 / (o.fps || 12)); };
-el('rigMotion').onchange = () => { clearInterval(rigT); rigT = null; el('rigPlayBtn').textContent = '▶ play'; rigDraw(0); }; el('rigBones').onchange = () => rigDraw(0);
+function moveRefresh() { if (typeof Move !== 'undefined') Move.refresh(); }
 const API = '/gameapi', GAME = new URLSearchParams(location.search).get('game') || ''; let CSRF = ''; // the forge's API for this game: /gameapi/<verb>/<slug>, writes with X-CSRF-TOKEN
 const apiUrl = verb => `${API}/${verb}/${GAME}`; const apiHeaders = () => ({ 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest' });
 async function apiToken() { try { const r = await fetch(apiUrl('token'), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); if (r.ok) { CSRF = (await r.json()).token || ''; return true; } } catch (e) {} return false; }
@@ -542,12 +558,6 @@ el('animBtn').onclick = () => { if (!cand) return; const sk = SK || {}; openAnim
 el('vAnim').onclick = () => { if (!V) return; const t = { refine: { id: V.job, file: V.file.replace(/\?.*$/, '') } }; closeViewer(); openAnim(t, t.refine.file); };
 el('animCurBtn').onclick = () => { if (!cur || !entry) { say('save the sprite first, then animate it', 'err'); return; } openAnim({ asset: cur }, cur); };
 el('moveAnimBtn').onclick = () => { if (cur && entry) openAnim({ asset: cur }, cur); };
-el('rigGoBtn').onclick = async () => {
-  if (!cur || !entry) return; el('rigGoBtn').disabled = true; el('aiStatus').textContent = 'sending the character to the artist to rig…';
-  try { const r = await fetch(apiUrl('sketch'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ rigjob: { notes: el('rigNotes').value.trim() }, asset: cur, note: el('rigNotes').value.trim(), size: Math.max(32, entry.w || 48), key: cur, style: STYLE[el('aiStyle').value], pixel: el('aiStyle').value !== 'hd' }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
-    SK = j; remember(); showOut(null); el('aiKey').value = cur; showTab('make'); el('aiStatus').textContent = (j.queued ? 'another sprite job is running: the rig is next. ' : 'the artist is rigging it. ') + 'The rig appears on the right when it is done; click it to watch it move, then Keep as rig.'; clearInterval(skT); skT = setInterval(pollSketch, 4000); el('outbox').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-  catch (e) { el('aiStatus').textContent = 'not sent: ' + e.message; } finally { el('rigGoBtn').disabled = false; }
-};
 el('animGo').onclick = async () => {
   if (!animTarget) return; const key = el('animKey').value.trim(); if (!KEY_RE.test(key)) { say('the key is lowercase letters, digits, - and _, starting with a letter', 'err'); el('animKey').focus(); return; }
   el('animGo').disabled = true; el('aiStatus').textContent = 'sending the character to the builder to rig…';
@@ -650,4 +660,5 @@ window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); 
 window.addEventListener('resize', () => { if (doc && mode === 'pix') { fitZoom(); render(); } });
 (async () => { drawSwatches(); show('none'); showTab(location.hash.slice(1) || 'make'); recall(); await apiToken(); await load(); await loadJobs(); if (el('jobs').children.length) el('jobsBox').open = true; })();
 </script>
+<script src="/kit/editor/sprites/move.js"></script>
 </body></html>
