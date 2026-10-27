@@ -149,8 +149,8 @@ const Move = {
   hitBone(p) { // what a press on the posed figure takes hold of: the nearest handle, whatever it is: a chain's end (IK), the root (move), a bone's tip (turn)
     const P = this.poseNow(), W = Rig.solve(this.R, P), r = 12 / this.k; let best = null, bd = r;
     const ends = {}; for (const [cn, ch] of Object.entries(this.R.chains)) ends[ch.bones[1]] = cn;
-    for (const [n, w] of Object.entries(W)) { const d = Math.hypot(w.tx - p.x, w.ty - p.y) - (ends[n] ? 1e-6 : 0); if (d < bd) { bd = d; best = ends[n] ? { chain: ends[n], at: [w.tx, w.ty], name: n + ' (' + ends[n] + ', IK)' } : { bone: n, chainOf: (Object.entries(this.R.chains).find(([, ch]) => ch.bones.includes(n)) || [null])[0], at: [w.tx, w.ty], name: n }; } }
-    for (const b of Object.values(this.R.bones)) if (!b.parent) { const w = W[b.name], d = Math.hypot(w.x - p.x, w.y - p.y); if (d < bd) { bd = d; best = { root: true, ox: p.x - P.root.x, oy: p.y - P.root.y, at: [w.x, w.y], name: b.name + ' (root: moves the body)' }; } }
+    for (const [n, w] of Object.entries(W)) { if (!(w.len > 0)) continue; const d = Math.hypot(w.tx - p.x, w.ty - p.y) - (ends[n] ? 1e-6 : 0); if (d < bd) { bd = d; best = ends[n] ? { chain: ends[n], at: [w.tx, w.ty], name: n + ' (' + ends[n] + ', IK)' } : { bone: n, chainOf: (Object.entries(this.R.chains).find(([, ch]) => ch.bones.includes(n)) || [null])[0], at: [w.tx, w.ty], name: n }; } }
+    for (const b of Object.values(this.R.bones)) if (!b.parent) { const w = W[b.name], d = Math.hypot(w.x - p.x, w.y - p.y); if (d <= bd + 1e-6 || d < 6 / this.k) { bd = d; best = { root: true, ox: p.x - P.root.x, oy: p.y - P.root.y, at: [w.x, w.y], name: b.name + ' (root: moves the whole body)' }; } } // the root wins a tie, and anything very close to it
     return best;
   },
   hintsUI() {
