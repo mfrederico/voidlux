@@ -90,7 +90,10 @@ const Move = {
     } catch (e) { el('moveSub').textContent = 'could not load it: ' + e.message; }
     this.draw();
   },
-  restFeet() { const W = Rig.solve(this.R, { pose: {}, root: { x: 0, y: 0 }, ik: {} }); let gy = -Infinity; for (const [cn, ch] of Object.entries(this.R.chains)) if (/leg|foot/i.test(cn + ch.bones[1])) gy = Math.max(gy, W[ch.bones[1]].ty); if (gy === -Infinity) for (const w of Object.values(W)) gy = Math.max(gy, w.ty); return gy; },
+  restFeet() { // the bottom of the DRAWN figure at rest (soles hang below the ankle joints): the lowest painted pixel, in rig units
+    try { const n = 256, c = document.createElement('canvas'); c.width = c.height = n; const g = c.getContext('2d'), k = n * 0.9 / (2 * this.half); g.translate(n / 2, n / 2); g.scale(k, k); const was = Draw.ctx; Draw.ctx = g; try { Rig.paint(this.R, '', 0, g); } finally { Draw.ctx = was; }
+      const px = g.getImageData(0, 0, n, n).data; for (let y = n - 1; y >= 0; y--) for (let x = 0; x < n; x++) if (px[(y * n + x) * 4 + 3] > 40) return Math.round(((y + 1) - n / 2) / k * 10) / 10; } catch (e) {}
+    const W = Rig.solve(this.R, { pose: {}, root: { x: 0, y: 0 }, ik: {} }); let gy = -Infinity; for (const w of Object.values(W)) gy = Math.max(gy, w.ty, w.y); return gy; },
   setGround(y) { this.groundY = Math.round(y * 10) / 10; this.R.ground = this.groundY; this.groundDirty = true; this.draw(); el('rigMsg').textContent = `ground at ${this.groundY} (${this.groundY >= this.half - 0.05 ? 'the bottom of the box' : 'inside the box'}); Save the rig to keep it`; },
   evalRig(text) { let def = null, name = ''; const real = Rig.define; Rig.define = (k, r) => { def = r; name = k; }; try { new Function('Rig', 'Draw', 'TAU', 'U', text)(Rig, Draw, TAU, U); } finally { Rig.define = real; } if (!def) throw new Error('no Rig.define in the file'); const key = 'move:' + cur, R = Rig.define(key, def); R.realKey = name; if (name && name !== key) Rig.rigs.set(name, R); return R; },
   names() { el('boneNames').innerHTML = (this.PLANS[this.plan] || []).map(n => `<option value="${n}">`).join(''); },
