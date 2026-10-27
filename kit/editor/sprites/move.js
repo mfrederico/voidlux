@@ -36,7 +36,7 @@ const Move = {
     el('mMotion').onchange = () => this.pickMotion(el('mMotion').value); el('mNew').onclick = () => this.newMotion(); el('mDel').onclick = () => this.delMotion();
     el('mDup').onclick = () => this.dupMotion(); el('mRename').onclick = () => this.renameMotion(); el('mAsk').onclick = () => { if (cur && entry) openAnim({ asset: cur }, cur); };
     for (const id of ['mSecs', 'mFps', 'mLoop']) el(id).onchange = () => { const M = this.M(); if (!M) return; this.snapshot(); M.secs = Math.max(0.1, +el('mSecs').value || 1); M.fps = Math.max(2, Math.min(30, +el('mFps').value || 12)); M.loop = el('mLoop').checked; this.tlUI(); this.draw(); };
-    el('mBones').onchange = () => this.draw();
+    el('mBones').onchange = () => this.draw(); el('mOnion').onchange = () => this.draw(); el('mGround').onchange = () => this.draw(); el('kHold').onclick = () => this.holdPrev();
     el('mPlay').onclick = () => this.play(); el('kFlip').onclick = () => this.flipBend(); el('kAdd').onclick = () => this.addKey(); el('kDup').onclick = () => this.dupKey(); el('kDel').onclick = () => this.delKey(); el('kMirror').onclick = () => this.mirrorKey();
     el('kT').onchange = () => { const K = this.K(); if (!K) return; this.snapshot(); K.t = Math.max(0, Math.min(1, +el('kT').value || 0)); this.M().keys.sort((a, b) => a.t - b.t); this.keyI = this.M().keys.indexOf(K); this.tlUI(); this.draw(); };
     el('kEase').onchange = () => { const K = this.K(); if (K) { this.snapshot(); K.ease = el('kEase').value; } };
@@ -54,7 +54,7 @@ const Move = {
       if (this.kind !== 'rig' || !this.M()) return; const M = this.M(), n = Rig.frames(M);
       if (e.key === ' ') { e.preventDefault(); this.play(); } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); this.stop(); this.scrub = ((Math.round(this.scrub * n) + (e.key === 'ArrowRight' ? 1 : -1)) % n + n) % n / n; this.keyI = M.keys.findIndex(K => Math.abs(K.t - this.scrub) < 0.5 / n); el('tlScrub').value = Math.round(this.scrub * 1000); this.tlUI(); this.draw(); }
       else if (e.key === ']' || e.key === '[') { e.preventDefault(); if (!M.keys.length) return; const i = this.keyI >= 0 ? this.keyI : (e.key === ']' ? M.keys.findIndex(K => K.t > this.scrub) - 1 : M.keys.findIndex(K => K.t >= this.scrub)); this.keyI = ((i + (e.key === ']' ? 1 : -1)) % M.keys.length + M.keys.length) % M.keys.length; this.scrub = M.keys[this.keyI].t; el('tlScrub').value = Math.round(this.scrub * 1000); this.tlUI(); this.draw(); }
-      else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); this.delKey(); } else if (k === 'd') { this.dupKey(); } else if (k === 'm') { this.mirrorKey(); } else if (k === 'f') { this.flipBend(); } else if (k === 'k') { this.addKey(); } });
+      else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); this.delKey(); } else if (k === 'd') { this.dupKey(); } else if (k === 'h') { this.holdPrev(); } else if (k === 'm') { this.mirrorKey(); } else if (k === 'f') { this.flipBend(); } else if (k === 'k') { this.addKey(); } });
     window.addEventListener('resize', () => this.draw());
   },
   // ---- undo: a snapshot of the motions (or the marks) before every change; Ctrl+Z back, Ctrl+Y forward ----
@@ -74,6 +74,7 @@ const Move = {
       if (this.kind === 'rig') {
         this.text = await (await fetch(ASSET(entry.file) + '?t=' + Date.now(), { cache: 'no-store' })).text();
         this.R = this.evalRig(this.text); this.half = this.R.half; const names = Object.keys(this.R.motions);
+        { const W = Rig.solve(this.R, { pose: {}, root: { x: 0, y: 0 }, ik: {} }); let gy = -Infinity; for (const [cn, ch] of Object.entries(this.R.chains)) if (/leg|foot/i.test(cn + ch.bones[1])) gy = Math.max(gy, W[ch.bones[1]].ty); if (gy === -Infinity) for (const w of Object.values(W)) gy = Math.max(gy, w.ty); this.groundY = gy; } // the ground: where the feet stand at rest
         el('moveSub').textContent = `a rig: ${Object.keys(this.R.bones).length} bones, ${Object.keys(this.R.chains).length} IK chains, ${this.R.parts.length} parts`;
         el('mMotion').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join(''); this.pickMotion(names[0] || '');
       } else {
@@ -98,6 +99,8 @@ const Move = {
     if (this.kind === 'none') { g.fillStyle = 'rgba(128,128,128,.5)'; g.font = '14px sans-serif'; g.textAlign = 'center'; g.fillText('pick a kept sprite on the left', N / 2, N / 2); return; }
     if (this.kind === 'pic') { if (this.base) g.drawImage(this.base, (N - this.base.width) / 2, (N - this.base.height) / 2); this.drawHints(); return; }
     const P = this.poseNow(), W = Rig.solve(this.R, P);
+    if (el('mGround').checked && this.groundY !== undefined) { g.save(); g.setLineDash([6, 6]); g.strokeStyle = 'rgba(124,180,204,.6)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(0, this.sy(this.groundY)); g.lineTo(N, this.sy(this.groundY)); g.stroke(); g.restore(); }
+    if (el('mOnion').checked) { const Mo = this.M(); if (Mo && Mo.keys.length > 1 && this.keyI >= 0) { const n = Mo.keys.length, ghosts = [[Mo.keys[(this.keyI - 1 + n) % n], 'rgba(124,180,204,.45)'], [Mo.keys[(this.keyI + 1) % n], 'rgba(224,119,0,.45)']]; for (const [Kg, col] of ghosts) { if (Kg === this.K()) continue; const Wg = Rig.solve(this.R, { pose: Kg.pose || {}, root: Kg.root || { x: 0, y: 0 }, ik: Kg.ik || {}, bend: Kg.bend || {} }); g.lineWidth = 3; g.strokeStyle = col; g.lineCap = 'round'; for (const w of Object.values(Wg)) { g.beginPath(); g.moveTo(this.sx(w.x), this.sy(w.y)); g.lineTo(this.sx(w.tx), this.sy(w.ty)); g.stroke(); } } } }
     g.save(); g.translate(N / 2, N / 2); g.scale(this.k, this.k); const was = Draw.ctx; Draw.ctx = g;
     for (const part of this.R.parts) { const w = W[part.bone]; if (!w) continue; g.save(); g.translate(w.x, w.y); g.rotate(w.angle); try { part.draw(g, w, P); } catch (e) {} g.restore(); }
     Draw.ctx = was; g.restore();
@@ -137,14 +140,16 @@ const Move = {
     if (this.kind === 'pic') { const j = this.joints[this.drag.joint]; j.x = Math.round(p.x * 10) / 10; j.y = Math.round(p.y * 10) / 10; this.draw(); return; }
     const K = this.K(); if (!K) return; const d = this.drag;
     d.at = [p.x, p.y];
-    if (d.root) { K.root = { x: Math.round((p.x - d.ox) * 10) / 10, y: Math.round((p.y - d.oy) * 10) / 10 }; }
+    const shift = e.shiftKey;
+    if (d.root) { let rx = p.x - d.ox, ry = p.y - d.oy; if (shift) { const r0 = d.root0 || (d.root0 = { x: (K.root || {}).x || 0, y: (K.root || {}).y || 0 }); if (Math.abs(rx - r0.x) > Math.abs(ry - r0.y)) ry = r0.y; else rx = r0.x; } K.root = { x: Math.round(rx * 10) / 10, y: Math.round(ry * 10) / 10 }; }
     else if (d.chain) { const r = K.root || { x: 0, y: 0 }; K.ik = K.ik || {}; const ch = this.R.chains[d.chain], W0 = Rig.solve(this.R, this.poseNow()), O = W0[ch.bones[0]], reach = (this.R.bones[ch.bones[0]].len + this.R.bones[ch.bones[1]].len) * 0.995; let tx = p.x, ty = p.y; const dist = Math.hypot(tx - O.x, ty - O.y); if (dist > reach) { tx = O.x + (tx - O.x) * reach / dist; ty = O.y + (ty - O.y) * reach / dist; }
+      if (el('mGround').checked && this.groundY !== undefined && /leg|foot/i.test(d.chain + ch.bones[1]) && Math.abs(ty - this.groundY) < 3.5 / Math.max(1, this.k / 4)) ty = this.groundY; // a foot near the ground stands on it
       K.ik[d.chain] = { x: Math.round((tx - r.x) * 10) / 10, y: Math.round((ty - r.y) * 10) / 10 }; this.lastChain = d.chain;
       if (d.elbow) { // of the two folds, keep the one whose elbow stays nearer where it just was: the joint swings round on its own when the limb passes through straight
         const ch = this.R.chains[d.chain], cur = Rig.bendAt(this.M(), this.keyI, d.chain, ch.bend || 1), e = s => { K.bend = K.bend || {}; const was = K.bend[d.chain]; K.bend[d.chain] = s; const W = Rig.solve(this.R, this.poseNow()); if (was === undefined) delete K.bend[d.chain]; else K.bend[d.chain] = was; const b = W[ch.bones[0]]; return [b.tx, b.ty]; };
         const e1 = e(cur), e2 = e(-cur), d1 = Math.hypot(e1[0] - d.elbow[0], e1[1] - d.elbow[1]), d2 = Math.hypot(e2[0] - d.elbow[0], e2[1] - d.elbow[1]);
         if (d2 + 0.5 < d1) { K.bend = K.bend || {}; K.bend[d.chain] = -cur; d.elbow = e2; } else d.elbow = e1; } }
-    else if (d.bone) { const W = Rig.solve(this.R, this.poseNow()), w = W[d.bone], b = this.R.bones[d.bone], par = b.parent ? W[b.parent].angle : 0; K.pose = K.pose || {}; K.pose[d.bone] = Math.round((Math.atan2(p.y - w.y, p.x - w.x) - par - b.angle) * 1000) / 1000; if (K.ik && d.chainOf) delete K.ik[d.chainOf]; }
+    else if (d.bone) { const W = Rig.solve(this.R, this.poseNow()), w = W[d.bone], b = this.R.bones[d.bone], par = b.parent ? W[b.parent].angle : 0; let ang = Math.atan2(p.y - w.y, p.x - w.x); if (shift) ang = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12); K.pose = K.pose || {}; K.pose[d.bone] = Math.round((ang - par - b.angle) * 1000) / 1000; if (K.ik && d.chainOf) delete K.ik[d.chainOf]; }
     this.draw();
   },
   hitBone(p) { // what a press on the posed figure takes hold of: the nearest handle, whatever it is: a chain's end (IK), the root (move), a bone's tip (turn)
@@ -214,6 +219,7 @@ const Move = {
   addKey() { const M = this.M(); if (!M) { say('make a motion first', 'err'); return; } const same = M.keys.findIndex(K => Math.abs(K.t - this.scrub) < 0.005); if (same >= 0) { this.keyI = same; this.tlUI(); this.draw(); say('a key is already at this time: it is selected', ''); return; } this.snapshot(); const P = Rig.pose(M, this.scrub, this.R); const bend = Object.assign({}, P.bend || {}); for (const [c, mx] of Object.entries(P.bendMix || {})) { const v = mx.u >= 0.5 ? mx.to : mx.from; if (v !== (this.R.chains[c].bend || 1)) bend[c] = v; } // the fold in force at the cursor comes along, so a new key continues the pose rather than swinging back
       const K = { t: Math.round(this.scrub * 100) / 100, pose: Object.assign({}, P.pose), root: Object.assign({}, P.root), ik: JSON.parse(JSON.stringify(P.ik)) }; if (Object.keys(bend).length) K.bend = bend; M.keys.push(K); M.keys.sort((a, b) => a.t - b.t); this.keyI = M.keys.indexOf(K); this.tlUI(); this.draw(); },
   dupKey() { const M = this.M(), K = this.K(); if (!K) return; this.snapshot(); let t = Math.min(1, Math.round((K.t + 0.1) * 100) / 100); while (M.keys.some(o => Math.abs(o.t - t) < 0.005) && t < 1) t = Math.round((t + 0.01) * 100) / 100; const C = JSON.parse(JSON.stringify(K)); C.t = t; M.keys.push(C); M.keys.sort((a, b) => a.t - b.t); this.keyI = M.keys.indexOf(C); this.scrub = t; el('tlScrub').value = Math.round(t * 1000); this.tlUI(); this.draw(); },
+  holdPrev() { const M = this.M(), K = this.K(); if (!K || M.keys.length < 2) return; const prev = M.keys[(this.keyI - 1 + M.keys.length) % M.keys.length]; this.snapshot(); K.pose = JSON.parse(JSON.stringify(prev.pose || {})); K.root = Object.assign({}, prev.root || { x: 0, y: 0 }); K.ik = JSON.parse(JSON.stringify(prev.ik || {})); K.bend = JSON.parse(JSON.stringify(prev.bend || {})); this.draw(); say('this key holds the previous pose', 'ok'); },
   delKey() { const M = this.M(); if (!M || this.keyI < 0) return; this.snapshot(); M.keys.splice(this.keyI, 1); this.keyI = Math.min(this.keyI, M.keys.length - 1); this.tlUI(); this.draw(); },
   mirrorKey() { // left and right limbs trade places: bones and chains named …L / …R
     const K = this.K(); if (!K) return; this.snapshot(); const swap = n => /L$/.test(n) ? n.slice(0, -1) + 'R' : /R$/.test(n) ? n.slice(0, -1) + 'L' : n;

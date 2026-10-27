@@ -11,8 +11,10 @@
 //       thighL: { parent: 'hips', x: -6, y: 0, len: 9, angle: 3.1416 },    measured so that a bone's own x axis runs from
 //       shinL:  { parent: 'thighL', len: 9, angle: 0 }, …                  its joint to its tip
 //     },
-//     chains: { legL: { bones: ['thighL', 'shinL'], bend: 1 }, … },         two-bone IK chains; bend 1 bows the joint toward
-//                                                                          +x (a knee, forward), -1 toward -x (an elbow, back)
+//     chains: { legL: { bones: ['thighL', 'shinL'], bend: 1, fold: [0, 150] }, … },  two-bone IK chains; bend 1 bows the joint
+//                                                                          toward +x (a knee, forward), -1 toward -x (an elbow, back);
+//                                                                          fold: how far the joint may close, degrees from straight
+//                                                                          (0) to fully folded (180); default 0..155
 //     parts: [ { bone: 'spine', z: 1, draw(g, b) { … } }, … ],             drawn in the bone's space: (0, 0) the joint, the
 //                                                                          bone along +x to (b.len, 0); z orders back to front
 //     motions: {
@@ -79,7 +81,10 @@ const Rig = {
     for (const n of rig.order) place(n);
     for (const [cn, ch] of Object.entries(rig.chains)) {
       const T = P.ik[cn]; if (!T) continue; const [an, bn] = ch.bones, A = W[an], B = W[bn], l1 = A.len, l2 = B.len;
-      const tx = T.x + P.root.x, ty = T.y + P.root.y, dx = tx - A.x, dy = ty - A.y, d = Math.max(1e-6, Math.min(l1 + l2 - 1e-4, Math.hypot(dx, dy)));
+      const tx = T.x + P.root.x, ty = T.y + P.root.y, dx = tx - A.x, dy = ty - A.y; let d = Math.max(1e-6, Math.min(l1 + l2 - 1e-4, Math.hypot(dx, dy)));
+      // the joint may not close past its limit: the end then stops short of the target along the same line
+      const lim = ch.fold || [0, 155], kneeMax = Math.PI - lim[0] * Math.PI / 180, kneeMin = Math.PI - lim[1] * Math.PI / 180, dMin = Math.sqrt(Math.max(0, l1 * l1 + l2 * l2 - 2 * l1 * l2 * Math.cos(kneeMin))), dMax = Math.sqrt(l1 * l1 + l2 * l2 - 2 * l1 * l2 * Math.cos(kneeMax));
+      d = Math.max(Math.min(d, dMax), dMin);
       const cosK = (l1 * l1 + l2 * l2 - d * d) / (2 * l1 * l2), knee = Math.acos(Math.max(-1, Math.min(1, cosK))), cosA = (l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), alpha = Math.acos(Math.max(-1, Math.min(1, cosA)));
       const mix = P.bendMix && P.bendMix[cn], base = Math.atan2(dy, dx); let a1, a2;
       if (mix) { // between two folds: the elbow travels from one solution's elbow to the other's, so the limb straightens and re-bends instead of jumping
