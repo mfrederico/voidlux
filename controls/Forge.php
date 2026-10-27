@@ -39,12 +39,12 @@ class Forge extends BaseControls\Control {
 
     public function summon($params = []): void {
         if (!$this->requireLogin()) return;
-        $templates = array_values(array_filter(scandir(GameStore::root() . '/templates'), fn($t) => $t[0] !== '.' && is_dir(GameStore::root() . '/templates/' . $t)));
+        $templates = GameStore::templates();
         $teams = Bean::getAll('SELECT t.id, t.name FROM team t JOIN teammember tm ON t.id = tm.team_id WHERE tm.member_id = ? AND t.is_active = 1 ORDER BY t.name', [(int) $this->member->id]);
         $form = ['title' => '', 'slug' => '', 'brief' => '', 'template' => 'blank', 'team_id' => 0, 'pipeline' => 1]; $problems = [];
         if (Flight::request()->method === 'POST') {
             $this->validateCSRF();
-            $form = ['title' => trim((string) $this->getParam('title')), 'slug' => trim((string) $this->getParam('slug')), 'brief' => trim((string) $this->getParam('brief')), 'template' => (string) $this->getParam('template', 'blank'), 'team_id' => (int) $this->getParam('team_id', 0), 'pipeline' => (int) $this->getParam('pipeline', 0)];
+            $form = ['title' => trim((string) $this->getParam('title')), 'slug' => trim((string) $this->getParam('slug')), 'brief' => trim((string) $this->getParam('brief')), 'template' => ((string) $this->getParam('template', '')) ?: 'blank', 'team_id' => (int) $this->getParam('team_id', 0), 'pipeline' => (int) $this->getParam('pipeline', 0)];
             if ($form['slug'] === '') $form['slug'] = substr(preg_replace('/^[^a-z]+|-+$/', '', preg_replace('/[^a-z0-9]+/', '-', strtolower($form['title']))), 0, 40);
             if ($form['title'] === '') $problems['title'] = 'Give the game a name.';
             if (!preg_match(GameStore::SLUG, $form['slug'])) $problems['slug'] = 'Lowercase letters, digits and dashes, 2 to 41 characters.';

@@ -71,8 +71,39 @@ class GameStore {
     }
 
     // ---- create ----
+    /** The templates a game can be summoned from: name => label (template.json's label, else a built-in one, else the name). */
+    public static function templates(): array {
+        $out = []; foreach (scandir(self::root() . '/templates') as $t) { if ($t[0] === '.' || !is_dir(self::root() . "/templates/$t")) continue; $j = is_file(self::root() . "/templates/$t/template.json") ? (json_decode((string) file_get_contents(self::root() . "/templates/$t/template.json"), true) ?: []) : [];
+            $out[$t] = (string) ($j['label'] ?? (['blank' => 'blank — a small arena shooter on the kit', 'centipede' => 'centipede — all of Centipede, as a springboard'][$t] ?? $t)); }
+        uksort($out, fn($a, $b) => ($a === 'blank' ? -1 : ($b === 'blank' ? 1 : strcmp($a, $b)))); return $out;
+    }
+    /**
+     * A game becomes a template: its code, art and guides copied to templates/<name> (not its history, runs, sketches or
+     * build), its slug and title turned into the placeholders a new game fills in, and a fresh GAME.md that keeps the
+     * game's design as the starting point and asks the planner to reshape it to the new brief.
+     */
+    public static function makeTemplate(object $g, string $name, string $label): array {
+        if (!preg_match('/^[a-z][a-z0-9-]{1,40}$/', $name)) throw new \InvalidArgumentException('a template name is lowercase letters, digits and dashes');
+        $src = self::dir((string) $g->slug); $dst = self::root() . "/templates/$name"; if (file_exists($dst)) throw new \InvalidArgumentException("a template named $name exists");
+        $skip = ['.git', '.studio', 'sketches', 'dist', 'node_modules', 'CLAUDE.md'];
+        $copy = function ($from, $to) use (&$copy, $skip) { mkdir($to, 0775, true); foreach (scandir($from) as $f) { if ($f === '.' || $f === '..' || in_array($f, $skip, true)) continue; is_dir("$from/$f") ? $copy("$from/$f", "$to/$f") : copy("$from/$f", "$to/$f"); } };
+        $copy($src, $dst);
+        $slug = (string) $g->slug; $title = (string) $g->title; $n = 0;
+        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dst, \FilesystemIterator::SKIP_DOTS)) as $f) { $p = $f->getPathname(); if (!preg_match('/\.(html|js|md|json|webmanifest)$/', $p) || basename($p) === 'GAME.md') continue; $s = file_get_contents($p); $t = str_replace([$title, $slug], ['__TITLE__', '__SLUG__'], $s); if ($t !== $s) { self::writeAtomic($p, $t); $n++; } }
+        $doc = (string) @file_get_contents("$src/GAME.md"); $design = preg_match('/^## Design\s*\n(.*?)(?=^## )/ms', $doc, $m) ? trim($m[1]) : '';
+        $game = "# __TITLE__\n\n**Slug:** `__SLUG__` · **Template:** $label · **Created:** __DATE__\n\n## Brief\n\n__BRIEF__\n\n"
+              . "## What this template starts from\n\n_This game starts as a copy of **$title**: its code, its look and its feel. Keep what makes that look and engine work (named below) and reshape everything else to the brief above: the fantasy, the player, the rules, the enemies, the goals and the name. The design below is $title's, for reference; the planner writes this game's own Design under it._\n\n$design\n\n"
+              . "## Design\n\n_The design doc the planner writes for THIS game, from the brief: the fantasy, the core loop, what makes a run end, what the player collects or builds, the enemies and how each one threatens, the levels or waves, the sounds and music the game needs, what sells it._\n\n"
+              . "## Acceptance criteria\n\n_Checkable claims the reviewer tests the build against. One per line, each true or false._\n\n- [ ] The game loads with no console errors and a 60 s soak with `?soak=60&fast=4` reports `ok: true`.\n- [ ] Title, play and game over screens exist and are reachable with the keyboard and by touch.\n- [ ] The score, the best score and the settings survive a reload.\n- [ ] Nothing of $title's own story remains (its name, its characters, its goals) unless the brief asks for it.\n\n"
+              . "## Tasks\n\n_The build plan: ordered tasks, each small enough for one agent turn, each with its own acceptance line._\n\n## Log\n\n_One line per build or review round: date, what was done, what the soak said._\n";
+        self::writeAtomic("$dst/GAME.md", $game);
+        $gj = json_decode((string) @file_get_contents("$dst/game.json"), true) ?: []; $gj = array_merge($gj, ['slug' => '__SLUG__', 'title' => '__TITLE__', 'template' => $name, 'status' => 'new', 'price' => null, 'tags' => []]); self::writeAtomic("$dst/game.json", json_encode($gj, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        self::writeAtomic("$dst/template.json", json_encode(['label' => $label, 'from' => $slug, 'title' => $title, 'created' => date('c')], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        return ['template' => $name, 'label' => $label, 'files_generalised' => $n, 'dir' => "templates/$name"];
+    }
     public static function create(string $slug, string $title, string $brief, string $template, int $memberId, int $teamId = 0): object {
         if (!preg_match(self::SLUG, $slug)) throw new \InvalidArgumentException('a slug is lowercase letters, digits and dashes, 2 to 41 characters');
+        if ($template === '') $template = 'blank'; // the form's empty choice means the default
         if (!preg_match('/^[a-z][a-z0-9-]{1,40}$/', $template)) throw new \InvalidArgumentException('bad template');
         $src = self::root() . '/templates/' . $template; $dst = self::gamesDir() . '/' . $slug;
         if (!is_dir($src)) throw new \InvalidArgumentException("no template {$template}");
@@ -89,6 +120,7 @@ class GameStore {
             foreach ($subs as $k => $v) $t = str_replace($k, str_ends_with($p, '.json') ? substr(json_encode($v), 1, -1) : $v, $t);
             if ($t !== $s) self::writeAtomic($p, $t);
         }
+        @unlink($dst . '/template.json');
         self::writeAtomic($dst . '/CLAUDE.md', "# Guidance for agents\n\nThis game's guidance is **AGENTS.md** (and the kit's, ../../kit/AGENTS.md). Claude Code reads it through the import below.\n\n@AGENTS.md\n");
         $m = json_decode((string) file_get_contents($dst . '/game.json'), true) ?: [];
         $m = array_merge($m, ['slug' => $slug, 'title' => $title, 'template' => $template, 'created' => $subs['__DATE__'], 'status' => 'new']);

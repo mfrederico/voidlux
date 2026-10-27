@@ -110,6 +110,12 @@ class Game extends BaseControls\Control {
         catch (\RuntimeException $e) { $this->jsonError($e->getMessage(), 409); }
     }
     public function stop($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $this->jsonSuccess(GameStore::stopRunner($g->slug), 'Stopped.'); }
+    /** POST /game/astemplate/<slug> { name, label }: an admin turns the game into a template new games can be summoned from. */
+    public function astemplate($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        if (!Flight::hasLevel(LEVELS['ADMIN'])) { $this->jsonError('Only an admin can add a template.', 403); return; }
+        $b = $this->body(); try { $this->jsonSuccess(GameStore::makeTemplate($g, trim((string) ($b['name'] ?? '')), trim(mb_substr((string) ($b['label'] ?? ''), 0, 120)) ?: (string) $g->title), 'Template made.'); } catch (\InvalidArgumentException $e) { $this->jsonError($e->getMessage(), 400); }
+    }
     /** POST /game/scrap/<slug> { confirm: <slug> }: the owner or an admin scraps the game (archived, not erased). */
     public function scrap($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
