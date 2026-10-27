@@ -423,11 +423,12 @@ function renderCode(text, size, frame, opts) {
 }
 async function takeThumb(img, url) { // a .js take shows as its rendering, still; with frames it plays while the pointer rests on it; anything else is the file itself
   if (!/\.js(\?|$)/i.test(url)) { img.src = url; return; }
-  try { const text = await (await fetch(url, { cache: 'no-store' })).text(), key = 'thumb:' + url.replace(/\?.*$/, ''), opts = { key, px: 2 }; const r = renderCode(text, 144, 0, opts); img.src = r.canvas.toDataURL();
+  let text = '', key = 'thumb:' + url.replace(/\?.*$/, ''), opts = { key, px: 2 };
+  try { text = await (await fetch(url, { cache: 'no-store' })).text(); let r; try { r = renderCode(text, 144, 0, opts); } catch (e1) { console.error('thumbnail (cached path) failed for ' + url + ': ' + (e1.stack || e1.message)); Draw.painters.delete(key); Rig.rigs.delete(key); r = renderCode(text, 144, 0); } img.src = r.canvas.toDataURL();
     if (r.def.o && r.def.o.frames > 1) { let t = null, f = 0; const host = img.closest('.slot, .cand, .takes, .job') || img; img.title = (img.title ? img.title + ' · ' : '') + 'moves while the pointer rests on it';
       host.addEventListener('mouseenter', () => { clearInterval(t); t = setInterval(() => { if (!img.isConnected) { clearInterval(t); return; } f = (f + 1) % r.def.o.frames; try { img.src = renderCode(text, 144, f, opts).canvas.toDataURL(); } catch (e) { clearInterval(t); } }, 1000 / (r.def.o.fps || 8)); });
       host.addEventListener('mouseleave', () => { clearInterval(t); t = null; f = 0; try { img.src = renderCode(text, 144, 0, opts).canvas.toDataURL(); } catch (e) {} }); } }
-  catch (e) { img.alt = 'code take: ' + e.message; img.title = e.message; }
+  catch (e) { console.error('thumbnail failed for ' + url + ': ' + (e.stack || e.message)); img.alt = '!'; img.title = 'this sprite did not render: ' + e.message; img.style.outline = '2px solid #c2410c'; }
 }
 let codeT = null, codeFrame = 0, codeAnim = null;
 function codePreview() { clearInterval(codeAnim); const cv = el('codeCv'), g = cv.getContext('2d'); g.clearRect(0, 0, cv.width, cv.height); el('codeErr').textContent = '';
