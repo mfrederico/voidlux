@@ -402,18 +402,20 @@ el('importFile').onchange = async () => {
 
 // ---- code sprites: a Draw.define(...) evaluated with the kit's own Draw, painted into a canvas ----
 let takeN = 0; const scratch = document.createElement('canvas'); scratch.width = scratch.height = 8; Draw.init(scratch);
+function asRealKey(R, fn) { // while a take paints, Rig.rigs answers to the sprite's own key too, for parts that look it up by name
+  const k = R.realKey; if (!k || k === R.key) return fn(); const prev = Rig.rigs.get(k); Rig.rigs.set(k, R); try { return fn(); } finally { if (prev) Rig.rigs.set(k, prev); else Rig.rigs.delete(k); } }
 function renderCode(text, size, frame, opts) {
   const c = document.createElement('canvas'); c.width = c.height = size; Draw.ctx = c.getContext('2d'); let def = null, rigDef = null; const real = Draw.define, realRig = Rig.define, stable = opts && opts.key;
   if (stable && (Draw.painters.has(stable) || Rig.rigs.has(stable))) { // rendered before under this key: no re-evaluation, the atlas has its frames
     const R = Rig.rigs.get(stable); if (opts.px) Draw.setPx(opts.px);
-    if (R) { const names = Object.keys(R.motions), name = (opts.motion && R.motions[opts.motion]) ? opts.motion : names[0]; if (name) { const M = R.motions[name], n = Rig.frames(M); Draw.rig(stable, name, ((frame || 0) % n) / (M.fps || 12), size / 2, size / 2, size * 0.9); } const o = name ? { frames: Rig.frames(R.motions[name]), fps: R.motions[name].fps || 12 } : null; return { canvas: c, def: { k: stable, half: R.half, o, rig: R, motions: names } }; }
+    if (R) { const names = Object.keys(R.motions), name = (opts.motion && R.motions[opts.motion]) ? opts.motion : names[0]; if (name) { const M = R.motions[name], n = Rig.frames(M); asRealKey(R, () => Draw.rig(stable, name, ((frame || 0) % n) / (M.fps || 12), size / 2, size / 2, size * 0.9)); } const o = name ? { frames: Rig.frames(R.motions[name]), fps: R.motions[name].fps || 12 } : null; return { canvas: c, def: { k: stable, half: R.half, o, rig: R, motions: names } }; }
     const Pn = Draw.painters.get(stable); Draw.pic(stable, size / 2, size / 2, size * 0.9, size * 0.9, 0, frame || 0); return { canvas: c, def: { k: stable, half: Pn.half, o: { frames: Pn.frames, fps: Pn.fps } } };
   }
-  Draw.define = (k, half, paint, o) => { def = { k, half, paint, o }; }; Rig.define = (k, r) => { rigDef = r; };
+  let rigKey = ''; Draw.define = (k, half, paint, o) => { def = { k, half, paint, o }; }; Rig.define = (k, r) => { rigDef = r; rigKey = k; };
   try { new Function('Draw', 'Rig', 'TAU', 'U', text)(Draw, Rig, TAU, U); } finally { Draw.define = real; Rig.define = realRig; }
   if (rigDef) { // a rig: its first motion (or the one asked for in opts), one frame
-    const key = stable || ('take:' + (++takeN)), R = Rig.define(key, rigDef), names = Object.keys(R.motions), name = (opts && opts.motion && R.motions[opts.motion]) ? opts.motion : names[0]; Draw.setPx((opts && opts.px) || Math.max(1, Math.min(4, Math.ceil(size / (R.half * 2)))));
-    if (name) { const M = R.motions[name], n = Rig.frames(M); Draw.rig(key, name, ((frame || 0) % n) / (M.fps || 12), size / 2, size / 2, size * 0.9); } else Draw.sprite(key + '#rest', R.half, g => Rig.paint(R, '', 0, g)) && Draw.pic(key, size / 2, size / 2, size * 0.9);
+    const key = stable || ('take:' + (++takeN)), R = Rig.define(key, rigDef), names = Object.keys(R.motions), name = (opts && opts.motion && R.motions[opts.motion]) ? opts.motion : names[0]; R.realKey = rigKey; Draw.setPx((opts && opts.px) || Math.max(1, Math.min(4, Math.ceil(size / (R.half * 2)))));
+    if (name) { const M = R.motions[name], n = Rig.frames(M); asRealKey(R, () => Draw.rig(key, name, ((frame || 0) % n) / (M.fps || 12), size / 2, size / 2, size * 0.9)); } else asRealKey(R, () => { Draw.sprite(key + '#rest', R.half, g => Rig.paint(R, '', 0, g)); Draw.pic(key, size / 2, size / 2, size * 0.9); });
     if (opts && opts.bones) { const g = c.getContext('2d'), k = size * 0.9 / (R.half * 2), W = Rig.bones(R, name || '', name ? (((frame || 0) % Rig.frames(R.motions[name])) / Rig.frames(R.motions[name])) : 0); g.save(); g.translate(size / 2, size / 2); g.scale(k, k); g.lineWidth = 1.2 / k; g.strokeStyle = 'rgba(255,64,160,.9)'; g.fillStyle = 'rgba(255,64,160,.9)'; for (const w of Object.values(W)) { g.beginPath(); g.moveTo(w.x, w.y); g.lineTo(w.tx, w.ty); g.stroke(); g.beginPath(); g.arc(w.x, w.y, 2 / k, 0, TAU); g.fill(); } g.restore(); }
     const o = name ? { frames: Rig.frames(R.motions[name]), fps: R.motions[name].fps || 12 } : null; if (!stable) Rig.rigs.delete(key); return { canvas: c, def: { k: key, half: R.half, o, rig: R, motions: names } };
   }

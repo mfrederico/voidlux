@@ -66,7 +66,7 @@ const Move = {
     } catch (e) { el('moveSub').textContent = 'could not load it: ' + e.message; }
     this.draw();
   },
-  evalRig(text) { let def = null; const real = Rig.define; Rig.define = (k, r) => { def = r; }; try { new Function('Rig', 'Draw', 'TAU', 'U', text)(Rig, Draw, TAU, U); } finally { Rig.define = real; } if (!def) throw new Error('no Rig.define in the file'); const key = 'move:' + cur; return Rig.define(key, def); },
+  evalRig(text) { let def = null, name = ''; const real = Rig.define; Rig.define = (k, r) => { def = r; name = k; }; try { new Function('Rig', 'Draw', 'TAU', 'U', text)(Rig, Draw, TAU, U); } finally { Rig.define = real; } if (!def) throw new Error('no Rig.define in the file'); const key = 'move:' + cur, R = Rig.define(key, def); R.realKey = name; if (name && name !== key) Rig.rigs.set(name, R); return R; },
   names() { el('boneNames').innerHTML = (this.PLANS[this.plan] || []).map(n => `<option value="${n}">`).join(''); },
   // ---- the stage ----
   sx(x) { return this.N / 2 + x * this.k; }, sy(y) { return this.N / 2 + y * this.k; },
