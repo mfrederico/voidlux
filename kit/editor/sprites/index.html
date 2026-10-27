@@ -373,7 +373,7 @@ function show(m) { mode = m; el('empty').classList.toggle('hidden', m !== 'none'
 function loadImage(url) { return new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error('could not load ' + url)); im.src = url; }); }
 function docFromImage(im, fw) { const w = im.naturalWidth, h = im.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.drawImage(im, 0, 0); const all = g.getImageData(0, 0, w, h).data; fw = fw && w % fw === 0 ? fw : w; const n = w / fw, d = { w: fw, h, frames: [], fps: 8 }; for (let k = 0; k < n; k++) { const f = blank(fw, h); for (let y = 0; y < h; y++) f.set(all.subarray((y * w + k * fw) * 4, (y * w + k * fw + fw) * 4), y * fw * 4); d.frames.push(f); } return d; }
 async function open(k) {
-  if (!leaveOk()) return; const s = M.sprites[k]; cur = k; entry = s; undo = []; redo = []; dirty = false; fi = 0; el('title').textContent = k; drawList(); if (location.hash === '#move' || s.kind === 'rig') { showTab('move'); } else showTab('draw');
+  if (!leaveOk()) return; const s = M.sprites[k]; cur = k; entry = s; undo = []; redo = []; dirty = false; fi = 0; el('title').textContent = k; drawList(); remember(); if (location.hash === '#move' || s.kind === 'rig') { showTab('move'); } else showTab('draw');
   if (s.kind === 'code' || s.kind === 'rig' || /\.js$/i.test(s.file)) { try { codeSet(await (await fetch(ASSET(s.file) + '?t=' + Date.now(), { cache: 'no-store' })).text()); say(''); } catch (e) { say(e.message, 'err'); } return; }
   if (/\.svg$/i.test(s.file)) { try { svgSet(await (await fetch(ASSET(s.file) + '?t=' + Date.now(), { cache: 'no-store' })).text(), s); } catch (e) { say(e.message, 'err'); } return; }
   try { const im = await loadImage(ASSET(s.file) + '?t=' + Date.now()); doc = docFromImage(im, s.frames > 1 ? s.w : im.naturalWidth); doc.fps = s.fps || 8; el('splitW').value = doc.w; show('pix'); fitZoom(); render(); drawSwatches(); el('aiKey').value = ''; say(''); }
@@ -594,7 +594,7 @@ function askThenLoad(job) {
 }
 padClear();
 const STORE = 'vl.sprites.' + GAME; // this browser remembers the drawing, the note, the settings and the last job per game
-function remember() { try { localStorage.setItem(STORE, JSON.stringify({ strokes: padStrokes, note: el('aiSubject').value, key: el('aiKey').value, maker: el('maker').value, style: el('aiStyle').value, size: el('aiSize').value, sk: SK, from: padFrom })); } catch (e) {} }
+function remember() { try { localStorage.setItem(STORE, JSON.stringify({ strokes: padStrokes, note: el('aiSubject').value, key: el('aiKey').value, maker: el('maker').value, style: el('aiStyle').value, size: el('aiSize').value, sk: SK, from: padFrom, cur: entry ? cur : null })); } catch (e) {} }
 function recall() { try { const s = JSON.parse(localStorage.getItem(STORE) || 'null'); if (!s) return; if (Array.isArray(s.strokes)) { padStrokes = s.strokes; padRedraw(); } el('aiSubject').value = s.note || ''; el('aiKey').value = s.key || ''; for (const id of ['maker', 'aiStyle', 'aiSize']) if (s[id === 'maker' ? 'maker' : id === 'aiStyle' ? 'style' : 'size']) el(id).value = s[id === 'maker' ? 'maker' : id === 'aiStyle' ? 'style' : 'size']; if (s.from && s.from.id) { setFrom(s.from); if (s.from.over) { padFrom = s.from; el('padFromLine').innerHTML = `marking up the builder's take <span class="mono">${esc(s.from.over)}</span>: draw your changes on it and press GO!. <a href="#" id="padFromX">start clean instead</a>`; el('padFromX').onclick = e => { e.preventDefault(); padImg = null; padImgAlpha = 1; setFrom(null); padRedraw(); remember(); }; } } if (s.sk && s.sk.id) { SK = s.sk; showOut(null); pollSketch(); skT = setInterval(pollSketch, 4000); } } catch (e) {} }
 pad.addEventListener('pointerup', remember); el('padUndo').addEventListener('click', remember); el('padClear').addEventListener('click', remember);
 for (const id of ['aiSubject', 'aiKey', 'maker', 'aiStyle', 'aiSize']) el(id).addEventListener('change', remember);
@@ -677,7 +677,9 @@ el('aiAnimBtn').onclick = () => { if (!cur || !entry) { say('save the sprite fir
 // ---- boot ----
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 window.addEventListener('resize', () => { if (doc && mode === 'pix') { fitZoom(); render(); } });
-(async () => { drawSwatches(); show('none'); showTab(location.hash.slice(1) || 'make'); recall(); await apiToken(); await load(); await loadJobs(); if (el('jobs').children.length) el('jobsBox').open = true; })();
+(async () => { drawSwatches(); show('none'); showTab(location.hash.slice(1) || 'make'); recall(); await apiToken(); await load(); await loadJobs(); if (el('jobs').children.length) el('jobsBox').open = true;
+  try { const s = JSON.parse(localStorage.getItem(STORE) || 'null'); if (s && s.cur && M.sprites[s.cur]) { const tab = location.hash.slice(1) || 'make'; await open(s.cur); showTab(tab); } } catch (e) {} // the sprite that was open comes back after a reload, on the same tab
+})();
 // ---- a newer version of this page: noticed every 20 s by the files' Last-Modified; reloaded by hand, or by itself after a
 //      minute without unsaved work or a touch, so a fix lands without anyone having to refresh the game page ----
 (() => {
