@@ -348,6 +348,11 @@ class GameStore {
             if (preg_match('/<script|\son[a-z]+\s*=|javascript:|<foreignObject/i', $svg)) throw new \InvalidArgumentException('that SVG carries script or event handlers; the game serves it from its own origin, so it is refused');
             $file = "$key.svg"; if ($w < 1 || $h < 1) { $w = $w ?: 64; $h = $h ?: 64; } $frames = 1;
             self::writeAtomic("$dir/$file", $svg);
+        } elseif (isset($b['rig'])) {
+            $code = (string) $b['rig']; self::checkSpriteCode($code, 'Rig.define(');
+            $file = "$key.rig.js"; if (!preg_match('/Rig\.define\(\s*([\'"])' . preg_quote($key, '/') . '\1\s*,/', $code)) throw new \InvalidArgumentException("the rig must call Rig.define('{$key}', { ... }) with this sprite's key");
+            $half = preg_match('/half:\s*([0-9.]+)/', $code, $hm) ? (float) $hm[1] : 24; if ($w < 1 || $h < 1) { $w = $h = (int) round($half * 2); } $frames = 1;
+            self::writeAtomic("$dir/$file", rtrim($code) . "\n"); $kind = 'rig';
         } elseif (isset($b['code'])) {
             $code = (string) $b['code']; self::checkSpriteCode($code);
             $file = "$key.js"; $half = 0; if (preg_match('/Draw\.define\(\s*([\'"])' . preg_quote($key, '/') . '\1\s*,\s*([0-9.]+)/', $code, $dm)) $half = (float) $dm[2];
@@ -368,9 +373,9 @@ class GameStore {
         return $entry;
     }
     /** A code sprite is a script the game runs: only drawing, and it must parse. Throws with the reason. */
-    public static function checkSpriteCode(string $code): void {
-        if (strlen($code) > 60000) throw new \InvalidArgumentException('a code sprite is under 60 KB');
-        if (!str_contains($code, 'Draw.define(')) throw new \InvalidArgumentException('a code sprite calls Draw.define(key, half, (g, f) => { ... })');
+    public static function checkSpriteCode(string $code, string $call = 'Draw.define('): void {
+        if (strlen($code) > 120000) throw new \InvalidArgumentException('a code sprite or rig is under 120 KB');
+        if (!str_contains($code, $call) && !str_contains($code, 'Rig.define(')) throw new \InvalidArgumentException("a code sprite calls {$call}key, …) (a rig calls Rig.define(key, { … }))");
         if (preg_match('/\b(fetch|XMLHttpRequest|WebSocket|import|require|eval|Function|document|window|globalThis|localStorage|sessionStorage|navigator|location|cookie|setTimeout|setInterval)\b|<\/?script/i', $code, $m)) throw new \InvalidArgumentException("a code sprite only draws: '{$m[0]}' is not allowed in it");
         $node = (string) self::cfg('node_bin', ''); $node = $node !== '' ? rtrim($node, '/') . '/node' : 'node';
         $tmp = tempnam(sys_get_temp_dir(), 'sprite') . '.js'; file_put_contents($tmp, $code);

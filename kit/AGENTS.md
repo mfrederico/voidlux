@@ -84,6 +84,11 @@ will not load is a console error, which the soak reports.
   once per frame into the atlas and stamps it scaled, so it costs what a picture costs. The sprite page can make these
   from a sketch (maker "drawing code"), and you may write one yourself the same way instead of a stroke-by-stroke
   drawer in render.js.
+- A **rig** is `assets/<key>.rig.js` with `"kind": "rig"`: one `Rig.define('<key>', { half, bones, chains, parts, motions })`
+  (the format is at the top of kit-rig.js): bones with rest angles, two-bone IK chains for arms and legs, parts drawn in
+  bone space, and motions as keyframes tweened. `Draw.rig(key, 'run', Game.time, x, y, w, flip)` plays one; `Draw.anim`
+  on a rig key plays its first motion. Motions are data: a motion made for one biped fits any other. The same safety
+  rules as a code sprite apply (only drawing, node --check).
 - Publishing copies `assets/` with the game.
 - The sprite page's `>>` sends the producer's sketch to you with a message that says exactly what to draw and where
   (`sketches/<id>/out-N.svg` or `.png`, then `result.json`). Follow it to the letter: nothing goes into `assets/` or the

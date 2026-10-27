@@ -13,6 +13,9 @@
 //                                 by code into the atlas, the way Centipede draws its creatures.
 //   Draw.define(key, half, (g, f) => {...}, { frames, fps })  a code sprite: paint draws at (0, 0), facing right, within radius half;
 //                                 f is the frame. Draw.pic / Draw.anim draw it like any other key, scaled to the w asked for.
+//   Draw.rig(key, motion, t, x, y, w, flip)  a skeleton rig (assets/<key>.rig.js, "kind": "rig", see kit-rig.js): the motion's
+//                                 frame at time t, painted once into the atlas like a code sprite. kit-rig.js loads itself from
+//                                 the kit's folder the first time a manifest names a rig.
 //   Draw.pic(key, x, y, w, h, angle, frame, flip)  draws a sprite centred, crisp (nothing, and false, until its file has arrived; a file
 //                                 that will not load is a console error, which the soak reports). A strip of frames: frame picks one;
 //                                 Draw.anim(key, Game.time, x, y, w, h, angle, flip) runs through them at the manifest's fps; flip
@@ -20,6 +23,7 @@
 //                                 when it is there; something stamped hundreds of times goes into the atlas then:
 //                                 Draw.sprite(key, half, g => g.drawImage(Draw.images.get(key), -half, -half, half * 2, half * 2)).
 // The atlas is one 2048 px canvas per page (one for sprites, one for text) packed in shelves; a full page is wiped and refills.
+const KIT_JS = (document.currentScript && document.currentScript.src) ? document.currentScript.src.replace(/[^/]*$/, '') : ''; // where the kit's scripts live (../../kit/js/ in the forge, js/ when published)
 const Draw = {
   ctx: null, px: 1, sprites: new Map(), pages: {}, ATLAS: 2048, camM: null, FONT: '"Trebuchet MS", "Segoe UI", sans-serif',
   init(canvas) { this.ctx = this.ctx0 = canvas.getContext('2d'); this.canvas = canvas; },
@@ -48,7 +52,12 @@ const Draw = {
   loadManifest(url) {
     url = url || 'assets/sprites.json'; const dir = url.slice(0, url.lastIndexOf('/') + 1);
     return fetch(url, { cache: 'no-store' }).then(r => { if (r.status === 404) return null; if (!r.ok) throw new Error(url + ': HTTP ' + r.status); return r.json(); })
-      .then(j => { let n = 0; for (const [k, m] of Object.entries((j && j.sprites) || {})) { n++; if (m.kind === 'code') { const s = document.createElement('script'); s.src = dir + m.file; s.onerror = () => console.error(`Draw.loadManifest: ${dir}${m.file} did not load (code sprite ${k})`); document.head.appendChild(s); this.meta.set(k, m); } else this.load(k, dir + m.file, m); } return n; })
+      .then(j => {
+        const S = Object.entries((j && j.sprites) || {}), addScript = (src, what) => { const s = document.createElement('script'); s.src = src; s.onerror = () => console.error(`Draw.loadManifest: ${src} did not load (${what})`); document.head.appendChild(s); return s; };
+        const rigs = S.filter(([, m]) => m.kind === 'rig'); let n = 0;
+        for (const [k, m] of S) { n++; this.meta.set(k, m); if (m.kind === 'code') addScript(dir + m.file, 'code sprite ' + k); else if (m.kind !== 'rig') this.load(k, dir + m.file, m); }
+        if (rigs.length) { const go = () => { for (const [k, m] of rigs) addScript(dir + m.file, 'rig ' + k); }; if (typeof Rig !== 'undefined') go(); else addScript(KIT_JS + 'kit-rig.js', 'the rig module').onload = go; } // the rig module first, then the rigs
+        return n; })
       .catch(e => { console.error('Draw.loadManifest: ' + e.message); return 0; });
   },
   pic(key, x, y, w, h, a, frame, flip) {
@@ -64,7 +73,14 @@ const Draw = {
     if (!a && !flip) { c.drawImage(im, f * fw, 0, fw, fh, x - w / 2, y - h / 2, w, h); c.imageSmoothingEnabled = sm; return true; }
     const t = c.getTransform(); c.translate(x, y); if (flip) c.scale(-1, 1); c.rotate(flip ? -(a || 0) : (a || 0)); c.drawImage(im, f * fw, 0, fw, fh, -w / 2, -h / 2, w, h); c.setTransform(t.a, t.b, t.c, t.d, t.e, t.f); c.imageSmoothingEnabled = sm; return true;
   },
-  anim(key, t, x, y, w, h, a, flip) { const m = this.painters.get(key) || this.meta.get(key); return this.pic(key, x, y, w, h, a, m ? Math.floor(t * (m.fps || 8)) : 0, flip); },
+  anim(key, t, x, y, w, h, a, flip) { if (typeof Rig !== 'undefined' && Rig.rigs.has(key)) return this.rig(key, null, t, x, y, w, flip); const m = this.painters.get(key) || this.meta.get(key); return this.pic(key, x, y, w, h, a, m ? Math.floor(t * (m.fps || 8)) : 0, flip); },
+  rig(key, motion, t, x, y, w, flip) { // a rig's motion at time t: one atlas sprite per frame, stamped scaled like a code sprite
+    if (typeof Rig === 'undefined') return false; const R = Rig.rigs.get(key); if (!R) return false;
+    const name = motion && R.motions[motion] ? motion : Object.keys(R.motions)[0]; if (!name) return false; const M = R.motions[name], n = Rig.frames(M), f = ((Math.floor(t * (M.fps || 12)) % n) + n) % n;
+    const S = this.sprite(`${key}#${name}#${f}`, R.half, g => Rig.paint(R, name, M.loop === false ? Math.min(1, f / Math.max(1, n - 1)) : f / n, g)), c = this.ctx, k = w ? w / (R.half * 2) : 1;
+    if (k === 1 && !flip) { this.stamp(S, x, y, 0); return true; }
+    const tr = c.getTransform(); c.translate(x, y); c.scale(flip ? -k : k, k); this.stamp(S, 0, 0, 0); c.setTransform(tr.a, tr.b, tr.c, tr.d, tr.e, tr.f); return true;
+  },
   textSprite(s, size, color, align) {
     const k = this.px, id = 'T' + s + '|' + size + '|' + color + '|' + (align || 'left') + '@' + k; let S = this.sprites.get(id); if (S) return S;
     const c = this.ctx; c.font = `bold ${size}px ${this.FONT}`; const tw = c.measureText(s).width, pad = Math.max(3, size * 0.18) + 2;

@@ -185,6 +185,10 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
     </section>
     <section class="tab panel hidden" id="tab-move">
       <div class="head"><div><h2 id="moveTitle">no sprite chosen</h2><div class="meta muted small">pick a kept sprite on the left, or a take in Make, to give it motion</div></div><div class="row"><button class="primary" id="moveAnimBtn" disabled>⟳ Let the artist animate it…</button></div></div>
+      <div id="rigPlay" class="hidden" style="display:grid;gap:8px">
+        <div class="row"><label>motion <select id="rigMotion"></select></label><button id="rigPlayBtn">▶ play</button><label><input type="checkbox" id="rigBones" checked> show the bones</label><span class="muted small" id="rigInfo"></span></div>
+        <div class="stage"><canvas id="rigCv" width="384" height="384" style="image-rendering:auto;max-width:100%"></canvas></div>
+      </div>
       <div class="cards2">
         <div class="card2"><div class="lbl">Animate as code frames</div><p class="muted small">Quick and ready today: the artist rigs the character in drawing code, a run, an idle, a jump, and the game plays it with <code>Draw.anim</code>. Good for a cycle that will not change much.</p></div>
         <div class="card2 soon"><div class="lbl">Skeleton rig <span class="muted">· coming next</span></div><p class="muted small">Bones fitted to the body (biped, quadruped, winged, serpent), parts bound to them, keyframes you drag with inverse kinematics, motions saved as data any character of the same plan can play.</p></div>
@@ -201,13 +205,21 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
 </div>
 <script src="/kit/js/kit-util.js"></script>
 <script src="/kit/js/kit-draw.js"></script>
+<script src="/kit/js/kit-rig.js"></script>
 <script>
 const el = id => document.getElementById(id);
 const LEDE = { make: "Draw a rough sketch, say what it is, press >>: the artist draws two takes. Keep one and it is in the game as Draw.pic('key', x, y, size).", draw: 'Edit a kept sprite: its pixels frame by frame, its SVG source, or its drawing code, with a live preview.', move: 'Give a kept sprite motion. Today: the artist animates it as code frames. Next: a skeleton rig with keyframes and inverse kinematics.' };
 function showTab(name) { if (!['make', 'draw', 'move'].includes(name)) name = 'make'; for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('on', a.dataset.tab === name); for (const s of document.querySelectorAll('.tab')) s.classList.toggle('hidden', s.id !== 'tab-' + name); el('lede').textContent = LEDE[name]; if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name); if (name === 'move') moveRefresh(); }
 for (const a of document.querySelectorAll('#tabs a')) a.onclick = e => { e.preventDefault(); showTab(a.dataset.tab); };
 window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
-function moveRefresh() { const has = !!(cur && entry); el('moveTitle').textContent = has ? cur : 'no sprite chosen'; el('moveAnimBtn').disabled = !has; }
+let rigT = null, rigText = '';
+function moveRefresh() { const has = !!(cur && entry); el('moveTitle').textContent = has ? cur : 'no sprite chosen'; el('moveAnimBtn').disabled = !has; clearInterval(rigT);
+  const isRig = has && entry.kind === 'rig'; el('rigPlay').classList.toggle('hidden', !isRig); if (!isRig) return;
+  fetch(ASSET(entry.file) + '?t=' + Date.now(), { cache: 'no-store' }).then(r => r.text()).then(t => { rigText = t; const r = renderCode(t, 384, 0, { bones: el('rigBones').checked }); const sel = el('rigMotion'); sel.innerHTML = r.def.motions.map(m => `<option>${esc(m)}</option>`).join(''); el('rigInfo').textContent = `${Object.keys(r.def.rig.bones).length} bones · ${Object.keys(r.def.rig.chains).length} IK chains · ${r.def.rig.parts.length} parts · ${r.def.motions.length} motion${r.def.motions.length === 1 ? '' : 's'}`; rigDraw(0); }).catch(e => { el('rigInfo').textContent = 'the rig does not load: ' + e.message; });
+}
+function rigDraw(f) { const cv = el('rigCv'), g = cv.getContext('2d'); try { const r = renderCode(rigText, cv.width, f, { motion: el('rigMotion').value, bones: el('rigBones').checked }); g.clearRect(0, 0, cv.width, cv.height); g.drawImage(r.canvas, 0, 0); return r.def.o; } catch (e) { el('rigInfo').textContent = e.message; return null; } }
+el('rigPlayBtn').onclick = () => { if (rigT) { clearInterval(rigT); rigT = null; el('rigPlayBtn').textContent = '▶ play'; return; } const o = rigDraw(0); if (!o) return; let f = 0; el('rigPlayBtn').textContent = '■ stop'; rigT = setInterval(() => { f = (f + 1) % o.frames; rigDraw(f); }, 1000 / (o.fps || 12)); };
+el('rigMotion').onchange = () => { clearInterval(rigT); rigT = null; el('rigPlayBtn').textContent = '▶ play'; rigDraw(0); }; el('rigBones').onchange = () => rigDraw(0);
 const API = '/gameapi', GAME = new URLSearchParams(location.search).get('game') || ''; let CSRF = ''; // the forge's API for this game: /gameapi/<verb>/<slug>, writes with X-CSRF-TOKEN
 const apiUrl = verb => `${API}/${verb}/${GAME}`; const apiHeaders = () => ({ 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest' });
 async function apiToken() { try { const r = await fetch(apiUrl('token'), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); if (r.ok) { CSRF = (await r.json()).token || ''; return true; } } catch (e) {} return false; }
@@ -326,7 +338,7 @@ function drawList() {
   const q = el('q').value.trim().toLowerCase(), I = el('listIn'), L = el('listLoose'); I.innerHTML = ''; L.innerHTML = '';
   const keys = Object.keys(M.sprites).filter(k => !q || k.includes(q)).sort();
   if (!keys.length) I.innerHTML = '<div class="muted small">none yet</div>';
-  for (const k of keys) { const s = M.sprites[k], b = document.createElement('button'); b.className = 'slot' + (k === cur ? ' on' : ''); b.innerHTML = `<img class="th" alt=""><span><div class="k">${esc(k)}</div><div class="d">${s.w}×${s.h}${s.frames > 1 ? ' · ' + s.frames + ' fr' : ''}${s.kind === 'code' ? ' · code' : ''}${s.source && s.source !== 'editor' ? ' · ' + esc(s.source) : ''}</div></span>`; b.onclick = () => open(k); I.appendChild(b); takeThumb(b.querySelector('img'), ASSET(s.file) + '?t=' + Date.now()); }
+  for (const k of keys) { const s = M.sprites[k], b = document.createElement('button'); b.className = 'slot' + (k === cur ? ' on' : ''); b.innerHTML = `<img class="th" alt=""><span><div class="k">${esc(k)}</div><div class="d">${s.w}×${s.h}${s.frames > 1 ? ' · ' + s.frames + ' fr' : ''}${s.kind === 'code' ? ' · code' : s.kind === 'rig' ? ' · rig' : ''}${s.source && s.source !== 'editor' ? ' · ' + esc(s.source) : ''}</div></span>`; b.onclick = () => open(k); I.appendChild(b); takeThumb(b.querySelector('img'), ASSET(s.file) + '?t=' + Date.now()); }
   const files = M.files.filter(f => !q || f.toLowerCase().includes(q));
   if (!files.length) L.innerHTML = '<div class="muted small">every picture in assets/ is in the game</div>';
   for (const f of files) { const b = document.createElement('button'); b.className = 'slot'; b.innerHTML = `<img class="th" src="${ASSET(f)}" alt=""><span><div class="k">${esc(f)}</div><div class="d">click to add it as a sprite</div></span>`; b.onclick = () => adopt(f); L.appendChild(b); }
@@ -340,7 +352,7 @@ function loadImage(url) { return new Promise((ok, no) => { const im = new Image(
 function docFromImage(im, fw) { const w = im.naturalWidth, h = im.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.drawImage(im, 0, 0); const all = g.getImageData(0, 0, w, h).data; fw = fw && w % fw === 0 ? fw : w; const n = w / fw, d = { w: fw, h, frames: [], fps: 8 }; for (let k = 0; k < n; k++) { const f = blank(fw, h); for (let y = 0; y < h; y++) f.set(all.subarray((y * w + k * fw) * 4, (y * w + k * fw + fw) * 4), y * fw * 4); d.frames.push(f); } return d; }
 async function open(k) {
   if (!leaveOk()) return; const s = M.sprites[k]; cur = k; entry = s; undo = []; redo = []; dirty = false; fi = 0; el('title').textContent = k; drawList(); if (location.hash !== '#move') showTab('draw'); else moveRefresh();
-  if (s.kind === 'code' || /\.js$/i.test(s.file)) { try { codeSet(await (await fetch(ASSET(s.file) + '?t=' + Date.now(), { cache: 'no-store' })).text()); say(''); } catch (e) { say(e.message, 'err'); } return; }
+  if (s.kind === 'code' || s.kind === 'rig' || /\.js$/i.test(s.file)) { try { codeSet(await (await fetch(ASSET(s.file) + '?t=' + Date.now(), { cache: 'no-store' })).text()); say(''); } catch (e) { say(e.message, 'err'); } return; }
   if (/\.svg$/i.test(s.file)) { try { svgSet(await (await fetch(ASSET(s.file) + '?t=' + Date.now(), { cache: 'no-store' })).text(), s); } catch (e) { say(e.message, 'err'); } return; }
   try { const im = await loadImage(ASSET(s.file) + '?t=' + Date.now()); doc = docFromImage(im, s.frames > 1 ? s.w : im.naturalWidth); doc.fps = s.fps || 8; el('splitW').value = doc.w; show('pix'); fitZoom(); render(); drawSwatches(); el('aiKey').value = ''; say(''); }
   catch (e) { say(e.message, 'err'); }
@@ -368,11 +380,17 @@ el('importFile').onchange = async () => {
 
 // ---- code sprites: a Draw.define(...) evaluated with the kit's own Draw, painted into a canvas ----
 let takeN = 0; const scratch = document.createElement('canvas'); scratch.width = scratch.height = 8; Draw.init(scratch);
-function renderCode(text, size, frame) {
-  const c = document.createElement('canvas'); c.width = c.height = size; Draw.ctx = c.getContext('2d'); let def = null; const real = Draw.define;
-  Draw.define = (k, half, paint, o) => { def = { k, half, paint, o }; };
-  try { new Function('Draw', 'TAU', 'U', text)(Draw, TAU, U); } finally { Draw.define = real; }
-  if (!def) throw new Error("the code never calls Draw.define('key', half, (g, f) => { ... })"); if (!(def.half > 0)) throw new Error('half must be a number above 0');
+function renderCode(text, size, frame, opts) {
+  const c = document.createElement('canvas'); c.width = c.height = size; Draw.ctx = c.getContext('2d'); let def = null, rigDef = null; const real = Draw.define, realRig = Rig.define;
+  Draw.define = (k, half, paint, o) => { def = { k, half, paint, o }; }; Rig.define = (k, r) => { rigDef = r; };
+  try { new Function('Draw', 'Rig', 'TAU', 'U', text)(Draw, Rig, TAU, U); } finally { Draw.define = real; Rig.define = realRig; }
+  if (rigDef) { // a rig: its first motion (or the one asked for in opts), one frame
+    const key = 'take:' + (++takeN), R = Rig.define(key, rigDef), names = Object.keys(R.motions), name = (opts && opts.motion && R.motions[opts.motion]) ? opts.motion : names[0]; Draw.setPx(Math.max(1, Math.min(4, Math.ceil(size / (R.half * 2)))));
+    if (name) { const M = R.motions[name], n = Rig.frames(M); Draw.rig(key, name, ((frame || 0) % n) / (M.fps || 12), size / 2, size / 2, size * 0.9); } else Draw.sprite(key + '#rest', R.half, g => Rig.paint(R, '', 0, g)) && Draw.pic(key, size / 2, size / 2, size * 0.9);
+    if (opts && opts.bones) { const g = c.getContext('2d'), k = size * 0.9 / (R.half * 2), W = Rig.bones(R, name || '', name ? (((frame || 0) % Rig.frames(R.motions[name])) / Rig.frames(R.motions[name])) : 0); g.save(); g.translate(size / 2, size / 2); g.scale(k, k); g.lineWidth = 1.2 / k; g.strokeStyle = 'rgba(255,64,160,.9)'; g.fillStyle = 'rgba(255,64,160,.9)'; for (const w of Object.values(W)) { g.beginPath(); g.moveTo(w.x, w.y); g.lineTo(w.tx, w.ty); g.stroke(); g.beginPath(); g.arc(w.x, w.y, 2 / k, 0, TAU); g.fill(); } g.restore(); }
+    const o = name ? { frames: Rig.frames(R.motions[name]), fps: R.motions[name].fps || 12 } : null; Rig.rigs.delete(key); return { canvas: c, def: { k: key, half: R.half, o, rig: R, motions: names } };
+  }
+  if (!def) throw new Error("the code never calls Draw.define('key', half, (g, f) => { ... }) or Rig.define('key', { ... })"); if (!(def.half > 0)) throw new Error('half must be a number above 0');
   const key = 'take:' + (++takeN); Draw.setPx(Math.max(1, Math.min(4, Math.ceil(size / (def.half * 2))))); Draw.define(key, def.half, def.paint, def.o);
   Draw.pic(key, size / 2, size / 2, size * 0.9, size * 0.9, 0, frame || 0); Draw.painters.delete(key); return { canvas: c, def };
 }
@@ -429,7 +447,7 @@ el('rasBtn').onclick = async () => { // the SVG drawn small, as pixels, into a n
 function stripDataUrl() { const c = document.createElement('canvas'); c.width = doc.w * doc.frames.length; c.height = doc.h; const g = c.getContext('2d'); doc.frames.forEach((f, i) => g.putImageData(new ImageData(f, doc.w, doc.h), i * doc.w, 0)); return c.toDataURL('image/png'); }
 el('saveBtn').onclick = async () => {
   if (!cur) return; let body;
-  if (mode === 'code') { const t = el('codeSrc').value; try { renderCode(t, 32, 0); } catch (e) { say('not saved: ' + e.message, 'err'); return; } if (!new RegExp(`Draw\\.define\\(\\s*(['"])${cur}\\1`).test(t)) { say(`the code must define '${cur}', this sprite's key`, 'err'); return; } body = { key: cur, code: t, source: entry ? entry.source : 'editor' }; }
+  if (mode === 'code') { const t = el('codeSrc').value; let r; try { r = renderCode(t, 32, 0); } catch (e) { say('not saved: ' + e.message, 'err'); return; } const isRig = !!(r.def && r.def.rig); if (!new RegExp(`(Draw|Rig)\\.define\\(\\s*(['"])${cur}\\2`).test(t)) { say(`the code must define '${cur}', this sprite's key`, 'err'); return; } body = isRig ? { key: cur, rig: t, source: entry ? entry.source : 'editor' } : { key: cur, code: t, source: entry ? entry.source : 'editor' }; }
   else if (mode === 'svg') { const t = el('svgSrc').value; if (!/<svg[\s>]/i.test(t)) { say('that is not an <svg> document', 'err'); return; } body = { key: cur, svg: t, w: parseInt(el('svgW').value, 10) || 64, h: parseInt(el('svgH').value, 10) || 64, smooth: el('svgSmooth').checked, source: entry ? entry.source : 'svg' }; }
   else body = { key: cur, png: stripDataUrl(), w: doc.w, h: doc.h, frames: doc.frames.length, fps: doc.fps, source: entry ? entry.source : 'editor' };
   el('saveBtn').disabled = true;
