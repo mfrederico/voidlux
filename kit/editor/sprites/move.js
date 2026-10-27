@@ -67,7 +67,7 @@ const Move = {
   // ---- what is on the stage ----
   async refresh() {
     if (!this.cv) this.init(); this.stop();
-    const has = !!(cur && entry); el('moveTitle').textContent = has ? cur : 'no sprite chosen'; el('moveAnimBtn').disabled = !has; el('rigGoBtn').disabled = !has; el('moveDupBtn').disabled = !has; el('moveDupBtn').onclick = () => el('dupBtn').click();
+    const has = !!(cur && entry); el('moveTitle').textContent = has ? cur : 'no sprite chosen'; el('moveAnimBtn').disabled = !has; el('moveAnimBtn').classList.toggle('hidden', !!(has && entry.kind === 'rig')); el('rigGoBtn').disabled = !has; el('moveDupBtn').disabled = !has; el('moveDupBtn').onclick = () => el('dupBtn').click();
     el('hintsPanel').classList.toggle('hidden', !has || entry.kind === 'rig'); el('rigPanel').classList.toggle('hidden', !(has && entry.kind === 'rig')); el('moveTl').classList.toggle('hidden', !(has && entry.kind === 'rig'));
     this.kind = !has ? 'none' : (entry.kind === 'rig' ? 'rig' : 'pic'); this.base = null; this.R = null; this.joints = []; this.sel = -1; this.hist = []; this.redoS = []; this.selJoint = null;
     if (!has) { el('moveSub').textContent = 'pick a kept sprite on the left to give it motion'; this.draw(); return; }
@@ -207,7 +207,7 @@ const Move = {
       if (!j.result) { el('moveOutStatus').textContent = j.status || 'working…'; return; } clearInterval(this.jobT); try { localStorage.removeItem('vl.sprites.' + GAME + '.rigjob'); } catch (e) {}
       if (j.result.ok === false) { el('moveOutStatus').textContent = 'the rigger could not do it: ' + (j.result.error || ''); return; }
       const f = (j.result.files || [])[0]; if (!f) { el('moveOutStatus').textContent = 'no file came back'; return; } const url = j.base + f;
-      el('moveOutStatus').textContent = (j.kind === 'animate' ? `done: the ${j.cycle || ''} motion, rigged in; watch it, then keep it (it replaces ${key} with the motion inside)` : 'done: watch it move, then keep it'); el('moveOutNote').textContent = j.result.note || ''; const c = el('moveOutCand'); c.classList.remove('hidden'); takeThumb(c.querySelector('img'), url + '?t=' + Date.now());
+      el('moveOutStatus').textContent = (j.kind === 'animate' ? `done: the ${j.cycle || ''} motion, rigged in; watch it, then keep it (it replaces ${key} with the motion inside)` : 'done: watch it move, then keep it'); el('moveOutNote').textContent = j.result.note || ''; const c = el('moveOutCand'); c.classList.remove('hidden'); takeThumb(c.querySelector('img'), url + '?t=' + Date.now(), j.cycle || undefined);
       cand = url; pickCand(); el('aiKey').value = key;
       el('moveKeep').textContent = (j.kind === 'animate' && this.R) ? `Add the ${j.cycle || 'new'} motion to ${key}` : 'Keep as rig';
       el('moveKeep').onclick = async () => { el('moveKeep').disabled = true;
@@ -216,7 +216,7 @@ const Move = {
           else { el('aiKey').value = key; await keep(false); if (M.sprites[key]) open(key); else this.refresh(); }
         } catch (e) { say('not kept: ' + e.message, 'err'); } finally { el('moveKeep').disabled = false; }
         el('moveOut').classList.add('hidden'); };
-      el('moveView').onclick = () => openViewer(id, f, url, j.result.note || '', `${key} · rig`);
+      el('moveView').onclick = () => openViewer(id, f, url, j.result.note || '', `${key} · ${j.cycle || 'rig'}`, j.cycle || undefined);
     } catch (e) {} };
     this.jobT = setInterval(tick, 4000); tick();
   },
