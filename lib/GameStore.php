@@ -361,6 +361,14 @@ class GameStore {
             if ($w < 1 || $h < 1) { $w = $h = (int) round($half * 2); }
             if (preg_match('/frames:\s*([0-9]+)/', $code, $fm)) $frames = max(1, (int) $fm[1]); if (preg_match('/fps:\s*([0-9]+)/', $code, $pm)) $fps = min(60, max(1, (int) $pm[1]));
             self::writeAtomic("$dir/$file", rtrim($code) . "\n"); $kind = 'code';
+        } elseif (!empty($b['copyOf'])) { // a duplicate of a kept sprite under this key: its file copied, its entry too
+            $src = (string) $b['copyOf']; $all0 = self::readSprites($slug); $e0 = ((array) $all0['sprites'])[$src] ?? null; if (!$e0) throw new \InvalidArgumentException("no sprite named {$src} to copy");
+            $e0 = (array) $e0; $sf = basename((string) $e0['file']); $ext = preg_replace('/^.*?(\.rig)?\.([a-z0-9]+)$/i', '$1.$2', $sf); $file = $key . $ext;
+            if (!is_file("$dir/$sf")) throw new \InvalidArgumentException("assets/$sf is missing");
+            $code = (string) file_get_contents("$dir/$sf");
+            if (preg_match('/\.js$/', $sf)) $code = preg_replace('/((?:Draw|Rig)\.define\(\s*)([\'"])' . preg_quote($src, '/') . '\2/', '$1$2' . $key . '$2', $code, 1); // the copy defines itself under the new key
+            self::writeAtomic("$dir/$file", $code); if (is_file("$dir/$src.rig-hints.json")) copy("$dir/$src.rig-hints.json", "$dir/$key.rig-hints.json");
+            $w = (int) ($e0['w'] ?? 0); $h = (int) ($e0['h'] ?? 0); $frames = (int) ($e0['frames'] ?? 1); $fps = (int) ($e0['fps'] ?? 8); if (!empty($e0['kind'])) $kind = $e0['kind']; if (!empty($e0['smooth'])) $b['smooth'] = true; $b['source'] = $b['source'] ?? ($e0['source'] ?? 'editor');
         } elseif (!empty($b['file'])) {
             $file = basename((string) $b['file']); if ($file[0] === '.' || !is_file("$dir/$file")) throw new \InvalidArgumentException("assets/$file does not exist");
             if ($w < 1 || $h < 1) { $sz = @getimagesize("$dir/$file"); $w = $sz ? (int) ($sz[0] / $frames) : 64; $h = $sz ? (int) $sz[1] : 64; }

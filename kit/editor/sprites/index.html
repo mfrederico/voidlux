@@ -169,7 +169,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
     </section>
     <section class="tab hidden" id="tab-draw">
     <section class="panel" id="editor">
-      <div class="head"><div><h2 id="title">no sprite</h2><div class="meta" id="meta"></div></div><div class="row"><button id="useBtn">Use in game</button><button id="animCurBtn" title="rig this sprite into a run, idle, jump… as a new code sprite">⟳ Animate…</button><button id="dlBtn">Download</button><button class="danger" id="delBtn">Delete</button><button class="primary" id="saveBtn">Save</button></div></div>
+      <div class="head"><div><h2 id="title">no sprite</h2><div class="meta" id="meta"></div></div><div class="row"><button id="useBtn">Use in game</button><button id="animCurBtn" title="rig this sprite into a run, idle, jump… as a new code sprite">⟳ Animate…</button><button id="dupBtn" title="a copy of this sprite under a new key">Duplicate…</button><button id="dlBtn">Download</button><button class="danger" id="delBtn">Delete</button><button class="primary" id="saveBtn">Save</button></div></div>
       <div id="empty" class="muted">Pick a sprite on the left, make a new one, or ask the builder for one.</div>
       <div id="pix" class="hidden" style="display: grid; gap: 12px;">
         <div class="row tools" id="tools">
@@ -205,6 +205,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
             <div id="hintList" class="hintlist"></div>
             <datalist id="boneNames"></datalist>
             <textarea id="rigNotes" rows="2" placeholder="notes for the whole rig, e.g. “side-scroller; the scarf trails; the sword stays in the right hand”"></textarea>
+            <div class="row"><label>keep the rig as <input id="rigKey" style="width:170px" pattern="[a-z][a-z0-9_\-]{0,40}"></label><span class="muted small" id="rigKeyWhy"></span></div>
             <div class="row"><button id="hintSave">Save marks</button><button class="primary gobtn small" id="rigGoBtn" disabled>Rig this character GO!</button></div>
             <div class="muted small" id="hintMsg"></div>
             <div id="moveOut" class="hidden" style="display:grid;gap:8px;border:1px dashed var(--line);border-radius:10px;padding:10px"><div class="lbl">The rigger's take</div><div class="muted small" id="moveOutStatus"></div><div class="cand hidden" id="moveOutCand"><img alt=""><div><div class="muted small" id="moveOutNote"></div><div class="row" style="margin-top:6px"><button class="primary" id="moveKeep">Keep as rig</button><button id="moveView">View it large</button></div></div></div></div>
@@ -494,6 +495,11 @@ el('delBtn').onclick = async () => {
   catch (e) { say(e.message, 'err'); }
 };
 el('dlBtn').onclick = () => { const a = document.createElement('a'); if (mode === 'code') { a.href = 'data:text/javascript;charset=utf-8,' + encodeURIComponent(el('codeSrc').value); a.download = cur + '.js'; } else if (mode === 'svg') { a.href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(el('svgSrc').value); a.download = cur + '.svg'; } else { a.href = stripDataUrl(); a.download = cur + '.png'; } a.click(); };
+el('dupBtn').onclick = async () => { // a copy under a new key: file, manifest entry, marks
+  if (!cur || !entry) { say('save the sprite first', 'err'); return; } const key = prompt(`Copy ${cur} as (a new key):`, cur + '-2'); if (!key) return; if (!KEY_RE.test(key)) { say('a key is lowercase letters, digits, - and _, starting with a letter', 'err'); return; } if (M.sprites[key] && !confirm(`${key} exists. Replace it with the copy?`)) return;
+  try { const r = await fetch(apiUrl('spritesave'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key, copyOf: cur }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); M = { sprites: j.sprites, files: j.files }; drawList(); say(`${key} is a copy of ${cur}`, 'ok'); open(key); }
+  catch (e) { say('not copied: ' + e.message, 'err'); }
+};
 el('useBtn').onclick = async () => { // the call for the code, copied; and, if asked, the builder told to put the sprite to use
   if (!cur || !entry) { say('save the sprite first', 'err'); return; }
   const w = entry.w || 32, isRig = entry.kind === 'rig', frames = (entry.frames || 1) > 1, code = isRig ? `Draw.rig('${cur}', 'run', Game.time, x, y, ${w}, facingLeft)` : frames ? `Draw.anim('${cur}', Game.time, x, y, ${w})` : `Draw.pic('${cur}', x, y, ${w})`;
