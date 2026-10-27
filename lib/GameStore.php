@@ -461,7 +461,7 @@ class GameStore {
     /** @param array{note?:string,style?:string,pixel?:bool,size?:int,key?:string,palette?:array,png?:string} $b */
     public static function startSketch(string $slug, array $b, int $memberId): array {
         $note = trim(mb_substr((string) ($b['note'] ?? ''), 0, 600)); $png = (string) ($b['png'] ?? '');
-        if ($note === '' && $png === '' && empty($b['animate'])) throw new \InvalidArgumentException('a sketch needs a drawing, a note, or both');
+        if ($note === '' && $png === '' && empty($b['animate']) && empty($b['rigjob'])) throw new \InvalidArgumentException('a sketch needs a drawing, a note, or both');
         $size = max(8, min(256, (int) ($b['size'] ?? 32))); $key = (string) ($b['key'] ?? 'sprite'); if (!preg_match(self::SPRITE_KEY, $key)) $key = 'sprite';
         $style = trim(mb_substr((string) ($b['style'] ?? 'pixel art'), 0, 120)); $pixel = !empty($b['pixel']);
         $pal = array_values(array_filter(array_map('strval', (array) ($b['palette'] ?? [])), fn($c) => preg_match('/^#[0-9a-f]{6}$/i', $c)));
