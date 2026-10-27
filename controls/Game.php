@@ -110,6 +110,13 @@ class Game extends BaseControls\Control {
         catch (\RuntimeException $e) { $this->jsonError($e->getMessage(), 409); }
     }
     public function stop($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $this->jsonSuccess(GameStore::stopRunner($g->slug), 'Stopped.'); }
+    /** POST /game/scrap/<slug> { confirm: <slug> }: the owner or an admin scraps the game (archived, not erased). */
+    public function scrap($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        if ((int) $g->memberId !== (int) $this->member->id && !Flight::hasLevel(LEVELS['ADMIN'])) { $this->jsonError('Only the game\'s owner (or an admin) can scrap it.', 403); return; }
+        if ((string) ($this->body()['confirm'] ?? '') !== (string) $g->slug) { $this->jsonError('Type the game\'s slug to confirm.', 400); return; }
+        try { $this->jsonSuccess(GameStore::scrap($g, (int) $this->member->id), 'Scrapped.'); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 500); }
+    }
     public function reset($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
         $s = GameStore::agentState($g->slug); $s['session'] = null; GameStore::saveAgentState($g->slug, $s); GameStore::emit($g->slug, 'note', ['text' => 'next run starts a fresh session']);

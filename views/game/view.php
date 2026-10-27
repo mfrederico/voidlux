@@ -11,6 +11,7 @@ $slug = $game['slug'];
 </div>
 
 <section class="vl-pane" id="pane-status">
+  <div class="vl-card" style="border-color:#4a1a1a"><h3 class="vl-h2 mt-0">Scrap this game</h3><p class="vl-muted small">Its folder and any published copy move into an archive (nothing is erased), its notes go, and it leaves the forge and the shelf. The owner or an admin only.</p><div class="vl-toolbar"><button class="btn btn-sm btn-outline-danger" onclick="scrapGame()">Scrap <?= h($slug) ?>…</button></div></div>
   <div class="vl-toolbar"><span>What the builder is doing: the pipeline stage, the task list from the Concept, and the agent session's running cost.</span></div>
   <div class="vl-cols">
     <div class="vl-card"><h3 class="vl-h2 mt-0">Pipeline</h3><div id="stage" class="vl-kv">idle</div><div class="vl-kv mt-2" id="metaLine"></div></div>
@@ -217,6 +218,7 @@ async function runBrowserSoak(req) {
 }
 async function startAgent(mode, prompt) { try { renderSession(await Forge.api(`/game/agent/${slug}`, { mode, prompt: prompt || '' })); showTab('build'); } catch (e) { alert(e.message); } }
 async function stopAgent() { try { await Forge.api(`/game/stop/${slug}`, {}); } catch (e) { alert(e.message); } }
+async function scrapGame() { const typed = prompt(`Scrap this game? Its folder and any published copy are archived, not erased, but it leaves the forge.\n\nType its slug to confirm:`, ''); if (typed === null) return; if (typed.trim() !== slug) { alert('That is not this game\'s slug; nothing was done.'); return; } try { const r = await Forge.api(`/game/scrap/${slug}`, { confirm: slug }); alert('Scrapped. Archived at: ' + (r.archived || []).join(' and ')); location.href = '/forge'; } catch (e) { alert('Not scrapped: ' + e.message); } }
 async function resetSession() { if (!confirm('Clear the builder\'s memory? Nothing in the game changes; the next run just starts without the conversation so far.')) return; renderSession(await Forge.api(`/game/reset/${slug}`, {})); }
 for (const f of document.querySelectorAll('form[data-chat]')) f.onsubmit = async e => { e.preventDefault(); const ta = f.querySelector('textarea'), t = ta.value.trim(); if (!t) return; try { const r = await Forge.api(`/game/agent/${slug}`, { mode: 'chat', prompt: t }); renderSession(r); ta.value = ''; showTab('build'); } catch (err) { alert(err.message); } };
 async function runSoak() { $('soakBtn').disabled = true; try { await Forge.api(`/game/agent/${slug}`, { mode: 'soak', prompt: `${+$('soakSecs').value} ${+$('soakFast').value}` }); showTab('build'); } catch (e) { alert(e.message); } $('soakBtn').disabled = false; }

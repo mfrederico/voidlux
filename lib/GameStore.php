@@ -208,6 +208,23 @@ class GameStore {
         self::saveAgentState($slug, $s);
         return $s;
     }
+    /**
+     * Scrap a game: its runs stopped, its folder and any published copy moved into .scrapped/ archives (nothing erased, so it can
+     * be brought back by hand), its notes and its row gone from the forge. Returns where the archives went.
+     */
+    public static function scrap(object $g, int $memberId): array {
+        $slug = (string) $g->slug; $stamp = date('Ymd-His'); $out = ['slug' => $slug, 'archived' => [], 'site' => null];
+        try { self::stopRunner($slug); } catch (\Throwable $e) {}
+        $a = self::artState($slug); if ($a['busy'] && self::alive((int) $a['pid'])) { @posix_kill(-(int) $a['pid'], SIGTERM); @posix_kill((int) $a['pid'], SIGTERM); }
+        $d = self::dir($slug); $arch = self::root() . '/games/.scrapped'; if (!is_dir($arch)) mkdir($arch, 0775, true);
+        if (is_dir($d)) { $to = "$arch/$slug-$stamp"; if (!rename($d, $to)) throw new \RuntimeException("could not move the game folder to $to"); $out['archived'][] = $to; }
+        $root = rtrim((string) self::cfg('publish_root', '/var/www/html/default'), '/'); $label = explode('.', (string) self::cfg('domain', 'voidlux.com'))[0];
+        $site = "$root/$slug.$label"; if (is_dir($site)) { $sa = "$root/.scrapped"; if (!is_dir($sa)) mkdir($sa, 0775, true); $to = "$sa/$slug.$label-$stamp"; if (rename($site, $to)) { $out['archived'][] = $to; $out['site'] = (string) $g->publishedUrl; } else error_log("ERROR scrap: could not move $site"); }
+        foreach (Bean::find('gamenote', 'game_id = ?', [(int) $g->id]) as $n) { Bean::trashAll(Bean::find('gamenotevote', 'gamenote_id = ?', [(int) $n->id])); Bean::trashAll(Bean::find('gamenotecomment', 'gamenote_id = ?', [(int) $n->id])); Bean::trash($n); }
+        Bean::trash($g);
+        error_log("INFO scrap: {$slug} scrapped by member {$memberId}: " . implode(', ', $out['archived']));
+        return $out;
+    }
     public static function stopRunner(string $slug): array {
         $s = self::agentState($slug);
         $pid = (int) $s['pid'];
