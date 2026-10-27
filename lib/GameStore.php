@@ -376,7 +376,7 @@ class GameStore {
     public static function checkSpriteCode(string $code, string $call = 'Draw.define('): void {
         if (strlen($code) > 120000) throw new \InvalidArgumentException('a code sprite or rig is under 120 KB');
         if (!str_contains($code, $call) && !str_contains($code, 'Rig.define(')) throw new \InvalidArgumentException("a code sprite calls {$call}key, …) (a rig calls Rig.define(key, { … }))");
-        if (preg_match('/\b(fetch|XMLHttpRequest|WebSocket|import|require|eval|Function|document|window|globalThis|localStorage|sessionStorage|navigator|location|cookie|setTimeout|setInterval)\b|<\/?script/i', $code, $m)) throw new \InvalidArgumentException("a code sprite only draws: '{$m[0]}' is not allowed in it");
+        if (preg_match('/\b(fetch|XMLHttpRequest|WebSocket|import|require|eval|Function|document|window|globalThis|localStorage|sessionStorage|navigator|location|cookie|setTimeout|setInterval)\b/', $code, $m) || preg_match('/<\/?script/i', $code, $m)) throw new \InvalidArgumentException("a code sprite only draws: '{$m[0]}' is not allowed in it"); // case matters: `function` helpers are fine, `Function` is not
         $node = (string) self::cfg('node_bin', ''); $node = $node !== '' ? rtrim($node, '/') . '/node' : 'node';
         $tmp = tempnam(sys_get_temp_dir(), 'sprite') . '.js'; file_put_contents($tmp, $code);
         exec('timeout 10 ' . escapeshellarg($node) . ' --check ' . escapeshellarg($tmp) . ' 2>&1', $out, $rc); @unlink($tmp);
@@ -638,7 +638,7 @@ class GameStore {
         foreach (is_dir($root) ? scandir($root, SCANDIR_SORT_DESCENDING) : [] as $id) {
             if (!preg_match(self::SKETCH_ID, $id) || !is_file("$root/$id/request.json")) continue;
             $s = self::sketchStatus($slug, $id); $req = json_decode((string) file_get_contents("$root/$id/request.json"), true) ?: [];
-            $out[] = ['id' => $id, 'at' => (int) ($req['at'] ?? 0), 'note' => (string) ($req['note'] ?? ''), 'key' => $s['key'], 'maker' => (string) ($req['maker'] ?? 'spritecook'), 'size' => (int) ($req['size'] ?? 0), 'sketch' => is_file("$root/$id/sketch.png"), 'strokes' => is_file("$root/$id/strokes.json"), 'refine' => $req['refine'] ?? null, 'from' => $req['from'] ?? null, 'animate' => $req['animate'] ?? null, 'rig' => $req['rig'] ?? null, 'saved' => $s['saved'], 'style' => (string) ($req['style'] ?? ''), 'pixel' => !empty($req['pixel']), 'base' => $s['base'], 'result' => $s['result']];
+            $out[] = self::jobFacts($req) + ['id' => $id, 'at' => (int) ($req['at'] ?? 0), 'note' => (string) ($req['note'] ?? ''), 'key' => $s['key'], 'maker' => (string) ($req['maker'] ?? 'spritecook'), 'size' => (int) ($req['size'] ?? 0), 'sketch' => is_file("$root/$id/sketch.png"), 'strokes' => is_file("$root/$id/strokes.json"), 'refine' => $req['refine'] ?? null, 'from' => $req['from'] ?? null, 'animate' => $req['animate'] ?? null, 'rig' => $req['rig'] ?? null, 'saved' => $s['saved'], 'style' => (string) ($req['style'] ?? ''), 'pixel' => !empty($req['pixel']), 'base' => $s['base'], 'result' => $s['result']];
         }
         return ['jobs' => $out, 'busy' => self::artState($slug)['busy']];
     }
@@ -654,6 +654,12 @@ class GameStore {
         if (str_ends_with($path, '.js')) { try { self::checkSpriteCode((string) file_get_contents($path)); return true; } catch (\InvalidArgumentException $e) { error_log("ERROR sprite take {$path} refused: " . $e->getMessage()); return false; } }
         return true;
     }
+    /** A job's kind, its base file (for a rig, an animation or a refinement) and the sprite it started from, from its request. */
+    public static function jobFacts(array $req): array {
+        $kind = !empty($req['rig']) ? 'rig' : (!empty($req['animate']) ? 'animate' : (!empty($req['refine']) ? 'refine' : (!empty($req['from']) ? 'revision' : 'sketch')));
+        $base = $req['rig']['base'] ?? $req['animate']['base'] ?? (!empty($req['refine']['ext']) ? 'base.' . $req['refine']['ext'] : '');
+        return ['kind' => $kind, 'basefile' => (string) $base, 'asset' => (string) ($req['rig']['asset'] ?? $req['animate']['asset'] ?? ''), 'cycle' => (string) ($req['animate']['name'] ?? '')];
+    }
     public static function sketchStatus(string $slug, string $id): array {
         if (!preg_match(self::SKETCH_ID, $id)) throw new \InvalidArgumentException('not a sketch id');
         $dir = self::sketchDir($slug, $id); if (!is_file($dir . '/request.json')) throw new \InvalidArgumentException('no such sketch');
@@ -664,7 +670,7 @@ class GameStore {
         $busy = self::artState($slug)['busy'];
         $saved = !empty($req['saved']) && $res === null;
         $qf = self::studioDir($slug) . '/art-queue.jsonl'; $queued = is_file($qf) && str_contains((string) file_get_contents($qf), "sketches/{$id}/");
-        return ['id' => $id, 'key' => (string) ($req['key'] ?? 'sprite'), 'base' => "/games/{$slug}/sketches/{$id}/", 'busy' => $busy || $queued, 'saved' => $saved, 'status' => $saved ? 'a saved drawing, not sent to the builder' : ($queued ? 'waiting its turn behind another sprite job' : ($busy ? 'the artist is working…' : 'waiting for the artist to start')), 'result' => $res];
+        return self::jobFacts($req) + ['id' => $id, 'key' => (string) ($req['key'] ?? 'sprite'), 'note' => (string) ($req['note'] ?? ''), 'at' => (int) ($req['at'] ?? 0), 'base' => "/games/{$slug}/sketches/{$id}/", 'busy' => $busy || $queued, 'saved' => $saved, 'status' => $saved ? 'a saved drawing, not sent to the builder' : ($queued ? 'waiting its turn behind another sprite job' : ($busy ? 'the artist is working…' : 'waiting for the artist to start')), 'result' => $res];
     }
 
     public static function saveSfx(string $slug, array $data): int {

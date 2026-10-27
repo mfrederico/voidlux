@@ -164,7 +164,7 @@ const Move = {
       el('moveOutStatus').textContent = 'done: watch it move, then keep it'; el('moveOutNote').textContent = j.result.note || ''; const c = el('moveOutCand'); c.classList.remove('hidden'); takeThumb(c.querySelector('img'), url + '?t=' + Date.now());
       cand = url; pickCand(); el('aiKey').value = key;
       el('moveKeep').onclick = async () => { el('moveKeep').disabled = true; try { await keep(false); } finally { el('moveKeep').disabled = false; } el('moveOut').classList.add('hidden'); this.refresh(); };
-      el('moveView').onclick = () => openViewer(id, f, url, j.result.note || '');
+      el('moveView').onclick = () => openViewer(id, f, url, j.result.note || '', `${key} · rig`);
     } catch (e) {} };
     this.jobT = setInterval(tick, 4000); tick();
   },
