@@ -208,7 +208,16 @@ const Move = {
       const f = (j.result.files || [])[0]; if (!f) { el('moveOutStatus').textContent = 'no file came back'; return; } const url = j.base + f;
       el('moveOutStatus').textContent = (j.kind === 'animate' ? `done: the ${j.cycle || ''} motion, rigged in; watch it, then keep it (it replaces ${key} with the motion inside)` : 'done: watch it move, then keep it'); el('moveOutNote').textContent = j.result.note || ''; const c = el('moveOutCand'); c.classList.remove('hidden'); takeThumb(c.querySelector('img'), url + '?t=' + Date.now());
       cand = url; pickCand(); el('aiKey').value = key;
-      el('moveKeep').onclick = async () => { el('aiKey').value = key; el('moveKeep').disabled = true; try { await keep(false); } finally { el('moveKeep').disabled = false; } el('moveOut').classList.add('hidden'); if (M.sprites[key]) open(key); else this.refresh(); };
+      el('moveKeep').textContent = (j.kind === 'animate' && this.R) ? `Add the ${j.cycle || 'new'} motion to ${key}` : 'Keep as rig';
+      el('moveKeep').onclick = async () => { el('moveKeep').disabled = true;
+        try {
+          if (j.kind === 'animate' && this.R && cur === key) { // merge: only the new motion joins the rig as it is now; the rest of the take (a copy of the rig as it was) is dropped
+            const text = await (await fetch(url, { cache: 'no-store' })).text(); let def = null; const real = Rig.define; Rig.define = (k, r) => { def = r; }; try { new Function('Rig', 'Draw', 'TAU', 'U', text)(Rig, Draw, TAU, U); } finally { Rig.define = real; }
+            const name = j.cycle && def && def.motions && def.motions[j.cycle] ? j.cycle : (def && def.motions ? Object.keys(def.motions).find(n => !this.R.motions[n]) || Object.keys(def.motions)[0] : null); if (!name) throw new Error('the take has no motion to add');
+            this.snapshot(); this.R.motions[name] = def.motions[name]; this.motionList(name); await this.saveRig(); say(`the motion ${name} is in ${key} now; everything else in the rig stayed as you had it`, 'ok'); }
+          else { el('aiKey').value = key; await keep(false); if (M.sprites[key]) open(key); else this.refresh(); }
+        } catch (e) { say('not kept: ' + e.message, 'err'); } finally { el('moveKeep').disabled = false; }
+        el('moveOut').classList.add('hidden'); };
       el('moveView').onclick = () => openViewer(id, f, url, j.result.note || '', `${key} · rig`);
     } catch (e) {} };
     this.jobT = setInterval(tick, 4000); tick();
