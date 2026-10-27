@@ -50,7 +50,7 @@ const Move = {
       if (!D.moved && Math.abs(f - D.t0) < 0.01) return; if (!D.moved) { this.snapshot(); D.moved = true; D.key = M.keys[D.i]; } let t = Math.round(f * 100) / 100; if (M.keys.some(o => o !== D.key && Math.abs(o.t - t) < 0.005)) return; D.key.t = t; this.keyI = D.i; this.scrub = D.key.t; this.tlUI(); this.draw(); });
     const barUp = () => { const D = this.tlDrag; this.tlDrag = null; if (!D || D.scrub) return; const M = this.M(); if (!M) return; if (D.moved) { M.keys.sort((a, b) => a.t - b.t); this.keyI = M.keys.indexOf(D.key); } else { this.keyI = D.i; this.scrub = M.keys[D.i].t; } el('tlScrub').value = Math.round(this.scrub * 1000); this.tlUI(); this.draw(); };
     bar.addEventListener('pointerup', barUp); bar.addEventListener('pointercancel', barUp);
-    el('rigSave').onclick = () => this.saveRig(); el('mUndo').onclick = () => this.undo(); el('mRedo').onclick = () => this.redo();
+    el('rigSave').onclick = () => this.saveRig(); el('skinGo').onclick = () => this.reskinGo(); el('mUndo').onclick = () => this.undo(); el('mRedo').onclick = () => this.redo();
     document.addEventListener('keydown', e => { if (el('tab-move').classList.contains('hidden') || e.target.matches('input, textarea, select')) return; const k = e.key.toLowerCase(); if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? this.redo() : this.undo(); return; } if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); this.redo(); return; }
       if (this.kind !== 'rig' || !this.M()) return; const M = this.M(), n = Rig.frames(M);
       if (e.key === ' ') { e.preventDefault(); this.play(); } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); this.stop(); this.scrub = ((Math.round(this.scrub * n) + (e.key === 'ArrowRight' ? 1 : -1)) % n + n) % n / n; this.keyI = M.keys.findIndex(K => Math.abs(K.t - this.scrub) < 0.5 / n); el('tlScrub').value = Math.round(this.scrub * 1000); this.tlUI(); this.draw(); }
@@ -78,6 +78,7 @@ const Move = {
         this.feetY = this.restFeet(); this.groundY = this.R.ground !== null ? this.R.ground : this.feetY; // the ground: the rig's own, else where the feet stand at rest
         el('moveSub').textContent = `a rig: ${Object.keys(this.R.bones).length} bones, ${Object.keys(this.R.chains).length} IK chains, ${this.R.parts.length} parts`;
         el('mMotion').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join(''); this.pickMotion(names[0] || '');
+        { const stem = cur.replace(/-rig$/, ''), opts = Object.entries(M.sprites).filter(([, s]) => /\.(svg|png)$/i.test(s.file)).map(([k]) => k).sort((a, b) => (b.startsWith(stem) - a.startsWith(stem)) || a.localeCompare(b)); el('skinFrom').innerHTML = opts.length ? opts.map(k => `<option>${esc(k)}</option>`).join('') : '<option value="">no SVG or picture sprites yet</option>'; el('skinGo').disabled = !opts.length; }
         { let rj = null; try { rj = JSON.parse(localStorage.getItem('vl.sprites.' + GAME + '.rigjob') || 'null'); } catch (e) {} if (rj && rj.key === cur) this.watch(rj.id, rj.key, 'picking the job up again…'); else el('moveOut').classList.add('hidden'); }
         this.listJobs();
       } else {
@@ -210,10 +211,11 @@ const Move = {
       const f = (j.result.files || [])[0]; if (!f) { el('moveOutStatus').textContent = 'no file came back'; return; } const url = j.base + f;
       el('moveOutStatus').textContent = (j.kind === 'animate' ? `done: the ${j.cycle || ''} motion, rigged in; watch it, then keep it (it replaces ${key} with the motion inside)` : 'done: watch it move, then keep it'); el('moveOutNote').textContent = j.result.note || ''; const c = el('moveOutCand'); c.classList.remove('hidden'); takeThumb(c.querySelector('img'), url + '?t=' + Date.now(), j.cycle || undefined);
       cand = url; pickCand(); el('aiKey').value = key;
-      el('moveKeep').textContent = (j.kind === 'animate' && this.R) ? `Add the ${j.cycle || 'new'} motion to ${key}` : 'Keep as rig';
+      el('moveKeep').textContent = (j.kind === 'reskin' && this.R) ? `Use this look for ${key}` : (j.kind === 'animate' && this.R) ? `Add the ${j.cycle || 'new'} motion to ${key}` : 'Keep as rig';
       el('moveKeep').onclick = async () => { el('moveKeep').disabled = true;
         try {
-          if (j.kind === 'animate' && this.R && cur === key) { await this.addMotionFrom(url, j.cycle); this.listJobs(); } // merge: only the new motion joins the rig as it is now
+          if (j.kind === 'reskin' && this.R && cur === key) { await this.reskinFrom(url); this.listJobs(); }
+          else if (j.kind === 'animate' && this.R && cur === key) { await this.addMotionFrom(url, j.cycle); this.listJobs(); } // merge: only the new motion joins the rig as it is now
           else { el('aiKey').value = key; await keep(false); if (M.sprites[key]) open(key); else this.refresh(); }
         } catch (e) { say('not kept: ' + e.message, 'err'); } finally { el('moveKeep').disabled = false; }
         el('moveOut').classList.add('hidden'); };
@@ -230,13 +232,29 @@ const Move = {
   },
   async listJobs() { // the artist's finished takes for this sprite: motions and rigs to add to a rig, or rigs to keep for a drawing
     const box = el('moveJobs'), L = el('moveJobsList'); if (!cur || !entry) { box.classList.add('hidden'); return; }
-    try { const j = await (await fetch(apiUrl('sketches'), { cache: 'no-store' })).json(); const jobs = j.jobs.filter(o => (o.key === cur || o.asset === cur) && o.result && o.result.ok && (this.R ? (o.kind === 'animate' || o.kind === 'rig') : o.kind === 'rig') && (o.result.files || []).length).slice(0, 8);
+    try { const j = await (await fetch(apiUrl('sketches'), { cache: 'no-store' })).json(); const jobs = j.jobs.filter(o => (o.key === cur || o.asset === cur) && o.result && o.result.ok && (this.R ? (o.kind === 'animate' || o.kind === 'rig' || o.kind === 'reskin') : o.kind === 'rig') && (o.result.files || []).length).slice(0, 8);
       box.classList.toggle('hidden', !jobs.length || el('tab-move').classList.contains('hidden')); el('moveJobsFor').textContent = cur; L.innerHTML = '';
-      for (const o of jobs) { const d = document.createElement('div'); d.className = 'row'; const url = o.base + o.result.files[0]; d.innerHTML = `<img alt="" style="width:40px;height:40px;object-fit:contain;image-rendering:pixelated;border-radius:6px;background:repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 10px 10px"><span class="small"><b>${esc(o.kind === 'animate' ? (o.cycle || 'motion') + ' motion' : 'a rig')}</b> <span class="muted">· ${esc(new Date(o.at * 1000).toLocaleString())}${o.result.note ? ' · ' + esc(o.result.note.slice(0, 80)) : ''}</span></span><button class="primary small" data-add="${esc(url)}" data-cycle="${esc(o.cycle || '')}">${o.kind === 'animate' ? 'Add this motion' : this.R ? 'Replace the rig with this' : `Keep as the rig (${esc(o.key)})`}</button><button data-view="${esc(url)}" data-label="${esc(cur + ' · ' + (o.cycle || 'rig'))}">view</button>`;
+      for (const o of jobs) { const d = document.createElement('div'); d.className = 'row'; const url = o.base + o.result.files[0]; d.innerHTML = `<img alt="" style="width:40px;height:40px;object-fit:contain;image-rendering:pixelated;border-radius:6px;background:repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 10px 10px"><span class="small"><b>${esc(o.kind === 'reskin' ? 'a new look' : o.kind === 'animate' ? (o.cycle || 'motion') + ' motion' : 'a rig')}</b> <span class="muted">· ${esc(new Date(o.at * 1000).toLocaleString())}${o.result.note ? ' · ' + esc(o.result.note.slice(0, 80)) : ''}</span></span><button class="primary small" data-add="${esc(url)}" data-cycle="${esc(o.cycle || '')}">${o.kind === 'reskin' ? 'Use this look' : o.kind === 'animate' ? 'Add this motion' : this.R ? 'Replace the rig with this' : `Keep as the rig (${esc(o.key)})`}</button><button data-view="${esc(url)}" data-label="${esc(cur + ' · ' + (o.cycle || 'rig'))}">view</button>`;
         d.style.cssText = 'display:grid;grid-template-columns:40px 1fr;gap:6px;align-items:center'; d.querySelector('span.small').style.cssText = 'overflow-wrap:anywhere'; const btns = document.createElement('div'); btns.className = 'row'; btns.style.gridColumn = '1 / -1'; btns.append(d.querySelector('[data-add]'), d.querySelector('[data-view]')); d.appendChild(btns);
-        takeThumb(d.querySelector('img'), url, o.cycle || undefined); d.querySelector('[data-add]').onclick = async ev => { const b = ev.currentTarget; b.disabled = true; try { if (o.kind === 'animate' && this.R) await this.addMotionFrom(url, o.cycle); else { if (!this.R && o.key === cur && !confirm(`The rig takes the place of the drawing ${cur} in the game (the SVG file stays in assets). Keep it as ${cur}?`)) return; cand = url; el('aiKey').value = o.key; await keep(false); open(o.key); } } catch (e) { say('not added: ' + e.message, 'err'); } finally { b.disabled = false; } };
+        takeThumb(d.querySelector('img'), url, o.cycle || undefined); d.querySelector('[data-add]').onclick = async ev => { const b = ev.currentTarget; b.disabled = true; try { if (o.kind === 'reskin' && this.R) await this.reskinFrom(url); else if (o.kind === 'animate' && this.R) await this.addMotionFrom(url, o.cycle); else { if (!this.R && o.key === cur && !confirm(`The rig takes the place of the drawing ${cur} in the game (the SVG file stays in assets). Keep it as ${cur}?`)) return; cand = url; el('aiKey').value = o.key; await keep(false); open(o.key); } } catch (e) { say('not added: ' + e.message, 'err'); } finally { b.disabled = false; } };
         d.querySelector('[data-view]').onclick = () => openViewer(o.id, o.result.files[0], url, o.result.note || '', cur + ' · ' + (o.cycle || 'rig'), o.cycle || undefined, o.key); L.appendChild(d); }
     } catch (e) { box.classList.add('hidden'); }
+  },
+  async reskinGo() {
+    const skin = el('skinFrom').value; if (!cur || !this.R || !skin) return; el('skinGo').disabled = true;
+    try { const r = await fetch(apiUrl('sketch'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ reskin: true, asset: cur, skin, key: cur, size: Math.round(this.half * 2) }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+      this.watch(j.id, cur, (j.queued ? 'another sprite job is running: the re-skin is next. ' : 'the artist is re-skinning it: ') + `${cur} from ${skin}; the new look appears here, and keeping it changes only the parts.`); }
+    catch (e) { el('rigMsg').textContent = 'not sent: ' + e.message; } finally { el('skinGo').disabled = false; }
+  },
+  // the parts block of a take's source spliced into the rig's source, nothing else touched (parts are code, so this is done on the text)
+  block(text, name, open) { const m = new RegExp('\\b' + name + '\\s*:\\s*\\' + open).exec(text); if (!m) return null; const close = open === '[' ? ']' : '}'; let i = m.index + m[0].length - 1, depth = 0, q = null;
+    for (let j = i; j < text.length; j++) { const ch = text[j], nx = text[j + 1]; if (q) { if (ch === '\\') { j++; continue; } if (ch === q) q = null; continue; } if (ch === '/' && nx === '/') { j = text.indexOf('\n', j); if (j < 0) return null; continue; } if (ch === '/' && nx === '*') { j = text.indexOf('*/', j + 2) + 1; if (j <= 0) return null; continue; } if (ch === '"' || ch === "'" || ch === '`') { q = ch; continue; } if (ch === open) depth++; else if (ch === close) { depth--; if (depth === 0) return { start: m.index, end: j + 1, body: text.slice(m.index, j + 1) }; } } return null; },
+  async reskinFrom(url) {
+    const take = await (await fetch(url, { cache: 'no-store' })).text(), src = this.block(take, 'parts', '['), dst = this.block(this.text, 'parts', '[');
+    if (!src) throw new Error('the take has no parts block'); if (!dst) throw new Error('this rig has no parts block to replace');
+    const text = this.text.slice(0, dst.start) + src.body + this.text.slice(dst.end); renderCode(text, 32, 0); // it must still render
+    this.text = text; const R = this.evalRig(text); R.motions = this.R.motions; R.ground = this.R.ground; this.R = R; // the new parts; the motions as they are in the editor
+    await this.saveRig(); this.draw(); say(`${cur} has its new look; bones, limits, ground and motions are as they were`, 'ok');
   },
   // ---- the rig's motions and keys ----
   M() { return this.R && this.R.motions[this.motion] || null; }, K() { const M = this.M(); return M && this.keyI >= 0 ? M.keys[this.keyI] : null; },

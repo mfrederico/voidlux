@@ -506,7 +506,7 @@ class GameStore {
     /** @param array{note?:string,style?:string,pixel?:bool,size?:int,key?:string,palette?:array,png?:string} $b */
     public static function startSketch(string $slug, array $b, int $memberId): array {
         $note = trim(mb_substr((string) ($b['note'] ?? ''), 0, 600)); $png = (string) ($b['png'] ?? '');
-        if ($note === '' && $png === '' && empty($b['animate']) && empty($b['rigjob']) && empty($b['vectorize'])) throw new \InvalidArgumentException('a sketch needs a drawing, a note, or both');
+        if ($note === '' && $png === '' && empty($b['animate']) && empty($b['rigjob']) && empty($b['vectorize']) && empty($b['reskin'])) throw new \InvalidArgumentException('a sketch needs a drawing, a note, or both');
         $size = max(8, min(256, (int) ($b['size'] ?? 32))); $key = (string) ($b['key'] ?? 'sprite'); if (!preg_match(self::SPRITE_KEY, $key)) $key = 'sprite';
         $style = trim(mb_substr((string) ($b['style'] ?? 'pixel art'), 0, 120)); $pixel = !empty($b['pixel']);
         $pal = array_values(array_filter(array_map('strval', (array) ($b['palette'] ?? [])), fn($c) => preg_match('/^#[0-9a-f]{6}$/i', $c)));
@@ -531,6 +531,16 @@ class GameStore {
             self::writeAtomic($dir . '/sketch.svg', "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 512 512\" width=\"512\" height=\"512\" fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n" . $paths . "</svg>\n");
         }
         $mk = (string) ($b['maker'] ?? 'svg'); $maker = in_array($mk, ['svg', 'code', 'spritecook'], true) ? $mk : 'svg';
+        // a re-skin job: a kept rig and a kept drawing (an SVG the producer edited, with layers named after bones if they can); the
+        // rig's parts are rewritten from the drawing; bones, chains, motions and ground stay (the page merges only the parts)
+        $reskin = null;
+        if (!empty($b['reskin']) && !empty($b['asset'])) {
+            $all = self::readSprites($slug); $ak = (string) $b['asset']; $e = ((array) $all['sprites'])[$ak] ?? null; if (!$e || (((array) $e)['kind'] ?? '') !== 'rig') throw new \InvalidArgumentException("{$ak} is not a kept rig");
+            $sk = (string) ($b['skin'] ?? ''); $es = ((array) $all['sprites'])[$sk] ?? null; if (!$es) throw new \InvalidArgumentException("no sprite named {$sk} to take the look from");
+            $sf = basename((string) ((array) $es)['file']); $sext = pathinfo($sf, PATHINFO_EXTENSION); if (!in_array($sext, ['svg', 'png'], true)) throw new \InvalidArgumentException('the look comes from an SVG (or a picture) sprite');
+            copy(self::dir($slug) . '/assets/' . basename((string) ((array) $e)['file']), "$dir/base.js"); copy(self::dir($slug) . "/assets/$sf", "$dir/skin.$sext");
+            $reskin = ['base' => 'base.js', 'asset' => $ak, 'skin' => $sk, 'skinfile' => "skin.$sext"]; $maker = 'code';
+        }
         // a vector job: a kept picture, usually pixels the producer drew, redrawn as SVG in the same look
         $vector = null;
         if (!empty($b['vectorize']) && !empty($b['asset'])) {
@@ -590,7 +600,7 @@ class GameStore {
             }
         }
         $saveOnly = !empty($b['save_only']);
-        $req = ['id' => $id, 'note' => $note, 'style' => $style, 'pixel' => $pixel, 'size' => $size, 'key' => $key, 'palette' => $pal, 'sketch' => $has, 'strokes' => count($strokes), 'maker' => $maker, 'refine' => $refine, 'from' => $from, 'animate' => $anim, 'rig' => $rigjob, 'vector' => $vector, 'saved' => $saveOnly, 'by' => $memberId, 'at' => time()];
+        $req = ['id' => $id, 'note' => $note, 'style' => $style, 'pixel' => $pixel, 'size' => $size, 'key' => $key, 'palette' => $pal, 'sketch' => $has, 'strokes' => count($strokes), 'maker' => $maker, 'refine' => $refine, 'from' => $from, 'animate' => $anim, 'rig' => $rigjob, 'vector' => $vector, 'reskin' => $reskin, 'saved' => $saveOnly, 'by' => $memberId, 'at' => time()];
         self::writeAtomic($dir . '/request.json', json_encode($req, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
         if ($saveOnly) return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'saved' => true]; // kept in the gallery, not sent
         $what = $note !== '' ? "\"{$note}\"" : 'nothing written: go by the drawing';
@@ -624,7 +634,15 @@ class GameStore {
            . "a prompt built from the note" . ($has ? ' and what the drawing shows' : '') . ", width and height {$size}, pixel=" . ($pixel ? 'true' : 'false') . ", bg_mode transparent, variations=2. "
            . "Download each result's sprite_url to sketches/{$id}/out-1.png and sketches/{$id}/out-2.png. Then write sketches/{$id}/result.json as {\"ok\": true, \"files\": [\"out-1.png\", \"out-2.png\"], \"note\": \"<one line on what you made>\"}.\n"
            . "Do not add anything to assets/ or assets/sprites.json and do not commit: the producer chooses what to keep on the sprite page. If anything stops you (SpriteCook needs authentication, no credits, an error), write sketches/{$id}/result.json as {\"ok\": false, \"error\": \"<why, in one line>\"} and stop. Do not run a soak. Reply with one line.";
-        if ($vector) { // pixels to vector: the same picture as clean shapes
+        if ($reskin) { // the rig's parts redrawn from the drawing, everything else kept
+            $sf = $reskin['skinfile']; $isSvg = str_ends_with($sf, '.svg');
+            $p = "RE-SKIN. sketches/{$id}/base.js is a kept skeleton rig (read ../../kit/js/kit-rig.js for the format) and sketches/{$id}/{$sf} is the producer's new drawing of the same character" . ($isSvg ? ' (an SVG they edited by hand; read it)' : ' (look at it with Read)') . ". Rewrite ONLY the rig's parts so the character looks like the new drawing. Keep every bone, chain, limit, the half, the ground and every motion EXACTLY as they are: the producer merges your parts into their rig and discards the rest of your file, so nothing else you change survives.\n"
+               . ($isSvg ? "If the SVG has layers or groups named after bones (inkscape:label or id equal to a bone name, or close to one: head, spine, armL, handL, kneeR…), bind each layer to that bone and draw its paths AS THEY ARE: build each path with new Path2D(d) from the layer's path data and fill/stroke it with the layer's own colours, transformed into the bone's space. The transform: the SVG's viewBox maps to the rig's space (centre (0, 0), the viewBox's width = half × 2), and a part is drawn with (0, 0) at its bone's joint and +x along the bone, so apply the inverse of the bone's rest transform (its joint position and world angle at rest: compute them with node and kit-rig.js, Rig.solve with an empty pose) as g.translate/rotate/scale before the Path2D calls. Flatten any transform attributes on the layers. The layer order, bottom to top, is the z order. A layer with no bone name you split by judgement; an unnamed drawing you split as a rigger would.\n" : "Split the picture into the parts the rig has, in bone space, in the picture's colours and outline weight.\n")
+               . "Keep the part shape the rig uses: { bone: '<name>', z: <n>, draw(g, b) { … } } drawing on g only (plain canvas calls, Path2D, fills, strokes, Math, TAU; no images, no text, no document, no globals, no Rig.* calls).\n"
+               . "Write sketches/{$id}/out-1.js as the SAME Rig.define with its parts array replaced. Run `node --check sketches/{$id}/out-1.js`, then the harness from the game folder, fixing anything it reports until it prints ok:\n"
+               . "  node -e \"const TAU=Math.PI*2;global.TAU=TAU;global.Path2D=class{constructor(){}};const fs=require('fs');const Rig=new Function(fs.readFileSync('../../kit/js/kit-rig.js','utf8')+'\\nreturn Rig;')();const g=new Proxy({},{get:()=>()=>0,set:()=>true});new Function('Rig','TAU',fs.readFileSync('sketches/{$id}/out-1.js','utf8'))(Rig,TAU);const R=[...Rig.rigs.values()][0];for(const m of Object.keys(R.motions)){const F=Rig.frames(R.motions[m]);for(let f=0;f<F;f++)Rig.paint(R,m,f/F,g);}console.log('ok',R.parts.length,'parts',Object.keys(R.motions).join(','));\"\n"
+               . "Then write sketches/{$id}/result.json as {\"ok\": true, \"files\": [\"out-1.js\"], \"note\": \"<the layers you bound and what you split by judgement, in one line>\"}. Do not add anything to assets/ or assets/sprites.json and do not commit. If something stops you, write result.json as {\"ok\": false, \"error\": \"<why>\"} and stop. Do not run a soak. Reply with one line.";
+        } elseif ($vector) { // pixels to vector: the same picture as clean shapes
             $p = "VECTOR. The producer drew sketches/{$id}/{$vector['base']} themselves, pixel by pixel ({$vector['w']}×{$vector['h']}); look at it with Read. They want the same picture as SVG: the same subject, proportions, placement, colours and details, as clean vector shapes, so it scales without pixels. " . ($note !== '' ? "Their note: \"{$note}\". " : '') . "Read GAME.md's Design so it stays in this game's world.\n"
                . "Draw two takes, each a complete SVG: sketches/{$id}/out-1.svg, faithful (every shape where the pixels have it, edges smoothed into curves and straight lines, the palette kept exactly: sample the colours from the picture), and sketches/{$id}/out-2.svg, cleaned up (the same drawing with a tidier silhouette, a consistent outline and one or two details resolved that the pixels could only hint at).\n"
                . "Rules for both: viewBox=\"0 0 {$size} {$size}\" with width and height {$size}, the xmlns attribute, a transparent background, only shapes, paths, groups and gradients (no <script>, no on* attributes, no <image>, no <text>, no external references, no <foreignObject>), under 30 KB, readable at {$size} px. Check each parses as XML before you finish.\n"
@@ -677,7 +695,7 @@ class GameStore {
                 . (!empty($from['over']) ? "and this time they drew DIRECTLY ON TOP of {$from['liked']}: sketch.png shows your take, faded, with their marks over it, and sketch.svg holds only their marks (in the take's 512-grid frame; the take fills the middle of it). Read each mark as an edit of that spot: lines drawn over a part of the take are the NEW shape of that part and REPLACE it (new arms drawn over the old arms means: these arms instead of those, not both); lines where the take had nothing add a part there; a scribble over something means remove or rework it; the note says the rest. Everything they did not mark stays exactly as it was in the take, down to the colours."
                    : "and apply what the new drawing and note change (compare the drawing with what you drew before: what moved, grew, shrank, appeared or vanished is the point of this round). Keep what they did not change.");
         }
-        $facts = self::jobFacts($req); $what = $facts['kind'] === 'rig' ? 'rig the character ' . ($facts['asset'] ?: $key) : ($facts['kind'] === 'animate' ? "a {$facts['cycle']} motion for " . ($facts['asset'] ?: $key) : ($facts['kind'] === 'vector' ? "{$facts['asset']} as vector, kept as {$key}" : ($facts['kind'] === 'refine' ? "refine {$key}" : ($facts['kind'] === 'revision' ? "a revision of {$key}" : "a sprite: {$key}"))));
+        $facts = self::jobFacts($req); $what = $facts['kind'] === 'rig' ? 'rig the character ' . ($facts['asset'] ?: $key) : ($facts['kind'] === 'animate' ? "a {$facts['cycle']} motion for " . ($facts['asset'] ?: $key) : ($facts['kind'] === 'reskin' ? "re-skin {$facts['asset']} from the drawing" : ($facts['kind'] === 'vector' ? "{$facts['asset']} as vector, kept as {$key}" : ($facts['kind'] === 'refine' ? "refine {$key}" : ($facts['kind'] === 'revision' ? "a revision of {$key}" : "a sprite: {$key}")))));
         self::emit($slug, 'prompt', ['text' => "Sprite job: {$what}" . ($note !== '' ? "\n{$note}" : '') . ($has ? "\n(with a drawing)" : ''), 'mode' => 'art', 'by' => self::memberName($memberId), 'job' => $id]);
         $r = self::startArt($slug, $p, $memberId); // the art lane: beside the builder, never inside its run
         return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'queued' => !empty($r['queued']), 'rig' => (bool) $rigjob, 'animate' => (bool) $anim];
@@ -706,9 +724,9 @@ class GameStore {
     }
     /** A job's kind, its base file (for a rig, an animation or a refinement) and the sprite it started from, from its request. */
     public static function jobFacts(array $req): array {
-        $kind = !empty($req['rig']) ? 'rig' : (!empty($req['animate']) ? 'animate' : (!empty($req['vector']) ? 'vector' : (!empty($req['refine']) ? 'refine' : (!empty($req['from']) ? 'revision' : 'sketch'))));
-        $base = $req['rig']['base'] ?? $req['animate']['base'] ?? $req['vector']['base'] ?? (!empty($req['refine']['ext']) ? 'base.' . $req['refine']['ext'] : '');
-        return ['kind' => $kind, 'basefile' => (string) $base, 'asset' => (string) ($req['rig']['asset'] ?? $req['animate']['asset'] ?? $req['vector']['asset'] ?? ''), 'cycle' => (string) ($req['animate']['name'] ?? '')];
+        $kind = !empty($req['reskin']) ? 'reskin' : (!empty($req['rig']) ? 'rig' : (!empty($req['animate']) ? 'animate' : (!empty($req['vector']) ? 'vector' : (!empty($req['refine']) ? 'refine' : (!empty($req['from']) ? 'revision' : 'sketch')))));
+        $base = $req['reskin']['skinfile'] ?? $req['rig']['base'] ?? $req['animate']['base'] ?? $req['vector']['base'] ?? (!empty($req['refine']['ext']) ? 'base.' . $req['refine']['ext'] : '');
+        return ['kind' => $kind, 'basefile' => (string) $base, 'asset' => (string) ($req['reskin']['asset'] ?? $req['rig']['asset'] ?? $req['animate']['asset'] ?? $req['vector']['asset'] ?? ''), 'cycle' => (string) ($req['animate']['name'] ?? '')];
     }
     public static function sketchStatus(string $slug, string $id): array {
         if (!preg_match(self::SKETCH_ID, $id)) throw new \InvalidArgumentException('not a sketch id');
