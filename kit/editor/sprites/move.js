@@ -78,6 +78,7 @@ const Move = {
         this.feetY = this.restFeet(); this.groundY = this.R.ground !== null ? this.R.ground : this.feetY; // the ground: the rig's own, else where the feet stand at rest
         el('moveSub').textContent = `a rig: ${Object.keys(this.R.bones).length} bones, ${Object.keys(this.R.chains).length} IK chains, ${this.R.parts.length} parts`;
         el('mMotion').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join(''); this.pickMotion(names[0] || '');
+        { let rj = null; try { rj = JSON.parse(localStorage.getItem('vl.sprites.' + GAME + '.rigjob') || 'null'); } catch (e) {} if (rj && rj.key === cur) this.watch(rj.id, rj.key, 'picking the job up again…'); else el('moveOut').classList.add('hidden'); }
       } else {
         this.half = Math.max(8, (entry.w || 48) / 2); const px = Math.round(this.N * 0.9);
         if (entry.kind === 'code' || /\.js$/i.test(entry.file)) { const t = await (await fetch(ASSET(entry.file) + '?t=' + Date.now(), { cache: 'no-store' })).text(); this.base = renderCode(t, px, 0).canvas; }
@@ -85,7 +86,7 @@ const Move = {
         el('moveSub').textContent = 'mark its bones for the rigger on the right, or let the artist animate it as code frames';
         const h = await (await fetch(apiUrl('spritehints') + '?key=' + encodeURIComponent(cur), { cache: 'no-store' })).json(); this.plan = h.plan || 'biped'; this.joints = Array.isArray(h.joints) ? h.joints : []; el('hintPlan').value = this.plan; el('rigNotes').value = h.notes || ''; this.names(); this.hintsUI();
         const codeBase = entry.kind === 'code' || /\.js$/i.test(entry.file); el('rigKey').value = codeBase ? cur + '-rig' : cur; el('rigKeyWhy').textContent = codeBase ? `a new key, so the coded ${cur} stays; use ${cur} to replace it` : `the rig takes the sprite's place under ${cur}; change it to keep both`;
-        let rj = null; try { rj = JSON.parse(localStorage.getItem('vl.sprites.' + GAME + '.rigjob') || 'null'); } catch (e) {} if (rj && rj.key === cur) this.watch(rj.id, rj.key, 'picking the rig job up again…'); else el('moveOut').classList.add('hidden');
+        let rj = null; try { rj = JSON.parse(localStorage.getItem('vl.sprites.' + GAME + '.rigjob') || 'null'); } catch (e) {} if (rj && rj.key === cur) this.watch(rj.id, rj.key, 'picking the job up again…'); else el('moveOut').classList.add('hidden');
       }
     } catch (e) { el('moveSub').textContent = 'could not load it: ' + e.message; }
     this.draw();
@@ -200,12 +201,12 @@ const Move = {
   },
   // the rig job followed here on Move: status while it runs, the take moving when it lands, Keep beside it
   watch(id, key, status) {
-    clearInterval(this.jobT); try { localStorage.setItem('vl.sprites.' + GAME + '.rigjob', JSON.stringify({ id, key })); } catch (e) {} el('moveOut').classList.remove('hidden'); el('moveOutCand').classList.add('hidden'); el('moveOutStatus').textContent = status; el('moveOut').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    clearInterval(this.jobT); try { localStorage.setItem('vl.sprites.' + GAME + '.rigjob', JSON.stringify({ id, key })); } catch (e) {} const box = el('moveOut'); if (box.parentElement !== el('moveSide')) el('moveSide').appendChild(box); box.classList.remove('hidden'); el('moveOutCand').classList.add('hidden'); el('moveOutStatus').textContent = status; el('moveOut').scrollIntoView({ behavior: 'smooth', block: 'center' });
     const tick = async () => { try { const j = await (await fetch(apiUrl('sketch') + '?id=' + encodeURIComponent(id), { cache: 'no-store' })).json();
       if (!j.result) { el('moveOutStatus').textContent = j.status || 'working…'; return; } clearInterval(this.jobT); try { localStorage.removeItem('vl.sprites.' + GAME + '.rigjob'); } catch (e) {}
       if (j.result.ok === false) { el('moveOutStatus').textContent = 'the rigger could not do it: ' + (j.result.error || ''); return; }
       const f = (j.result.files || [])[0]; if (!f) { el('moveOutStatus').textContent = 'no file came back'; return; } const url = j.base + f;
-      el('moveOutStatus').textContent = 'done: watch it move, then keep it'; el('moveOutNote').textContent = j.result.note || ''; const c = el('moveOutCand'); c.classList.remove('hidden'); takeThumb(c.querySelector('img'), url + '?t=' + Date.now());
+      el('moveOutStatus').textContent = (j.kind === 'animate' ? `done: the ${j.cycle || ''} motion, rigged in; watch it, then keep it (it replaces ${key} with the motion inside)` : 'done: watch it move, then keep it'); el('moveOutNote').textContent = j.result.note || ''; const c = el('moveOutCand'); c.classList.remove('hidden'); takeThumb(c.querySelector('img'), url + '?t=' + Date.now());
       cand = url; pickCand(); el('aiKey').value = key;
       el('moveKeep').onclick = async () => { el('aiKey').value = key; el('moveKeep').disabled = true; try { await keep(false); } finally { el('moveKeep').disabled = false; } el('moveOut').classList.add('hidden'); if (M.sprites[key]) open(key); else this.refresh(); };
       el('moveView').onclick = () => openViewer(id, f, url, j.result.note || '', `${key} · rig`);

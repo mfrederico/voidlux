@@ -685,6 +685,10 @@ class GameStore {
         if (!preg_match(self::SKETCH_ID, $id)) throw new \InvalidArgumentException('not a sketch id');
         $dir = self::sketchDir($slug, $id); if (!is_file($dir . '/request.json')) throw new \InvalidArgumentException('no such sketch');
         $req = json_decode((string) file_get_contents($dir . '/request.json'), true) ?: [];
+        if (!is_file($dir . '/result.json') && empty($req['saved']) && !self::artState($slug)['busy']) { // the artist finished without its result file: its takes on disk are the result
+            $found = array_values(array_filter(scandir($dir), fn($f) => preg_match('/^out-[0-9]+\.(png|svg|js)$/', $f))); sort($found);
+            if ($found && filemtime($dir . '/' . $found[0]) < time() - 20) self::writeAtomic($dir . '/result.json', json_encode(['ok' => true, 'files' => $found, 'note' => 'the artist finished without leaving a note; these are its takes'], JSON_UNESCAPED_SLASHES));
+        }
         $res = is_file($dir . '/result.json') ? json_decode((string) file_get_contents($dir . '/result.json'), true) : null;
         if (is_file($dir . '/result.json') && !is_array($res)) $res = ['ok' => false, 'error' => 'the builder wrote a result.json that is not JSON'];
         if (is_array($res) && !empty($res['ok'])) $res['files'] = array_values(array_filter((array) ($res['files'] ?? []), fn($f) => preg_match('/^out-[0-9]+\.(png|svg|js)$/', (string) $f) && is_file($dir . '/' . $f) && self::takeIsSafe($dir . '/' . $f)));

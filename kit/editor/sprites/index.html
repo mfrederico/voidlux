@@ -208,7 +208,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
             <div class="row"><label>keep the rig as <input id="rigKey" style="width:170px" pattern="[a-z][a-z0-9_\-]{0,40}"></label><span class="muted small" id="rigKeyWhy"></span></div>
             <div class="row"><button id="hintSave">Save marks</button><button class="primary gobtn small" id="rigGoBtn" disabled>Rig this character GO!</button></div>
             <div class="muted small" id="hintMsg"></div>
-            <div id="moveOut" class="hidden" style="display:grid;gap:8px;border:1px dashed var(--line);border-radius:10px;padding:10px"><div class="lbl">The rigger's take</div><div class="muted small" id="moveOutStatus"></div><div class="cand hidden" id="moveOutCand"><img alt=""><div><div class="muted small" id="moveOutNote"></div><div class="row" style="margin-top:6px"><button class="primary" id="moveKeep">Keep as rig</button><button id="moveView">View it large</button></div></div></div></div>
+            <div id="moveOut" class="hidden" style="display:grid;gap:8px;border:1px dashed var(--line);border-radius:10px;padding:10px"><div class="lbl">The artist's take</div><div class="muted small" id="moveOutStatus"></div><div class="cand hidden" id="moveOutCand"><img alt=""><div><div class="muted small" id="moveOutNote"></div><div class="row" style="margin-top:6px"><button class="primary" id="moveKeep">Keep as rig</button><button id="moveView">View it large</button></div></div></div></div>
           </div>
           <div id="rigPanel" class="hidden" style="display:grid;gap:8px">
             <div class="lbl">Motions of this rig <span class="muted">(run, idle, attack… all live inside the one rig)</span></div>
@@ -594,7 +594,8 @@ el('animGo').onclick = async () => {
   try {
     const body = Object.assign({ animate: { name: el('animName').value, frames: parseInt(el('animFrames').value, 10) || 8, fps: parseInt(el('animFps').value, 10) || 12, notes: el('animNotes').value.trim() }, note: el('animNotes').value.trim(), size: parseInt(el('aiSize').value, 10), key, style: STYLE[el('aiStyle').value], pixel: el('aiStyle').value !== 'hd' }, animTarget);
     const r = await fetch(apiUrl('sketch'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
-    SK = j; remember(); el('animBox').classList.add('hidden'); showOut(null); el('aiKey').value = key; el('aiStatus').textContent = (j.queued ? 'another sprite job is running: the animation is next. ' : 'the artist is rigging it. ') + 'Two cycles appear on the right when it is done; click one to watch it move.'; clearInterval(skT); skT = setInterval(pollSketch, 4000); el('outbox').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    SK = j; remember(); el('animBox').classList.add('hidden'); showOut(null); el('aiKey').value = key; el('aiStatus').textContent = (j.queued ? 'another sprite job is running: the animation is next. ' : 'the artist is rigging it. ') + 'The takes appear in Make\'s panel when done; click one to watch it move.'; clearInterval(skT); skT = setInterval(pollSketch, 4000);
+    if (animTarget && animTarget.asset && typeof Move !== 'undefined') { Move.watch(j.id, key, (j.queued ? 'another sprite job is running: this motion is next. ' : 'the artist is on it: ') + 'about a minute; the motion appears here when it is done.'); } else el('outbox').scrollIntoView({ behavior: 'smooth', block: 'center' });
   } catch (e) { el('aiStatus').textContent = 'not sent: ' + e.message; } finally { el('animGo').disabled = false; }
 };
 function askThenLoad(job) {
