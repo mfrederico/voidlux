@@ -15,6 +15,15 @@ const Move = {
     serpent: ['head', 'spine1', 'spine2', 'spine3', 'spine4', 'spine5', 'spine6', 'tail'],
     other: [],
   },
+  // where each named joint hangs in its plan: a new joint attaches there when that joint is placed, else to the selected one
+  TREE: {
+    biped: { spine: 'hips', neck: 'spine', head: 'neck', shoulderL: 'neck', elbowL: 'shoulderL', handL: 'elbowL', shoulderR: 'neck', elbowR: 'shoulderR', handR: 'elbowR', kneeL: 'hips', footL: 'kneeL', kneeR: 'hips', footR: 'kneeR', scarf1: 'head', scarf2: 'scarf1', tail1: 'hips', tail2: 'tail1' },
+    quadruped: { spine: 'hips', shoulders: 'spine', neck: 'shoulders', head: 'neck', frontKneeL: 'shoulders', frontFootL: 'frontKneeL', frontKneeR: 'shoulders', frontFootR: 'frontKneeR', backKneeL: 'hips', backFootL: 'backKneeL', backKneeR: 'hips', backFootR: 'backKneeR', tail1: 'hips', tail2: 'tail1', tail3: 'tail2' },
+    winged: { spine: 'hips', neck: 'spine', head: 'neck', shoulderL: 'neck', elbowL: 'shoulderL', handL: 'elbowL', shoulderR: 'neck', elbowR: 'shoulderR', handR: 'elbowR', kneeL: 'hips', footL: 'kneeL', kneeR: 'hips', footR: 'kneeR', wingL1: 'spine', wingL2: 'wingL1', wingR1: 'spine', wingR2: 'wingR1', tail1: 'hips' },
+    serpent: { spine1: 'head', spine2: 'spine1', spine3: 'spine2', spine4: 'spine3', spine5: 'spine4', spine6: 'spine5', tail: 'spine6' },
+    other: {},
+  },
+  parentFor(name) { const want = (this.TREE[this.plan] || {})[name]; if (want && this.joints.some(j => j.name === want)) return want; if (this.sel >= 0 && this.joints[this.sel]) return this.joints[this.sel].name; return this.joints.length ? this.joints[this.joints.length - 1].name : ''; },
   init() {
     this.cv = el('moveCv'); this.g = this.cv.getContext('2d');
     this.cv.addEventListener('pointerdown', e => this.down(e)); this.cv.addEventListener('pointermove', e => this.move(e)); const up = () => { this.drag = null; }; this.cv.addEventListener('pointerup', up); this.cv.addEventListener('pointercancel', up);
@@ -93,8 +102,9 @@ const Move = {
       if (h >= 0) { this.sel = h; this.drag = { joint: h }; this.hintsUI(); this.draw(); return; }
       if (!this.adding) return;
       const used = new Set(this.joints.map(j => j.name)), name = (this.PLANS[this.plan] || []).find(n => !used.has(n)) || ('joint' + (this.joints.length + 1));
-      const parent = this.sel >= 0 ? this.joints[this.sel].name : (this.joints.length ? this.joints[this.joints.length - 1].name : '');
-      this.joints.push({ name, x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, parent, note: '' }); this.sel = this.joints.length - 1; this.hintsUI(); this.draw(); return;
+      const parent = this.joints.length ? this.parentFor(name) : '';
+      this.joints.push({ name, x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, parent, note: '' }); this.sel = this.joints.length - 1; this.hintsUI(); this.draw();
+      const nextName = (this.PLANS[this.plan] || []).find(n => !this.joints.some(j => j.name === n)); el('hintMsg').textContent = nextName ? `placed ${name}${parent ? ' from ' + parent : ' (root)'} · next: ${nextName}${(this.TREE[this.plan] || {})[nextName] ? ' from ' + this.TREE[this.plan][nextName] : ''}` : `placed ${name}`; return;
     }
     if (this.kind === 'rig') { const K = this.K(); if (!K) { say('select a key on the timeline first (or add one at the cursor) to pose it', 'err'); return; } this.drag = this.hitBone(p); }
   },
@@ -120,7 +130,7 @@ const Move = {
       const d = document.createElement('div'); d.className = 'hint' + (i === this.sel ? ' on' : '');
       d.innerHTML = `<input value="${esc(j.name)}" list="boneNames" placeholder="name" title="the bone that ends at this joint"><select title="attached to"><option value="">(root)</option>${this.joints.filter(o => o !== j).map(o => `<option${o.name === j.parent ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}</select><button class="x danger" title="remove">✕</button><input class="note" value="${esc(j.note || '')}" placeholder="what it is for, e.g. holds the sword; bends forward; trails behind">`;
       const [nm, par, x, note] = d.querySelectorAll('input, select, button, .note').length ? [d.children[0], d.children[1], d.children[2], d.children[3]] : [];
-      nm.onchange = () => { const old = j.name; j.name = nm.value.trim() || old; for (const o of this.joints) if (o.parent === old) o.parent = j.name; this.hintsUI(); this.draw(); };
+      nm.onchange = () => { const old = j.name; j.name = nm.value.trim() || old; for (const o of this.joints) if (o.parent === old) o.parent = j.name; const want = (this.TREE[this.plan] || {})[j.name]; if (want && want !== j.name && this.joints.some(o => o.name === want)) j.parent = want; this.hintsUI(); this.draw(); };
       par.onchange = () => { j.parent = par.value; this.draw(); }; note.onchange = () => { j.note = note.value; };
       x.onclick = () => { const name = j.name; this.joints.splice(i, 1); for (const o of this.joints) if (o.parent === name) o.parent = j.parent || ''; this.sel = -1; this.hintsUI(); this.draw(); };
       d.onclick = ev => { if (ev.target === d) { this.sel = i; this.hintsUI(); this.draw(); } };
