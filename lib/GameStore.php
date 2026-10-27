@@ -406,6 +406,39 @@ class GameStore {
         }
         return self::startRunner($slug, 'chat', $prompt, $memberId) + ['queued' => false];
     }
+    // ---- the art lane: sprite jobs run beside the builder, in their own runner with their own lock (.studio/art.json), fresh
+    //      sessions and no commits; they touch only sketches/<id>/. One at a time per game; more wait in art-queue.jsonl ----
+    public static function artState(string $slug): array {
+        $f = self::dir($slug) . '/.studio/art.json'; $s = is_file($f) ? (json_decode((string) file_get_contents($f), true) ?: []) : [];
+        $s += ['busy' => false, 'mode' => '', 'pid' => 0, 'session' => null, 'runs' => 0, 'cost' => 0.0];
+        if ($s['busy'] && !self::alive((int) $s['pid'])) { $s['busy'] = false; $s['mode'] = ''; $s['pid'] = 0; }
+        return $s;
+    }
+    public static function saveArtState(string $slug, array $s): void { self::writeAtomic(self::studioDir($slug) . '/art.json', json_encode($s, JSON_PRETTY_PRINT)); }
+    public static function startArt(string $slug, string $prompt, int $memberId): array {
+        $s = self::artState($slug); $sd = self::studioDir($slug);
+        if ($s['busy']) {
+            file_put_contents($sd . '/art-queue.jsonl', json_encode(['prompt' => $prompt, 'memberId' => $memberId, 'at' => time()], JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND);
+            self::emit($slug, 'note', ['text' => 'art: another sprite job is running; this one is next: ' . mb_substr($prompt, 0, 120)]);
+            return $s + ['queued' => true];
+        }
+        file_put_contents($sd . '/art-prompt.txt', $prompt);
+        $log = $sd . '/runner.log';
+        $cmd = 'setsid nohup php ' . escapeshellarg(self::root() . '/scripts/game-agent.php') . ' ' . escapeshellarg($slug) . ' art ' . escapeshellarg((string) $memberId) . ' >> ' . escapeshellarg($log) . ' 2>&1 & echo $!';
+        $pid = (int) trim((string) shell_exec($cmd));
+        if ($pid <= 0) throw new \RuntimeException('the art runner did not start; see ' . $log);
+        $s = array_merge($s, ['busy' => true, 'mode' => 'art', 'pid' => $pid, 'started' => date('c'), 'by' => $memberId]);
+        self::saveArtState($slug, $s);
+        return $s + ['queued' => false];
+    }
+    public static function startQueuedArt(string $slug): bool {
+        $q = self::studioDir($slug) . '/art-queue.jsonl'; if (!is_file($q)) return false;
+        $lines = array_values(array_filter(array_map('trim', file($q)), fn($l) => $l !== '')); if (!$lines) { @unlink($q); return false; }
+        $next = json_decode(array_shift($lines), true); if ($lines) self::writeAtomic($q, implode("\n", $lines) . "\n"); else @unlink($q);
+        if (!is_array($next) || trim((string) ($next['prompt'] ?? '')) === '') return self::startQueuedArt($slug);
+        try { self::startArt($slug, (string) $next['prompt'], (int) ($next['memberId'] ?? 0)); return true; }
+        catch (\Throwable $e) { self::emit($slug, 'error', ['text' => 'art: the queued job could not start: ' . $e->getMessage()]); return false; }
+    }
     /** The runner, as it ends: the next queued run of its own, if any, starts now. */
     public static function startQueued(string $slug): bool {
         $q = self::studioDir($slug) . '/queue.jsonl'; if (!is_file($q)) return false;
@@ -547,7 +580,7 @@ class GameStore {
                 . (!empty($from['over']) ? "and this time they drew DIRECTLY ON TOP of {$from['liked']}: sketch.png shows your take, faded, with their marks over it, and sketch.svg holds only their marks (in the take's 512-grid frame; the take fills the middle of it). Read each mark as an edit of that spot: lines drawn over a part of the take are the NEW shape of that part and REPLACE it (new arms drawn over the old arms means: these arms instead of those, not both); lines where the take had nothing add a part there; a scribble over something means remove or rework it; the note says the rest. Everything they did not mark stays exactly as it was in the take, down to the colours."
                    : "and apply what the new drawing and note change (compare the drawing with what you drew before: what moved, grew, shrank, appeared or vanished is the point of this round). Keep what they did not change.");
         }
-        $r = self::askBuilder($slug, $p, $memberId, true);
+        $r = self::startArt($slug, $p, $memberId); // the art lane: beside the builder, never inside its run
         return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'queued' => !empty($r['queued'])];
     }
     /** Every sketch job of a game, newest first, with its takes. */
@@ -558,7 +591,7 @@ class GameStore {
             $s = self::sketchStatus($slug, $id); $req = json_decode((string) file_get_contents("$root/$id/request.json"), true) ?: [];
             $out[] = ['id' => $id, 'at' => (int) ($req['at'] ?? 0), 'note' => (string) ($req['note'] ?? ''), 'key' => $s['key'], 'maker' => (string) ($req['maker'] ?? 'spritecook'), 'size' => (int) ($req['size'] ?? 0), 'sketch' => is_file("$root/$id/sketch.png"), 'strokes' => is_file("$root/$id/strokes.json"), 'refine' => $req['refine'] ?? null, 'from' => $req['from'] ?? null, 'animate' => $req['animate'] ?? null, 'saved' => $s['saved'], 'style' => (string) ($req['style'] ?? ''), 'pixel' => !empty($req['pixel']), 'base' => $s['base'], 'result' => $s['result']];
         }
-        return ['jobs' => $out, 'busy' => self::agentState($slug)['busy']];
+        return ['jobs' => $out, 'busy' => self::artState($slug)['busy']];
     }
     public static function deleteSketch(string $slug, string $id): void {
         if (!preg_match(self::SKETCH_ID, $id)) throw new \InvalidArgumentException('not a sketch id');
@@ -579,10 +612,10 @@ class GameStore {
         $res = is_file($dir . '/result.json') ? json_decode((string) file_get_contents($dir . '/result.json'), true) : null;
         if (is_file($dir . '/result.json') && !is_array($res)) $res = ['ok' => false, 'error' => 'the builder wrote a result.json that is not JSON'];
         if (is_array($res) && !empty($res['ok'])) $res['files'] = array_values(array_filter((array) ($res['files'] ?? []), fn($f) => preg_match('/^out-[0-9]+\.(png|svg|js)$/', (string) $f) && is_file($dir . '/' . $f) && self::takeIsSafe($dir . '/' . $f)));
-        $busy = self::agentState($slug)['busy'];
+        $busy = self::artState($slug)['busy'];
         $saved = !empty($req['saved']) && $res === null;
-        $queued = is_file(self::studioDir($slug) . '/queue.jsonl') && str_contains((string) file_get_contents(self::studioDir($slug) . '/queue.jsonl'), "sketches/{$id}/");
-        return ['id' => $id, 'key' => (string) ($req['key'] ?? 'sprite'), 'base' => "/games/{$slug}/sketches/{$id}/", 'busy' => $busy, 'saved' => $saved, 'status' => $saved ? 'a saved drawing, not sent to the builder' : ($queued ? 'waiting its turn: it runs as soon as the builder\'s current run ends' : ($busy ? 'the builder is working…' : 'waiting for the builder to start')), 'result' => $res];
+        $qf = self::studioDir($slug) . '/art-queue.jsonl'; $queued = is_file($qf) && str_contains((string) file_get_contents($qf), "sketches/{$id}/");
+        return ['id' => $id, 'key' => (string) ($req['key'] ?? 'sprite'), 'base' => "/games/{$slug}/sketches/{$id}/", 'busy' => $busy || $queued, 'saved' => $saved, 'status' => $saved ? 'a saved drawing, not sent to the builder' : ($queued ? 'waiting its turn behind another sprite job' : ($busy ? 'the artist is working…' : 'waiting for the artist to start')), 'result' => $res];
     }
 
     public static function saveSfx(string $slug, array $data): int {

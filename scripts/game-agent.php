@@ -14,11 +14,13 @@ define('BASE_PATH', \app\Paths::root());
 new \app\Bootstrap('conf/config.ini');
 [$slug, $mode, $memberId] = [(string) ($argv[1] ?? ''), (string) ($argv[2] ?? 'chat'), (int) ($argv[3] ?? 0)];
 $dir = \app\GameStore::dir($slug);
-$prompt = is_file($dir . '/.studio/prompt.txt') ? trim((string) file_get_contents($dir . '/.studio/prompt.txt')) : '';
-$state = \app\GameStore::agentState($slug);
+$art = $mode === 'art'; // the art lane: a sprite job beside the builder, with its own prompt file and lock
+$pf = $dir . '/.studio/' . ($art ? 'art-prompt.txt' : 'prompt.txt');
+$prompt = is_file($pf) ? trim((string) file_get_contents($pf)) : '';
+$state = $art ? \app\GameStore::artState($slug) : \app\GameStore::agentState($slug);
 $state = array_merge($state, ['busy' => true, 'mode' => $mode, 'pid' => getmypid(), 'started' => date('c')]);
-\app\GameStore::saveAgentState($slug, $state);
-$agent = new \app\GameAgent($slug, $memberId);
+if ($art) \app\GameStore::saveArtState($slug, $state); else \app\GameStore::saveAgentState($slug, $state);
+$agent = new \app\GameAgent($slug, $memberId, $art ? 'art' : 'build');
 $outcome = 'finished';
 try {
     switch ($mode) {
@@ -26,15 +28,23 @@ try {
         case 'review': $agent->reviewOnly(); break;
         case 'fix': $agent->fix(); break;
         case 'soak': { $p = array_map('intval', explode(' ', $prompt . ' ')); $agent->soakOnly($p[0] ?: 60, $p[1] ?: 4); break; }
+        case 'art': $agent->art($prompt); break;
         default: $agent->chat($prompt);
     }
 } catch (\Throwable $e) {
     $outcome = 'failed: ' . $e->getMessage();
     \app\GameStore::emit($slug, 'error', ['text' => 'runner: ' . $e->getMessage()]);
 } finally {
-    $s = \app\GameStore::agentState($slug);
-    if ((int) $s['pid'] === getmypid() || !\app\GameStore::alive((int) $s['pid'])) { $s['busy'] = false; $s['mode'] = ''; $s['pid'] = 0; \app\GameStore::saveAgentState($slug, $s); } // only my own lock: a runner started after a Stop must not be cleared by the one dying
-    \app\GameStore::emit($slug, 'idle', []);
-    if ($mode !== 'soak') \app\GameNotices::finished($slug, $mode, $outcome, $memberId);
-    \app\GameStore::startQueued($slug); // a sprite job (or another run of its own) that waited for this one
+    if ($art) {
+        $s = \app\GameStore::artState($slug);
+        if ((int) $s['pid'] === getmypid() || !\app\GameStore::alive((int) $s['pid'])) { $s['busy'] = false; $s['mode'] = ''; $s['pid'] = 0; \app\GameStore::saveArtState($slug, $s); }
+        \app\GameStore::emit($slug, 'artdone', ['text' => $outcome]);
+        \app\GameStore::startQueuedArt($slug); // the next sprite job that waited
+    } else {
+        $s = \app\GameStore::agentState($slug);
+        if ((int) $s['pid'] === getmypid() || !\app\GameStore::alive((int) $s['pid'])) { $s['busy'] = false; $s['mode'] = ''; $s['pid'] = 0; \app\GameStore::saveAgentState($slug, $s); } // only my own lock
+        \app\GameStore::emit($slug, 'idle', []);
+        if ($mode !== 'soak') \app\GameNotices::finished($slug, $mode, $outcome, $memberId);
+        \app\GameStore::startQueued($slug); // a run of its own that waited for this one
+    }
 }

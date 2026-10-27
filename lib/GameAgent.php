@@ -30,13 +30,17 @@ class GameAgent {
 
     private string $slug; private string $dir; private array $state; private int $memberId; private bool $stop = false;
 
-    public function __construct(string $slug, int $memberId = 0) {
-        $this->slug = $slug; $this->dir = GameStore::dir($slug); $this->memberId = $memberId; $this->state = GameStore::agentState($slug);
+    private string $lane = 'build'; // 'build': the builder (its session, its inbox, its checkpoints); 'art': a sprite job beside it (fresh session, no inbox, no commits)
+    public function __construct(string $slug, int $memberId = 0, string $lane = 'build') {
+        $this->slug = $slug; $this->dir = GameStore::dir($slug); $this->memberId = $memberId; $this->lane = $lane === 'art' ? 'art' : 'build';
+        $this->state = $this->lane === 'art' ? GameStore::artState($slug) : GameStore::agentState($slug);
         pcntl_async_signals(true);
         pcntl_signal(SIGTERM, function () { $this->stop = true; });
     }
     private function emit(string $kind, array $d = []): void { GameStore::emit($this->slug, $kind, $d); }
-    private function save(): void { GameStore::saveAgentState($this->slug, $this->state); }
+    private function save(): void { if ($this->lane === 'art') GameStore::saveArtState($this->slug, $this->state); else GameStore::saveAgentState($this->slug, $this->state); }
+    /** A sprite job: one fresh, self-contained run, nothing committed. */
+    public function art(string $prompt): array { return $this->run($prompt, false, true, 0, 'art'); }
 
     /** [env, binary, note] for a run, or throws naming what to set. */
     public static function environment(string $root): array {
@@ -78,7 +82,7 @@ class GameAgent {
         $model = (string) GameStore::cfg('model', ''); if ($model !== '') array_push($cmd, '--model', $model);
         if ($resume && $sid) array_push($cmd, '--resume', $sid);
         $inbox = $this->dir . '/.studio/inbox.txt';
-        if (is_file($inbox) && trim((string) file_get_contents($inbox)) !== '') { $prompt .= "\n\nNotes from the producer since the last run (follow them where they fit this task; keep them in mind otherwise):\n" . trim((string) file_get_contents($inbox)); unlink($inbox); $this->emit('note', ['text' => "the producer's notes go with this run"]); }
+        if ($this->lane !== 'art' && is_file($inbox) && trim((string) file_get_contents($inbox)) !== '') { $prompt .= "\n\nNotes from the producer since the last run (follow them where they fit this task; keep them in mind otherwise):\n" . trim((string) file_get_contents($inbox)); unlink($inbox); $this->emit('note', ['text' => "the producer's notes go with this run"]); }
         $env['GAME_URL'] = GameStore::soakUrl($this->slug); $env['STUDIO'] = GameStore::root() . '/studio'; $env['VOIDLUX_GAME'] = $this->slug;
         $env['PLAYWRIGHT_ROOT'] = (string) GameStore::cfg('playwright_root', '/home/ubuntu'); $env['CHROME'] = (string) GameStore::cfg('chrome', '/usr/bin/google-chrome'); $env['CDP_URL'] = (string) GameStore::cfg('cdp_url', 'http://127.0.0.1:9222');
         if ($jail) { $env['CLAUDE_BIN'] = $bin; $env['JAIL_HOME_CLAUDE'] = (string) GameStore::cfg('agent_login', 'host') === 'host' ? '1' : '0'; $cmd = array_merge([GameStore::root() . '/studio/jail.sh', $this->dir], $cmd); }
