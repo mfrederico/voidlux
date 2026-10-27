@@ -26,7 +26,7 @@ const Move = {
   parentFor(name) { const want = (this.TREE[this.plan] || {})[name]; if (want && this.joints.some(j => j.name === want)) return want; if (this.sel >= 0 && this.joints[this.sel]) return this.joints[this.sel].name; return this.joints.length ? this.joints[this.joints.length - 1].name : ''; },
   init() {
     this.cv = el('moveCv'); this.g = this.cv.getContext('2d');
-    this.cv.addEventListener('pointerdown', e => this.down(e)); this.cv.addEventListener('pointermove', e => this.move(e)); const up = () => { this.drag = null; }; this.cv.addEventListener('pointerup', up); this.cv.addEventListener('pointercancel', up);
+    this.cv.addEventListener('pointerdown', e => this.down(e)); this.cv.addEventListener('pointermove', e => this.move(e)); const up = () => { if (this.drag && this.kind === 'rig') { this.drag = null; this.tlUI(); this.draw(); } else this.drag = null; }; this.cv.addEventListener('pointerup', up); this.cv.addEventListener('pointercancel', up); this.cv.addEventListener('pointerleave', () => { if (!this.drag && this.hover) { this.hover = null; this.draw(); } });
     el('hintPlan').onchange = () => { this.plan = el('hintPlan').value; this.names(); this.draw(); };
     el('hintAdd').onclick = () => { this.adding = !this.adding; el('hintAdd').classList.toggle('on', this.adding); el('hintMsg').textContent = this.adding ? 'click the figure to place a joint; click a joint to select it; drag to move' : ''; };
     el('hintClear').onclick = () => { if (!this.joints.length || confirm('Clear every mark?')) { this.snapshot(); this.joints = []; this.sel = -1; this.hintsUI(); this.draw(); } };
@@ -89,6 +89,7 @@ const Move = {
     for (const part of this.R.parts) { const w = W[part.bone]; if (!w) continue; g.save(); g.translate(w.x, w.y); g.rotate(w.angle); try { part.draw(g, w, P); } catch (e) {} g.restore(); }
     Draw.ctx = was; g.restore();
     if (el('mBones').checked) this.drawBones(W, P);
+    const h = this.drag && this.drag.at ? this.drag : this.hover; if (h && h.at) { const g = this.g, x = this.sx(h.at[0]), y = this.sy(h.at[1]), live = !!this.drag; g.beginPath(); g.arc(x, y, live ? 11 : 13, 0, TAU); g.strokeStyle = live ? 'rgba(80,220,120,1)' : 'rgba(80,220,120,.55)'; g.lineWidth = live ? 3 : 2; g.stroke(); g.font = '12px ui-monospace, monospace'; g.textAlign = 'left'; const label = (live ? '✥ ' : '') + h.name; g.fillStyle = 'rgba(6,6,8,.75)'; const wl = g.measureText(label).width + 10; g.fillRect(x + 14, y - 20, wl, 18); g.fillStyle = 'rgba(120,255,160,1)'; g.fillText(label, x + 19, y - 7); }
   },
   drawBones(W, P) {
     const g = this.g, ends = new Set(Object.values(this.R.chains).map(c => c.bones[1])), roots = Object.values(this.R.bones).filter(b => !b.parent).map(b => b.name);
@@ -116,23 +117,24 @@ const Move = {
       this.joints.push({ name, x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, parent, note: '' }); this.sel = this.joints.length - 1; this.hintsUI(); this.draw();
       const nextName = (this.PLANS[this.plan] || []).find(n => !this.joints.some(j => j.name === n)); el('hintMsg').textContent = nextName ? `placed ${name}${parent ? ' from ' + parent : ' (root)'} · next: ${nextName}${(this.TREE[this.plan] || {})[nextName] ? ' from ' + this.TREE[this.plan][nextName] : ''}` : `placed ${name}`; return;
     }
-    if (this.kind === 'rig') { const K = this.K(); if (!K) { say('select a key on the timeline first (or add one at the cursor) to pose it', 'err'); return; } this.drag = this.hitBone(p); if (this.drag) this.snapshot(); }
+    if (this.kind === 'rig') { const K = this.K(); if (!K) { say('select a key on the timeline first (or add one at the cursor) to pose it', 'err'); return; } this.drag = this.hitBone(p); if (this.drag) { this.snapshot(); el('tlInfo').textContent = 'dragging ' + this.drag.name; this.draw(); } }
   },
   move(e) {
-    if (!this.drag) return; const p = this.world(e);
+    if (!this.drag) { if (this.kind !== 'rig' || !this.R) return; const h = this.hitBone(this.world(e)), was = this.hover && this.hover.name; this.hover = h; if ((h && h.name) !== was) this.draw(); return; } const p = this.world(e);
     if (this.kind === 'pic') { const j = this.joints[this.drag.joint]; j.x = Math.round(p.x * 10) / 10; j.y = Math.round(p.y * 10) / 10; this.draw(); return; }
     const K = this.K(); if (!K) return; const d = this.drag;
+    d.at = [p.x, p.y];
     if (d.root) { K.root = { x: Math.round((p.x - d.ox) * 10) / 10, y: Math.round((p.y - d.oy) * 10) / 10 }; }
     else if (d.chain) { const r = K.root || { x: 0, y: 0 }; K.ik = K.ik || {}; K.ik[d.chain] = { x: Math.round((p.x - r.x) * 10) / 10, y: Math.round((p.y - r.y) * 10) / 10 }; this.lastChain = d.chain; }
     else if (d.bone) { const W = Rig.solve(this.R, this.poseNow()), w = W[d.bone], b = this.R.bones[d.bone], par = b.parent ? W[b.parent].angle : 0; K.pose = K.pose || {}; K.pose[d.bone] = Math.round((Math.atan2(p.y - w.y, p.x - w.x) - par - b.angle) * 1000) / 1000; if (K.ik && d.chainOf) delete K.ik[d.chainOf]; }
     this.draw();
   },
-  hitBone(p) { // what a press on the posed figure takes hold of: a chain's end (IK), the root (move), or a bone's tip (turn)
-    const W = Rig.solve(this.R, this.poseNow()), r = 10 / this.k, P = this.poseNow();
-    for (const [cn, ch] of Object.entries(this.R.chains)) { const w = W[ch.bones[1]]; if (Math.hypot(w.tx - p.x, w.ty - p.y) < r) return { chain: cn }; }
-    for (const b of Object.values(this.R.bones)) if (!b.parent) { const w = W[b.name]; if (Math.hypot(w.x - p.x, w.y - p.y) < r) return { root: true, ox: p.x - P.root.x, oy: p.y - P.root.y }; }
-    let best = null, bd = r; for (const [n, w] of Object.entries(W)) { const d = Math.hypot(w.tx - p.x, w.ty - p.y); if (d < bd) { bd = d; best = n; } }
-    if (!best) return null; const chainOf = Object.entries(this.R.chains).find(([, ch]) => ch.bones.includes(best)); return { bone: best, chainOf: chainOf ? chainOf[0] : null };
+  hitBone(p) { // what a press on the posed figure takes hold of: the nearest handle, whatever it is: a chain's end (IK), the root (move), a bone's tip (turn)
+    const P = this.poseNow(), W = Rig.solve(this.R, P), r = 12 / this.k; let best = null, bd = r;
+    const ends = {}; for (const [cn, ch] of Object.entries(this.R.chains)) ends[ch.bones[1]] = cn;
+    for (const [n, w] of Object.entries(W)) { const d = Math.hypot(w.tx - p.x, w.ty - p.y) - (ends[n] ? 1e-6 : 0); if (d < bd) { bd = d; best = ends[n] ? { chain: ends[n], at: [w.tx, w.ty], name: n + ' (' + ends[n] + ', IK)' } : { bone: n, chainOf: (Object.entries(this.R.chains).find(([, ch]) => ch.bones.includes(n)) || [null])[0], at: [w.tx, w.ty], name: n }; } }
+    for (const b of Object.values(this.R.bones)) if (!b.parent) { const w = W[b.name], d = Math.hypot(w.x - p.x, w.y - p.y); if (d < bd) { bd = d; best = { root: true, ox: p.x - P.root.x, oy: p.y - P.root.y, at: [w.x, w.y], name: b.name + ' (root: moves the body)' }; } }
+    return best;
   },
   hintsUI() {
     const L = el('hintList'); L.innerHTML = '';
