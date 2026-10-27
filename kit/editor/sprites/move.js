@@ -139,9 +139,9 @@ const Move = {
     if (this.kind === 'rig') { const hit = this.hitBone(p); if (!hit && el('mGround').checked && this.groundY !== undefined && Math.abs(p.y - this.groundY) < 8 / this.k) { this.drag = { ground: true, name: 'ground' }; el('tlInfo').textContent = 'dragging the ground line'; return; } if (!hit) return; if (!this.K()) { if (!this.M()) { say('make a motion first', 'err'); return; } this.addKey(); say('a key was made at the cursor for this pose', 'ok'); } this.drag = this.hitBone(p); if (this.drag) { this.snapshot(); if (this.drag.chain) { const W = Rig.solve(this.R, this.poseNow()), ch = this.R.chains[this.drag.chain]; this.drag.elbow = [W[ch.bones[0]].tx, W[ch.bones[0]].ty]; } el('tlInfo').textContent = 'dragging ' + this.drag.name; this.draw(); } }
   },
   move(e) {
-    if (!this.drag) { if (this.kind !== 'rig' || !this.R) return; const h = this.hitBone(this.world(e)), was = this.hover && this.hover.name; this.hover = h; if ((h && h.name) !== was) this.draw(); return; } const p = this.world(e);
+    if (!this.drag) { if (this.kind !== 'rig' || !this.R) return; const q = this.world(e); let h = this.hitBone(q); if (!h && el('mGround').checked && this.groundY !== undefined && Math.abs(q.y - this.groundY) < 8 / this.k) h = { name: 'ground (drag to move it)', at: [q.x, this.groundY] }; const was = this.hover && this.hover.name; this.hover = h; if ((h && h.name) !== was) this.draw(); return; } const p = this.world(e);
     if (this.kind === 'pic') { const j = this.joints[this.drag.joint]; j.x = Math.round(p.x * 10) / 10; j.y = Math.round(p.y * 10) / 10; this.draw(); return; }
-    const K = this.K(); if (!K) return; const d = this.drag;
+    const d = this.drag; if (d.ground) { this.setGround(p.y); return; } const K = this.K(); if (!K) return;
     d.at = [p.x, p.y];
     const shift = e.shiftKey;
     if (d.root) { let rx = p.x - d.ox, ry = p.y - d.oy; if (shift) { const r0 = d.root0 || (d.root0 = { x: (K.root || {}).x || 0, y: (K.root || {}).y || 0 }); if (Math.abs(rx - r0.x) > Math.abs(ry - r0.y)) ry = r0.y; else rx = r0.x; } K.root = { x: Math.round(rx * 10) / 10, y: Math.round(ry * 10) / 10 }; }
@@ -240,9 +240,10 @@ const Move = {
     const round = v => typeof v === 'number' ? Math.round(v * 1000) / 1000 : v;
     const clean = JSON.parse(JSON.stringify(this.R.motions, (k, v) => round(v)));
     const body = JSON.stringify(clean, null, 2).replace(/"([a-zA-Z_][a-zA-Z0-9_]*)":/g, '$1:').replace(/\n/g, '\n  ');
-    const m = /motions\s*:\s*\{/.exec(this.text); if (!m) throw new Error('the rig file has no motions block to replace');
-    let i = m.index + m[0].length - 1, depth = 0, j = i; for (; j < this.text.length; j++) { const ch = this.text[j]; if (ch === '{') depth++; else if (ch === '}') { depth--; if (depth === 0) break; } }
-    if (depth !== 0) throw new Error('the motions block does not close'); return this.text.slice(0, m.index) + 'motions: ' + body + this.text.slice(j + 1);
+    let text = this.text; if (this.R.ground !== null && this.R.ground !== undefined) { if (/\bground\s*:\s*-?[0-9.]+/.test(text)) text = text.replace(/\bground\s*:\s*-?[0-9.]+/, 'ground: ' + this.R.ground); else text = text.replace(/(\bhalf\s*:\s*[0-9.]+\s*,)/, '$1 ground: ' + this.R.ground + ','); }
+    const m = /motions\s*:\s*\{/.exec(text); if (!m) throw new Error('the rig file has no motions block to replace');
+    let i = m.index + m[0].length - 1, depth = 0, j = i; for (; j < text.length; j++) { const ch = text[j]; if (ch === '{') depth++; else if (ch === '}') { depth--; if (depth === 0) break; } }
+    if (depth !== 0) throw new Error('the motions block does not close'); return text.slice(0, m.index) + 'motions: ' + body + text.slice(j + 1);
   },
   async saveRig() {
     if (!cur || !this.R) return; let text; try { text = this.serialize(); renderCode(text, 32, 0); } catch (e) { el('rigMsg').textContent = 'not saved: ' + e.message; return; }
