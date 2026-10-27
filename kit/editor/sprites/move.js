@@ -36,7 +36,7 @@ const Move = {
     el('mDup').onclick = () => this.dupMotion(); el('mRename').onclick = () => this.renameMotion(); el('mAsk').onclick = () => { if (cur && entry) openAnim({ asset: cur }, cur); };
     for (const id of ['mSecs', 'mFps', 'mLoop']) el(id).onchange = () => { const M = this.M(); if (!M) return; this.snapshot(); M.secs = Math.max(0.1, +el('mSecs').value || 1); M.fps = Math.max(2, Math.min(30, +el('mFps').value || 12)); M.loop = el('mLoop').checked; this.tlUI(); this.draw(); };
     el('mBones').onchange = () => this.draw();
-    el('mPlay').onclick = () => this.play(); el('kAdd').onclick = () => this.addKey(); el('kDup').onclick = () => this.dupKey(); el('kDel').onclick = () => this.delKey(); el('kMirror').onclick = () => this.mirrorKey();
+    el('mPlay').onclick = () => this.play(); el('kFlip').onclick = () => this.flipBend(); el('kAdd').onclick = () => this.addKey(); el('kDup').onclick = () => this.dupKey(); el('kDel').onclick = () => this.delKey(); el('kMirror').onclick = () => this.mirrorKey();
     el('kT').onchange = () => { const K = this.K(); if (!K) return; this.snapshot(); K.t = Math.max(0, Math.min(1, +el('kT').value || 0)); this.M().keys.sort((a, b) => a.t - b.t); this.keyI = this.M().keys.indexOf(K); this.tlUI(); this.draw(); };
     el('kEase').onchange = () => { const K = this.K(); if (K) { this.snapshot(); K.ease = el('kEase').value; } };
     el('tlScrub').oninput = () => { this.scrub = +el('tlScrub').value / 1000; this.keyI = -1; this.tlUI(); this.draw(); };
@@ -123,7 +123,7 @@ const Move = {
     if (this.kind === 'pic') { const j = this.joints[this.drag.joint]; j.x = Math.round(p.x * 10) / 10; j.y = Math.round(p.y * 10) / 10; this.draw(); return; }
     const K = this.K(); if (!K) return; const d = this.drag;
     if (d.root) { K.root = { x: Math.round((p.x - d.ox) * 10) / 10, y: Math.round((p.y - d.oy) * 10) / 10 }; }
-    else if (d.chain) { const r = K.root || { x: 0, y: 0 }; K.ik = K.ik || {}; K.ik[d.chain] = { x: Math.round((p.x - r.x) * 10) / 10, y: Math.round((p.y - r.y) * 10) / 10 }; }
+    else if (d.chain) { const r = K.root || { x: 0, y: 0 }; K.ik = K.ik || {}; K.ik[d.chain] = { x: Math.round((p.x - r.x) * 10) / 10, y: Math.round((p.y - r.y) * 10) / 10 }; this.lastChain = d.chain; }
     else if (d.bone) { const W = Rig.solve(this.R, this.poseNow()), w = W[d.bone], b = this.R.bones[d.bone], par = b.parent ? W[b.parent].angle : 0; K.pose = K.pose || {}; K.pose[d.bone] = Math.round((Math.atan2(p.y - w.y, p.x - w.x) - par - b.angle) * 1000) / 1000; if (K.ik && d.chainOf) delete K.ik[d.chainOf]; }
     this.draw();
   },
@@ -180,7 +180,8 @@ const Move = {
   },
   // ---- the rig's motions and keys ----
   M() { return this.R && this.R.motions[this.motion] || null; }, K() { const M = this.M(); return M && this.keyI >= 0 ? M.keys[this.keyI] : null; },
-  poseNow() { const M = this.M(); if (!M) return { pose: {}, root: { x: 0, y: 0 }, ik: {} }; const K = this.K(); if (K) return { pose: K.pose || {}, root: K.root || { x: 0, y: 0 }, ik: K.ik || {} }; return Rig.pose(M, this.scrub, this.R); },
+  poseNow() { const M = this.M(); if (!M) return { pose: {}, root: { x: 0, y: 0 }, ik: {} }; const K = this.K(); if (K) return { pose: K.pose || {}, root: K.root || { x: 0, y: 0 }, ik: K.ik || {}, bend: K.bend || {} }; return Rig.pose(M, this.scrub, this.R); },
+  flipBend() { const K = this.K(); if (!K) { say('select a key first', 'err'); return; } const c = this.lastChain || Object.keys(this.R.chains)[0]; if (!c) return; this.snapshot(); K.bend = K.bend || {}; const now = K.bend[c] || this.R.chains[c].bend || 1; K.bend[c] = -now; if (K.bend[c] === (this.R.chains[c].bend || 1)) delete K.bend[c]; this.draw(); say(`${c} folds ${now > 0 ? 'back' : 'forward'} in this key`, 'ok'); },
   pickMotion(name) { this.stop(); this.motion = name; const M = this.M(); if (!M) { this.keyI = -1; this.tlUI(); this.draw(); return; } if (!M.keys) M.keys = []; M.keys.sort((a, b) => a.t - b.t); el('mSecs').value = M.secs || 1; el('mFps').value = M.fps || 12; el('mLoop').checked = M.loop !== false; this.keyI = M.keys.length ? 0 : -1; this.scrub = this.keyI >= 0 ? M.keys[0].t : 0; el('tlScrub').value = Math.round(this.scrub * 1000); this.tlUI(); this.draw(); },
   tlUI() {
     const M = this.M(), bar = el('tlBar'); for (const k of bar.querySelectorAll('.tlkey')) k.remove(); el('tlCursor').style.left = (this.scrub * 100) + '%';
@@ -194,7 +195,7 @@ const Move = {
   delKey() { const M = this.M(); if (!M || this.keyI < 0) return; this.snapshot(); M.keys.splice(this.keyI, 1); this.keyI = Math.min(this.keyI, M.keys.length - 1); this.tlUI(); this.draw(); },
   mirrorKey() { // left and right limbs trade places: bones and chains named …L / …R
     const K = this.K(); if (!K) return; this.snapshot(); const swap = n => /L$/.test(n) ? n.slice(0, -1) + 'R' : /R$/.test(n) ? n.slice(0, -1) + 'L' : n;
-    const pose = {}; for (const [n, a] of Object.entries(K.pose || {})) pose[swap(n)] = a; K.pose = pose; const ik = {}; for (const [c, t] of Object.entries(K.ik || {})) ik[swap(c)] = t; K.ik = ik; this.draw();
+    const pose = {}; for (const [n, a] of Object.entries(K.pose || {})) pose[swap(n)] = a; K.pose = pose; const ik = {}; for (const [c, t] of Object.entries(K.ik || {})) ik[swap(c)] = t; K.ik = ik; const bend = {}; for (const [c, s] of Object.entries(K.bend || {})) bend[swap(c)] = s; K.bend = bend; this.draw();
   },
   newMotion() { const name = prompt('Name of the new motion (letters, digits, dashes):', 'idle'); if (!name || !/^[a-z][a-z0-9-]{0,20}$/.test(name)) return; if (this.R.motions[name] && !confirm(`${name} exists. Start it over?`)) return; this.snapshot(); this.R.motions[name] = { secs: 1, fps: 12, loop: true, keys: [{ t: 0, pose: {}, root: { x: 0, y: 0 }, ik: {} }] }; el('mMotion').innerHTML = Object.keys(this.R.motions).map(n => `<option>${esc(n)}</option>`).join(''); el('mMotion').value = name; this.pickMotion(name); },
   motionList(select) { el('mMotion').innerHTML = Object.keys(this.R.motions).map(n => `<option>${esc(n)}</option>`).join(''); el('mMotion').value = select; this.pickMotion(select); },
