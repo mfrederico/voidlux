@@ -50,7 +50,7 @@ const Move = {
       if (!D.moved && Math.abs(f - D.t0) < 0.01) return; if (!D.moved) { this.snapshot(); D.moved = true; D.key = M.keys[D.i]; } let t = Math.round(f * 100) / 100; if (M.keys.some(o => o !== D.key && Math.abs(o.t - t) < 0.005)) return; D.key.t = t; this.keyI = D.i; this.scrub = D.key.t; this.tlUI(); this.draw(); });
     const barUp = () => { const D = this.tlDrag; this.tlDrag = null; if (!D || D.scrub) return; const M = this.M(); if (!M) return; if (D.moved) { M.keys.sort((a, b) => a.t - b.t); this.keyI = M.keys.indexOf(D.key); } else { this.keyI = D.i; this.scrub = M.keys[D.i].t; } el('tlScrub').value = Math.round(this.scrub * 1000); this.tlUI(); this.draw(); };
     bar.addEventListener('pointerup', barUp); bar.addEventListener('pointercancel', barUp);
-    el('rigSave').onclick = () => this.saveRig(); el('skinGo').onclick = () => this.reskinGo();
+    el('rigSave').onclick = () => this.saveRig(); el('skelBtn').onclick = () => this.skelToggle(); el('skinGo').onclick = () => this.reskinGo();
     el('skinDl').onclick = () => { const v = el('skinFrom').value, file = v.startsWith('file:') ? v.slice(5) : (M.sprites[v] || {}).file; if (!file) { el('rigMsg').textContent = 'pick a drawing first'; return; } const a = document.createElement('a'); a.href = ASSET(file) + '?t=' + Date.now(); a.download = file; document.body.appendChild(a); a.click(); a.remove(); el('rigMsg').textContent = `downloading ${file}`; };
     el('skinUp').onclick = () => { if (el('skinFrom').value) el('skinFile').click(); };
     el('skinFile').onchange = async () => { const f = el('skinFile').files[0]; el('skinFile').value = ''; if (!f) return; let k; try { k = await this.skinKey(); } catch (e) { el('rigMsg').textContent = e.message; return; } const s = M.sprites[k];
@@ -66,9 +66,9 @@ const Move = {
     window.addEventListener('resize', () => this.draw());
   },
   // ---- undo: a snapshot of the motions (or the marks) before every change; Ctrl+Z back, Ctrl+Y forward ----
-  snapshot() { const s = JSON.stringify({ motions: this.R ? this.R.motions : null, motion: this.motion, keyI: this.keyI, joints: this.joints, plan: this.plan }); if (this.hist[this.hist.length - 1] === s) return; this.hist.push(s); if (this.hist.length > 100) this.hist.shift(); this.redoS = []; },
-  current() { return JSON.stringify({ motions: this.R ? this.R.motions : null, motion: this.motion, keyI: this.keyI, joints: this.joints, plan: this.plan }); },
-  restore(s) { const d = JSON.parse(s); this.stop(); if (this.R && d.motions) { this.R.motions = d.motions; this.motionList(d.motions[d.motion] ? d.motion : Object.keys(d.motions)[0] || ''); this.keyI = Math.min(d.keyI, (this.M() ? this.M().keys.length : 0) - 1); if (this.keyI >= 0) { this.scrub = this.M().keys[this.keyI].t; el('tlScrub').value = Math.round(this.scrub * 1000); } this.tlUI(); } if (this.kind === 'pic') { this.joints = d.joints || []; this.plan = d.plan || this.plan; el('hintPlan').value = this.plan; this.names(); this.hintsUI(); } this.draw(); },
+  snapshot() { const s = JSON.stringify({ motions: this.R ? this.R.motions : null, motion: this.motion, keyI: this.keyI, joints: this.joints, plan: this.plan, bones: this.def ? this.def.bones : null, skin: this.def ? this.def.skin || null : null }); if (this.hist[this.hist.length - 1] === s) return; this.hist.push(s); if (this.hist.length > 100) this.hist.shift(); this.redoS = []; },
+  current() { return JSON.stringify({ motions: this.R ? this.R.motions : null, motion: this.motion, keyI: this.keyI, joints: this.joints, plan: this.plan, bones: this.def ? this.def.bones : null, skin: this.def ? this.def.skin || null : null }); },
+  restore(s) { const d = JSON.parse(s); this.stop(); if (this.def && d.bones) { this.def.bones = d.bones; if (d.skin) this.def.skin = d.skin; else delete this.def.skin; this.redefine(); } if (this.R && d.motions) { this.R.motions = d.motions; this.motionList(d.motions[d.motion] ? d.motion : Object.keys(d.motions)[0] || ''); this.keyI = Math.min(d.keyI, (this.M() ? this.M().keys.length : 0) - 1); if (this.keyI >= 0) { this.scrub = this.M().keys[this.keyI].t; el('tlScrub').value = Math.round(this.scrub * 1000); } this.tlUI(); } if (this.kind === 'pic') { this.joints = d.joints || []; this.plan = d.plan || this.plan; el('hintPlan').value = this.plan; this.names(); this.hintsUI(); } this.draw(); },
   undo() { if (!this.hist.length) { say('nothing to undo on Move', ''); return; } this.redoS.push(this.current()); this.restore(this.hist.pop()); say('undone', 'ok'); },
   redo() { if (!this.redoS.length) return; this.hist.push(this.current()); this.restore(this.redoS.pop()); say('redone', 'ok'); },
   // ---- what is on the stage ----
@@ -76,7 +76,7 @@ const Move = {
     if (!this.cv) this.init(); this.stop();
     const has = !!(cur && entry); el('moveTitle').textContent = has ? cur : 'no sprite chosen'; el('moveAnimBtn').disabled = !has; el('moveAnimBtn').classList.toggle('hidden', !!(has && entry.kind === 'rig')); el('rigGoBtn').disabled = !has; el('moveDupBtn').disabled = !has; el('moveDupBtn').onclick = () => el('dupBtn').click();
     el('hintsPanel').classList.toggle('hidden', !has || entry.kind === 'rig'); el('rigPanel').classList.toggle('hidden', !(has && entry.kind === 'rig')); el('moveTl').classList.toggle('hidden', !(has && entry.kind === 'rig'));
-    this.kind = !has ? 'none' : (entry.kind === 'rig' ? 'rig' : 'pic'); this.base = null; this.R = null; this.joints = []; this.sel = -1; this.hist = []; this.redoS = []; this.selJoint = null;
+    this.kind = !has ? 'none' : (entry.kind === 'rig' ? 'rig' : 'pic'); this.base = null; this.R = null; this.joints = []; this.sel = -1; this.hist = []; this.redoS = []; this.selJoint = null; if (this.skel) this.skelToggle(); this.skelDirty = false;
     if (!has) { el('moveSub').textContent = 'pick a kept sprite on the left to give it motion'; this.draw(); return; }
     try {
       if (this.kind === 'rig') {
@@ -122,7 +122,7 @@ const Move = {
     if (el('mGround').checked && this.groundY !== undefined) { g.save(); g.setLineDash([6, 6]); g.strokeStyle = 'rgba(124,180,204,.6)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(0, this.sy(this.groundY)); g.lineTo(N, this.sy(this.groundY)); g.stroke(); g.restore(); }
     if (el('mOnion').checked) { const Mo = this.M(); if (Mo && Mo.keys.length > 1 && this.keyI >= 0) { const n = Mo.keys.length, ghosts = [[Mo.keys[(this.keyI - 1 + n) % n], 'rgba(124,180,204,.45)'], [Mo.keys[(this.keyI + 1) % n], 'rgba(224,119,0,.45)']]; for (const [Kg, col] of ghosts) { if (Kg === this.K()) continue; const Wg = Rig.solve(this.R, { pose: Kg.pose || {}, root: Kg.root || { x: 0, y: 0 }, ik: Kg.ik || {}, bend: Kg.bend || {} }); g.lineWidth = 3; g.strokeStyle = col; g.lineCap = 'round'; for (const w of Object.values(Wg)) { g.beginPath(); g.moveTo(this.sx(w.x), this.sy(w.y)); g.lineTo(this.sx(w.tx), this.sy(w.ty)); g.stroke(); } } } }
     g.save(); g.translate(N / 2, N / 2); g.scale(this.k, this.k); const was = Draw.ctx; Draw.ctx = g;
-    for (const part of this.R.parts) { const w = W[part.bone]; if (!w) continue; g.save(); g.translate(w.x, w.y); g.rotate(w.angle); try { part.draw(g, w, P); } catch (e) {} g.restore(); }
+    for (const part of this.R.parts) { const w = W[part.bone]; if (!w) continue; g.save(); Rig.partFrame(this.R, part, w, g); try { part.draw(g, Rig.partBone(this.R, part, w), P); } catch (e) {} g.restore(); }
     Draw.ctx = was; g.restore();
     if (el('mBones').checked) this.drawBones(W, P);
     if (this.selJoint) { const s = this.selJoint, at = s.chain ? (() => { const b = W[this.R.chains[s.chain].bones[1]]; return [b.tx, b.ty]; })() : s.root ? (() => { const b = W[Object.values(this.R.bones).find(b => !b.parent).name]; return [b.x, b.y]; })() : (W[s.bone] ? [W[s.bone].tx, W[s.bone].ty] : null); if (at) { const g = this.g, x = this.sx(at[0]), y = this.sy(at[1]); g.beginPath(); g.arc(x, y, 10, 0, TAU); g.strokeStyle = 'rgba(80,220,120,.95)'; g.lineWidth = 2.5; g.stroke(); g.beginPath(); g.arc(x, y, 15, 0, TAU); g.strokeStyle = 'rgba(80,220,120,.35)'; g.lineWidth = 1.5; g.stroke(); } }
@@ -154,14 +154,15 @@ const Move = {
       this.joints.push({ name, x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, parent, note: '' }); this.sel = this.joints.length - 1; this.hintsUI(); this.draw();
       const nextName = (this.PLANS[this.plan] || []).find(n => !this.joints.some(j => j.name === n)); el('hintMsg').textContent = nextName ? `placed ${name}${parent ? ' from ' + parent : ' (root)'} · next: ${nextName}${(this.TREE[this.plan] || {})[nextName] ? ' from ' + this.TREE[this.plan][nextName] : ''}` : `placed ${name}`; return;
     }
+    if (this.kind === 'rig' && this.skel) { const h = this.skelHit(p); if (!h) return; this.snapshot(); this.drag = h; el('tlInfo').textContent = 'moving the joint ' + h.name; this.draw(); return; }
     if (this.kind === 'rig') { const hit = this.hitBone(p); if (!hit && el('mGround').checked && this.groundY !== undefined && Math.abs(p.y - this.groundY) < 8 / this.k) { this.drag = { ground: true, name: 'ground' }; el('tlInfo').textContent = 'dragging the ground line'; return; }
       if (!hit) { if (this.selJoint) { this.selJoint = null; this.draw(); } return; }
       this.selJoint = { chain: hit.chain || null, bone: hit.bone || null, root: !!hit.root, chainOf: hit.chainOf || null, name: hit.name }; if (hit.chain || hit.chainOf) this.lastChain = hit.chain || hit.chainOf; if (!this.K()) { if (!this.M()) { say('make a motion first', 'err'); return; } this.addKey(); say('a key was made at the cursor for this pose', 'ok'); } this.drag = this.hitBone(p); if (this.drag) { this.snapshot(); if (this.drag.chain) { const W = Rig.solve(this.R, this.poseNow()), ch = this.R.chains[this.drag.chain]; this.drag.elbow = [W[ch.bones[0]].tx, W[ch.bones[0]].ty]; } el('tlInfo').textContent = 'dragging ' + this.drag.name; this.draw(); } }
   },
   move(e) {
-    if (!this.drag) { if (this.kind !== 'rig' || !this.R) return; const q = this.world(e); let h = this.hitBone(q); if (!h && el('mGround').checked && this.groundY !== undefined && Math.abs(q.y - this.groundY) < 8 / this.k) h = { name: 'ground (drag to move it)', at: [q.x, this.groundY] }; const was = this.hover && this.hover.name; this.hover = h; if ((h && h.name) !== was) this.draw(); return; } const p = this.world(e);
+    if (!this.drag) { if (this.kind !== 'rig' || !this.R) return; const q = this.world(e); let h = this.skel ? this.skelHit(q) : this.hitBone(q); if (!h && el('mGround').checked && this.groundY !== undefined && Math.abs(q.y - this.groundY) < 8 / this.k) h = { name: 'ground (drag to move it)', at: [q.x, this.groundY] }; const was = this.hover && this.hover.name; this.hover = h; if ((h && h.name) !== was) this.draw(); return; } const p = this.world(e);
     if (this.kind === 'pic') { const j = this.joints[this.drag.joint]; j.x = Math.round(p.x * 10) / 10; j.y = Math.round(p.y * 10) / 10; this.draw(); return; }
-    const d = this.drag; if (d.ground) { this.setGround(p.y); return; } const K = this.K(); if (!K) return;
+    const d = this.drag; if (d.skel) { this.skelDrag(d, p); return; } if (d.ground) { this.setGround(p.y); return; } const K = this.K(); if (!K) return;
     d.at = [p.x, p.y];
     const shift = e.shiftKey;
     if (d.root) { let rx = p.x - d.ox, ry = p.y - d.oy; if (shift) { const r0 = d.root0 || (d.root0 = { x: (K.root || {}).x || 0, y: (K.root || {}).y || 0 }); if (Math.abs(rx - r0.x) > Math.abs(ry - r0.y)) ry = r0.y; else rx = r0.x; } K.root = { x: Math.round(rx * 10) / 10, y: Math.round(ry * 10) / 10 }; }
@@ -254,6 +255,20 @@ const Move = {
   async skinKey() { const v = el('skinFrom').value; if (!v) throw new Error('pick a drawing first'); if (!v.startsWith('file:')) return v; const file = v.slice(5), key = file.replace(/\.[a-z0-9]+$/i, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-') + '-drawing';
     if (!M.sprites[key]) { const r = await fetch(apiUrl('spritesave'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key, file, source: 'upload' }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); M = { sprites: j.sprites, files: j.files }; drawList(); }
     const o = document.createElement('option'); o.value = key; o.textContent = key; el('skinFrom').prepend(o); el('skinFrom').value = key; return key; },
+  redefine() { const motions = this.R.motions, ground = this.R.ground, key = 'move:' + cur; this.R = Rig.define(key, Object.assign({}, this.def, { motions, ground })); this.R.realKey = this.R.realKey || cur; if (cur) Rig.rigs.set(cur, this.R); },
+  // ---- edit skeleton: drag a joint where it belongs on the drawing; bones rebuilt, parts compensated, motions untouched ----
+  skelToggle() { this.skel = !this.skel; el('skelBtn').classList.toggle('on', this.skel); el('skelBtn').textContent = this.skel ? '✓ Done editing the skeleton' : '✥ Edit skeleton'; this.stop(); this.selJoint = null; this.hover = null;
+    el('skelMsg').textContent = this.skel ? 'the rig at rest: drag a joint dot (or the hips ring) to where it belongs on the drawing; the drawing stays, the pivot moves' : (this.skelDirty ? 'skeleton changed: Save the rig to keep it' : '');
+    for (const id of ['mPlay', 'kAdd', 'kDup', 'kDel', 'kMirror', 'kFlip', 'kHold']) el(id).disabled = this.skel; this.draw(); },
+  skelHit(p) { const W = Rig.solve(this.R, { pose: {}, root: { x: 0, y: 0 }, ik: {} }), r = 12 / this.k; let best = null, bd = r;
+    for (const b of Object.values(this.R.bones)) if (!b.parent) { const w = W[b.name], d = Math.hypot(w.x - p.x, w.y - p.y); if (d < bd) { bd = d; best = { skel: true, root: true, name: b.name + ' (root)', at: [w.x, w.y] }; } }
+    for (const [n, w] of Object.entries(W)) { if (!(w.len > 0)) continue; const d = Math.hypot(w.tx - p.x, w.ty - p.y); if (d < bd) { bd = d; best = { skel: true, bone: n, name: n + ' — the joint at its end', at: [w.tx, w.ty] }; } }
+    return best; },
+  skelDrag(d, p) {
+    if (!this.def.skin) this.def.skin = Object.fromEntries(Object.entries(Rig.restWorld(this.R)).map(([n, w]) => [n, { x: Math.round(w.x * 1000) / 1000, y: Math.round(w.y * 1000) / 1000, a: Math.round(w.a * 10000) / 10000, len: w.len }])); // where the parts were drawn
+    const W = Rig.restWorld(this.R), rootName = Object.values(this.R.bones).find(b => !b.parent).name, root = d.root ? { x: p.x, y: p.y } : { x: W[rootName].x, y: W[rootName].y }, tips = {};
+    for (const [n, w] of Object.entries(W)) tips[n] = { x: w.tx, y: w.ty }; if (d.bone) tips[d.bone] = { x: p.x, y: p.y };
+    Rig.rebuild(this.def, this.R, root, tips); this.redefine(); d.at = [p.x, p.y]; this.skelDirty = true; this.draw(); },
   async reskinGo() {
     let skin; try { skin = await this.skinKey(); } catch (e) { el('rigMsg').textContent = e.message; return; } if (!cur || !this.R) return; el('skinGo').disabled = true;
     try { const r = await fetch(apiUrl('sketch'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ reskin: true, asset: cur, skin, key: cur, size: Math.round(this.half * 2) }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
@@ -279,7 +294,7 @@ const Move = {
   },
   // ---- the rig's motions and keys ----
   M() { return this.R && this.R.motions[this.motion] || null; }, K() { const M = this.M(); return M && this.keyI >= 0 ? M.keys[this.keyI] : null; },
-  poseNow() { const M = this.M(); if (!M) return { pose: {}, root: { x: 0, y: 0 }, ik: {} }; const K = this.K(); if (K) return { pose: K.pose || {}, root: K.root || { x: 0, y: 0 }, ik: K.ik || {}, bend: Rig.keyBend(M, this.keyI, this.R), bendMix: {} }; return Rig.pose(M, this.scrub, this.R); },
+  poseNow() { if (this.skel) return { pose: {}, root: { x: 0, y: 0 }, ik: {}, bend: {}, bendMix: {} }; const M = this.M(); if (!M) return { pose: {}, root: { x: 0, y: 0 }, ik: {} }; const K = this.K(); if (K) return { pose: K.pose || {}, root: K.root || { x: 0, y: 0 }, ik: K.ik || {}, bend: Rig.keyBend(M, this.keyI, this.R), bendMix: {} }; return Rig.pose(M, this.scrub, this.R); },
   flipBend() { const K = this.K(), M = this.M(); if (!K) { say('select a key first', 'err'); return; } const s = this.selJoint, c = (s && (s.chain || s.chainOf)) || this.lastChain || Object.keys(this.R.chains)[0]; if (!c) return; if (s && !s.chain && !s.chainOf) { say(`${s.name} is not on a limb with a joint to flip: select a hand, foot, elbow or knee`, 'err'); return; } this.snapshot(); K.bend = K.bend || {}; const now = Rig.bendAt(M, this.keyI, c, this.R.chains[c].bend || 1); K.bend[c] = -now; if (K.bend[c] === (this.R.chains[c].bend || 1)) delete K.bend[c]; this.draw(); say(`${c} folds the other way in this key`, 'ok'); },
   pickMotion(name) { this.stop(); this.motion = name; const M = this.M(); if (!M) { this.keyI = -1; this.tlUI(); this.draw(); return; } if (!M.keys) M.keys = []; M.keys.sort((a, b) => a.t - b.t); el('mSecs').value = M.secs || 1; el('mFps').value = M.fps || 12; el('mLoop').checked = M.loop !== false; this.keyI = M.keys.length ? 0 : -1; this.scrub = this.keyI >= 0 ? M.keys[0].t : 0; el('tlScrub').value = Math.round(this.scrub * 1000); this.tlUI(); this.draw(); },
   tlUI() {
@@ -316,9 +331,16 @@ const Move = {
     let i = m.index + m[0].length - 1, depth = 0, j = i; for (; j < text.length; j++) { const ch = text[j]; if (ch === '{') depth++; else if (ch === '}') { depth--; if (depth === 0) break; } }
     if (depth !== 0) throw new Error('the motions block does not close'); return text.slice(0, m.index) + 'motions: ' + body + text.slice(j + 1);
   },
+  // the rig's data as one const laid over the file's definition: an existing __kept is replaced, else the Rig.define call is wrapped
+  withKept(text) { const raw = this.def || {}, lit = o => JSON.stringify(o, (k, v) => typeof v === 'number' ? Math.round(v * 10000) / 10000 : v, 2).replace(/"([a-zA-Z_][a-zA-Z0-9_]*)":/g, '$1:');
+    const kept = { half: raw.half || this.R.half, ground: this.R.ground !== null && this.R.ground !== undefined ? this.R.ground : undefined, bones: raw.bones, chains: raw.chains, skin: raw.skin, motions: this.R.motions }, decl = `const __kept = ${lit(kept)};`;
+    const at = text.indexOf('const __kept = {'); if (at >= 0) { const end = this.matchEnd(text, text.indexOf('{', at)); if (end < 0) throw new Error('the kept data does not close'); return text.slice(0, at) + decl + text.slice(text[end] === ';' ? end + 1 : end); }
+    const call = this.defineCall(text); if (!call) throw new Error('the rig file has no Rig.define(key, { … }) call');
+    return `// the rig's data (bones, limits, skin, ground, motions), kept by the editor and laid over the definition below\n${decl}\n` + text.slice(0, call.start) + `Rig.define('${cur}', Object.assign(${text.slice(call.argStart, call.argEnd).trim()}, __kept))` + text.slice(call.end); },
+  matchEnd(text, i) { let depth = 0, q = null; for (let j = i; j < text.length; j++) { const ch = text[j], nx = text[j + 1]; if (q) { if (ch === '\\') { j++; continue; } if (ch === q) q = null; continue; } if (ch === '/' && nx === '/') { j = text.indexOf('\n', j); if (j < 0) return -1; continue; } if (ch === '/' && nx === '*') { j = text.indexOf('*/', j + 2) + 1; if (j <= 0) return -1; continue; } if (ch === '"' || ch === "'" || ch === '`') { q = ch; continue; } if ('([{'.includes(ch)) depth++; else if (')]}'.includes(ch)) { depth--; if (depth === 0) return j + 1; } } return -1; },
   async saveRig() {
-    if (!cur || !this.R) return; let text; try { text = this.serialize(); renderCode(text, 32, 0); } catch (e) { el('rigMsg').textContent = 'not saved: ' + e.message; return; }
-    el('rigSave').disabled = true; try { const r = await fetch(apiUrl('spritesave'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: cur, rig: text, source: entry.source || 'editor' }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); this.text = text; el('rigMsg').textContent = `saved ${Object.keys(this.R.motions).length} motion${Object.keys(this.R.motions).length === 1 ? '' : 's'} (${Object.keys(this.R.motions).join(', ')}) into assets/${j.sprite.file}`; say(`rig saved · Draw.rig('${cur}', '${this.motion}', Game.time, x, y, ${j.sprite.w})`, 'ok'); }
+    if (!cur || !this.R) return; let text; try { text = this.withKept(this.text); renderCode(text, 32, 0); } catch (e) { el('rigMsg').textContent = 'not saved: ' + e.message; return; }
+    el('rigSave').disabled = true; try { const r = await fetch(apiUrl('spritesave'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: cur, rig: text, source: entry.source || 'editor' }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); this.text = text; this.skelDirty = false; el('skelMsg').textContent = ''; el('rigMsg').textContent = `saved ${Object.keys(this.R.motions).length} motion${Object.keys(this.R.motions).length === 1 ? '' : 's'} (${Object.keys(this.R.motions).join(', ')}) into assets/${j.sprite.file}`; say(`rig saved · Draw.rig('${cur}', '${this.motion}', Game.time, x, y, ${j.sprite.w})`, 'ok'); }
     catch (e) { el('rigMsg').textContent = 'not saved: ' + e.message; } finally { el('rigSave').disabled = false; }
   },
 };

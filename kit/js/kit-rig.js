@@ -4,6 +4,9 @@
 //
 //   Rig.define('ninja', {
 //     half: 24,                                   the radius the drawn figure fits in, like a code sprite
+//     skin: { spine: { x, y, a, len }, … },       where each bone sat at rest when its part was drawn (written by the editor's
+//                                                 edit-skeleton mode): a part is drawn there, so moving a joint moves the pivot,
+//                                                 not the drawing
 //     ground: 24,                                 where the feet stand, in the rig's space (y down; half = the box's bottom);
 //                                                 Draw.rig(…) with a stand=true last argument puts that line at (x, y)
 //     bones: {                                    name → { parent, x, y, len, angle }: the origin sits at the parent's tip
@@ -40,7 +43,9 @@ const Rig = {
     const seen = new Set(); const visit = n => { if (seen.has(n)) return; const b = rig.bones[n]; if (!b) throw new Error(`rig ${key}: bone ${n} is missing`); if (b.parent) visit(b.parent); seen.add(n); rig.order.push(n); };
     for (const n of Object.keys(rig.bones)) visit(n);
     for (const [cn, ch] of Object.entries(rig.chains)) if (!ch.bones || ch.bones.length !== 2 || !rig.bones[ch.bones[0]] || !rig.bones[ch.bones[1]] || rig.bones[ch.bones[1]].parent !== ch.bones[0]) throw new Error(`rig ${key}: chain ${cn} must be two bones, the second the child of the first`);
-    this.rigs.set(key, rig); if (typeof Draw !== 'undefined') for (const id of [...Draw.sprites.keys()]) if (id.startsWith(key + '#')) Draw.sprites.delete(id);
+    // parts drawn when the bones sat elsewhere: the transform from the bone's rest frame now to the frame it was drawn in
+    rig.comp = {}; if (r.skin) { const W0 = this.solve(rig, { pose: {}, root: { x: 0, y: 0 }, ik: {} }); for (const [n, s] of Object.entries(r.skin)) { const w = W0[n]; if (!w) continue; const dx = s.x - w.x, dy = s.y - w.y, c = Math.cos(-w.angle), sn = Math.sin(-w.angle); rig.comp[n] = { x: dx * c - dy * sn, y: dx * sn + dy * c, a: (s.a || 0) - w.angle, len: s.len }; } }
+    this.rigs.set(key, rig); if (typeof Draw !== 'undefined' && Draw.sprites) for (const id of [...Draw.sprites.keys()]) if (id.startsWith(key + '#')) Draw.sprites.delete(id);
     return rig;
   },
   // the keyframes around a phase, blended: angles by shortest arc, root and ik targets by straight lerp. A chain with a target
@@ -104,7 +109,20 @@ const Rig = {
   paint(rig, motionName, phase, g) {
     const motion = rig.motions[motionName] || rig.motions[Object.keys(rig.motions)[0]] || { keys: [] };
     const P = this.pose(motion, phase, rig), W = this.solve(rig, P);
-    for (const part of rig.parts) { const w = W[part.bone]; if (!w) continue; g.save(); g.translate(w.x, w.y); g.rotate(w.angle); part.draw(g, w, P); g.restore(); }
+    for (const part of rig.parts) { const w = W[part.bone]; if (!w) continue; g.save(); this.partFrame(rig, part, w, g); part.draw(g, this.partBone(rig, part, w), P); g.restore(); }
+  },
+  partFrame(rig, part, w, g) { g.translate(w.x, w.y); g.rotate(w.angle); const c = rig.comp && rig.comp[part.bone]; if (c) { g.translate(c.x, c.y); g.rotate(c.a); } },
+  // the bone as the part sees it: the frame it is drawn in (origin, angle) and the length it was drawn for, so a part that reads w.angle (a foot kept level) or w.len stays right
+  partBone(rig, part, w) { const c = rig.comp && rig.comp[part.bone]; if (!c) return w; const cs = Math.cos(w.angle), sn = Math.sin(w.angle); return Object.assign({}, w, { x: w.x + c.x * cs - c.y * sn, y: w.y + c.x * sn + c.y * cs, angle: w.angle + c.a, len: c.len !== undefined ? c.len : w.len }); },
+  // the rest pose's world frame of every bone: { x, y, a, len, tx, ty }
+  restWorld(rig) { const W = this.solve(rig, { pose: {}, root: { x: 0, y: 0 }, ik: {} }), out = {}; for (const [n, w] of Object.entries(W)) out[n] = { x: w.x, y: w.y, a: w.angle, len: w.len, tx: w.tx, ty: w.ty }; return out; },
+  // bones rebuilt from joint positions: the root's origin and each bone's tip, in rest-pose world coordinates; a bone of zero length stays zero
+  rebuild(def, rig, root, tips) {
+    const W0 = this.restWorld(rig), W = {}, r = v => Math.round(v * 1000) / 1000;
+    for (const n of rig.order) { const b = def.bones[n], par = b.parent ? W[b.parent] : null, pa = par ? par.a : 0; let ox, oy;
+      if (!par) { ox = root.x; oy = root.y; b.x = r(ox); b.y = r(oy); } else { const c = Math.cos(pa), s = Math.sin(pa); ox = par.tx + (b.x || 0) * c - (b.y || 0) * s; oy = par.ty + (b.x || 0) * s + (b.y || 0) * c; }
+      const zero = !(W0[n].len > 0), t = zero ? { x: ox, y: oy } : (tips[n] || { x: W0[n].tx, y: W0[n].ty }), dx = t.x - ox, dy = t.y - oy, len = Math.hypot(dx, dy), wa = len > 1e-6 ? Math.atan2(dy, dx) : W0[n].a;
+      if (!zero) b.len = r(len); b.angle = Math.round((wa - pa) * 10000) / 10000; W[n] = { a: wa, tx: ox + Math.cos(wa) * (zero ? 0 : len), ty: oy + Math.sin(wa) * (zero ? 0 : len) }; }
   },
   // the skeleton itself, for editors: joints and bones over the figure
   bones(rig, motionName, phase) { return this.solve(rig, this.pose(rig.motions[motionName] || { keys: [] }, phase, rig)); },
