@@ -483,7 +483,15 @@ el('delBtn').onclick = async () => {
   catch (e) { say(e.message, 'err'); }
 };
 el('dlBtn').onclick = () => { const a = document.createElement('a'); if (mode === 'code') { a.href = 'data:text/javascript;charset=utf-8,' + encodeURIComponent(el('codeSrc').value); a.download = cur + '.js'; } else if (mode === 'svg') { a.href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(el('svgSrc').value); a.download = cur + '.svg'; } else { a.href = stripDataUrl(); a.download = cur + '.png'; } a.click(); };
-el('useBtn').onclick = async () => { const w = mode === 'svg' ? (parseInt(el('svgW').value, 10) || 64) : mode === 'code' ? ((entry && entry.w) || 32) : doc.w, code = (mode === 'pix' && doc.frames.length > 1) ? `Draw.anim('${cur}', Game.time, x, y, ${w})` : `Draw.pic('${cur}', x, y, ${w})`; try { await navigator.clipboard.writeText(code); say(`copied: ${code}  — paste it into a draw(), or tell the builder "draw the ${cur} sprite for the …"`, 'ok'); } catch (e) { say(code); } };
+el('useBtn').onclick = async () => { // the call for the code, copied; and, if asked, the builder told to put the sprite to use
+  if (!cur || !entry) { say('save the sprite first', 'err'); return; }
+  const w = entry.w || 32, isRig = entry.kind === 'rig', frames = (entry.frames || 1) > 1, code = isRig ? `Draw.rig('${cur}', 'run', Game.time, x, y, ${w}, facingLeft)` : frames ? `Draw.anim('${cur}', Game.time, x, y, ${w})` : `Draw.pic('${cur}', x, y, ${w})`;
+  try { await navigator.clipboard.writeText(code); } catch (e) {}
+  const what = prompt(`The sprite is in the game's assets already; the game draws it with\n\n  ${code}\n\n(copied). What should the game use ${cur} for? Say it in a few words and the builder wires it in, or Cancel to only copy the call.`, '');
+  if (what === null || !what.trim()) { say(`copied: ${code}`, 'ok'); return; }
+  try { const r = await fetch(`/game/agent/${GAME}`, { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ mode: 'chat', prompt: `Use the sprite "${cur}" from assets/sprites.json (${isRig ? 'a skeleton rig with motions ' + '(see kit-rig.js)' : frames ? 'a code sprite with frames' : 'a still'}; the game draws it with ${code}) for: ${what.trim()}. Replace the coded drawing of that thing with the sprite where it is drawn, keep its size and placement sensible, run node --check, and commit. Do not run a soak unless the change is in play the autopilot reaches.` }) }); const j = await r.json(); if (!r.ok || j.success === false) throw new Error(j.message || j.error || r.status); say(`the builder is wiring ${cur} in${j.data && j.data.queued ? ' after its current run' : ''}; the Build tab on the game page shows it. Reload the game when it finishes.`, 'ok'); }
+  catch (e) { say('copied the call, but the builder could not be asked: ' + e.message, 'err'); }
+};
 
 // ---- the AI panel: messages to the builder, which runs its plugins ----
 async function ask(prompt) {
