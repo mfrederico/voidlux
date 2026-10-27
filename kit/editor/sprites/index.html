@@ -211,7 +211,8 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
           </div>
           <div id="rigPanel" class="hidden" style="display:grid;gap:8px">
             <div class="lbl">Motions</div>
-            <div class="row"><select id="mMotion"></select><button id="mNew" title="a new motion">+ new</button><button id="mDel" class="danger" title="remove this motion">remove</button></div>
+            <div class="row"><select id="mMotion"></select><button id="mNew" title="a new, empty motion">+ new</button><button id="mDup" title="a copy of this motion under another name">duplicate</button><button id="mRename" title="rename this motion">rename</button><button id="mDel" class="danger" title="remove this motion">remove</button></div>
+            <div class="row"><button id="mAsk" class="primary">⟳ Ask the artist for a motion…</button><span class="muted small">attack, jump, hurt… added to this rig as keyframes; the bones and the drawing stay</span></div>
             <div class="row"><label>secs <input type="number" id="mSecs" step="0.1" min="0.1" max="10" style="width:64px"></label><label>fps <input type="number" id="mFps" min="2" max="30" style="width:56px"></label><label><input type="checkbox" id="mLoop"> loop</label><label><input type="checkbox" id="mBones" checked> bones</label></div>
             <div class="row"><button id="mPlay">▶ play</button><button id="kAdd">+ key at cursor</button><button id="kDup">duplicate</button><button id="kMirror" title="swap left and right limbs in this key">mirror L/R</button><button id="kDel" class="danger">delete key</button></div>
             <div class="row" id="kFields"><label>key at <input type="number" id="kT" step="0.01" min="0" max="1" style="width:64px"></label><label>ease <select id="kEase"><option value="io">in-out</option><option value="lin">linear</option></select></label><span class="muted small" id="kInfo"></span></div>
@@ -573,7 +574,8 @@ el('overBtn').onclick = () => { if (!cand) return; const sk = SK || {}; drawOver
 el('vOver').onclick = () => { if (V) drawOver(V.job, V.file, V.url, el('vNote').textContent, (SK && SK.id === V.job) ? SK.at : 0); };
 // ---- animate: a take (refine: the job and the file) or a kept sprite (asset: its key) becomes a code sprite with frames ----
 let animTarget = null;
-function openAnim(target, label) { showTab('move'); animTarget = target; el('animWhat').textContent = label; const base = (el('aiKey').value.trim() || (target.asset || 'sprite')).replace(/-(run|walk|idle|jump|attack|hurt|death|fly|swim)$/, ''); el('animKey').value = `${base}-${el('animName').value}`; el('animKey').dataset.base = base; el('animBox').classList.remove('hidden'); el('animNotes').focus(); el('animBox').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+function openAnim(target, label) { showTab('move'); animTarget = target; const onRig = !!(target.asset && M.sprites[target.asset] && M.sprites[target.asset].kind === 'rig'); el('animWhat').textContent = label + (onRig ? ' (a motion added to the rig)' : '');
+  const base = (el('aiKey').value.trim() || (target.asset || 'sprite')).replace(/-(run|walk|idle|jump|attack|hurt|death|fly|swim)$/, ''); el('animKey').value = onRig ? target.asset : `${base}-${el('animName').value}`; el('animKey').dataset.base = onRig ? '' : base; el('animKey').readOnly = onRig; el('animBox').classList.remove('hidden'); el('animNotes').focus(); el('animBox').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
 el('animName').onchange = () => { const b = el('animKey').dataset.base; if (b) el('animKey').value = `${b}-${el('animName').value}`; };
 el('animCancel').onclick = () => { el('animBox').classList.add('hidden'); animTarget = null; };
 el('animBtn').onclick = () => { if (!cand) return; const sk = SK || {}; openAnim({ refine: { id: sk.id, file: cand.replace(/^.*\//, '').replace(/\?.*$/, '') } }, cand.replace(/^.*\//, '').replace(/\?.*$/, '')); };
