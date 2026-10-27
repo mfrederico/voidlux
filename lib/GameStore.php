@@ -486,6 +486,17 @@ class GameStore {
             self::writeAtomic($dir . '/sketch.svg', "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 512 512\" width=\"512\" height=\"512\" fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n" . $paths . "</svg>\n");
         }
         $mk = (string) ($b['maker'] ?? 'svg'); $maker = in_array($mk, ['svg', 'code', 'spritecook'], true) ? $mk : 'svg';
+        // a rig job: the character's body plan inferred, bones fitted, parts split, idle and locomotion as motions; from a kept sprite or a take
+        $rigjob = null;
+        if (!empty($b['rigjob']) && is_array($b['rigjob'])) {
+            $rigjob = ['notes' => trim(mb_substr((string) ($b['rigjob']['notes'] ?? ''), 0, 400))];
+            if (!empty($b['asset'])) {
+                $all = self::readSprites($slug); $ak = (string) $b['asset']; $e = ((array) $all['sprites'])[$ak] ?? null; if (!$e) throw new \InvalidArgumentException("no sprite named {$ak} in the game");
+                $af = basename((string) ((array) $e)['file']); $ext = pathinfo($af, PATHINFO_EXTENSION); if (!in_array($ext, ['svg', 'js', 'png'], true)) throw new \InvalidArgumentException('only an svg, code or png sprite can be rigged');
+                copy(self::dir($slug) . "/assets/$af", "$dir/base.$ext"); $rigjob['base'] = "base.$ext"; $rigjob['asset'] = $ak;
+            }
+            $maker = 'code';
+        }
         // an animation: a cycle (run, idle, jump…) rigged in code from a take or a kept sprite, always a code sprite with frames
         $anim = null;
         if (!empty($b['animate']) && is_array($b['animate'])) {
@@ -509,8 +520,10 @@ class GameStore {
             if (!$has && is_file("$dir/sketch.png")) $has = true;
             $refine = ['id' => $pid, 'file' => $pf, 'ext' => $ext];
             if ($anim) { $anim['base'] = "base.$ext"; $refine = null; $maker = 'code'; } // for an animation the take is the base, not a thing to refine
+            if ($rigjob) { $rigjob['base'] = "base.$ext"; $refine = null; $maker = 'code'; }
         }
         if ($anim && empty($anim['base'])) throw new \InvalidArgumentException('an animation starts from a take or a kept sprite');
+        if ($rigjob && empty($rigjob['base'])) throw new \InvalidArgumentException('a rig starts from a take or a kept sprite');
         // iteration: the drawing came back from an earlier job; that job's takes come along as earlier-N.<ext>, the liked one first
         $from = null;
         if (!empty($b['from']) && is_array($b['from']) && preg_match(self::SKETCH_ID, (string) ($b['from']['id'] ?? ''))) {
@@ -523,7 +536,7 @@ class GameStore {
             }
         }
         $saveOnly = !empty($b['save_only']);
-        $req = ['id' => $id, 'note' => $note, 'style' => $style, 'pixel' => $pixel, 'size' => $size, 'key' => $key, 'palette' => $pal, 'sketch' => $has, 'strokes' => count($strokes), 'maker' => $maker, 'refine' => $refine, 'from' => $from, 'animate' => $anim, 'saved' => $saveOnly, 'by' => $memberId, 'at' => time()];
+        $req = ['id' => $id, 'note' => $note, 'style' => $style, 'pixel' => $pixel, 'size' => $size, 'key' => $key, 'palette' => $pal, 'sketch' => $has, 'strokes' => count($strokes), 'maker' => $maker, 'refine' => $refine, 'from' => $from, 'animate' => $anim, 'rig' => $rigjob, 'saved' => $saveOnly, 'by' => $memberId, 'at' => time()];
         self::writeAtomic($dir . '/request.json', json_encode($req, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
         if ($saveOnly) return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'saved' => true]; // kept in the gallery, not sent
         $what = $note !== '' ? "\"{$note}\"" : 'nothing written: go by the drawing';
@@ -557,7 +570,18 @@ class GameStore {
            . "a prompt built from the note" . ($has ? ' and what the drawing shows' : '') . ", width and height {$size}, pixel=" . ($pixel ? 'true' : 'false') . ", bg_mode transparent, variations=2. "
            . "Download each result's sprite_url to sketches/{$id}/out-1.png and sketches/{$id}/out-2.png. Then write sketches/{$id}/result.json as {\"ok\": true, \"files\": [\"out-1.png\", \"out-2.png\"], \"note\": \"<one line on what you made>\"}.\n"
            . "Do not add anything to assets/ or assets/sprites.json and do not commit: the producer chooses what to keep on the sprite page. If anything stops you (SpriteCook needs authentication, no credits, an error), write sketches/{$id}/result.json as {\"ok\": false, \"error\": \"<why, in one line>\"} and stop. Do not run a soak. Reply with one line.";
-        if ($anim) { // the rig: the character as parts, posed per frame
+        if ($rigjob) { // the skeleton: body plan inferred from the form, bones fitted, parts split, two motions
+            $half = $size / 2; $base = $rigjob['base']; $bext = pathinfo($base, PATHINFO_EXTENSION);
+            $p = "RIG. The producer wants the character in sketches/{$id}/{$base} turned into a skeleton rig: bones fitted to its body, its drawing split into parts bound to the bones, and two motions, so that any motion made for this body plan can play on it. " . ($bext === 'png' ? 'Look at the picture with Read. ' : 'Read the file: it is the character, its shapes and its palette. ') . ($rigjob['notes'] !== '' ? "Their notes: \"{$rigjob['notes']}\". " : '')
+               . "Read ../../kit/js/kit-rig.js first: its header is the exact format (Rig.define, bones with rest angles, two-bone IK chains with bend, parts drawn in bone space, motions as keyframes) and ../../kit/AGENTS.md's Sprites section the rules. Read GAME.md's Design so the motion suits the game.\n"
+               . "1. Decide the BODY PLAN from the form, and say which in the header comment: biped (spine, head, two arms, two legs; IK chains for arms and legs; feet are the ground contacts), quadruped (spine with hips and shoulders, neck and head, four legs with IK, a tail as a chain of two or three bones), winged (a biped or quadruped plus wing chains), serpent (one spine chain, no IK), or none (a vehicle, a blob, a projectile: then write result.json as {\"ok\": false, \"error\": \"no skeleton suits this form: animate it as code frames instead\"} and stop).\n"
+               . "2. Fit the bones to the drawing: the root at the hips (or the body's centre of mass), lengths and rest angles so the skeleton's rest pose lies on the drawn figure, facing RIGHT, the whole figure within radius {$half} with the feet near the bottom. Chains: bend 1 for a knee (forward), -1 for an elbow (back); a quadruped's rear legs bend the other way from its front legs.\n"
+               . "3. Split the drawing into parts bound to bones, drawn in bone space ((0, 0) the joint, the bone along +x to (b.len, 0)) with plain canvas calls in the character's own palette and outline weight; z orders back to front (far limbs behind the torso, near limbs and the head in front). Keep the character's look exactly: colours, proportions, details (eyes, mask, scarf, weapon).\n"
+               . "4. Motions: an idle (slow breath, a small bob) and a locomotion matching the plan: run for a biped, trot for a quadruped, fly for winged, slither for a serpent; legs by IK foot targets placed within reach (the chain's two lengths), loops seamless, arms counter-swinging, root bobbing. Keys at t in 0..1 with pose, root and ik.\n"
+               . "Write ONE file, sketches/{$id}/out-1.js: a header comment naming the plan, then exactly one Rig.define('{$key}', { half: {$half}, bones, chains, parts, motions }). Nothing but drawing in it: no images, no text, no document, no globals, no timers. Then check it: `node --check sketches/{$id}/out-1.js`, and run this harness from the game folder, fixing anything it reports until it prints ok:\n"
+               . "  node -e \"const TAU=Math.PI*2;global.TAU=TAU;const fs=require('fs');const Rig=new Function(fs.readFileSync('../../kit/js/kit-rig.js','utf8')+'\\nreturn Rig;')();const g=new Proxy({},{get:()=>()=>0,set:()=>true});new Function('Rig','TAU',fs.readFileSync('sketches/{$id}/out-1.js','utf8'))(Rig,TAU);const R=Rig.rigs.get('{$key}');let bad=0;for(const m of Object.keys(R.motions)){const F=Rig.frames(R.motions[m]);for(let f=0;f<F;f++){const P=Rig.pose(R.motions[m],f/F),W=Rig.solve(R,P);for(const [cn,ch] of Object.entries(R.chains)){const T=P.ik[cn];if(!T)continue;const e=W[ch.bones[1]];const miss=Math.hypot(e.tx-(T.x+P.root.x),e.ty-(T.y+P.root.y));if(miss>0.5){bad++;console.log(m,'frame',f,cn,'target out of reach by',miss.toFixed(1));}}for(const w of Object.values(W))for(const v of [w.x,w.y,w.angle,w.tx,w.ty])if(!Number.isFinite(v)){bad++;console.log(m,f,'non-finite');}Rig.paint(R,m,f/F,g);}}console.log(bad?'problems: '+bad:'ok',Object.keys(R.bones).length,'bones',Object.keys(R.motions).join(','));\"\n"
+               . "Then write sketches/{$id}/result.json as {\"ok\": true, \"files\": [\"out-1.js\"], \"note\": \"<the plan, the bones, the motions, in one line>\"}. Do not add anything to assets/ or assets/sprites.json and do not commit. If something stops you, write result.json as {\"ok\": false, \"error\": \"<why>\"} and stop. Do not run a soak. Reply with one line.";
+        } elseif ($anim) { // the rig: the character as parts, posed per frame
             $half = $size / 2; $n = $anim['frames']; $fps = $anim['fps']; $base = $anim['base']; $bext = pathinfo($base, PATHINFO_EXTENSION);
             $p = "ANIMATION. The producer wants the character in sketches/{$id}/{$base} animated: a \"{$anim['name']}\" cycle, {$n} frames at {$fps} fps, as a code sprite. " . ($bext === 'png' ? 'Look at the picture with Read. ' : 'Read the file: it is the character, its shapes and its palette. ') . ($anim['notes'] !== '' ? "Their notes: \"{$anim['notes']}\". " : '') . ($note !== '' && $note !== $anim['notes'] ? "Their description: \"{$note}\". " : '')
                . "First read GAME.md's Design so the motion suits the game.\n"
@@ -586,7 +610,7 @@ class GameStore {
                    : "and apply what the new drawing and note change (compare the drawing with what you drew before: what moved, grew, shrank, appeared or vanished is the point of this round). Keep what they did not change.");
         }
         $r = self::startArt($slug, $p, $memberId); // the art lane: beside the builder, never inside its run
-        return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'queued' => !empty($r['queued'])];
+        return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'queued' => !empty($r['queued']), 'rig' => (bool) $rigjob, 'animate' => (bool) $anim];
     }
     /** Every sketch job of a game, newest first, with its takes. */
     public static function listSketches(string $slug): array {
@@ -594,7 +618,7 @@ class GameStore {
         foreach (is_dir($root) ? scandir($root, SCANDIR_SORT_DESCENDING) : [] as $id) {
             if (!preg_match(self::SKETCH_ID, $id) || !is_file("$root/$id/request.json")) continue;
             $s = self::sketchStatus($slug, $id); $req = json_decode((string) file_get_contents("$root/$id/request.json"), true) ?: [];
-            $out[] = ['id' => $id, 'at' => (int) ($req['at'] ?? 0), 'note' => (string) ($req['note'] ?? ''), 'key' => $s['key'], 'maker' => (string) ($req['maker'] ?? 'spritecook'), 'size' => (int) ($req['size'] ?? 0), 'sketch' => is_file("$root/$id/sketch.png"), 'strokes' => is_file("$root/$id/strokes.json"), 'refine' => $req['refine'] ?? null, 'from' => $req['from'] ?? null, 'animate' => $req['animate'] ?? null, 'saved' => $s['saved'], 'style' => (string) ($req['style'] ?? ''), 'pixel' => !empty($req['pixel']), 'base' => $s['base'], 'result' => $s['result']];
+            $out[] = ['id' => $id, 'at' => (int) ($req['at'] ?? 0), 'note' => (string) ($req['note'] ?? ''), 'key' => $s['key'], 'maker' => (string) ($req['maker'] ?? 'spritecook'), 'size' => (int) ($req['size'] ?? 0), 'sketch' => is_file("$root/$id/sketch.png"), 'strokes' => is_file("$root/$id/strokes.json"), 'refine' => $req['refine'] ?? null, 'from' => $req['from'] ?? null, 'animate' => $req['animate'] ?? null, 'rig' => $req['rig'] ?? null, 'saved' => $s['saved'], 'style' => (string) ($req['style'] ?? ''), 'pixel' => !empty($req['pixel']), 'base' => $s['base'], 'result' => $s['result']];
         }
         return ['jobs' => $out, 'busy' => self::artState($slug)['busy']];
     }
