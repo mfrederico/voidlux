@@ -39,7 +39,7 @@ class Improve {
         $p = $e['proposals'][(int) $i] ?? null; if (!is_array($p) || !preg_match('/^[0-9-]+$/', $file) || !ctype_digit($i)) throw new \InvalidArgumentException("no proposal $id"); return $p + ['id' => $id, 'from' => $e['at'] ?? '']; }
     private static function setLedgerStatus(string $id, string $status): void { [$file, $i] = explode('#', $id, 2); $f = Retro::dir() . '/' . basename($file) . '.json'; $e = json_decode((string) @file_get_contents($f), true); if (!is_array($e) || !isset($e['proposals'][(int) $i])) return; $e['proposals'][(int) $i]['status'] = $status; file_put_contents($f, json_encode($e, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"); }
     /** What waits on a person: open proposals, and built changes to review. */
-    public static function inbox(): array { $o = ['decide' => 0, 'review' => 0]; foreach (self::all(96) as $p) { $s = $p['improve']['status'] ?? ($p['status'] ?? 'open'); if ($s === 'open') $o['decide']++; elseif ($s === 'built') $o['review']++; } return $o; }
+    public static function inbox(): array { $o = ['decide' => 0, 'review' => 0]; foreach (self::all(96) as $p) { $s = $p['improve']['status'] ?? ($p['status'] ?? 'open'); if ($s === 'built' && empty($p['improve'])) $s = 'done by hand'; if ($s === 'open') $o['decide']++; elseif (($p['improve']['status'] ?? '') === 'built') $o['review']++; } return $o; }
 
     // ---- 1. decide ----
     public static function decide(string $id, string $decision, string $note, int $memberId): array {
@@ -47,7 +47,7 @@ class Improve {
         $p = self::find($id); $note = trim(mb_substr($note, 0, 400));
         file_put_contents(self::dir() . '/decisions.jsonl', json_encode(['id' => $id, 'title' => $p['title'], 'decision' => $decision, 'note' => $note, 'by' => GameStore::memberName($memberId), 'at' => date('c')], JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND);
         if ($decision === 'approve') return self::start($id, $memberId, $note);
-        $s = self::state($id); self::save($id, $s + ['status' => $decision === 'decline' ? 'declined' : 'later', 'note' => $note]); return self::state($id);
+        $s = self::state($id); self::save($id, array_merge($s, ['status' => $decision === 'decline' ? 'declined' : 'later', 'note' => $note])); return self::state($id);
     }
     public static function decisions(int $n): array { $f = self::dir() . '/decisions.jsonl'; if (!is_file($f)) return []; $out = []; foreach (array_slice(file($f), -$n) as $l) { $j = json_decode($l, true); if (is_array($j)) $out[] = $j + ['note' => '']; } return $out; }
 
@@ -60,7 +60,7 @@ class Improve {
         [$rc, $out] = GameStore::git($root, ['worktree', 'add', '-q', '-b', $b, $wt, 'main']); if ($rc !== 0) throw new \RuntimeException('could not make a checkout for the improver: ' . $out);
         self::save($id, ['status' => 'building', 'branch' => $b, 'wt' => $wt, 'base' => trim(GameStore::git($root, ['rev-parse', 'main'])[1]), 'note' => $note, 'by' => $memberId, 'started' => date('c')]);
         $cmd = 'setsid nohup php ' . escapeshellarg($root . '/scripts/forge-improve.php') . ' ' . escapeshellarg($id) . ($stub ? ' --stub' : '') . ' >> ' . escapeshellarg($root . '/log/improve.log') . ' 2>&1 & echo $!';
-        $pid = (int) trim((string) shell_exec($cmd)); if ($pid <= 0) { self::save($id, self::state($id) + ['status' => 'failed', 'error' => 'the improver did not start; see log/improve.log']); throw new \RuntimeException('the improver did not start'); }
+        $pid = (int) trim((string) shell_exec($cmd)); if ($pid <= 0) { self::save($id, array_merge(self::state($id), ['status' => 'failed', 'error' => 'the improver did not start; see log/improve.log'])); throw new \RuntimeException('the improver did not start'); }
         $st = self::state($id); $st['pid'] = $pid; self::save($id, $st); return self::state($id);
     }
     public static function prompt(array $p, string $note): string {
@@ -71,7 +71,7 @@ class Improve {
     }
     /** The improver's run (scripts/forge-improve.php calls this, detached). $stub: make a trivial change instead of calling the agent (tests). */
     public static function run(string $id, bool $stub = false): array {
-        $p = self::find($id); $s = self::state($id); $wt = (string) ($s['wt'] ?? ''); if (!is_dir($wt)) { self::save($id, $s + ['status' => 'failed', 'error' => 'no checkout']); return self::state($id); }
+        $p = self::find($id); $s = self::state($id); $wt = (string) ($s['wt'] ?? ''); if (!is_dir($wt)) { self::save($id, array_merge($s, ['status' => 'failed', 'error' => 'no checkout'])); return self::state($id); }
         $summary = ''; $cost = 0.0;
         if ($stub) { file_put_contents("$wt/IMPROVE-STUB.md", "stub change for {$id}\n"); $summary = 'stub change (test)'; }
         else {
@@ -79,20 +79,20 @@ class Improve {
             $cmd = [$root . '/studio/jail.sh', $wt, $bin, '-p', self::prompt($p, (string) ($s['note'] ?? '')), '--output-format', 'json', '--max-turns', (string) GameStore::cfg('improve_turns', '40'), '--permission-mode', 'bypassPermissions'];
             $model = (string) GameStore::cfg('model', ''); if ($model !== '') array_push($cmd, '--model', $model);
             $proc = proc_open($cmd, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $wt, $env);
-            if (!is_resource($proc)) { self::save($id, $s + ['status' => 'failed', 'error' => 'the agent did not start']); return self::state($id); }
+            if (!is_resource($proc)) { self::save($id, array_merge($s, ['status' => 'failed', 'error' => 'the agent did not start'])); return self::state($id); }
             fclose($pipes[0]); $out = stream_get_contents($pipes[1]); $err = stream_get_contents($pipes[2]); fclose($pipes[1]); fclose($pipes[2]); $rc = proc_close($proc);
             $j = json_decode((string) $out, true); $text = (string) ($j['result'] ?? ''); $cost = (float) ($j['total_cost_usd'] ?? 0);
-            if (!is_array($j)) { self::save($id, self::state($id) + ['status' => 'failed', 'error' => "the agent answered nothing usable (exit $rc): " . mb_substr(trim($err ?: (string) $out), -600)]); return self::state($id); }
+            if (!is_array($j)) { self::save($id, array_merge(self::state($id), ['status' => 'failed', 'error' => "the agent answered nothing usable (exit $rc): " . mb_substr(trim($err ?: (string) $out), -600)])); return self::state($id); }
             $summary = preg_match('/^\s*SUMMARY:\s*(.+)$/mi', $text, $m) ? trim($m[1]) : mb_substr(trim($text), -300);
         }
         // deterministic from here: what changed, linted, committed
         GameStore::git($wt, ['add', '-A']); [, $names] = GameStore::git($wt, ['diff', '--cached', '--name-only']); $files = array_values(array_filter(array_map('trim', explode("\n", $names))));
-        if (!$files) { self::save($id, self::state($id) + ['status' => 'failed', 'error' => 'the improver changed nothing: ' . $summary, 'cost' => $cost]); return self::state($id); }
+        if (!$files) { self::save($id, array_merge(self::state($id), ['status' => 'failed', 'error' => 'the improver changed nothing: ' . $summary, 'cost' => $cost])); return self::state($id); }
         $bad = array_values(array_filter(array_map(fn($f) => self::lint("$wt/$f", $f), $files)));
-        if ($bad) { self::save($id, self::state($id) + ['status' => 'failed', 'error' => 'checks failed: ' . implode(' | ', $bad), 'files' => $files, 'summary' => $summary, 'cost' => $cost]); return self::state($id); }
+        if ($bad) { self::save($id, array_merge(self::state($id), ['status' => 'failed', 'error' => 'checks failed: ' . implode(' | ', $bad), 'files' => $files, 'summary' => $summary, 'cost' => $cost])); return self::state($id); }
         GameStore::git($wt, ['-c', 'user.email=forge@voidlux.com', '-c', 'user.name=VoidLux Forge', 'commit', '-q', '-m', "Improve: {$p['title']}\n\n{$summary}\n\nProposal {$id} from the hourly retrospective, approved by a person; built by the improver.\n\nCo-Authored-By: Claude <noreply@anthropic.com>"]);
         [, $stat] = GameStore::git($wt, ['show', '--stat', '--format=', 'HEAD']); [, $diff] = GameStore::git($wt, ['show', '--format=', 'HEAD']);
-        self::save($id, self::state($id) + ['status' => 'built', 'files' => $files, 'summary' => $summary, 'stat' => trim($stat), 'cost' => $cost, 'built' => date('c')]);
+        self::save($id, array_merge(self::state($id), ['status' => 'built', 'files' => $files, 'summary' => $summary, 'stat' => trim($stat), 'cost' => $cost, 'built' => date('c')]));
         file_put_contents(self::dir() . '/' . self::safe($id) . '.diff', $diff);
         self::notify($id, 'built: a change is ready for review', "<p>{$p['title']}</p><p>" . htmlspecialchars($summary) . '</p><pre>' . htmlspecialchars(trim($stat)) . '</pre>');
         return self::state($id);
@@ -119,14 +119,14 @@ class Improve {
         $fail = array_values(array_filter(array_map(fn($f) => self::lint("$repo/$f", $f), (array) ($s['files'] ?? []))));
         if (!$fail) { sleep(3); exec('cd ' . escapeshellarg($repo) . ' && timeout 120 php scripts/forge-retro.php --dry > /dev/null 2>&1', $x, $rr); if ($rr !== 0) $fail[] = "the retrospective's dry run exited $rr"; }
         if (!$fail) foreach ($smokeUrls ?? [GameStore::baseUrl() . '/', GameStore::baseUrl() . '/auth/login'] as $u) { $code = self::httpCode($u); if ($code !== 200) $fail[] = "$u answered $code"; }
-        if ($fail) { GameStore::git($repo, ['reset', '-q', '--hard', $pre]); self::save($id, $s + ['status' => 'failed', 'error' => 'merged, then the smoke failed, so main was put back: ' . implode(' | ', $fail)]); self::notify($id, 'merge rolled back', '<p>' . htmlspecialchars(implode(' | ', $fail)) . '</p>'); return self::state($id); }
+        if ($fail) { GameStore::git($repo, ['reset', '-q', '--hard', $pre]); self::save($id, array_merge($s, ['status' => 'failed', 'error' => 'merged, then the smoke failed, so main was put back: ' . implode(' | ', $fail)])); self::notify($id, 'merge rolled back', '<p>' . htmlspecialchars(implode(' | ', $fail)) . '</p>'); return self::state($id); }
         $pushed = false; if ($push) { [$pr, $po] = GameStore::git($repo, ['push', '-q', 'origin', 'main']); $pushed = $pr === 0; }
-        self::save($id, $s + ['status' => 'merged', 'merged' => date('c'), 'merged_by' => $memberId, 'sha' => trim(GameStore::git($repo, ['rev-parse', 'HEAD'])[1]), 'pushed' => $pushed]);
+        self::save($id, array_merge($s, ['status' => 'merged', 'merged' => date('c'), 'merged_by' => $memberId, 'sha' => trim(GameStore::git($repo, ['rev-parse', 'HEAD'])[1]), 'pushed' => $pushed]));
         self::cleanup($id, $repo); return self::state($id);
     }
     public static function reject(string $id, string $note, int $memberId): array {
         $s = self::state($id); self::cleanup($id); file_put_contents(self::dir() . '/decisions.jsonl', json_encode(['id' => $id, 'title' => (self::find($id)['title'] ?? ''), 'decision' => 'reject the change', 'note' => trim(mb_substr($note, 0, 400)), 'by' => GameStore::memberName($memberId), 'at' => date('c')], JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND);
-        self::save($id, $s + ['status' => 'rejected', 'note' => $note]); return self::state($id);
+        self::save($id, array_merge($s, ['status' => 'rejected', 'note' => $note])); return self::state($id);
     }
     private static function cleanup(string $id, ?string $repo = null): void { $s = self::state($id); $repo = $repo ?? Paths::root(); if (!empty($s['wt']) && is_dir($s['wt'])) GameStore::git($repo, ['worktree', 'remove', '--force', $s['wt']]); if (!empty($s['branch'])) GameStore::git($repo, ['branch', '-D', $s['branch']]); }
     private static function httpCode(string $url): int { $ch = curl_init($url); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_NOBODY => false, CURLOPT_FOLLOWLOCATION => false]); curl_exec($ch); $c = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch); return $c; }
