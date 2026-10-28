@@ -899,14 +899,20 @@ class GameStore {
     }
 
     // ---- publish: a deployable build (kit inlined, version stamped) into the folder capricorn serves for <slug>.<domain> ----
-    public static function publish(object $g): array {
+    public static function publish(object $g, bool $ship = true): array { // $ship false: build dist/ only (no copy to the site, no push, no record)
         $slug = (string) $g->slug; $d = self::dir($slug); $dist = $d . '/dist';
         [, $sha] = self::git($d, ['rev-parse', '--short', 'HEAD']); $sha = trim($sha) ?: 'dev';
         [, $st] = self::git($d, ['status', '--porcelain']); $bid = $sha . (trim($st) !== '' ? '-dirty' : '');
         if (is_dir($dist)) exec('rm -rf ' . escapeshellarg($dist));
         mkdir($dist . '/js', 0775, true);
-        foreach (glob($d . '/js/*.js') as $f) copy($f, $dist . '/js/' . basename($f));
-        foreach (glob(self::root() . '/kit/js/*.js') as $f) if (basename($f) !== 'kit-notes.js') copy($f, $dist . '/js/' . basename($f));
+        // only what the page loads ships: the game's own scripts and the kit scripts its index.html names; never the forge's
+        // tools (note mode, the soak shim). kit-rig.js rides along whenever the kit's drawing does, as it loads itself lazily
+        $page = (string) file_get_contents($d . '/index.html'); $forgeOnly = ['kit-notes.js', 'forge-soak.js']; $kitUsed = false;
+        preg_match_all('#<script src="((?:\.\./\.\./kit/)?js/[A-Za-z0-9_.-]+\.js)"#', $page, $sm);
+        foreach ($sm[1] as $src) { $b = basename($src); if (in_array($b, $forgeOnly, true)) continue;
+            if (str_starts_with($src, '../../kit/')) { $kitUsed = true; $from = self::root() . '/kit/js/' . $b; } else $from = $d . '/js/' . $b;
+            if (!is_file($from)) throw new \RuntimeException("index.html loads {$src}, which does not exist"); copy($from, $dist . '/js/' . $b); }
+        if ($kitUsed && is_file(self::root() . '/kit/js/kit-rig.js')) copy(self::root() . '/kit/js/kit-rig.js', $dist . '/js/kit-rig.js');
         if (is_dir($d . '/icons')) self::copyTree($d . '/icons', $dist . '/icons');
         if (is_dir($d . '/assets')) self::copyTree($d . '/assets', $dist . '/assets'); // sprites and pictures the game draws
         $cv = self::cover($slug); foreach (['jpg', 'png'] as $x) if ($cv !== '' && is_file("$d/.studio/soaks/$cv.$x")) copy("$d/.studio/soaks/$cv.$x", "$dist/cover.$x"); // the store card's pictures ship with the game
@@ -914,11 +920,12 @@ class GameStore {
         if (is_file($d . '/manifest.webmanifest')) copy($d . '/manifest.webmanifest', $dist . '/manifest.webmanifest');
         self::writeAtomic($dist . '/js/version.js', 'const BUILD = ' . json_encode(['id' => $bid, 'date' => date('Y-m-d'), 'channel' => 'stable']) . ";\n");
         $html = str_replace('../../kit/js/', 'js/', (string) file_get_contents($d . '/index.html'));
-        $html = preg_replace('/^.*<script src="[^"]*kit-notes\.js"><\/script>.*\n?/m', '', $html); // note mode is the forge\'s tool, not the player\'s
-        $html = preg_replace_callback('/<script src="js\/([a-z0-9-]+)\.js"><\/script>/', fn($m) => "<script src=\"js/{$m[1]}.js?v={$bid}\"></script>", $html);
-        $html = preg_replace('/<script src="js\/kit-util\.js/', "<script src=\"js/version.js?v={$bid}\"></script>\n<script src=\"js/kit-util.js", $html, 1);
+        $html = preg_replace('/^.*<script src="[^"]*(kit-notes|forge-soak)\.js"><\/script>.*\n?/m', '', $html); // note mode and the soak shim are the forge's tools, not the player's
+        $html = preg_replace_callback('/<script src="js\/([A-Za-z0-9_.-]+)\.js"><\/script>/', fn($m) => "<script src=\"js/{$m[1]}.js?v={$bid}\"></script>", $html);
+        $html = preg_replace('/<script src="js\//', "<script src=\"js/version.js?v={$bid}\"></script>\n<script src=\"js/", $html, 1); // the build stamp before the page's first script, whatever it is
         self::writeAtomic($dist . '/index.html', $html);
         $out = ['build' => $bid, 'dist' => 'games/' . $slug . '/dist'];
+        if (!$ship) return $out;
         $domain = (string) self::cfg('domain', ''); $root = (string) self::cfg('publish_root', '/var/www/html/default');
         if ($domain !== '') {
             $sname = $slug . '.' . preg_replace('/\.[a-z]+$/', '', $domain); // void-drift.voidlux: capricorn's folder name for void-drift.voidlux.com
@@ -929,6 +936,11 @@ class GameStore {
             $proxy = rtrim($root, '/') . '/../.proxy.' . $sname; if (is_file($proxy)) @unlink($proxy); // an older route through a studio process
             $out['url'] = "https://{$slug}.{$domain}/"; $out['folder'] = $pub;
         }
+        // a game with its own remote (centipede: GitHub) has its commits pushed with every publish; a failure is said, not fatal
+        [, $remote] = self::git($d, ['remote', 'get-url', 'origin']); $remote = trim($remote);
+        if ($remote !== '' && !str_contains($remote, 'fatal') && (string) self::cfg('publish_push', '1') === '1') { [, $br] = self::git($d, ['rev-parse', '--abbrev-ref', 'HEAD']); $br = trim($br) ?: 'main';
+            [$prc, $po] = self::git($d, ['push', '-q', 'origin', $br]); $out['pushed'] = $prc === 0 ? "pushed {$br} to {$remote}" : 'push failed: ' . mb_substr(trim($po), -300);
+            self::emit($slug, $prc === 0 ? 'note' : 'error', ['text' => 'publish: ' . $out['pushed']]); }
         $g->publishedAt = date('c'); $g->publishedUrl = $out['url'] ?? ''; $g->publishedBuild = $bid; if (($out['url'] ?? '') !== '') $g->status = 'published';
         Bean::store($g);
         self::emit($slug, 'note', ['text' => "published build {$bid}" . (isset($out['url']) ? ' to ' . $out['url'] : ' to dist/ (no [forge] domain in config.ini)')]);
