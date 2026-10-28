@@ -118,6 +118,17 @@ class Game extends BaseControls\Control {
         catch (\RuntimeException $e) { $this->jsonError($e->getMessage(), 409); }
     }
     public function stop($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $this->jsonSuccess(GameStore::stopRunner($g->slug), 'Stopped.'); }
+    // ---- GitHub: linking is the owner's or an admin's (it uses the forge's GitHub account); pushing is anyone's on the game ----
+    private function gitManager(object $g): bool { if ((int) $g->memberId === (int) $this->member->id || Flight::hasLevel(LEVELS['ADMIN'])) return true; $this->jsonError('Only the game\'s owner or an admin links it to GitHub; anyone on the game can publish and push once it is linked.', 403); return false; }
+    public function gitstatus($params = []): void { if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
+        $l = GameGit::link($g->slug); $acct = ''; $err = ''; if (!$l) { try { $acct = GameGit::account(); } catch (\Throwable $e) { $err = $e->getMessage(); } }
+        $this->jsonSuccess(['link' => $l, 'account' => $acct, 'connection' => $err === '' ? 'ok' : $err, 'canLink' => (int) $g->memberId === (int) $this->member->id || Flight::hasLevel(LEVELS['ADMIN'])]); }
+    public function gitlink($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; if (!$this->gitManager($g)) return; $b = $this->body();
+        try { $this->jsonSuccess(GameGit::linkGame($g->slug, trim((string) ($b['repo'] ?? '')), !empty($b['create']), !isset($b['private']) || !empty($b['private']), (int) $this->member->id), 'Linked.'); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 400); } }
+    public function gitunlink($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; if (!$this->gitManager($g)) return;
+        try { $this->jsonSuccess(GameGit::unlinkGame($g->slug), 'Unlinked.'); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 400); } }
+    public function gitpush($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        try { $r = GameGit::push($g->slug); $r['ok'] ? $this->jsonSuccess($r, 'Pushed.') : $this->jsonError($r['text'], 400); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 400); } }
     /** POST /game/astemplate/<slug> { name, label }: an admin turns the game into a template new games can be summoned from. */
     public function astemplate($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;

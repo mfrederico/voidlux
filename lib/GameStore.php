@@ -936,9 +936,11 @@ class GameStore {
             $proxy = rtrim($root, '/') . '/../.proxy.' . $sname; if (is_file($proxy)) @unlink($proxy); // an older route through a studio process
             $out['url'] = "https://{$slug}.{$domain}/"; $out['folder'] = $pub;
         }
-        // a game with its own remote (centipede: GitHub) has its commits pushed with every publish; a failure is said, not fatal
+        // a game linked to GitHub (GameGit) is pushed with its own deploy key, by whoever publishes; a game with only an origin
+        // remote (an older setup) is pushed with the server's key. A failure is said, not fatal
         [, $remote] = self::git($d, ['remote', 'get-url', 'origin']); $remote = trim($remote);
-        if ($remote !== '' && !str_contains($remote, 'fatal') && (string) self::cfg('publish_push', '1') === '1') { [, $br] = self::git($d, ['rev-parse', '--abbrev-ref', 'HEAD']); $br = trim($br) ?: 'main';
+        if (GameGit::link($slug) && (string) self::cfg('publish_push', '1') === '1') { try { $p = GameGit::push($slug); $out['pushed'] = $p['text']; } catch (\Throwable $e) { $out['pushed'] = 'push failed: ' . $e->getMessage(); self::emit($slug, 'error', ['text' => 'publish: ' . $out['pushed']]); } }
+        elseif ($remote !== '' && !str_contains($remote, 'fatal') && (string) self::cfg('publish_push', '1') === '1') { [, $br] = self::git($d, ['rev-parse', '--abbrev-ref', 'HEAD']); $br = trim($br) ?: 'main';
             [$prc, $po] = self::git($d, ['push', '-q', 'origin', $br]); $out['pushed'] = $prc === 0 ? "pushed {$br} to {$remote}" : 'push failed: ' . mb_substr(trim($po), -300);
             self::emit($slug, $prc === 0 ? 'note' : 'error', ['text' => 'publish: ' . $out['pushed']]); }
         $g->publishedAt = date('c'); $g->publishedUrl = $out['url'] ?? ''; $g->publishedBuild = $bid; if (($out['url'] ?? '') !== '') $g->status = 'published';

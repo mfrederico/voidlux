@@ -2,6 +2,12 @@
     "version": 1,
     "concepts": [],
     "connectors": {
+        "github_api": {
+            "version": "1.0.0",
+            "source": "control-plane catalog",
+            "installed_at": "2026-10-28T18:17:44+00:00",
+            "hash": "sha256:2b0360893dd15b83f3c3024a2747e64d9e2468a5682d10600f6ff89a1e403db6"
+        },
         "mailgun": {
             "version": "1.0.0",
             "source": "control-plane catalog",

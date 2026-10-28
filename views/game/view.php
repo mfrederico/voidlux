@@ -111,6 +111,7 @@ $slug = $game['slug'];
 <section class="vl-pane" id="pane-ship">
   <div class="vl-cols">
     <div class="vl-card"><h3 class="vl-h2 mt-0">Build &amp; publish</h3><div class="vl-kv" id="shipInfo"></div><div class="vl-toolbar mt-2"><button class="btn btn-sm btn-primary" onclick="publish()" id="pubBtn">Build and publish</button></div><div class="vl-msg" id="pubMsg"></div></div>
+    <div class="vl-card"><h3 class="vl-h2 mt-0">GitHub</h3><div id="gitBox" class="vl-kv">…</div><div class="vl-msg" id="gitMsg"></div></div>
     <div class="vl-card"><h3 class="vl-h2 mt-0">Store card</h3>
       <form class="vl-form" id="cardForm">
         <label>Title <input name="title"></label>
@@ -144,6 +145,7 @@ function showTab(name) {
   if (name === 'design') loadDoc();
   if (name === 'build') { const b = $('stream'); b.scrollTop = b.scrollHeight; }
   if (name === 'notes') loadNotes();
+  if (name === 'ship') gitLoad();
   if (name === 'assets') loadAssets(); // the timeline opens on the newest event
 }
 $('tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (!b) return; e.stopPropagation(); if (b.tagName === 'A' && (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1)) return; /* a new tab or window: the browser's business */ e.preventDefault(); showTab(b.dataset.tab); };
@@ -236,6 +238,14 @@ async function runBrowserSoak(req) {
 }
 async function startAgent(mode, prompt) { try { renderSession(await Forge.api(`/game/agent/${slug}`, { mode, prompt: prompt || '' })); showTab('build'); } catch (e) { alert(e.message); } }
 async function stopAgent() { try { await Forge.api(`/game/stop/${slug}`, {}); } catch (e) { alert(e.message); } }
+async function gitLoad() { const box = $('gitBox'); let r; try { r = await Forge.api(`/game/gitstatus/${slug}`); } catch (e) { box.textContent = e.message; return; }
+  if (r.link) { const L = r.link; box.innerHTML = `<b>linked</b> <a href="https://github.com/${Forge.esc(L.repo)}" target="_blank">${Forge.esc(L.repo)}</a> ${L.private ? '(private)' : '(public)'}<br><span class="vl-muted small">its own deploy key; every publish pushes, whoever publishes${L.last_push ? '<br>last push: ' + Forge.esc(L.last_push.slice(0, 16).replace('T', ' ')) + ' · ' + Forge.esc(L.last_push_text || '') : ''}</span><div class="vl-toolbar mt-2"><button class="btn btn-sm btn-outline-primary" onclick="gitPush()">Push now</button>${r.canLink ? '<button class="btn btn-sm btn-outline-danger" onclick="gitUnlink()">Unlink…</button>' : ''}</div>`; return; }
+  if (!r.canLink) { box.innerHTML = '<span class="vl-muted small">Not linked to GitHub. The game\'s owner or an admin can link it; after that, anyone on the game pushes when they publish.</span>'; return; }
+  if (r.connection !== 'ok') { box.innerHTML = `<span class="vl-muted small">${Forge.esc(r.connection)}</span>`; return; }
+  box.innerHTML = `<div class="vl-muted small">The forge's GitHub account is <b>${Forge.esc(r.account)}</b>. Linking gives this game its own key for one repository; teammates do not need GitHub accounts.</div><form class="vl-form mt-2" id="gitForm"><label>Repository <input name="repo" value="${Forge.esc(r.account)}/${Forge.esc(slug)}"></label><label class="vl-check"><input type="checkbox" name="create" checked> make it (a new, empty repository)</label><label class="vl-check"><input type="checkbox" name="private" checked> private</label><button class="btn btn-sm btn-primary" type="submit">Link to GitHub</button></form>`;
+  $('gitForm').onsubmit = async e => { e.preventDefault(); const f = e.target; $('gitMsg').textContent = 'linking, then pushing the history…'; try { const x = await Forge.api(`/game/gitlink/${slug}`, { repo: f.repo.value.trim(), create: f.create.checked ? 1 : 0, private: f.private.checked ? 1 : 0 }); $('gitMsg').textContent = x.push && x.push.text ? x.push.text : 'linked'; gitLoad(); } catch (err) { $('gitMsg').textContent = err.message; } }; }
+async function gitPush() { $('gitMsg').textContent = 'pushing…'; try { const r = await Forge.api(`/game/gitpush/${slug}`, {}); $('gitMsg').textContent = r.text; gitLoad(); } catch (e) { $('gitMsg').textContent = e.message; } }
+async function gitUnlink() { if (!confirm('Unlink this game from GitHub? Its key is removed from the repository; the repository itself stays as it is.')) return; try { const r = await Forge.api(`/game/gitunlink/${slug}`, {}); $('gitMsg').textContent = 'unlinked' + (r.note ? ': ' + r.note : ''); gitLoad(); } catch (e) { $('gitMsg').textContent = e.message; } }
 async function asTemplate() { const name = prompt('Name for the template (lowercase, dashes):', slug.replace(/[^a-z0-9-]/g, '') + '-template'); if (!name) return; const label = prompt('One line for the summon page (what a new game starts from):', `${G.title} — `) || ''; try { const r = await Forge.api(`/game/astemplate/${slug}`, { name, label }); alert(`Template "${r.template}" made. It is in the list when you summon a game.`); } catch (e) { alert('Not made: ' + e.message); } }
 async function scrapGame() { const typed = prompt(`Scrap this game? Its folder and any published copy are archived, not erased, but it leaves the forge.\n\nType its slug to confirm:`, ''); if (typed === null) return; if (typed.trim() !== slug) { alert('That is not this game\'s slug; nothing was done.'); return; } try { const r = await Forge.api(`/game/scrap/${slug}`, { confirm: slug }); alert('Scrapped. Archived at: ' + (r.archived || []).join(' and ')); location.href = '/forge'; } catch (e) { alert('Not scrapped: ' + e.message); } }
 async function resetSession() { if (!confirm('Clear the builder\'s memory? Nothing in the game changes; the next run just starts without the conversation so far.')) return; renderSession(await Forge.api(`/game/reset/${slug}`, {})); }
