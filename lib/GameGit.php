@@ -75,9 +75,11 @@ class GameGit {
         $d = GameStore::dir($slug); if (self::link($slug)) throw new \InvalidArgumentException('this game is linked already: unlink it first');
         [$owner, $name] = explode('/', $repo, 2); $keyId = null; $url = '';
         if (self::$remoteForTests === null) {
-            if ($create) { $me = self::account(); $body = ['name' => $name, 'private' => $private, 'auto_init' => false, 'description' => 'A VoidLux forge game: ' . (string) (GameStore::row($slug)->title ?? $slug)];
+            $exists = true; try { self::api('GET', '/repos/' . $repo); } catch (\RuntimeException $e) { if (!str_contains($e->getMessage(), ' 404 ')) throw $e; $exists = false; }
+            if (!$exists && !$create) throw new \InvalidArgumentException("there is no repository $repo (or the forge's GitHub account cannot see it): tick \"make it\" to create it");
+            if (!$exists) { $me = self::account(); $body = ['name' => $name, 'private' => $private, 'auto_init' => false, 'description' => 'A VoidLux forge game: ' . (string) (GameStore::row($slug)->title ?? $slug)];
                 self::api('POST', strcasecmp($owner, $me) === 0 ? '/user/repos' : '/orgs/' . rawurlencode($owner) . '/repos', $body); }
-            else self::api('GET', '/repos/' . $repo); // it exists and the token can see it
+            $create = !$exists; // an existing repository is linked as it is, whatever the box said
             [$pub, $priv] = self::makeKey($slug);
             $k = self::api('POST', "/repos/$repo/keys", ['title' => "voidlux forge: $slug", 'key' => $pub, 'read_only' => false]); $keyId = (int) ($k['id'] ?? 0);
             file_put_contents(self::keyFile($slug), EncryptionService::encryptWith($priv, ConnectionStore::ownKey())); chmod(self::keyFile($slug), 0600);
