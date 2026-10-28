@@ -163,8 +163,13 @@ class GameAgent {
     }
     private function trim(array $rep): array { $o = []; foreach (['status', 'errors', 'checks', 'browserErrors', 'scenes', 'fps', 'slowFrames'] as $k) if (isset($rep[$k])) $o[$k] = $rep[$k]; return $o; }
     public function reviewOnly(): void {
-        $v = $this->review(); $this->checkpoint('review');
+        $v = $this->review(); $this->checkpoint('review'); if ($v !== null) $this->recordReview($v);
         if ($v !== null) $this->emit('stage', ['stage' => !empty($v['pass']) ? 'accepted' : 'rejected', 'text' => 'review: ' . (!empty($v['pass']) ? 'pass' : 'fail'), 'failures' => $v['failures'] ?? []]);
+    }
+    /** Which version was reviewed and how it came out: the commit after the review's own checkpoint (its ticks and log line), so "unchanged since" means no commit since. */
+    private function recordReview(array $v): void {
+        [, $sha] = GameStore::git($this->dir, ['rev-parse', '--short', 'HEAD']); $s = GameStore::agentState($this->slug);
+        $s['lastReview'] = ['sha' => trim($sha), 'pass' => !empty($v['pass']), 'failures' => count((array) ($v['failures'] ?? [])), 'at' => date('c')]; GameStore::saveAgentState($this->slug, $s); $this->state['lastReview'] = $s['lastReview'];
     }
     private function review(): ?array {
         $r = $this->run(self::REVIEW, false, true, 40, 'review');
@@ -205,7 +210,7 @@ class GameAgent {
             if ($this->stop) return;
             $this->emit('stage', ['stage' => 'review', 'text' => 'independent review against the acceptance criteria (round ' . ($i + 1) . ')']);
             $v = $this->review(); if ($v === null) return;
-            $this->checkpoint('review round ' . ($i + 1));
+            $this->checkpoint('review round ' . ($i + 1)); $this->recordReview($v);
             if (!empty($v['pass'])) { $this->emit('stage', ['stage' => 'accepted', 'text' => 'the reviewer accepted every criterion']); break; }
             $fails = $v['failures'] ?? []; if (!$fails) $fails = ['the reviewer gave no detail'];
             if ($i === $rounds) { $this->emit('stage', ['stage' => 'rejected', 'text' => "still failing after {$rounds} rework rounds", 'failures' => $fails]); break; }

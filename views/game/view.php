@@ -49,7 +49,7 @@ $slug = $game['slug'];
     <div>
       <div class="vl-toolbar">
         <button class="btn btn-sm btn-primary" onclick="startAgent('pipeline')" id="btnPipeline" title="The whole loop: plan what the Concept still lacks, build every open task, playtest, review against the acceptance criteria, rework what fails, checkpoint along the way.">Build the game</button>
-        <button class="btn btn-sm btn-outline-secondary" onclick="startAgent('review')" title="An independent reviewer (a fresh agent that never saw the build) checks every acceptance criterion in the Concept, with evidence, and reports pass or fail. Builds nothing.">Review</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="reviewAgain()" title="An independent reviewer (a fresh agent that never saw the build) checks every acceptance criterion in the Concept, with evidence, and reports pass or fail. Builds nothing.">Review</button>
         <button class="btn btn-sm btn-danger" onclick="stopAgent()" title="Stops the agent that is running now. Whatever it had committed stays; a checkpoint marks where it stopped.">Stop</button>
         <span id="streamNote"><?= h($agentNote) ?></span>
       </div>
@@ -236,6 +236,16 @@ async function runBrowserSoak(req) {
     $('streamNote').textContent = ''; refreshDue = true;
   } catch (e) { $('streamNote').textContent = 'playtest here failed: ' + e.message; }
   finally { soakRunning = false; }
+}
+// Review: if this exact version was reviewed already (no commit since, nothing uncommitted), say so first
+async function reviewAgain() {
+  try { const r = await Forge.api(`/game/status/${slug}`); G = r.game; } catch (e) {}
+  const L = G.lastReview; if (!L || L.sha !== G.head || G.dirty) return startAgent('review');
+  const when = new Date(L.at).toLocaleString(), how = L.pass ? 'it passed every criterion' : `it failed ${L.failures} criteri${L.failures === 1 ? 'on' : 'a'}`;
+  const box = document.createElement('div'); box.className = 'vl-ask';
+  box.innerHTML = `<div class="vl-ask-card"><h3 class="vl-h2 mt-0">Already reviewed</h3><p>This version <code>${Forge.esc(G.head)}</code> has been reviewed (${Forge.esc(when)}): ${how}. Nothing has changed since.</p><p class="vl-muted small">A new review costs a run and should come out the same. Continue with the review anyway?</p><div class="vl-toolbar"><button class="btn btn-sm btn-primary" data-go>CONTINUE</button><button class="btn btn-sm btn-outline-secondary" data-no>CANCEL</button></div></div>`;
+  const close = () => box.remove(); box.querySelector('[data-no]').onclick = close; box.addEventListener('click', e => { if (e.target === box) close(); }); box.querySelector('[data-go]').onclick = () => { close(); startAgent('review'); };
+  document.body.appendChild(box); box.querySelector('[data-no]').focus(); document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); } });
 }
 async function startAgent(mode, prompt) { try { renderSession(await Forge.api(`/game/agent/${slug}`, { mode, prompt: prompt || '' })); showTab('build'); } catch (e) { alert(e.message); } }
 async function stopAgent() { try { await Forge.api(`/game/stop/${slug}`, {}); } catch (e) { alert(e.message); } }

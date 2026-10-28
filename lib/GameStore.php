@@ -164,7 +164,7 @@ class GameStore {
             'id' => (int) $g->id, 'slug' => $slug, 'title' => (string) $g->title, 'template' => (string) $g->template, 'brief' => (string) $g->brief,
             'status' => (string) $g->status, 'price' => $g->price === null ? null : (float) $g->price, 'isPublic' => (int) $g->isPublic === 1, 'tags' => json_decode((string) $g->tags, true) ?: [], 'notes' => (string) $g->notes,
             'memberId' => (int) $g->memberId, 'teamId' => (int) $g->teamId, 'createdAt' => (string) $g->createdAt, 'publishedAt' => (string) $g->publishedAt, 'publishedUrl' => (string) $g->publishedUrl,
-            'lastSoak' => $soaks[0] ?? null, 'checkpoints' => count(self::checkpoints($slug)), 'lastCommit' => mb_substr(trim($log), 0, 140),
+            'lastSoak' => $soaks[0] ?? null, 'head' => trim(self::git($d, ['rev-parse', '--short', 'HEAD'])[1]), 'dirty' => trim(self::git($d, ['status', '--porcelain', '--untracked-files=no'])[1]) !== '', 'lastReview' => self::agentState($slug)['lastReview'] ?? null, 'checkpoints' => count(self::checkpoints($slug)), 'lastCommit' => mb_substr(trim($log), 0, 140),
             'tasks' => ['done' => count(array_filter($tasks, fn($t) => $t['done'])), 'total' => count($tasks)], 'taskList' => $tasks,
             'agent' => self::agentState($slug), 'playUrl' => '/games/' . $slug . '/', 'cover' => self::cover($slug), 'gif' => self::gif($slug),
         ];
