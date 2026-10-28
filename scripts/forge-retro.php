@@ -14,9 +14,9 @@ require __DIR__ . '/../vendor/autoload.php';
 chdir(dirname(__DIR__));
 define('BASE_PATH', \app\Paths::root());
 new \app\Bootstrap('conf/config.ini');
-$opts = getopt('', ['no-agent', 'quiet', 'weekly', 'at::']);
+$opts = getopt('', ['no-agent', 'quiet', 'weekly', 'at::', 'dry']); // --dry: compute and print, write and send nothing, no agent
 $at = isset($opts['at']) ? (int) $opts['at'] : null;
-$e = isset($opts['weekly']) ? \app\Retro::week($at, !isset($opts['quiet'])) : \app\Retro::hour($at, !isset($opts['no-agent']), !isset($opts['quiet']));
+$e = isset($opts['weekly']) ? \app\Retro::week($at, !isset($opts['quiet'])) : \app\Retro::hour($at, !isset($opts['no-agent']) && !isset($opts['dry']), !isset($opts['quiet']) && !isset($opts['dry']), !isset($opts['dry']));
 $m = $e['measures'];
 printf("%s %s: build %d art %d $%.2f | art jobs %d (ok %d, recovered %d, failed %d) | keeps %d | findings %d | proposals %d%s\n", $e['kind'], $e['at'], $m['runs']['build'], $m['runs']['art'], $m['cost']['total'], $m['art']['jobs'], $m['art']['finished'], $m['art']['recovered'], $m['art']['failed'], $m['keeps'], count($e['findings']), count($e['proposals']), $e['agent'] ? sprintf(' | agent %s $%.3f%s', $e['agent']['ok'] ? 'ok' : 'FAILED', $e['agent']['cost'], $e['agent']['error'] ? ': ' . $e['agent']['error'] : '') : '');
 foreach ($e['findings'] as $f) echo "  - [{$f['severity']}] {$f['text']}\n";

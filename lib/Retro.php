@@ -110,7 +110,9 @@ class Retro {
              . "You are the forge's hourly retrospective. The forge is this app (a tiknix app at " . Paths::root() . "): producers describe arcade games, an AI builder builds them (lib/GameAgent.php, prompts there and in kit/AGENTS.md and the games' AGENTS.md), and an AI artist makes sprites, rigs and motions from sketches (prompts in lib/GameStore.php startSketch; the kit in kit/js; the sprite page in kit/editor/sprites). You may READ any file here to ground a proposal; you change nothing.\n"
              . "The hour's measures, how they compare, the rule-based findings and a few samples are in this JSON:\n" . json_encode($brief, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n\n"
              . "Write the hour's note (120 words at most, plain, what happened and what it cost, no praise) and at most THREE proposals, only ones the evidence supports: each the smallest change that fixes a class of problem, naming the exact file and the change, its kind (prompt | guide | harness | ux | kit | pipeline), its evidence from the brief, and what measure should move if it works. Prefer deterministic fixes (a check, a contract, a default) over longer prompts. If nothing is worth changing, propose nothing and say why in the note. Do not repeat a last proposal still marked open unless new evidence makes it urgent.\n"
-             . "Answer with ONLY this JSON, no prose around it: {\"note\": \"...\", \"proposals\": [{\"title\": \"...\", \"kind\": \"...\", \"file\": \"relative/path\", \"change\": \"...\", \"evidence\": \"...\", \"measure\": \"...\"}]}";
+             . "Answer with ONLY this JSON, no prose around it: {\"note\": \"...\", \"proposals\": [{\"title\": \"...\", \"kind\": \"...\", \"file\": \"relative/path\", \"change\": \"...\", \"evidence\": \"...\", \"measure\": \"...\", \"rule\": \"<the finding rule it should reduce, e.g. notes-unanswered, or other>\"}]}"
+             . (($d = Improve::decisions(20)) ? "\nThe human's recent decisions on earlier proposals (learn what they accept; do not re-propose what they declined unless the evidence is new and you say so):\n" . implode("\n", array_map(fn($x) => '- ' . $x['decision'] . ': ' . $x['title'] . ($x['note'] !== '' ? ' — ' . $x['note'] : ''), $d)) : '')
+             . (($o = Improve::outcomes(10)) ? "\nHow merged proposals worked out (the finding they targeted, before vs after):\n" . implode("\n", array_map(fn($x) => '- ' . $x['title'] . ': ' . $x['verdict'], $o)) : '');
     }
 
     /** The one agentic step: a short, read-only run; its JSON validated before it is believed. */
@@ -126,7 +128,7 @@ class Retro {
         if (!preg_match('/\{.*\}/s', $text, $mm)) return ['ok' => false, 'error' => 'the retro agent wrote no JSON object', 'cost' => $cost, 'raw' => mb_substr($text, 0, 600)];
         $a = json_decode($mm[0], true); if (!is_array($a)) return ['ok' => false, 'error' => 'the retro agent\'s JSON does not parse', 'cost' => $cost, 'raw' => mb_substr($text, 0, 600)];
         $props = [];
-        foreach (array_slice((array) ($a['proposals'] ?? []), 0, 3) as $p) { if (!is_array($p)) continue; $file = trim((string) ($p['file'] ?? '')); $props[] = ['title' => mb_substr((string) ($p['title'] ?? ''), 0, 120), 'kind' => preg_replace('/[^a-z]/', '', (string) ($p['kind'] ?? '')), 'file' => $file, 'file_exists' => $file !== '' && is_file($root . '/' . ltrim($file, '/')), 'change' => mb_substr((string) ($p['change'] ?? ''), 0, 1200), 'evidence' => mb_substr((string) ($p['evidence'] ?? ''), 0, 600), 'measure' => mb_substr((string) ($p['measure'] ?? ''), 0, 200), 'status' => 'open']; }
+        foreach (array_slice((array) ($a['proposals'] ?? []), 0, 3) as $p) { if (!is_array($p)) continue; $file = trim((string) ($p['file'] ?? '')); $props[] = ['title' => mb_substr((string) ($p['title'] ?? ''), 0, 120), 'kind' => preg_replace('/[^a-z]/', '', (string) ($p['kind'] ?? '')), 'file' => $file, 'file_exists' => $file !== '' && is_file($root . '/' . ltrim($file, '/')), 'change' => mb_substr((string) ($p['change'] ?? ''), 0, 1200), 'evidence' => mb_substr((string) ($p['evidence'] ?? ''), 0, 600), 'measure' => mb_substr((string) ($p['measure'] ?? ''), 0, 200), 'rule' => preg_replace('/[^a-z-]/', '', (string) ($p['rule'] ?? 'other')) ?: 'other', 'status' => 'open']; }
         return ['ok' => true, 'note' => mb_substr((string) ($a['note'] ?? ''), 0, 1500), 'proposals' => $props, 'cost' => $cost, 'model' => $model, 'login' => $note];
     }
 
@@ -135,7 +137,7 @@ class Retro {
     public static function last(): ?array { $e = self::entries(1); return $e[0] ?? null; }
 
     /** One hour's retrospective: measured and ruled deterministically, narrated by the agent only if there was activity. */
-    public static function hour(?int $until = null, bool $withAgent = true, bool $notify = true): array {
+    public static function hour(?int $until = null, bool $withAgent = true, bool $notify = true, bool $write = true): array {
         $until = $until ?? (int) (floor(time() / 3600) * 3600); $since = $until - 3600;
         $g = self::gather($since, $until); $m = self::measures($g, $since, $until);
         $gp = self::gather($since - 3600, $since); $prev = self::measures($gp, $since - 3600, $since);
@@ -145,8 +147,9 @@ class Retro {
         $quiet = count($f) === 1 && $f[0]['rule'] === 'quiet';
         if ($withAgent && !$quiet && (string) GameStore::cfg('retro_agent', '1') === '1') { $a = self::ask(self::brief($m, $prev, $base, $f, $g, $last)); $entry['agent'] = ['ok' => $a['ok'], 'cost' => $a['cost'] ?? 0, 'error' => $a['error'] ?? null, 'model' => $a['model'] ?? null]; if ($a['ok']) { $entry['note'] = $a['note']; $entry['proposals'] = $a['proposals']; } }
         elseif ($quiet) $entry['note'] = 'A quiet hour: no runs, no art jobs, no messages.';
-        file_put_contents(self::dir() . '/' . date('Y-m-d-H', $until) . '.json', json_encode($entry, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-        if ($notify && !$quiet) self::notify($entry);
+        if ($write) file_put_contents(self::dir() . '/' . date('Y-m-d-H', $until) . '.json', json_encode($entry, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        if ($notify && !$quiet && $write) self::notify($entry);
+        if ($write) Improve::verifyAll(); // merged proposals: did the finding they targeted fire less?
         return $entry;
     }
 

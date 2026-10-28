@@ -22,8 +22,22 @@ class Forge extends BaseControls\Control {
     /** The retrospective's ledger: every hour's measures, findings, note and proposals, newest first (lib/Retro.php). */
     public function retro($params = []): void {
         if (!$this->requireLogin()) return; if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/forge'); return; }
-        $this->render('forge/retro', ['title' => 'The forge, hour by hour', 'entries' => Retro::entries(72)]);
+        $this->render('forge/retro', ['title' => 'The forge, hour by hour', 'entries' => Retro::entries(72), 'states' => array_map(fn($p) => $p['improve'], Improve::all(96)), 'inbox' => Improve::inbox()]);
     }
+
+    // ---- the improve loop's gates (lib/Improve.php): admins only, JSON ----
+    private function improveGate(): bool { if (!$this->requireLogin()) return false; if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::jsonError('admins only', 403); return false; } $this->validateCSRF(); return true; }
+    /** POST /forge/improvedecide { id, decision: approve|decline|later, note } */
+    public function improvedecide($params = []): void { if (!$this->improveGate()) return; $b = $this->getJsonInput() ?? [];
+        try { Flight::jsonSuccess(Improve::decide((string) ($b['id'] ?? ''), (string) ($b['decision'] ?? ''), (string) ($b['note'] ?? ''), (int) $this->member->id), 'Done.'); } catch (\Throwable $e) { Flight::jsonError($e->getMessage(), 400); } }
+    /** POST /forge/improvemerge { id } */
+    public function improvemerge($params = []): void { if (!$this->improveGate()) return; $b = $this->getJsonInput() ?? [];
+        try { Flight::jsonSuccess(Improve::merge((string) ($b['id'] ?? ''), (int) $this->member->id), 'Merged.'); } catch (\Throwable $e) { Flight::jsonError($e->getMessage(), 400); } }
+    /** POST /forge/improvereject { id, note } */
+    public function improvereject($params = []): void { if (!$this->improveGate()) return; $b = $this->getJsonInput() ?? [];
+        try { Flight::jsonSuccess(Improve::reject((string) ($b['id'] ?? ''), (string) ($b['note'] ?? ''), (int) $this->member->id), 'Rejected.'); } catch (\Throwable $e) { Flight::jsonError($e->getMessage(), 400); } }
+    /** GET /forge/improvediff?id= : the built change's diff, as text */
+    public function improvediff($params = []): void { if (!$this->requireLogin() || !Flight::hasLevel(LEVELS['ADMIN'])) { Flight::halt(403, 'admins only'); return; } header('Content-Type: text/plain; charset=utf-8'); echo Improve::diff((string) $this->getParam('id', '')); exit; }
 
     /** POST /forge/revokeinvite { id }: withdraw a pending team invitation (the team's owner or an admin of it). JSON. */
     public function revokeinvite($params = []): void {
