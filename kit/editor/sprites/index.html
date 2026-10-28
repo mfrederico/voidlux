@@ -242,13 +242,14 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
     </div>
   </div>
 </div>
+<script src="/kit/editor/ux.js"></script><!-- what a person meets here, for the forge's hourly retrospective -->
 <script src="/kit/js/kit-util.js"></script>
 <script src="/kit/js/kit-draw.js"></script>
 <script src="/kit/js/kit-rig.js"></script>
 <script>
 const el = id => document.getElementById(id);
 const LEDE = { make: "Draw a rough sketch, say what it is, press >>: the artist draws two takes. Keep one and it is in the game as Draw.pic('key', x, y, size).", draw: 'Edit a kept sprite: its pixels frame by frame, its SVG source, or its drawing code, with a live preview.', move: 'Give a kept sprite motion. Today: the artist animates it as code frames. Next: a skeleton rig with keyframes and inverse kinematics.' };
-function showTab(name) { if (!['make', 'draw', 'move'].includes(name)) name = 'make'; for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('on', a.dataset.tab === name); for (const s of document.querySelectorAll('.tab')) s.classList.toggle('hidden', s.id !== 'tab-' + name); el('lede').textContent = LEDE[name]; if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name); if (name === 'move') moveRefresh(); else el('moveJobs').classList.add('hidden'); }
+function showTab(name) { if (!['make', 'draw', 'move'].includes(name)) name = 'make'; if (typeof UX !== 'undefined') UX.tab(name); for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('on', a.dataset.tab === name); for (const s of document.querySelectorAll('.tab')) s.classList.toggle('hidden', s.id !== 'tab-' + name); el('lede').textContent = LEDE[name]; if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name); if (name === 'move') moveRefresh(); else el('moveJobs').classList.add('hidden'); }
 for (const a of document.querySelectorAll('#tabs a')) a.onclick = e => { e.preventDefault(); showTab(a.dataset.tab); };
 window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
 function moveRefresh() { if (typeof Move !== 'undefined') Move.refresh(); }

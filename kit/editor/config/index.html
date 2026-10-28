@@ -60,6 +60,7 @@ code { font-family: var(--mono); font-size: 12.5px; }
   </div>
   <div class="list" id="list"></div>
 </div>
+<script src="/kit/editor/ux.js"></script><!-- what a person meets here, for the forge's hourly retrospective -->
 <script>
 /* the forge's API for this game: /gameapi/<verb>/<slug>, writes with X-CSRF-TOKEN; the game's own CFG loads next, untouched */
 const API = '/gameapi', GAME = new URLSearchParams(location.search).get('game') || ''; let CSRF = '';

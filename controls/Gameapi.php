@@ -77,6 +77,19 @@ class Gameapi extends BaseControls\Control {
             $this->raw(GameStore::readHints($g->slug, (string) $this->getParam('key', '')));
         } catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); } catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 500); }
     }
+    /** POST /gameapi/ux/<slug>: the editors' ergonomics events (kit/editor/ux.js), appended to .studio/ux.jsonl for the retrospective.
+     *  No CSRF token (sent by sendBeacon as a page closes); sign-in and access to the game are required, and only known fields are kept. */
+    public function ux($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $b = $this->getJsonInput() ?? []; $who = (int) $this->member->id; $lines = '';
+        foreach (array_slice((array) ($b['items'] ?? []), 0, 50) as $it) { if (!is_array($it)) continue; $ev = (string) ($it['ev'] ?? ''); if (!in_array($ev, ['error', 'fail', 'act', 'undo', 'tab', 'session'], true)) continue;
+            $keep = ['ev' => $ev, 'page' => preg_replace('/[^a-z]/', '', (string) ($it['page'] ?? '')), 'at' => time(), 'by' => $who];
+            foreach (['msg' => 200, 'where' => 60, 'name' => 40, 'detail' => 60, 'id' => 30, 'tab' => 30, 'path' => 80, 'method' => 8, 'via' => 10] as $k => $n) if (isset($it[$k]) && is_scalar($it[$k])) $keep[$k] = mb_substr((string) $it[$k], 0, $n);
+            foreach (['status', 'secs', 'acts', 'errors', 'fails', 'undos', 't'] as $k) if (isset($it[$k]) && is_numeric($it[$k])) $keep[$k] = (int) $it[$k];
+            $lines .= json_encode($keep, JSON_UNESCAPED_SLASHES) . "\n"; }
+        $f = GameStore::studioDir($g->slug) . '/ux.jsonl'; if (is_file($f) && filesize($f) > 2 * 1024 * 1024) @rename($f, $f . '.1'); // keep it small: one old file at most
+        if ($lines !== '') file_put_contents($f, $lines, FILE_APPEND | LOCK_EX);
+        http_response_code(204); exit;
+    }
     public function sketches($params = []): void { if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $this->raw(GameStore::listSketches($g->slug)); }
     public function sketchdelete($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; if (!$this->post()) { $this->raw(['error' => 'POST'], 405); }
