@@ -102,6 +102,7 @@ a { color: inherit; }
             <div class="meta">
                 <div class="title"><span><?= h($g['title']) ?></span><span class="price <?= $g['price'] === null || $g['price'] <= 0 ? 'free' : '' ?>"><?= $g['price'] === null || $g['price'] <= 0 ? 'free' : '$' . number_format((float) $g['price'], 2) ?></span></div>
                 <?php if ($g['brief'] !== ''): ?><div class="brief"><?= h($g['brief']) ?></div><?php endif; ?>
+                <div class="tags"><span class="tag" title="last updated">updated <?= h(date('M j', $g['updated'])) ?></span></div>
                 <?php if ($g['tags']): ?><div class="tags"><?php foreach (array_slice($g['tags'], 0, 4) as $t): ?><span class="tag"><?= h($t) ?></span><?php endforeach; ?></div><?php endif; ?>
             </div>
         </a>

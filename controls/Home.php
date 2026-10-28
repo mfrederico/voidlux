@@ -17,8 +17,10 @@ class Home extends BaseControls\Control {
         $games = [];
         foreach (\app\Bean::find('game', "published_url <> '' AND is_public = 1 ORDER BY published_at DESC") as $g) {
             $games[] = ['slug' => (string) $g->slug, 'title' => (string) $g->title, 'url' => (string) $g->publishedUrl, 'brief' => mb_substr((string) $g->brief, 0, 140), 'price' => $g->price === null ? null : (float) $g->price,
-                        'tags' => json_decode((string) $g->tags, true) ?: [], 'cover' => GameStore::cover((string) $g->slug) !== '', 'gif' => GameStore::gif((string) $g->slug) !== '', 'at' => (string) $g->publishedAt];
+                        'tags' => json_decode((string) $g->tags, true) ?: [], 'cover' => GameStore::cover((string) $g->slug) !== '', 'gif' => GameStore::gif((string) $g->slug) !== '', 'at' => (string) $g->publishedAt,
+                        'updated' => max((int) strtotime((string) $g->publishedAt ?: '@0'), GameStore::lastTouched((string) $g->slug))];
         }
+        usort($games, fn($a, $b) => $b['updated'] <=> $a['updated']); // newest first: the game updated most recently leads
         return $games;
     }
     /** A public game's cover picture (its latest playtest shot) for the landing page: no sign-in, public games only. */
