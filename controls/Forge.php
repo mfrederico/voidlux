@@ -39,6 +39,30 @@ class Forge extends BaseControls\Control {
     /** GET /forge/improvediff?id= : the built change's diff, as text */
     public function improvediff($params = []): void { if (!$this->requireLogin() || !Flight::hasLevel(LEVELS['ADMIN'])) { Flight::halt(403, 'admins only'); return; } header('Content-Type: text/plain; charset=utf-8'); echo Improve::diff((string) $this->getParam('id', '')); exit; }
 
+    // ---- GitHub for the forge: an admin saves the OAuth App once and signs in; games then link to repositories (GameGit) ----
+    public function github($params = []): void {
+        if (!$this->requireLogin()) return; if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/forge'); return; }
+        if (Flight::request()->method === 'POST') { $this->validateCSRF();
+            try { GameGit::saveOauthApp(trim((string) $this->getParam('client_id')), trim((string) $this->getParam('client_secret'))); $this->flash('success', 'Saved. Now sign in with GitHub.'); } catch (\Throwable $e) { $this->flash('error', $e->getMessage()); }
+            Flight::redirect('/forge/github'); return; }
+        $who = ''; $err = ''; try { $who = GameGit::account(); } catch (\Throwable $e) { $err = $e->getMessage(); }
+        $app = null; try { $app = GameGit::oauthApp(); } catch (\Throwable $e) { $err = $e->getMessage(); }
+        $this->render('forge/github', ['title' => 'GitHub', 'who' => $who, 'err' => $err, 'app' => $app, 'callback' => GameGit::callbackUrl(), 'home' => GameStore::baseUrl()]);
+    }
+    public function githubconnect($params = []): void {
+        if (!$this->requireLogin()) return; if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/forge'); return; }
+        $state = bin2hex(random_bytes(16)); $_SESSION['gh_oauth_state'] = $state;
+        try { Flight::redirect(GameGit::authorizeUrl($state)); } catch (\Throwable $e) { $this->flash('error', $e->getMessage()); Flight::redirect('/forge/github'); }
+    }
+    public function githubcallback($params = []): void {
+        if (!$this->requireLogin()) return; if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/forge'); return; }
+        $state = (string) $this->getParam('state', ''); $want = (string) ($_SESSION['gh_oauth_state'] ?? ''); unset($_SESSION['gh_oauth_state']);
+        if ($want === '' || !hash_equals($want, $state)) { $this->flash('error', 'That GitHub sign-in did not start here (or was already used): try again.'); Flight::redirect('/forge/github'); return; }
+        if ($this->getParam('error')) { $this->flash('error', 'GitHub said: ' . (string) $this->getParam('error_description', $this->getParam('error'))); Flight::redirect('/forge/github'); return; }
+        try { $r = GameGit::finishSignIn((string) $this->getParam('code', '')); $this->flash('success', "Signed in to GitHub as {$r['login']}. Games can now be linked from their Ship tab."); } catch (\Throwable $e) { $this->flash('error', $e->getMessage()); }
+        Flight::redirect('/forge/github');
+    }
+
     /** POST /forge/revokeinvite { id }: withdraw a pending team invitation (the team's owner or an admin of it). JSON. */
     public function revokeinvite($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF();

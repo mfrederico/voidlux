@@ -332,6 +332,12 @@ class Game extends BaseControls\Control {
         $this->jsonSuccess(['ok' => true], 'Deleted.');
     }
 
+    /** POST /game/transfer/<slug> { to }: the owner (or an admin) hands the game to another member. */
+    public function transfer($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        if ((int) $g->memberId !== (int) $this->member->id && !Flight::hasLevel(LEVELS['ADMIN'])) { $this->jsonError('Only the game\'s owner (or an admin) can hand it on.', 403); return; }
+        try { $this->jsonSuccess(GameStore::transfer($g, (string) ($this->body()['to'] ?? ''), (int) $this->member->id), 'Transferred.'); } catch (\InvalidArgumentException $e) { $this->jsonError($e->getMessage(), 400); }
+    }
     public function card($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
         $b = $this->body();

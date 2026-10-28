@@ -24,9 +24,10 @@ class GameGit {
 
     // ---- the forge's GitHub connection ----
     public static function token(): string {
-        $conn = ConnectionStore::for('github_api');
-        if (!$conn) throw new \RuntimeException('No GitHub connection: an admin connects one under Connections → GitHub REST API, with a token of the account that will own the games\' repositories (fine-grained, with Administration: read and write, on the repositories the games use, or all of them).');
-        $t = ConnectionStore::ownToken($conn); if ($t === '') throw new \RuntimeException('The GitHub connection has no usable token (empty, or it will not decrypt with this install\'s key): reconnect it under Connections → GitHub REST API.');
+        // GitHub (OAuth): signed in with GitHub, preferred; GitHub REST API: a pasted token
+        $conn = ConnectionStore::for('github_oauth') ?? ConnectionStore::for('github_api');
+        if (!$conn) throw new \RuntimeException('No GitHub connection: an admin signs the forge in to GitHub at /forge/github (or pastes a token under Connections → GitHub REST API).');
+        $t = ConnectionStore::ownToken($conn); if ($t === '') throw new \RuntimeException('The GitHub connection has no usable token (empty, or it will not decrypt with this install\'s key): connect it again under Connections.');
         return $t;
     }
     public static function api(string $method, string $path, ?array $body = null): array {
@@ -41,6 +42,31 @@ class GameGit {
     }
     /** Who the connection is: the default owner of new repositories. */
     public static function account(): string { return (string) (self::api('GET', '/user')['login'] ?? ''); }
+
+    // ---- sign in with GitHub (the forge's own OAuth flow: this runtime has no /connections/callback) ----
+    private static function appFile(): string { return Paths::root() . '/secure/github-oauth-app.enc'; }
+    /** The forge's GitHub OAuth App (registered by an admin on GitHub): client id and secret, encrypted with the app's key. */
+    public static function oauthApp(): ?array { $f = self::appFile(); if (!is_file($f)) return null;
+        try { $j = json_decode(EncryptionService::decryptWith((string) file_get_contents($f), ConnectionStore::ownKey()), true); } catch (\Throwable $e) { throw new \RuntimeException('the saved GitHub OAuth App will not decrypt with this install\'s key: save it again'); }
+        return is_array($j) && !empty($j['client_id']) ? $j : null; }
+    public static function saveOauthApp(string $id, string $secret): void {
+        if (!preg_match('/^[A-Za-z0-9._-]{8,80}$/', $id)) throw new \InvalidArgumentException('that does not look like a GitHub client id');
+        if (strlen($secret) < 20) throw new \InvalidArgumentException('that does not look like a GitHub client secret');
+        file_put_contents(self::appFile(), EncryptionService::encryptWith(json_encode(['client_id' => $id, 'client_secret' => $secret]), ConnectionStore::ownKey())); chmod(self::appFile(), 0600); }
+    public static function callbackUrl(): string { return GameStore::baseUrl() . '/forge/githubcallback'; }
+    public static function authorizeUrl(string $state): string { $a = self::oauthApp(); if (!$a) throw new \RuntimeException('no GitHub OAuth App saved yet');
+        return 'https://github.com/login/oauth/authorize?' . http_build_query(['client_id' => $a['client_id'], 'redirect_uri' => self::callbackUrl(), 'scope' => 'read:user repo', 'state' => $state, 'allow_signup' => 'false']); }
+    /** The code GitHub sent back, for a token; stored as this install's github_oauth connection. */
+    public static function finishSignIn(string $code): array {
+        $a = self::oauthApp(); if (!$a) throw new \RuntimeException('no GitHub OAuth App saved');
+        $ch = curl_init('https://github.com/login/oauth/access_token'); curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 30, CURLOPT_HTTPHEADER => ['Accept: application/json', 'User-Agent: voidlux-forge'], CURLOPT_POSTFIELDS => http_build_query(['client_id' => $a['client_id'], 'client_secret' => $a['client_secret'], 'code' => $code, 'redirect_uri' => self::callbackUrl()])]);
+        $raw = (string) curl_exec($ch); curl_close($ch); $j = json_decode($raw, true) ?: [];
+        if (empty($j['access_token'])) throw new \RuntimeException('GitHub did not give a token: ' . (string) ($j['error_description'] ?? $j['error'] ?? mb_substr($raw, 0, 200)));
+        $u = curl_init('https://api.github.com/user'); curl_setopt_array($u, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $j['access_token'], 'Accept: application/vnd.github+json', 'User-Agent: voidlux-forge']]); $me = json_decode((string) curl_exec($u), true) ?: []; curl_close($u);
+        if (empty($me['login'])) throw new \RuntimeException('signed in, but GitHub would not say who you are');
+        ConnectionStore::put('github_oauth', 'production', ['external_eid' => (string) $me['id'], 'external_name' => (string) $me['login'], 'external_url' => 'https://github.com/' . $me['login'], 'token_type' => (string) ($j['token_type'] ?? 'bearer'), 'scopes' => (string) ($j['scope'] ?? ''), 'auth_type' => 'oauth', 'access_token' => (string) $j['access_token']]);
+        return ['login' => (string) $me['login'], 'scopes' => (string) ($j['scope'] ?? '')];
+    }
 
     // ---- linking ----
     /** Link a game to owner/name (made first when $create): a deploy key made for it, the game's origin pointed at it, then a first push. */

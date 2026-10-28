@@ -266,6 +266,19 @@ class GameStore {
         error_log("INFO scrap: {$slug} scrapped by member {$memberId}: " . implode(', ', $out['archived']));
         return $out;
     }
+    /** The game's owner becomes another member (found by email or username). The old owner keeps access through the game's team, if it has one. */
+    public static function transfer(object $g, string $to, int $byMemberId): array {
+        $to = trim($to); if ($to === '') throw new \InvalidArgumentException('say who: their email or username');
+        $m = Bean::findOne('member', 'LOWER(email) = ? OR LOWER(username) = ?', [strtolower($to), strtolower($to)]); if (!$m || !$m->id) throw new \InvalidArgumentException("no member is $to");
+        if ((int) $m->id === (int) $g->memberId) throw new \InvalidArgumentException('they already own it');
+        $from = (int) $g->memberId; $g->memberId = (int) $m->id; Bean::store($g);
+        $who = (string) ($m->username ?: $m->email);
+        self::emit((string) $g->slug, 'note', ['text' => 'ownership moved from ' . self::memberName($from) . " to {$who} by " . self::memberName($byMemberId)]);
+        try { \app\services\NotifyService::create()->to((string) $m->email, (string) ($m->username ?? ''))->subject('Forge: you now own ' . $g->title)->relatedTo('game', (int) $g->id)->owner((int) $m->id)
+            ->send('<p>' . htmlspecialchars(self::memberName($byMemberId)) . ' made you the owner of <b>' . htmlspecialchars((string) $g->title) . '</b>.</p><p><a href="' . htmlspecialchars(self::baseUrl() . '/game/view/' . $g->slug) . '">Open it in the forge</a></p>'); }
+        catch (\Throwable $e) { error_log('ERROR transfer notice: ' . $e->getMessage()); }
+        return ['owner' => $who, 'from' => self::memberName($from), 'team' => (int) $g->teamId > 0];
+    }
     public static function stopRunner(string $slug): array {
         $s = self::agentState($slug);
         $pid = (int) $s['pid'];
