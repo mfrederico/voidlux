@@ -13,6 +13,14 @@
   const upd = G.update.bind(G);
   const step = dt => { if (done) return; upd(dt); t += dt; const k = G.state + (G.state === 'playing' ? ':' + G.mode : ''); scenes[k] = (scenes[k] || 0) + dt; if (t >= secs) finish(); };
   G.update = function (dt) { for (let i = 1; i < fast; i++) { step(1 / 60); Input.endFrame(); } step(dt); };
+  /* a hidden or covered window gets few animation frames or none, so the game would stand still: a message-channel pump
+     (not throttled like timers) steps it in ~12 ms slices whenever frames lag, as the trials pump in main.js does */
+  { const ch = new MessageChannel(); let due = performance.now();
+    ch.port1.onmessage = () => { if (done) return; const now = performance.now();
+      if (now - (G.rafAt || 0) < 40) { due = now; setTimeout(() => ch.port2.postMessage(0), 100); return; }
+      let n = 0; try { while (due <= now && n < 200 && performance.now() - now < 12) { G.update(1 / 60); Input.endFrame(); due += 1000 / 60; n++; } } catch (err) { note(err && err.stack || err); }
+      if (due < now - 200) due = now - 200; ch.port2.postMessage(0); };
+    ch.port2.postMessage(0); }
   function finish() {
     done = true; const p = G.prof;
     let shot = ''; try { const c = document.createElement('canvas'); c.width = 320; c.height = 180; c.getContext('2d').drawImage(document.getElementById('game'), 0, 0, 320, 180); shot = c.toDataURL('image/jpeg', 0.6); } catch (e) {}
