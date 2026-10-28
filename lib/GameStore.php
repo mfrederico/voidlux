@@ -350,7 +350,10 @@ class GameStore {
     }
     /** A soak, blocking, in a viewer's browser. The server's own Chrome runs one only when [forge] server_chrome = 1: on
      *  this machine it brought the box down, so with nobody's page open the answer is a 'no-browser' report, not a launch. */
+    /** The shortest playtest that reaches this game's first scheduled event (game.json "soak_min", seconds), or 0. */
+    public static function soakMin(string $slug): int { $j = json_decode((string) @file_get_contents(self::dir($slug) . '/game.json'), true); return max(0, min(900, (int) ($j['soak_min'] ?? 0))); }
     public static function runSoak(string $slug, int $secs = 60, int $fast = 4): array {
+        $secs = max($secs, self::soakMin($slug));
         $rep = self::browserSoak($slug, $secs, $fast); if ($rep !== null) return $rep;
         if ((string) self::cfg('server_chrome', '0') === '1') return self::chromeSoak($slug, $secs, $fast);
         $rep = ['ok' => false, 'status' => 'no-browser', 'runner' => 'none', 'errors' => [], 'checks' => [], 'scenes' => [], 'note' => 'no browser is attached to this game: open its page in the forge (Play or Test tab) and the playtest runs there. Not a fault in the game.'];
@@ -489,7 +492,7 @@ class GameStore {
                 file_put_contents(self::studioDir($slug) . '/queue.jsonl', json_encode(['prompt' => $prompt, 'memberId' => $memberId, 'at' => time()], JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND);
                 self::emit($slug, 'note', ['text' => 'queued as a run of its own, right after this one: ' . mb_substr($prompt, 0, 160)]);
             } else {
-                file_put_contents(self::studioDir($slug) . '/inbox.txt', $prompt . "\n", FILE_APPEND);
+                self::queueNote($slug, $prompt);
                 self::emit($slug, 'prompt', ['text' => mb_substr($prompt, 0, 4000), 'mode' => 'inbox', 'by' => self::memberName($memberId)]);
                 self::emit($slug, 'note', ['text' => 'the builder is mid-run: this goes to it with its next run']);
             }
@@ -531,6 +534,16 @@ class GameStore {
         catch (\Throwable $e) { self::emit($slug, 'error', ['text' => 'art: the queued job could not start: ' . $e->getMessage()]); return false; }
     }
     public static function memberName(int $id): string { if ($id <= 0) return 'the forge'; $m = Bean::load('member', $id); return (string) ($m->username ?: $m->email ?: 'member ' . $id); }
+    /** A note for the builder's next run: one JSON line per note in .studio/inbox.jsonl, so a note may span lines and each is answered on its own. */
+    public static function queueNote(string $slug, string $text, int $tries = 0): void { file_put_contents(self::studioDir($slug) . '/inbox.jsonl', json_encode(['text' => trim($text), 'at' => time(), 'tries' => $tries], JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND); }
+    /** The queued notes, read without taking them. */
+    public static function peekNotes(string $slug): array { $d = self::studioDir($slug); $out = []; if (is_file("$d/inbox.jsonl")) foreach (file("$d/inbox.jsonl") as $l) { $j = json_decode($l, true); if (is_array($j) && trim((string) ($j['text'] ?? '')) !== '') $out[] = $j + ['tries' => 0]; } if (is_file("$d/inbox.txt")) foreach (file("$d/inbox.txt") as $l) if (trim($l) !== '') $out[] = ['text' => trim($l), 'tries' => 0]; return $out; }
+    /** The queued notes, taken (the file is emptied): from inbox.jsonl, and any left in the old inbox.txt (one per line). */
+    public static function takeNotes(string $slug): array {
+        $d = self::studioDir($slug); $out = [];
+        $out = self::peekNotes($slug); @unlink("$d/inbox.jsonl"); @unlink("$d/inbox.txt");
+        return array_map(fn($n) => ['text' => trim((string) $n['text']), 'tries' => (int) ($n['tries'] ?? 0)], $out);
+    }
     /** The runner, as it ends: the next queued run of its own, if any, starts now. */
     public static function startQueued(string $slug): bool {
         $q = self::studioDir($slug) . '/queue.jsonl'; if (!is_file($q)) return false;

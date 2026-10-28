@@ -4,6 +4,9 @@
 # written to .studio/ here and the report comes back the same way); otherwise the server's headless Chrome runs it.
 set -euo pipefail
 SECS=${1:-60}; FAST=${2:-4}
+# a game that declares soak_min in game.json (its first night, its first boss) is never soaked for less
+MIN=$(python3 -c "import json; print(int(json.load(open('game.json')).get('soak_min', 0)))" 2>/dev/null || echo 0)
+if [ "${MIN:-0}" -gt "$SECS" ]; then echo "soak: $SECS s is shorter than this game's soak_min, so it runs for $MIN s" >&2; SECS=$MIN; fi
 SLUG=${VOIDLUX_GAME:-$(basename "$PWD")}
 STUDIO=${STUDIO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 URL=${GAME_URL:-https://voidlux.com/games/$SLUG/}

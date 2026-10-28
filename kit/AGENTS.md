@@ -120,6 +120,8 @@ in one line and stop; never work around it with an API key or a web form.
 - Match the code around you: dense lines, several statements per line, plain-English comments that say what a thing is
   for and why. Every file starts with a header comment saying what it holds.
 - **Never splice a `//` comment into the middle of a line**: it silently comments out the rest. Use `/* ... */` inside a line.
+- If the game has a scheduled first event (a first night, a first boss, a timer), put `"soak_min": <seconds>` in game.json,
+  enough to reach and get through it: every soak of this game then runs at least that long.
 - `node --check` every changed file. Soak when the autopilot would play through the change, not otherwise. Then commit,
   saying what changed and why.
 - Files the editors write (tuning.js, sfx.js, music-themes.js) are the designer's work: never revert or tidy them.

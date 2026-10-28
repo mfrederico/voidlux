@@ -265,7 +265,7 @@ class Game extends BaseControls\Control {
         if (!$rows) throw new \RuntimeException('none of those notes belong to this game');
         $lines = $rows;
         $queued = GameStore::agentState($g->slug)['busy'];
-        if ($queued) { file_put_contents(GameStore::studioDir($g->slug) . '/inbox.txt', $prompt . "\n", FILE_APPEND); GameStore::emit($g->slug, 'note', ['text' => count($lines) . ' producer note(s) queued for the next run']); }
+        if ($queued) { GameStore::queueNote($g->slug, $prompt); GameStore::emit($g->slug, 'note', ['text' => count($lines) . ' producer note(s) queued for the next run']); }
         else GameStore::startRunner($g->slug, 'chat', $prompt, (int) $this->member->id);
         foreach ($rows as $row) { $row->state = 'sent'; $row->sentAt = date('c'); Bean::store($row); }
         return ['sent' => count($rows), 'queued' => $queued];

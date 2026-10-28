@@ -172,6 +172,7 @@ function addEvent(ev) {
   if (ev.kind === 'soak') text = `⚗ soak ${ev.ok ? 'ok' : 'FAILED (' + ev.status + ')'} · ${ev.seconds || 0} s · ${ev.fps || '?'} fps · scenes ${Object.keys(ev.scenes || {}).join(', ')}` + ((ev.errors || []).concat(ev.browserErrors || []).map(e => '\n  ! ' + String(e.text || '').split('\n')[0]).join(''));
   if (ev.kind === 'checkpoint') text = `⚑ checkpoint ${ev.tag}: ${ev.label || ''}`;
   if (ev.kind === 'idle') text = '— idle —';
+  if (ev.kind === 'notes') text = (ev.missing && ev.missing.length ? '⚠ ' : '✓ ') + (ev.text || '') + (ev.answers && Object.keys(ev.answers).length ? '\n' + Object.entries(ev.answers).map(([n, a]) => `  ${n}. ${a}`).join('\n') : '');
   if (ev.kind === 'artdone') text = '◆ sprite job ' + (ev.text || 'finished') + ' (the art lane, beside the builder)';
   if (ev.kind === 'prompt') { d.classList.add('you'); d.innerHTML = `<time>${Forge.time(ev.t)}</time><div class="vl-you-head">${Forge.esc(ev.by || 'you')} · ${Forge.esc({ chat: 'to the builder', pipeline: 'the brief for a build', inbox: 'to the builder, for its next run', art: 'to the artist' }[ev.mode] || ev.mode || '')}</div><div class="vl-you-text">${Forge.esc(ev.text || '')}</div>`; const stick0 = box.scrollTop + box.clientHeight >= box.scrollHeight - 40; box.appendChild(d); if (stick0) box.scrollTop = box.scrollHeight; return; }
   const stamp = `<time>${Forge.time(ev.t)}</time>`;

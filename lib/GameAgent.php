@@ -30,6 +30,7 @@ class GameAgent {
 
     private string $slug; private string $dir; private array $state; private int $memberId; private bool $stop = false;
 
+    private array $pendingNotes = []; // the queued notes this run was given, to check its answer against
     private string $lane = 'build'; // 'build': the builder (its session, its inbox, its checkpoints); 'art': a sprite job beside it (fresh session, no inbox, no commits)
     public function __construct(string $slug, int $memberId = 0, string $lane = 'build') {
         $this->slug = $slug; $this->dir = GameStore::dir($slug); $this->memberId = $memberId; $this->lane = $lane === 'art' ? 'art' : 'build';
@@ -81,8 +82,11 @@ class GameAgent {
         foreach (['kit', 'studio', 'centipede', 'templates'] as $extra) if (is_dir(GameStore::root() . '/' . $extra)) array_push($cmd, '--add-dir', GameStore::root() . '/' . $extra); // the shared engine, the soak tools and the reference game are readable beyond the game's folder
         $model = (string) GameStore::cfg('model', ''); if ($model !== '') array_push($cmd, '--model', $model);
         if ($resume && $sid) array_push($cmd, '--resume', $sid);
-        $inbox = $this->dir . '/.studio/inbox.txt';
-        if ($this->lane !== 'art' && is_file($inbox) && trim((string) file_get_contents($inbox)) !== '') { $prompt .= "\n\nNotes from the producer since the last run (follow them where they fit this task; keep them in mind otherwise):\n" . trim((string) file_get_contents($inbox)); unlink($inbox); $this->emit('note', ['text' => "the producer's notes go with this run"]); }
+        $notes = $this->lane !== 'art' ? GameStore::takeNotes($this->slug) : [];
+        if ($notes) { // numbered, and each must be answered: the run's reply ends with a NOTES line, checked after the run
+            $prompt .= "\n\nNotes from the producer that arrived while you were busy. Each needs an answer: do it now if it fits this run, or say it is planned for later, or decline it and say why.\n" . implode("\n", array_map(fn($n, $i) => ($i + 1) . '. ' . $n['text'], $notes, array_keys($notes)))
+                     . "\nEnd your reply with one line exactly like: NOTES: 1 built; 2 planned (when); 3 declined (why) — one entry for every number above.";
+            $this->pendingNotes = $notes; $this->emit('note', ['text' => count($notes) . " producer note(s) go with this run, numbered; the reply must answer each"]); }
         $env['GAME_URL'] = GameStore::soakUrl($this->slug); $env['STUDIO'] = GameStore::root() . '/studio'; $env['VOIDLUX_GAME'] = $this->slug;
         $env['PLAYWRIGHT_ROOT'] = (string) GameStore::cfg('playwright_root', '/home/ubuntu'); $env['CHROME'] = (string) GameStore::cfg('chrome', '/usr/bin/google-chrome'); $env['CDP_URL'] = (string) GameStore::cfg('cdp_url', 'http://127.0.0.1:9222');
         if ($jail) { $env['CLAUDE_BIN'] = $bin; $env['JAIL_HOME_CLAUDE'] = (string) GameStore::cfg('agent_login', 'host') === 'host' ? '1' : '0'; $cmd = array_merge([GameStore::root() . '/studio/jail.sh', $this->dir], $cmd); }
@@ -91,10 +95,10 @@ class GameAgent {
         $proc = proc_open($cmd, $desc, $pipes, $this->dir, $env);
         if (!is_resource($proc)) { $this->emit('error', ['text' => 'cannot start the agent process']); return $result; }
         fclose($pipes[0]); stream_set_blocking($pipes[2], false);
-        $last = []; $err = '';
+        $last = []; $err = ''; $tail = [];
         while (($line = fgets($pipes[1])) !== false) {
             $err .= (string) stream_get_contents($pipes[2]);
-            $line = trim($line); if ($line === '') continue;
+            $line = trim($line); if ($line === '') continue; $tail[] = mb_substr($line, 0, 400); if (count($tail) > 6) array_shift($tail);
             $m = json_decode($line, true);
             if (!is_array($m)) { $this->emit('note', ['text' => mb_substr($line, 0, 500)]); continue; }
             $kind = $m['type'] ?? '';
@@ -127,7 +131,15 @@ class GameAgent {
             $this->state['session'] = null; $this->save();
             return $this->run($prompt, false, true, $maxTurns, $label, true);
         }
-        elseif ($rc !== 0 && !$result['ok']) $this->emit('error', ['text' => "the agent exited {$rc}: " . (trim(substr($err, -800)) ?: 'no message')]);
+        elseif ($rc !== 0 && !$result['ok']) { // say why: stderr's tail, else the last things the agent wrote, and what the failed run cost
+            $why = trim(substr($err, -1500)); $lastOut = implode("\n", array_slice($tail, -3));
+            $this->emit('error', ['text' => "the agent exited {$rc}: " . ($why !== '' ? $why : ($lastOut !== '' ? "nothing on stderr; its last output was:\n{$lastOut}" : 'no output at all (the process died before writing anything)')), 'exit' => $rc, 'wasted' => round((float) $result['cost'], 4), 'subtype' => $result['subtype'] ?? null]); }
+        if ($this->pendingNotes && !$this->stop) { // every queued note answered, or the gap said out loud
+            $txt = (string) $result['text']; $ans = []; if (preg_match('/^\s*NOTES:\s*(.+)$/mi', $txt, $nm)) foreach (preg_split('/;\s*/', $nm[1]) as $part) if (preg_match('/^\s*(\d+)\s+(built|planned|declined|done)\b(.*)$/i', $part, $pm)) $ans[(int) $pm[1]] = strtolower($pm[2]) . trim($pm[3]);
+            $missing = []; foreach ($this->pendingNotes as $i => $n) if (!isset($ans[$i + 1])) $missing[] = ($i + 1) . '. ' . mb_substr($n['text'], 0, 120);
+            $this->emit('notes', ['answered' => count($ans), 'total' => count($this->pendingNotes), 'missing' => $missing, 'answers' => $ans, 'text' => $missing ? 'not answered: ' . implode(' | ', $missing) : 'every queued note answered']);
+            if ($missing) foreach ($this->pendingNotes as $i => $n) if (!isset($ans[$i + 1])) GameStore::queueNote($this->slug, $n['text'], $n['tries'] + 1); // back in the queue, one try spent
+            $this->pendingNotes = []; }
         $this->state['runs'] = ($this->state['runs'] ?? 0) + 1; $this->state['cost'] = ($this->state['cost'] ?? 0) + $result['cost']; $this->save();
         $this->emit('done', ['ok' => $result['ok'], 'cost' => round($result['cost'], 4), 'turns' => $result['turns'], 'text' => mb_substr((string) $result['text'], 0, 2000), 'label' => $label]);
         return $result;
