@@ -53,7 +53,8 @@ class Game extends BaseControls\Control {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
         GameStore::browserSeen($g->slug); // this viewer's page is open: it can run playtests
         $req = GameStore::soakRequest($g->slug);
-        $this->jsonSuccess(GameStore::events($g->slug, (int) $this->getParam('since', 0)) + ['agent' => GameStore::agentState($g->slug), 'soakRequest' => ($req && empty($req['claimed'])) ? $req : null]);
+        $shot = GameStore::shotRequest($g->slug);
+        $this->jsonSuccess(GameStore::events($g->slug, (int) $this->getParam('since', 0)) + ['agent' => GameStore::agentState($g->slug), 'soakRequest' => ($req && empty($req['claimed'])) ? $req : null, 'shotRequest' => ($shot && empty($shot['claimed'])) ? $shot : null]);
     }
     public function doc($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
@@ -76,6 +77,13 @@ class Game extends BaseControls\Control {
     public function soakclaim($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
         $ok = GameStore::claimSoak($g->slug, (string) ($this->body()['id'] ?? '')); $this->jsonSuccess(['claimed' => $ok], $ok ? 'Yours.' : 'Someone else took it.');
+    }
+    /** A screenshot the builder asked for: the page claims it, then posts the PNG. */
+    public function shotclaim($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $ok = GameStore::claimShot($g->slug, (string) ($this->body()['id'] ?? '')); $this->jsonSuccess(['claimed' => $ok]); }
+    public function shotdone($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $b = $this->body();
+        try { $this->jsonSuccess(['file' => GameStore::finishShot($g->slug, (string) ($b['id'] ?? ''), (string) ($b['png'] ?? ''), ['by' => (string) ($this->member->username ?: $this->member->email), 'w' => (int) ($b['w'] ?? 0), 'h' => (int) ($b['h'] ?? 0), 'errors' => array_slice((array) ($b['errors'] ?? []), 0, 10)])]); }
+        catch (\Throwable $e) { $this->jsonError($e->getMessage()); }
     }
     /** The page's report for a playtest it ran. */
     public function soakdone($params = []): void {

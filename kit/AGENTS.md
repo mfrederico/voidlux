@@ -120,6 +120,11 @@ in one line and stop; never work around it with an API key or a web form.
 - Match the code around you: dense lines, several statements per line, plain-English comments that say what a thing is
   for and why. Every file starts with a header comment saying what it holds.
 - **Never splice a `//` comment into the middle of a line**: it silently comments out the rest. Use `/* ... */` inside a line.
+- **Never start a browser** (Chrome, Chromium, Playwright, Puppeteer). There is none in the jail and the server must not
+  run one; it brought the machine down. Playtests and screenshots run in a producer's open browser, the game page in
+  the forge: `../../studio/bin/soak 60 4` for a playtest, `../../studio/bin/shot 5 "bot=1"` for a screenshot after 5
+  seconds with that query (it prints a PNG path to Read). If either says `no-browser`, nobody has the game open: the
+  check is not done, so say so in your reply and carry on. Do not look for another way.
 - If the game has a scheduled first event (a first night, a first boss, a timer), put `"soak_min": <seconds>` in game.json,
   enough to reach and get through it: every soak of this game then runs at least that long.
 - `node --check` every changed file. Soak when the autopilot would play through the change, not otherwise. Then commit,

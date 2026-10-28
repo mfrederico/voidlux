@@ -25,10 +25,18 @@ args+=(--ro-bind "$CLAUDE_DIR" "$CLAUDE_DIR")
 # the node install: the whole prefix, not just bin/ (npx is a link into ../lib/node_modules, and a plugin's MCP server such as
 # mojulo starts with `npx -y`); /usr and /opt are bound already
 NODE_HOME=$(dirname "$NODE_BIN"); case "$NODE_HOME" in /usr*|/opt*) ;; *) args+=(--ro-bind "$NODE_HOME" "$NODE_HOME");; esac
-# the soak: Playwright from the operator's node_modules, its browser cache, and Chrome (/opt/google is under /opt above)
+# No browser in the jail. Playtests and screenshots run in a producer's open browser (studio/bin/soak, studio/bin/shot);
+# a builder that tries to start Chrome finds none: /opt/google/chrome is an empty dir in here, Playwright's browser cache
+# is not shown, and downloads of browsers are switched off. Only with [forge] server_chrome = 1 (JAIL_CHROME=1 from the
+# runner) does the old server-side soak get Playwright and its browsers back.
 PW_ROOT=${PLAYWRIGHT_ROOT:-$H}
-[ -d "$PW_ROOT/node_modules" ] && args+=(--ro-bind "$PW_ROOT/node_modules" "$PW_ROOT/node_modules")
-[ -d "$H/.cache/ms-playwright" ] && args+=(--ro-bind "$H/.cache/ms-playwright" "$H/.cache/ms-playwright")
+if [ "${JAIL_CHROME:-0}" = "1" ]; then
+  [ -d "$PW_ROOT/node_modules" ] && args+=(--ro-bind "$PW_ROOT/node_modules" "$PW_ROOT/node_modules")
+  [ -d "$H/.cache/ms-playwright" ] && args+=(--ro-bind "$H/.cache/ms-playwright" "$H/.cache/ms-playwright")
+else
+  for d in /opt/google/chrome /opt/chromium /opt/microsoft; do [ -d "$d" ] && args+=(--tmpfs "$d"); done
+  for f in /usr/bin/chromium /usr/bin/chromium-browser /usr/lib/chromium/chromium; do [ -e "$f" ] && args+=(--ro-bind /dev/null "$f"); done
+fi
 if [ "${JAIL_HOME_CLAUDE:-0}" = "1" ]; then
   [ -d "$H/.claude" ] && args+=(--bind "$H/.claude" "$H/.claude")
   [ -f "$H/.claude.json" ] && args+=(--bind "$H/.claude.json" "$H/.claude.json")
@@ -44,6 +52,6 @@ fi
 IFS=: read -ra extra <<< "${JAIL_RW:-}"; for d in "${extra[@]}"; do [ -n "$d" ] && [ -e "$d" ] && args+=(--bind "$d" "$d"); done
 IFS=: read -ra extra <<< "${JAIL_RO:-}"; for d in "${extra[@]}"; do [ -n "$d" ] && [ -e "$d" ] && args+=(--ro-bind "$d" "$d"); done
 exec bwrap "${args[@]}" --chdir "$GAME" --setenv HOME "$H" --setenv PATH "$CLAUDE_DIR:$NODE_BIN:/usr/local/bin:/usr/bin:/bin" --setenv JAILED 1 \
-  --setenv PLAYWRIGHT_ROOT "$PW_ROOT" --setenv CHROME "${CHROME:-/usr/bin/google-chrome}" --setenv XDG_RUNTIME_DIR "/run/user/$(id -u)" \
+  --setenv PLAYWRIGHT_ROOT "$PW_ROOT" --setenv CHROME "${CHROME:-/usr/bin/google-chrome}" --setenv PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD 1 --setenv PLAYWRIGHT_BROWSERS_PATH /nonexistent --setenv PUPPETEER_SKIP_DOWNLOAD 1 --setenv XDG_RUNTIME_DIR "/run/user/$(id -u)" \
   --unsetenv CLAUDECODE --unsetenv CLAUDE_CODE_CHILD_SESSION --unsetenv CLAUDE_CODE_SESSION_ID --unsetenv CLAUDE_PID --unsetenv CLAUDE_CODE_MESSAGING_SOCKET --unsetenv CLAUDE_CODE_MESSAGING_TOKEN --unsetenv CLAUDE_CODE_ENTRYPOINT \
   --die-with-parent -- "$@"

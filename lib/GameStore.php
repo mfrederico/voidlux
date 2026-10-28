@@ -313,6 +313,17 @@ class GameStore {
     public static function browserSeen(string $slug): void { @touch(self::studioDir($slug) . '/browser-seen'); }
     public static function browserAttached(string $slug): bool { $f = self::dir($slug) . '/.studio/browser-seen'; return is_file($f) && time() - filemtime($f) < (int) self::cfg('browser_soak_window', 20); }
     public static function soakRequest(string $slug): ?array { $f = self::dir($slug) . '/.studio/soak-request.json'; if (!is_file($f)) return null; $r = json_decode((string) file_get_contents($f), true); return is_array($r) ? $r : null; }
+    // ---- screenshots through a producer's open browser, the way playtests run: a request file, the page claims it, loads
+    //      the game with the asked query in a frame, waits, captures the canvas, and posts the PNG back ----
+    public static function shotRequest(string $slug): ?array { $f = self::dir($slug) . '/.studio/shot-request.json'; if (!is_file($f)) return null; $r = json_decode((string) file_get_contents($f), true); return is_array($r) ? $r : null; }
+    public static function claimShot(string $slug, string $id): bool { $r = self::shotRequest($slug); if (!$r || $r['id'] !== $id || !empty($r['claimed'])) return false; $r['claimed'] = time(); self::writeAtomic(self::dir($slug) . '/.studio/shot-request.json', json_encode($r)); return true; }
+    public static function finishShot(string $slug, string $id, string $png, array $info): string {
+        $r = self::shotRequest($slug); if (!$r || $r['id'] !== $id) throw new \RuntimeException('no such shot request');
+        if (!preg_match('#^data:image/png;base64,([A-Za-z0-9+/=]+)$#', $png, $m)) throw new \InvalidArgumentException('the shot must be a PNG data URL');
+        $bin = base64_decode($m[1], true); if ($bin === false || strlen($bin) > 8 * 1024 * 1024) throw new \InvalidArgumentException('the shot is not a PNG under 8 MB');
+        $d = self::studioDir($slug) . '/shots'; if (!is_dir($d)) mkdir($d, 0775, true); self::writeAtomic("$d/$id.png", $bin); self::writeAtomic("$d/$id.json", json_encode($info + ['id' => $id, 'query' => $r['query'] ?? '', 'secs' => $r['secs'] ?? 0], JSON_UNESCAPED_SLASHES));
+        @unlink(self::dir($slug) . '/.studio/shot-request.json'); self::emit($slug, 'note', ['text' => "shot {$id} taken in a viewer's browser: .studio/shots/{$id}.png"]); return ".studio/shots/$id.png";
+    }
     public static function requestSoak(string $slug, int $secs, int $fast): string {
         $id = date('Ymd-His') . '-' . substr(bin2hex(random_bytes(2)), 0, 3);
         self::writeAtomic(self::studioDir($slug) . '/soak-request.json', json_encode(['id' => $id, 'secs' => $secs, 'fast' => $fast, 't' => time(), 'claimed' => 0]));

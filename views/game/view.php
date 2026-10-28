@@ -190,6 +190,7 @@ async function poll() {
     for (const ev of r.events) { addEvent(ev); if (['idle', 'checkpoint', 'soak', 'done'].includes(ev.kind)) refreshDue = true; }
     const first = lastId === 0; lastId = r.last; renderSession(r.agent); if (first) { const b = $('stream'); b.scrollTop = b.scrollHeight; }
     if (r.soakRequest && !soakRunning) runBrowserSoak(r.soakRequest);
+    if (r.shotRequest && !shotRunning) runBrowserShot(r.shotRequest);
     if (refreshDue) { refreshDue = false; render(await Forge.api(`/game/status/${slug}`)); }
     $('streamNote').textContent = ''; $('attachedPill').className = 'vl-pill live'; $('attachedPill').textContent = '● this browser is attached';
   } catch (e) { $('streamNote').textContent = 'polling: ' + e.message; $('attachedPill').className = 'vl-pill'; $('attachedPill').textContent = '○ not attached (reconnecting)'; }
@@ -197,7 +198,22 @@ async function poll() {
 }
 // ---- playtests in this browser: the server hands a pending request to whoever polls first; the game runs in a hidden
 // frame here with its bots, and the report (window.__SOAK, same origin) goes back. The server's Chrome is the fallback ----
-let soakRunning = false, hereCount = 0;
+let soakRunning = false, hereCount = 0, shotRunning = false;
+// a screenshot the builder asked for: the game in a small frame with the asked query, given its seconds, its canvas captured
+async function runBrowserShot(req) {
+  shotRunning = true; let win = null;
+  try {
+    const c = await Forge.api(`/game/shotclaim/${slug}`, { id: req.id }); if (!c.claimed) return;
+    win = document.createElement('div'); win.className = 'vl-soak-win'; win.innerHTML = `<div class="vl-soak-title"><span>📷 screenshot for the builder · ${req.secs} s${req.query ? ' · ?' + Forge.esc(req.query) : ''}</span><button type="button">–</button></div>`; win.querySelector('button').onclick = () => win.classList.toggle('min');
+    const f = document.createElement('iframe'); f.className = 'vl-soak-frame'; const q = (req.query || '').replace(/^\?/, ''); f.src = `/games/${slug}/?${q}${q ? '&' : ''}seed=7&r=${Date.now()}`; win.appendChild(f); document.body.appendChild(win);
+    const errs = []; f.addEventListener('load', () => { try { f.contentWindow.addEventListener('error', e => errs.push(String(e.message))); } catch (e) {} });
+    await new Promise(r => setTimeout(r, Math.max(1, Math.min(120, +req.secs || 3)) * 1000));
+    let png = '', w = 0, h = 0; try { const cv = f.contentWindow.document.querySelector('canvas'); w = cv.width; h = cv.height; png = cv.toDataURL('image/png'); } catch (e) { errs.push('could not read the canvas: ' + e.message); }
+    if (!png) { const cv = document.createElement('canvas'); cv.width = 320; cv.height = 180; const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, 320, 180); g.fillStyle = '#f66'; g.font = '14px monospace'; g.fillText('no canvas to capture', 20, 90); png = cv.toDataURL('image/png'); }
+    await Forge.api(`/game/shotdone/${slug}`, { id: req.id, png, w, h, errors: errs });
+    win.querySelector('.vl-soak-title span').textContent = '📷 sent to the builder'; win.classList.add('ok');
+  } catch (e) { $('streamNote').textContent = 'shot: ' + e.message; } finally { shotRunning = false; if (win) setTimeout(() => win.remove(), 2500); }
+}
 async function runBrowserSoak(req) {
   soakRunning = true;
   try {

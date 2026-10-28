@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# A screenshot of this game, taken in a producer's open browser (the forge's game page), the way playtests run.
+# usage: shot [seconds] [query]     e.g.  shot 5 "bot=1"   shot 3 "god=1&scene=play"
+#   seconds: how long the game runs before the capture (1-120, default 3); query: added to the game's URL
+# Prints the PNG's path (read it with Read). With no browser attached it prints no-browser and exits 2: then the shot
+# is not taken. Do NOT start a browser yourself (none is available in the jail); say in your reply that it is still to do.
+set -euo pipefail
+SECS=${1:-3}; QUERY=${2:-}
+WINDOW=${BROWSER_SOAK_WINDOW:-20}; WAIT=${BROWSER_SOAK_WAIT:-60}
+mkdir -p .studio/shots
+ID="$(date +%Y%m%d-%H%M%S)-$(head -c 2 /dev/urandom | od -An -tx1 | tr -d ' \n' | cut -c1-3)"
+python3 -c "import json,sys,time; json.dump({'id':sys.argv[1],'secs':int(sys.argv[2]),'query':sys.argv[3],'t':int(time.time()),'claimed':0}, open('.studio/shot-request.json.tmp','w'))" "$ID" "$SECS" "$QUERY" && mv .studio/shot-request.json.tmp .studio/shot-request.json
+echo "shot: asking a producer's browser (request $ID)…" >&2
+CLAIM_BY=$(( $(date +%s) + WAIT )); DEADLINE=$(( $(date +%s) + WAIT + SECS + 60 ))
+while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+  if [ -f ".studio/shots/$ID.png" ]; then echo ".studio/shots/$ID.png"; [ -f ".studio/shots/$ID.json" ] && cat ".studio/shots/$ID.json" >&2 && echo >&2; exit 0; fi
+  [ -f .studio/shot-request.json ] || break
+  if [ "$(date +%s)" -gt "$CLAIM_BY" ] && grep -q '"claimed": 0' .studio/shot-request.json 2>/dev/null; then break; fi
+  sleep 1
+done
+rm -f .studio/shot-request.json
+printf '{"ok": false, "status": "no-browser", "note": "no browser is attached to this game, so the screenshot was not taken. Do not start a browser yourself (there is none in the jail and the server must not run one). Carry on, and say in your reply that the visual check is still to be done: a producer opens the game page in the forge and asks again."}\n'
+exit 2

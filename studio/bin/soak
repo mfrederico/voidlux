@@ -30,5 +30,5 @@ if [ "${SERVER_CHROME:-0}" = "1" ]; then
 fi
 # No browser answered and the server's own Chrome is off (it brought this machine down): say so plainly. This is not a
 # fault in the game; a producer opens the game's page in the forge and the next soak runs there.
-printf '{"ok": false, "status": "no-browser", "runner": "none", "errors": [], "checks": [], "scenes": {}, "note": "no browser is attached to this game, so the playtest could not run. Not a fault in the game: a producer opens the game page in the forge (Play or Test tab) and the next soak runs in their browser. Carry on with the task; say in your reply that the soak is still to be run."}\n'
+printf '{"ok": false, "status": "no-browser", "runner": "none", "errors": [], "checks": [], "scenes": {}, "note": "no browser is attached to this game, so the playtest could not run. Not a fault in the game. Do NOT start a browser yourself: there is none in the jail and the server must never run one. Carry on with the task and say in your reply that the soak is still to be run; it runs in the browser of a producer who opens the game page."}\n'
 exit 2
