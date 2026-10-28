@@ -47,7 +47,7 @@ try {
         if ($mode !== 'soak') \app\GameNotices::finished($slug, $mode, $outcome, $memberId);
         if (!\app\GameStore::startQueued($slug) && $mode !== 'soak') { // nothing else queued: notes that arrived during this run get a run of their own now
             $waiting = \app\GameStore::peekNotes($slug); $fresh = array_filter($waiting, fn($n) => (int) ($n['tries'] ?? 0) < 2);
-            if ($fresh) { try { \app\GameStore::startRunner($slug, 'chat', 'Notes from the producer arrived while you were busy; they follow. Handle each one.', 0); } catch (\Throwable $e) { \app\GameStore::emit($slug, 'error', ['text' => 'the queued notes could not start a run: ' . $e->getMessage()]); } }
+            if ($fresh) { try { \app\GameStore::startRunner($slug, 'chat', 'The producer sent notes while you were busy; they are listed below, numbered. Handle each one.', 0); } catch (\Throwable $e) { \app\GameStore::emit($slug, 'error', ['text' => 'the queued notes could not start a run: ' . $e->getMessage()]); } }
             elseif ($waiting) \app\GameStore::emit($slug, 'notes', ['text' => count($waiting) . ' note(s) left unanswered after two tries; they stay queued for the next run you start', 'missing' => array_map(fn($n) => mb_substr((string) $n['text'], 0, 120), $waiting), 'answered' => 0, 'total' => count($waiting)]);
         }
     }

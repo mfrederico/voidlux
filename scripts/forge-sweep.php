@@ -25,7 +25,7 @@ foreach (\app\Bean::find('game') as $g) {
             else { $notes = array_filter(\app\GameStore::peekNotes($slug), fn($n) => (int) ($n['tries'] ?? 0) < 2);
                 // a note gets a minute's grace: the run that just ended starts it itself, and a burst of notes goes as one run
                 $f = \app\GameStore::studioDir($slug) . '/inbox.jsonl'; $fresh = is_file($f) && time() - filemtime($f) < 45;
-                if ($notes && !$fresh) { $did[] = "$slug: " . count($notes) . ' queued note(s)'; if (!$dry) { \app\GameStore::emit($slug, 'note', ['text' => 'the sweep found ' . count($notes) . ' note(s) waiting with nothing running: a run for them starts']); \app\GameStore::startRunner($slug, 'chat', 'Notes from the producer arrived while you were busy; they follow. Handle each one.', 0); } } }
+                if ($notes && !$fresh) { $did[] = "$slug: " . count($notes) . ' queued note(s)'; if (!$dry) { \app\GameStore::emit($slug, 'note', ['text' => 'the sweep found ' . count($notes) . ' note(s) waiting with nothing running: a run for them starts']); \app\GameStore::startRunner($slug, 'chat', 'The producer sent notes while you were busy; they are listed below, numbered. Handle each one.', 0); } } }
         }
         $a = \app\GameStore::artState($slug); $aq = \app\GameStore::studioDir($slug) . '/art-queue.jsonl';
         if (!$a['busy'] && is_file($aq) && trim((string) file_get_contents($aq)) !== '') { $did[] = "$slug: a queued sprite job"; if (!$dry) \app\GameStore::startQueuedArt($slug); }

@@ -92,6 +92,7 @@ class GameAgent {
         if ($jail) { $env['JAIL_CHROME'] = (string) GameStore::cfg('server_chrome', '0') === '1' ? '1' : '0'; $env['CLAUDE_BIN'] = $bin; $env['JAIL_HOME_CLAUDE'] = (string) GameStore::cfg('agent_login', 'host') === 'host' ? '1' : '0'; $cmd = array_merge([GameStore::root() . '/studio/jail.sh', $this->dir], $cmd); }
         $this->emit('note', ['text' => ($label !== '' ? "{$label}: " : '') . 'agent run starts' . ($resume && $sid ? ' (resumes ' . substr($sid, 0, 8) . ')' : ' (new session)') . " on {$note}" . ($jail ? ', in the jail' : '')]);
         $desc = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+        $cmd[array_search('-p', $cmd, true) + 1] = $prompt; // the prompt as it now is: the queued notes were added above, after $cmd was built
         $proc = proc_open($cmd, $desc, $pipes, $this->dir, $env);
         if (!is_resource($proc)) { $this->emit('error', ['text' => 'cannot start the agent process']); return $result; }
         fclose($pipes[0]); stream_set_blocking($pipes[2], false);
