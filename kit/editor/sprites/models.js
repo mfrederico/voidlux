@@ -10,14 +10,21 @@ function toast(t, cls) { let b = document.getElementById('toast'); if (!b) { b =
 const CAST_OK = ['castGrid', 'castHist', 'castReqs', 'castWaiting', 'castAsk', 'castAskBtn', 'castList', 'castMake', 'castWire', 'castSub', 'castNote'].every(id => el(id));
 if (!CAST_OK) { el('fresh').classList.remove('hidden'); el('freshWhy').textContent = '(the 3D tab is newer than this copy of the page)'; }
 const Cast = {
-  S: null, jobs: [], open: '', focus: '', t: 0, viewT: 0,
+  S: null, jobs: [], open: '', focus: '', t: 0, viewT: 0, seenWaiting: null, title: document.title,
   async refresh() {
     if (!CAST_OK) return;
     try {
       const [c, j] = await Promise.all([fetch(apiUrl('cast'), { cache: 'no-store' }), fetch(apiUrl('sketches'), { cache: 'no-store' })]);
       const cj = await c.json(); if (!c.ok) throw new Error(cj.error || c.status); this.S = cj; this.jobs = (await j.json()).jobs || [];
     } catch (e) { el('castSub').textContent = 'the cast could not be read: ' + e.message; return; }
-    this.draw(); clearTimeout(this.t); if (this.busy()) this.t = setTimeout(() => { if (!el('tab-3d').classList.contains('hidden')) this.refresh(); }, 5000);
+    this.landed(); this.draw(); clearTimeout(this.t); if (this.busy()) this.t = setTimeout(() => { if (!el('tab-3d').classList.contains('hidden')) this.refresh(); }, 5000);
+  },
+  landed() { // a revision that has just come back: say so, and open its model at it unless the person is busy with another
+    const W = this.S.waiting || [], fresh = this.seenWaiting === null ? [] : W.filter(k => !this.seenWaiting.includes(k)); this.seenWaiting = W.slice();
+    document.title = (W.length ? `(${W.length}) ` : '') + this.title;
+    if (!fresh.length) return; const k = fresh[0], j = this.jobs.find(x => x.kind === 'remodel' && x.key === k);
+    toast(fresh.length > 1 ? `${fresh.length} revisions are ready: ${fresh.join(', ')}` : `The revision of ${k} is ready: compare it, then Use this model`, 'ok');
+    if (!this.open && j) { this.open = k; this.focus = j.id; this.scrollTo = true; }
   },
   busy() { const S = this.S; if (!S) return false; return (S.list && S.list.busy) || (S.requests || []).some(q => q.state === 'reading') || Object.values(S.items).some(it => it.state === 'making') || this.jobs.some(j => j.kind === 'remodel' && !j.result); },
   items() { return Object.entries(this.S ? this.S.items : {}); },
@@ -43,7 +50,7 @@ const Cast = {
         d.innerHTML = `<img alt=""><div><div><b class="mono">${esc(k)}</b> ${W.includes(k) ? '<span class="pill s-made">revision ready</span> ' : ''}<span class="pill s-${esc(it.state)}">${{ kept: 'model', made: 'made', making: 'making…', failed: 'failed', none: 'stand-in' }[it.state] || esc(it.state)}</span>${it.hooked ? ' <span class="pill s-hooked" title="the game asks Models.make for it">in game</span>' : ''}</div><div class="muted small">${esc(it.what || '')}</div><div class="muted small">${+it.size || '?'} units${it.error ? ' · ' + esc(it.error) : ''}</div></div>`;
         const img = d.querySelector('img'); if (it.file) glbThumb(img, ASSET(it.file) + '?v=' + (it.v || ''), 96); else img.style.visibility = 'hidden';
         d.onclick = () => { this.open = this.open === k ? '' : k; this.focus = ''; this.draw(); };
-        g.appendChild(d); if (this.open === k) g.appendChild(this.detail(k, it));
+        g.appendChild(d); if (this.open === k) { const det = this.detail(k, it); g.appendChild(det); if (this.scrollTo) { this.scrollTo = false; requestAnimationFrame(() => (det.querySelector('.crev.on') || det).scrollIntoView({ behavior: 'smooth', block: 'center' })); } }
       }
     }
   },
@@ -96,7 +103,7 @@ const Cast = {
       const r = document.createElement('div'); r.className = 'crev' + (j.id === this.focus ? ' on' : ''); const ok = j.result && j.result.ok && (j.result.files || [])[0], kept = it.kept === j.id;
       r.innerHTML = `<div class="small"><b>Revision:</b> ${esc(j.note || '')}<div class="muted">${!j.result ? 'the artist is on it…' : !j.result.ok ? 'failed: ' + esc(j.result.error || '') : kept ? '<b>in use</b>: this is the model the game has now' : esc(j.result.note || '')}</div></div>`;
       if (ok && !kept) { const im = document.createElement('img'); glbThumb(im, j.base + ok, 96); im.title = 'see it turning'; im.style.cursor = 'pointer'; im.onclick = () => this.view(v, j.base + ok); r.prepend(im);
-        const b = document.createElement('div'); b.className = 'row'; b.innerHTML = '<button class="primary" title="this revision replaces the model in the game; the one in use now is kept under Earlier versions">Use this model</button><button>Discard</button>'; const [kb, db] = b.querySelectorAll('button');
+        const b = document.createElement('div'); b.className = 'row'; b.innerHTML = '<button class="primary' + (j.id === this.focus ? ' pulse' : '') + '" title="this revision replaces the model in the game; the one in use now is kept under Earlier versions">Use this model</button><button>Discard</button>'; const [kb, db] = b.querySelectorAll('button');
         kb.onclick = async () => { kb.disabled = db.disabled = true; kb.textContent = 'Switching…'; this.focus = j.id;
           await this.post(apiUrl('spritesave'), { key: k, take: { id: j.id, file: ok }, size: +it.size || 1 }, `${k}: this revision is now the model the game uses (it loads it next time it starts). The one it replaced is under Earlier versions.`); };
         db.onclick = () => this.post(apiUrl('sketchdelete'), { id: j.id }, 'revision discarded'); r.appendChild(b); }
