@@ -51,7 +51,7 @@ class Cast {
         $c = self::read($slug); $dir = GameStore::dir($slug); $hooks = self::hooks($slug); $out = [];
         foreach ($c['items'] as $k => $it) {
             $state = !empty($it['file']) && is_file("$dir/assets/{$it['file']}") ? 'kept' : 'none'; $job = (string) ($it['job'] ?? '');
-            if ($job !== '' && ($it['kept'] ?? '') !== $job) {
+            if ($job !== '' && strcmp((string) ($it['kept'] ?? ''), $job) < 0) { // a job newer than what is kept
                 try { $s = GameStore::sketchStatus($slug, $job); $state = !empty($s['busy']) && empty($s['result']) ? 'making' : (!empty($s['result']['ok']) ? ($state === 'kept' ? 'kept' : 'made') : (!empty($s['result']) ? 'failed' : 'making')); if (!empty($s['result']) && empty($s['result']['ok'])) $it['error'] = (string) ($s['result']['error'] ?? 'the job failed'); }
                 catch (\InvalidArgumentException $e) { $state = $state === 'kept' ? 'kept' : 'none'; } // the job was deleted
             }
@@ -157,7 +157,7 @@ class Cast {
         }
         $c = self::read($slug);
         foreach ($c['items'] as $k => $it) {
-            $job = (string) ($it['job'] ?? ''); if ($job === '' || ($it['kept'] ?? '') === $job) continue;
+            $job = (string) ($it['job'] ?? ''); if ($job === '' || strcmp((string) ($it['kept'] ?? ''), $job) >= 0) continue; // kept from this job, or from a later one (a revision a person kept): never put an older take back
             try { $s = GameStore::sketchStatus($slug, $job); } catch (\InvalidArgumentException $e) { continue; }
             $req = json_decode((string) @file_get_contents(GameStore::sketchDir($slug, $job) . '/request.json'), true) ?: [];
             if (($req['model']['cast'] ?? '') !== $k || empty($s['result'])) continue; // a revision is kept by a person; a job still running waits
