@@ -8,7 +8,8 @@
  *   GET  sprites    POST spritesave { key, png|svg|file, w, h, frames, fps, source }    POST spritedelete { key, file }
  *   POST sketch { png, note, style, pixel, size, key, palette } → { id }      GET sketch?id= → { result, base, busy }
  *   GET  sketches → { jobs }      POST sketchdelete { id }      GET spritehints?key=   POST spritehints { key, plan, joints, notes }
- *   GET  cast → the 3D cast       POST cast { do: list | make | wire | revise | edit }
+ *   GET  cast → the 3D cast       POST cast { do: list | make | wire | revise | edit | request | go | cancel | keepall }
+ *   GET  events → rules, vocabulary, proposals      POST events { do: save | describe | add | dismiss | wire | ask }
  */
 namespace app;
 
@@ -90,6 +91,27 @@ class Gameapi extends BaseControls\Control {
         $f = GameStore::studioDir($g->slug) . '/ux.jsonl'; if (is_file($f) && filesize($f) > 2 * 1024 * 1024) @rename($f, $f . '.1'); // keep it small: one old file at most
         if ($lines !== '') file_put_contents($f, $lines, FILE_APPEND | LOCK_EX);
         http_response_code(204); exit;
+    }
+    /** The events (lib/Rules.php): GET the vocabulary, rules and proposals; POST { do: save (rules) | describe (text) | add (id) |
+     *  dismiss (id) | wire (extra?) | ask (what) }. */
+    public function events($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $slug = (string) $g->slug; $who = (int) $this->member->id;
+        try {
+            if ($this->post()) { $b = $this->getJsonInput() ?? []; $out = [];
+                switch ((string) ($b['do'] ?? '')) {
+                    case 'save': $out = ['saved' => count(Rules::save($slug, (array) ($b['rules'] ?? [])))]; break;
+                    case 'describe': $out = Rules::describe($slug, (string) ($b['text'] ?? ''), $who); break;
+                    case 'add': $out = ['added' => Rules::settleProposal($slug, (string) ($b['id'] ?? ''), true)]; break;
+                    case 'dismiss': Rules::settleProposal($slug, (string) ($b['id'] ?? ''), false); break;
+                    case 'wire': $r = Rules::wire($slug, $who, trim(mb_substr((string) ($b['extra'] ?? ''), 0, 600))); $out = ['queued' => !empty($r['queued'])]; break;
+                    case 'ask': $r = Rules::askFor($slug, (string) ($b['what'] ?? ''), $who); $out = ['queued' => !empty($r['queued'])]; break;
+                    default: $this->raw(['error' => 'do: save, describe, add, dismiss, wire or ask'], 400);
+                }
+                $this->raw($out + Rules::status($slug));
+            }
+            $this->raw(Rules::status($slug));
+        } catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
+        catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 409); }
     }
     /** The 3D cast (lib/Cast.php): GET its items and states; POST { do: list | make (keys?) | wire | revise (key, note) | edit (key, fields | drop) | request (text) | go (id, keys?) | cancel (id) | keepall (keys?) }. */
     public function cast($params = []): void {

@@ -109,10 +109,29 @@ will not load is a console error, which the soak reports.
      Parts the stand-in animated in code (legs, eyes, colour flashes) need a decision per thing: keep those parts in code
      beside the model, tint the model's materials, or play its clips (`Models.clips(key)`) with an AnimationMixer.
   Then a model kept later appears without another change. 2D games ignore all of this.
-- Publishing copies `assets/` and `js/vendor/` with the game.
+- Publishing copies `assets/` (models, events-vocab.json and events.json with them) and `js/vendor/` with the game.
 - The sprite page's `>>` sends the producer's sketch to you with a message that says exactly what to draw and where
   (`sketches/<id>/<key>-N.svg` or `.png`, then `result.json`). Follow it to the letter: nothing goes into `assets/` or the
   manifest until the producer keeps a take.
+
+## Events (rules the producer writes)
+
+How things react (an enemy hit by fire starts burning, at most three times; a burning tree sets its neighbours alight) is
+**rules**, not code: the producer writes them on the sprite page's Events tab, `../../kit/js/kit-events.js` runs them, and
+its header is the format. Your part, once per game and whenever the game learns a new trick:
+- `assets/events-vocab.json`: the **subjects** (each kind of thing, keyed by its sprite or model key, with groups such as
+  player, enemy, boss, prop, pickup), the **events** the game emits (spawn, hit, die, touch, pickup…, each with the fields
+  the code knows then: hit has type, amount, source) and the **actions** it can do (each wrapping the game's own function,
+  with settings and defaults; `"lasting": true` for one with a duration). The producer can use nothing else, so declare
+  what the game really does, in words a producer reads.
+- `<script src="../../kit/js/kit-events.js">`; `Events.action(name, (ctx, args, end) => …)` for every action (ctx.target is
+  the object, end() for a lasting one when its effect is over); `Events.clock` and `Events.rng` set to the game's own time
+  and random if it has them; then `await Events.load()` before play starts.
+- `Events.emit(event, key, fields, object)` at the one place each event happens. Rules are data: never read
+  `assets/events.json` yourself and never write a reaction in code that a rule could hold. You do not edit the producer's
+  rules, except when asked to move a hard-wired reaction into one that reproduces it exactly.
+- A broken rule or a missing implementation is an error in the console at load, naming it; fix the vocabulary or the code,
+  not the rule. `?events` in the page's address logs every rule that fires; `Events.trace` holds the last 300 steps.
 
 ## Plugins the builder has
 

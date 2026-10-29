@@ -41,6 +41,10 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
 .casthist { display: grid; gap: 6px; margin: 10px 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); } .hlist { display: grid; gap: 4px; max-height: 340px; overflow-y: auto; }
 .hrow { display: grid; grid-template-columns: 48px minmax(90px, auto) minmax(0, 1fr) auto auto; gap: 10px; align-items: center; text-align: left; padding: 4px 6px; border: 1px solid transparent; border-radius: 8px; background: none; color: inherit; font: inherit; cursor: pointer; } .hrow:hover, .hrow.on { border-color: var(--accent); } .hrow img { width: 48px; height: 48px; object-fit: contain; }
 @media (max-width: 700px) { .hrow { grid-template-columns: 48px 1fr; } .hrow .small { grid-column: 2; } } .crev.on { border-color: var(--accent); border-style: solid; } .linkish { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0; justify-self: start; font: inherit; }
+.evgrid { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 14px; align-items: start; margin-top: 10px; } @media (max-width: 800px) { .evgrid { grid-template-columns: 1fr; } }
+.evwhos { display: grid; gap: 4px; max-height: 70vh; overflow-y: auto; } .evwho { display: grid; grid-template-columns: 1fr auto; text-align: left; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: inherit; font: inherit; cursor: pointer; } .evwho .muted { grid-column: 1; } .evwho .pill { grid-row: 1; grid-column: 2; } .evwho.on { border-color: var(--accent); }
+.evrules { display: grid; gap: 10px; margin-top: 8px; } .evrule { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); } .evrule.off { opacity: .55; } .evrule.broken { border-color: var(--set); } .evbroken { color: var(--set); }
+.evhead { justify-content: space-between; } .evrow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; } .evk { min-width: 36px; font-weight: 600; color: var(--accent); } .evdo { align-items: flex-start; } .evlim { gap: 8px; width: 100%; padding-left: 42px; } .evadd { padding-left: 42px; } .evadd button { font-size: 12px; }
 .castgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; } .castgrp { grid-column: 1 / -1; margin: 10px 0 0; text-transform: capitalize; }
 .ccard { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: center; text-align: left; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; font: inherit; cursor: pointer; } .ccard.on { border-color: var(--accent); }
 .ccard img { width: 64px; height: 64px; object-fit: contain; } .pill { display: inline-block; padding: 0 7px; border-radius: 99px; font-size: 12px; border: 1px solid var(--line); }
@@ -131,7 +135,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
 </style></head><body>
 <div class="wrap">
   <div class="crumbs"><a href="/forge">Forge</a> / <a id="crumbGame" href="#">game</a> / Sprites</div>
-  <div class="top"><h1>Sprites</h1><nav class="tabs" id="tabs"><a href="#make" data-tab="make" class="on">Make</a><a href="#draw" data-tab="draw">Draw</a><a href="#move" data-tab="move">Move</a><a href="#3d" data-tab="3d">3D</a></nav></div>
+  <div class="top"><h1>Sprites</h1><nav class="tabs" id="tabs"><a href="#make" data-tab="make" class="on">Make</a><a href="#draw" data-tab="draw">Draw</a><a href="#move" data-tab="move">Move</a><a href="#3d" data-tab="3d">3D</a><a href="#events" data-tab="events">Events</a></nav></div>
   <p class="lede" id="lede">Draw a rough sketch, say what it is, press &gt;&gt;: the artist draws two takes. Keep one and it is in the game as <code>Draw.pic('key', x, y, size)</code>.</p>
   <div id="msg" class="msg"></div>
   <div id="fresh" class="hidden" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 12px;border:1px solid var(--accent);border-radius:10px;background:var(--surface)"><span>This page was updated behind you.</span><button class="primary" id="freshBtn">Reload it</button><span class="muted small" id="freshWhy"></span></div>
@@ -221,6 +225,13 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
       <div id="castWaiting" class="castwait hidden"></div>
       <div id="castGrid" class="castgrid"></div>
     </section>
+    <section class="tab panel hidden" id="tab-events">
+      <div class="head"><div><h2>Events</h2><div class="meta muted small" id="evSub">loading…</div></div><div class="row"><button id="evWire">Wire events into the game</button><button id="evSave" class="primary" disabled>Saved</button></div></div>
+      <div class="castask" id="evAskBox"><label for="evAsk"><b>Describe a rule</b> <span class="muted small">in your words, e.g. “enemies hit by fire start burning, but at most 3 burns at once; a burning tree sets fire to what touches it”. The artist writes the rules for you to add.</span></label>
+        <textarea id="evAsk" rows="2"></textarea><div class="row"><button class="primary" id="evAskBtn">Write the rules &gt;&gt;</button></div></div>
+      <div id="evProps"></div>
+      <div class="evgrid" id="evBody"><div class="evwhos" id="evWho"></div><div><div class="row"><h3 id="evWhoTitle" style="margin:0">Rules</h3><button id="evNew">+ New rule</button></div><div id="evRules" class="evrules"></div></div></div>
+    </section>
     <section class="tab panel hidden" id="tab-move">
       <div class="head"><div><h2 id="moveTitle">no sprite chosen</h2><div class="meta muted small" id="moveSub">pick a kept sprite on the left to give it motion</div></div><div class="row"><button id="moveDupBtn" disabled title="a copy of this whole sprite (or rig) under a new key">Duplicate sprite…</button><button id="moveAnimBtn" disabled title="the artist animates it as code frames, no rig">⟳ Let the artist animate it…</button></div></div>
       <div class="movegrid">
@@ -271,8 +282,8 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
 <script src="/kit/js/kit-rig.js"></script>
 <script>
 const el = id => document.getElementById(id);
-const LEDE = { make: "Draw a rough sketch, say what it is, press >>: the artist draws two takes. Keep one and it is in the game as Draw.pic('key', x, y, size).", draw: 'Edit a kept sprite: its pixels frame by frame, its SVG source, or its drawing code, with a live preview.', '3d': 'Everything the game draws in 3D, each with its model: list them, make the missing ones in one go, wire them into the game once, then revise any one of them.', move: 'Give a kept sprite motion. Today: the artist animates it as code frames. Next: a skeleton rig with keyframes and inverse kinematics.' };
-function showTab(name) { if (!['make', 'draw', 'move', '3d'].includes(name)) name = 'make'; if (typeof UX !== 'undefined') UX.tab(name); for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('on', a.dataset.tab === name); for (const s of document.querySelectorAll('.tab')) s.classList.toggle('hidden', s.id !== 'tab-' + name); el('lede').textContent = LEDE[name]; if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name); if (name === '3d' && typeof Cast !== 'undefined') Cast.refresh(); if (name === 'move') moveRefresh(); else el('moveJobs').classList.add('hidden'); }
+const LEDE = { make: "Draw a rough sketch, say what it is, press >>: the artist draws two takes. Keep one and it is in the game as Draw.pic('key', x, y, size).", draw: 'Edit a kept sprite: its pixels frame by frame, its SVG source, or its drawing code, with a live preview.', events: 'How things react: on an event, if conditions hold, do actions. Rules per sprite, per group or for everything, using only what the game can do.', '3d': 'Everything the game draws in 3D, each with its model: list them, make the missing ones in one go, wire them into the game once, then revise any one of them.', move: 'Give a kept sprite motion. Today: the artist animates it as code frames. Next: a skeleton rig with keyframes and inverse kinematics.' };
+function showTab(name) { if (!['make', 'draw', 'move', '3d', 'events'].includes(name)) name = 'make'; if (typeof UX !== 'undefined') UX.tab(name); for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('on', a.dataset.tab === name); for (const s of document.querySelectorAll('.tab')) s.classList.toggle('hidden', s.id !== 'tab-' + name); el('lede').textContent = LEDE[name]; if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name); if (name === '3d' && typeof Cast !== 'undefined') Cast.refresh(); if (name === 'events' && typeof Ev !== 'undefined') Ev.refresh(true); if (name === 'move') moveRefresh(); else el('moveJobs').classList.add('hidden'); }
 for (const a of document.querySelectorAll('#tabs a')) a.onclick = e => { e.preventDefault(); showTab(a.dataset.tab); };
 window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
 function moveRefresh() { if (typeof Move !== 'undefined') Move.refresh(); }
@@ -783,7 +794,7 @@ window.addEventListener('resize', () => { if (doc && mode === 'pix') { fitZoom()
 // ---- a newer version of this page: noticed every 20 s by the files' Last-Modified; reloaded by hand, or by itself after a
 //      minute without unsaved work or a touch, so a fix lands without anyone having to refresh the game page ----
 (() => {
-  const FILES = [location.pathname, '/kit/editor/sprites/move.js', '/kit/editor/sprites/models.js', '/kit/js/kit-draw.js', '/kit/js/kit-rig.js']; let stamp = null, since = 0, lastTouch = Date.now();
+  const FILES = [location.pathname, '/kit/editor/sprites/move.js', '/kit/editor/sprites/models.js', '/kit/editor/sprites/events.js', '/kit/js/kit-draw.js', '/kit/js/kit-rig.js']; let stamp = null, since = 0, lastTouch = Date.now();
   for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, () => { lastTouch = Date.now(); }, true);
   async function fingerprint() { const parts = []; for (const f of FILES) { try { const r = await fetch(f, { method: 'HEAD', cache: 'no-store' }); parts.push(r.headers.get('last-modified') || r.headers.get('etag') || ''); } catch (e) { parts.push('?'); } } return parts.join('|'); }
   async function check() {
@@ -798,4 +809,5 @@ window.addEventListener('resize', () => { if (doc && mode === 'pix') { fitZoom()
 </script>
 <script src="/kit/editor/sprites/move.js"></script>
 <script src="/kit/editor/sprites/models.js"></script>
+<script src="/kit/editor/sprites/events.js"></script>
 </body></html>
