@@ -161,6 +161,8 @@ in one line and stop; never work around it with an API key or a web form.
 
 ## House rules
 
+- Playtests and screenshots run in a frame that keeps drawing while the producer's tab is hidden (kit/js/kit-shot.js serves
+  animation frames there): a game needs no pump or draw hook of its own for that.
 - **Never delete, loosen or skip a soak check or test to get a pass.** A check that already fails is reported as failing
   (reply and commit message) and fixed only when that is the task.
 

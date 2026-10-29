@@ -1,4 +1,4 @@
-// Forge screenshots (studio/bin/shot): loaded FIRST in the frame the game page opens for a screenshot (/game/shotframe/<slug>),
+// Forge screenshots and playtests (studio/bin/shot, studio/bin/soak): loaded FIRST in the frame the game page opens for either (/game/shotframe/<slug>),
 // before any game script. A browser stops animation frames in a tab that is not the one on screen, and the producer's game
 // page is often behind another tab while the builder asks for a picture: the game then never draws, and the shot is blank.
 // So while the document is hidden, requestAnimationFrame is served from a message-channel pump (not throttled like timers)

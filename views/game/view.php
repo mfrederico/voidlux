@@ -227,7 +227,7 @@ async function runBrowserSoak(req) {
     $('streamNote').textContent = `playtest ${req.id} running in this browser (${req.secs} s at ${req.fast}x)…`;
     const win = document.createElement('div'); win.className = 'vl-soak-win'; win.innerHTML = `<div class="vl-soak-title"><span>▶ playtest · ${req.secs} game-seconds at ${req.fast}x · the bots are playing</span><button type="button" title="hide the window (the playtest keeps running)">–</button></div>`;
     win.querySelector('button').onclick = () => win.classList.toggle('min');
-    const f = document.createElement('iframe'); f.className = 'vl-soak-frame'; f.src = `/games/${slug}/?soak=${req.secs}&fast=${req.fast}&seed=7&r=${Date.now()}`; win.appendChild(f); document.body.appendChild(win);
+    const f = document.createElement('iframe'); f.className = 'vl-soak-frame'; f.src = `/game/shotframe/${slug}?soak=${req.secs}&fast=${req.fast}&seed=7&r=${Date.now()}`; /* with kit-shot.js first: the game draws even while this tab is hidden, whatever the game's own pumps do */ win.appendChild(f); document.body.appendChild(win);
     const budget = Date.now() + (req.secs / Math.max(1, req.fast)) * 1000 * 2.5 + 20000; let rep = null, errs = [], hiddenTicks = 0, ticks = 0;
     // the frame's own window exists only once it has loaded: listen for its errors then (a listener set before load is lost)
     f.addEventListener('load', () => { try { const w = f.contentWindow; w.addEventListener('error', e => errs.push(String(e.message || e.error) + (e.filename ? ' @' + e.filename.replace(/^.*\//, '') + ':' + e.lineno : ''))); w.addEventListener('unhandledrejection', e => errs.push('unhandled: ' + String(e.reason && e.reason.message || e.reason))); } catch (e) {} });
