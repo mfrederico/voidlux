@@ -433,11 +433,18 @@ async function open(k) {
   try { const im = await loadImage(ASSET(s.file) + '?t=' + Date.now()); doc = docFromImage(im, s.frames > 1 ? s.w : im.naturalWidth); doc.fps = s.fps || 8; el('splitW').value = doc.w; show('pix'); fitZoom(); render(); drawSwatches(); el('aiKey').value = ''; say(''); }
   catch (e) { say(e.message, 'err'); }
 }
-let modelT = 0;
-async function modelShow(url, s) { // a kept 3D model, turning; drag to turn it
-  const st = el('modelStage'); st.innerHTML = ''; clearInterval(modelT); const sc = await glbScene(url), n = 360, cv = document.createElement('canvas'); cv.width = cv.height = n; st.appendChild(cv); const r = new sc.T.WebGLRenderer({ canvas: cv, alpha: true, antialias: true });
+// One turning model on screen at a time, with ONE renderer: starting a viewer stops the previous one and gives its WebGL
+// context back (a browser has about 16; a renderer per viewer, never released, ran it out and three.js then failed).
+const SPIN = { r: null, T: 0 };
+function spinStop() { clearInterval(SPIN.T); if (SPIN.r) { SPIN.r.dispose(); SPIN.r.forceContextLoss(); SPIN.r = null; } }
+async function spin(box, url, n) { // the model at url turning in box, n px square; drag to turn it
+  spinStop(); box.innerHTML = ''; const s = await glbScene(url), cv = document.createElement('canvas'); cv.width = cv.height = n; box.appendChild(cv); spinStop(); // (another viewer may have started while this one loaded)
+  const r = SPIN.r = new s.T.WebGLRenderer({ canvas: cv, alpha: true, antialias: true });
   let a = 0.7, drag = null; cv.addEventListener('pointerdown', e => { drag = e.clientX; cv.setPointerCapture(e.pointerId); }); cv.addEventListener('pointermove', e => { if (drag !== null) { a += (e.clientX - drag) / 120; drag = e.clientX; } }); cv.addEventListener('pointerup', () => { drag = null; });
-  modelT = setInterval(() => { if (!cv.isConnected || mode !== 'model') { clearInterval(modelT); r.dispose(); return; } if (drag === null) a += 0.01; sc.aim(a); r.render(sc.scene, sc.cam); }, 33);
+  SPIN.T = setInterval(() => { if (!cv.isConnected) { if (SPIN.r === r) spinStop(); return; } if (drag === null) a += 0.01; s.aim(a); r.render(s.scene, s.cam); }, 33);
+}
+async function modelShow(url, s) { // a kept 3D model, turning; drag to turn it
+  await spin(el('modelStage'), url, 360);
   el('modelNote').textContent = `3D model, assets/${s.file}, ${((s.w || 100) / 100)} world units across · drag to turn it. A new version is a new 3D model job (Make, builder: 3D model).`;
   el('meta').textContent = `model · ${s.file}`;
 }
@@ -537,9 +544,7 @@ async function openViewer(job, file, url, note, label, motion, keyHint) {
   V = { job, file, url, motion, key: keyHint || el('aiKey').value.trim() || cur || '', rig: false }; const st = el('vStage'); st.innerHTML = ''; el('vTitle').textContent = `${label || file} · key ${el('aiKey').value || 'not set yet'}`; el('vTitle').title = file; el('vNote').textContent = note || ''; el('vStatus').textContent = ''; el('vRefine').value = '';
   const isCode = /\.js(\?|$)/i.test(url), isSvg = /\.svg(\?|$)/i.test(url), isGlb = /\.glb(\?|$)/i.test(url); V.glb = isGlb;
   try {
-    if (/\.glb(\?|$)/i.test(url)) { const s = await glbScene(url), n = Math.min(768, Math.floor(Math.min(innerWidth, innerHeight) * 0.66)), cv = document.createElement('canvas'); cv.width = cv.height = n; st.appendChild(cv); const r = new s.T.WebGLRenderer({ canvas: cv, alpha: true, antialias: true });
-      let a = 0.7, drag = null; cv.addEventListener('pointerdown', e => { drag = e.clientX; cv.setPointerCapture(e.pointerId); }); cv.addEventListener('pointermove', e => { if (drag !== null) { a += (e.clientX - drag) / 120; drag = e.clientX; } }); cv.addEventListener('pointerup', () => { drag = null; });
-      clearInterval(vAnimT); vAnimT = setInterval(() => { if (!cv.isConnected) { clearInterval(vAnimT); r.dispose(); return; } if (drag === null) a += 0.01; s.aim(a); r.render(s.scene, s.cam); }, 33); el('vNote').textContent = (note || '') + ' · drag to turn it'; }
+    if (/\.glb(\?|$)/i.test(url)) { clearInterval(vAnimT); await spin(st, url, Math.min(768, Math.floor(Math.min(innerWidth, innerHeight) * 0.66))); el('vNote').textContent = (note || '') + ' · drag to turn it'; }
     else if (isCode) { const text = await (await fetch(url, { cache: 'no-store' })).text(); const n = Math.min(768, Math.floor(Math.min(innerWidth, innerHeight) * 0.66)), vo = { motion: motion || undefined }, r = renderCode(text, n, 0, vo); st.appendChild(r.canvas); V.rig = !!(r.def && r.def.rig);
       clearInterval(vAnimT); if (r.def.o && r.def.o.frames > 1) { let f = 0; const cv = r.canvas, g = cv.getContext('2d'); vAnimT = setInterval(() => { f = (f + 1) % r.def.o.frames; try { g.clearRect(0, 0, n, n); g.drawImage(renderCode(text, n, f, vo).canvas, 0, 0); } catch (e) {} }, 1000 / (r.def.o.fps || 8)); el('vNote').textContent = (note || '') + ` · ${r.def.o.frames} frames at ${r.def.o.fps || 8} fps`; } }
     else { const im = document.createElement('img'); im.alt = file; im.className = isSvg ? '' : 'px'; const n = Math.max(160, Math.floor(Math.min(innerWidth * 0.92, innerHeight * 0.66))); im.width = im.height = n; im.style.width = im.style.height = n + 'px'; im.onerror = () => { st.innerHTML = `<div class="msg err">could not load ${esc(file)}</div>`; }; im.src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(); st.appendChild(im); }
@@ -548,7 +553,7 @@ async function openViewer(job, file, url, note, label, motion, keyHint) {
   el('vAnim').textContent = V.rig ? '⛶ Keep & pose it' : '⟳ Animate…'; el('vAnim').title = V.rig ? 'keep this rig in the game and open it on Move with the timeline and posing' : 'rig this character into a run, idle, jump… as a code sprite';
   el('viewer').classList.add('open'); el('vRefine').focus();
 }
-function closeViewer() { el('viewer').classList.remove('open'); V = null; clearInterval(vAnimT); }
+function closeViewer() { el('viewer').classList.remove('open'); V = null; clearInterval(vAnimT); el('vStage').innerHTML = ''; } // (a turning model's renderer stops when its canvas leaves the page)
 el('vClose').onclick = closeViewer; el('viewer').addEventListener('click', e => { if (e.target === el('viewer') || e.target === el('vStage')) closeViewer(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && V) closeViewer(); });
 el('vKeep').onclick = () => { if (V && V.rig && V.key) el('aiKey').value = V.key; closeViewer(); el('keepBtn').click(); }; el('vKeepPx').onclick = () => { closeViewer(); el('keepPxBtn').click(); }; el('vEdit').onclick = () => { closeViewer(); el('editBtn').click(); };

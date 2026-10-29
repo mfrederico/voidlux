@@ -2,10 +2,13 @@
 // The producer's rules for how things react: on <event> → if <conditions> → do <actions>, per sprite, per group or for
 // everything. Only what the game declares (assets/events-vocab.json, the builder's) can be chosen; the rules are
 // assets/events.json (lib/Rules.php checks them before they are written; kit/js/kit-events.js runs them).
+const EV_OK = ['evSub', 'evWire', 'evSave', 'evBody', 'evAskBox', 'evAsk', 'evAskBtn', 'evProps', 'evWho', 'evRules', 'evWhoTitle', 'evNew'].every(id => el(id));
+if (!EV_OK) { el('fresh').classList.remove('hidden'); el('freshWhy').textContent = '(the Events tab is newer than this copy of the page)'; }
 const Ev = {
   S: null, rules: [], who: '*', dirty: false, t: 0,
   OPS: [['is', 'is'], ['not', 'is not'], ['>', '>'], ['<', '<'], ['>=', '≥'], ['<=', '≤'], ['has', 'has']],
   async refresh(keep) {
+    if (!EV_OK) return;
     try { const r = await fetch(apiUrl('events'), { cache: 'no-store' }), j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); this.S = j; if (!keep || !this.dirty) { this.rules = JSON.parse(JSON.stringify(j.rules || [])); this.dirty = false; } }
     catch (e) { el('evSub').textContent = 'the events could not be read: ' + e.message; return; }
     this.draw(); clearTimeout(this.t); if ((this.S.proposals || []).some(p => p.state === 'reading')) this.t = setTimeout(() => { if (!el('tab-events').classList.contains('hidden')) this.refresh(true); }, 5000);
@@ -96,11 +99,13 @@ const Ev = {
     this.refresh(body.do !== 'save' && body.do !== 'add');
   },
 };
+if (EV_OK) {
 el('evSave').onclick = () => Ev.post({ do: 'save', rules: Ev.rules.map(r => { const c = Object.assign({}, r); delete c.broken; return c; }) }, j => `${j.saved} rule(s) saved; the game uses them next time it starts`);
 el('evNew').onclick = () => { const V = Ev.V(), on = V.events.hit ? 'hit' : Object.keys(V.events).sort()[0]; if (!on) return; Ev.rules.push({ id: 'r' + Date.now().toString(36), who: Ev.who, on, if: [], do: [] }); Ev.touch(); Ev.draw(); };
 el('evAskBtn').onclick = () => { const t = el('evAsk').value.trim(); if (!t) { say('describe the rule first', 'err'); return; } Ev.post({ do: 'describe', text: t }, j => { el('evAsk').value = ''; return j.queued ? 'the art lane is full: your rule is written when a slot frees' : 'the artist is writing the rules; they appear here to add or dismiss'; }); };
 el('evWire').onclick = () => { const extra = Ev.S.vocab ? prompt('What should the game be able to react to or do that it cannot yet? (blank: just bring the events up to date with the game)', '') : ''; if (extra === null) return;
   if (!Ev.S.vocab && !confirm('Ask the builder to wire events into the game (one run)? It declares what can happen and what the game can do, emits the events, and moves reactions that are fixed in code today into rules you can edit, checking with a playtest before and after.')) return;
   Ev.post({ do: 'wire', extra }, j => j.queued ? 'the builder is busy: wiring events is its next run' : 'the builder is wiring events in; watch it on the game page\'s Build tab'); };
+}
 window.addEventListener('beforeunload', e => { if (Ev.dirty) { e.preventDefault(); e.returnValue = ''; } });
-if (location.hash === '#events') Ev.refresh(); // the page opened on this tab before this file loaded
+if (EV_OK && location.hash === '#events') Ev.refresh(); // the page opened on this tab before this file loaded

@@ -7,9 +7,12 @@
 // a message where the person is looking (the page's own line is at the top, out of sight when they are down at a model)
 function toast(t, cls) { let b = document.getElementById('toast'); if (!b) { b = document.createElement('div'); b.id = 'toast'; b.setAttribute('role', 'status'); document.body.appendChild(b); }
   b.textContent = t; b.className = 'on ' + (cls || ''); clearTimeout(toast.t); toast.t = setTimeout(() => b.className = '', cls === 'err' ? 9000 : 6000); }
+const CAST_OK = ['castGrid', 'castHist', 'castReqs', 'castWaiting', 'castAsk', 'castAskBtn', 'castList', 'castMake', 'castWire', 'castSub', 'castNote'].every(id => el(id));
+if (!CAST_OK) { el('fresh').classList.remove('hidden'); el('freshWhy').textContent = '(the 3D tab is newer than this copy of the page)'; }
 const Cast = {
   S: null, jobs: [], open: '', focus: '', t: 0, viewT: 0,
   async refresh() {
+    if (!CAST_OK) return;
     try {
       const [c, j] = await Promise.all([fetch(apiUrl('cast'), { cache: 'no-store' }), fetch(apiUrl('sketches'), { cache: 'no-store' })]);
       const cj = await c.json(); if (!c.ok) throw new Error(cj.error || c.status); this.S = cj; this.jobs = (await j.json()).jobs || [];
@@ -113,10 +116,8 @@ const Cast = {
     const rv = d.querySelector('[data-a="revise"]'); if (rv) rv.onclick = () => { const t = f('rev').value.trim(); if (!t) { say('say what to change', 'err'); return; } this.act({ do: 'revise', key: k, note: t }, `the artist is revising ${k}; the revision appears here to keep or discard`); };
     return d;
   },
-  async view(box, url) { // the model turning, drag to turn it
-    box.innerHTML = ''; clearInterval(this.viewT); try { const s = await glbScene(url), cv = document.createElement('canvas'); cv.width = cv.height = 300; box.appendChild(cv); const r = new s.T.WebGLRenderer({ canvas: cv, alpha: true, antialias: true });
-      let a = 0.7, drag = null; cv.addEventListener('pointerdown', e => { drag = e.clientX; cv.setPointerCapture(e.pointerId); }); cv.addEventListener('pointermove', e => { if (drag !== null) { a += (e.clientX - drag) / 120; drag = e.clientX; } }); cv.addEventListener('pointerup', () => { drag = null; });
-      this.viewT = setInterval(() => { if (!cv.isConnected) { clearInterval(this.viewT); r.dispose(); return; } if (drag === null) a += 0.01; s.aim(a); r.render(s.scene, s.cam); }, 33); }
+  async view(box, url) { // the model turning, drag to turn it (the page's one viewer: see spin())
+    try { await spin(box, url, 300); }
     catch (e) { box.textContent = 'it could not be shown: ' + e.message; }
   },
   async act(body, ok) { return this.post(apiUrl('cast'), body, ok); },
@@ -126,6 +127,7 @@ const Cast = {
     await this.refresh();
   },
 };
+if (CAST_OK) {
 el('castAskBtn').onclick = () => { const t = el('castAsk').value.trim(); if (!t) { say('describe the change first', 'err'); return; }
   Cast.act({ do: 'request', text: t }, j => { el('castAsk').value = ''; return j.queued ? 'the art lane is full: your request is read when a slot frees' : 'the artist is working out which models you mean; the list appears here to check before anything changes'; }); };
 el('castList').onclick = () => Cast.act({ do: 'list' }, j => j.queued ? 'another sprite job is running: listing the cast is next' : 'the artist is reading the game for its 3D things (a few minutes); the list appears here');
@@ -134,4 +136,5 @@ el('castMake').onclick = () => { const n = Cast.items().filter(([, it]) => it.st
   Cast.act({ do: 'make' }, j => `${(j.started || []).length} model job(s) started; they are made one after another`); };
 el('castWire').onclick = () => { if (!confirm('Ask the builder to hook every thing in the cast into the game (one run)? After that, a model kept or revised here shows up in the game by itself.')) return;
   Cast.act({ do: 'wire' }, j => j.queued ? 'the builder is busy: wiring the cast is its next run' : 'the builder is wiring the cast in; watch it on the game page\'s Build tab'); };
-if (location.hash === '#3d') Cast.refresh(); // the page opened on this tab before this file loaded
+}
+if (CAST_OK && location.hash === '#3d') Cast.refresh(); // the page opened on this tab before this file loaded
