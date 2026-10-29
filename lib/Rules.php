@@ -197,9 +197,11 @@ class Rules {
         $p = "Make built-in behaviours of the game rules the producer can change (\"Events\" in ../../kit/AGENTS.md; items of assets/events-builtin.json):\n" . implode("\n", $lines) . "\n" . ($also !== '' ? "Also: {$also}\n" : '')
            . "First run ../../studio/bin/soak 60 4 and keep its report. Then, item by item:\n"
            . "1. Add to the vocabulary and the code what it needs (events emitted where they happen, fields, states, targets, actions wrapping the game's own functions), declared in assets/events-vocab.json in words a producer reads.\n"
-           . "2. Remove the hard-wired reaction from the code and add rules to assets/events.json that reproduce it EXACTLY (the same numbers from the same settings, the same order, the same conditions), each with a note saying it was built in.\n"
-           . "3. In assets/events-builtin.json set the item's now to the new rules' ids (and its rule and why, if only part moved).\n"
-           . "If an item turns out not to be exactly reproducible, leave it in code, say why in the catalogue and in your reply, and go on to the next.\n"
+           . "2. Remove the hard-wired reaction from the code and make it rules in assets/events.json, each with a note saying it was built in. Try, in this order, and go to the next only when the one before cannot reproduce it EXACTLY (the same numbers from the same settings, the same order, the same conditions):\n"
+           . "   a. A FULL RULE built from the game's smaller actions (this is what the producer wants: try hard; add the small actions, fields, states or events it takes). A per-frame drain or effect of a status can be a full rule on a status-tick event (once a second, with the status and its magnitude), if the game sends one: add it if it does not.\n"
+           . "   b. A RULE THAT RUNS CODE: wrap the existing code for that reaction, unchanged, as one action declared with \"code\": true and its numbers as settings (defaults from the same CFG paths), and make a rule call it on the same event and conditions. The reaction is still a rule (it can be switched off, limited, conditioned, retuned and chained), its insides stay code.\n"
+           . "   c. Only a formula inside other code (damage maths, armour, movement, targeting) stays in code.\n"
+           . "3. In assets/events-builtin.json set the item's now to the new rules' ids and its via to \"rule\" or \"code\" (a or b), or, for c, its rule to \"no\" with why.\n"
            . "At the end: node --check; ../../studio/bin/soak 60 4 again and compare with the first (no new errors; deaths, kills and level within noise); never loosen a check. Commit, naming the items moved and any left.";
         return GameStore::askBuilder($slug, $p, $memberId, true);
     }

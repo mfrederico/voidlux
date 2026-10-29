@@ -89,7 +89,7 @@ const Ev = {
       else { const def = V.actions[a.fn] || this.BUILTIN[a.fn] || {};
         row.append(this.sel([...Object.keys(V.actions).sort(), ['Count', 'Count (counter)'], ['SetCount', 'SetCount (counter)']], a.fn, v => { a.fn = v; a.args = {}; redraw(); }, 'action…'));
         for (const [p, pd] of Object.entries(def.params || {})) row.append(this.param(a, 'args', p, pd, p === 'name' ? '90px' : '64px'));
-        if (def.about) row.append(this.span(def.about + (def.lasting ? ' (lasting)' : ''), 'muted small')); }
+        if (def.about) row.append(this.span((def.code ? '⚙ runs the game\'s code: ' : '') + def.about + (def.lasting ? ' (lasting)' : ''), 'muted small')); }
       const tg = document.createElement('div'); tg.className = 'row small evlim'; tg.append(this.span('on'));
       tg.append(this.sel([['', 'this thing'], ...Object.keys(targets).sort()], a.to ? a.to.target : '', v => { if (!v) delete a.to; else a.to = { target: v }; redraw(); }));
       if (a.to) { for (const [p, pd] of Object.entries((targets[a.to.target] || {}).params || {})) tg.append(this.param(a.to, 'args', p, pd)); tg.append(this.span('only'), this.sel(this.whoOpts(), a.to.who || '*', v => { if (v === '*') delete a.to.who; else a.to.who = v; this.touch(); })); }
@@ -116,12 +116,12 @@ const Ev = {
       const det = document.createElement('details'); det.className = 'evsys'; det.open = this.who !== '*' || (B.systems || []).length < 3;
       det.innerHTML = `<summary><b>${esc(s.name || s.id)}</b> <span class="muted small">${items.length} · ${esc(s.about || '')}</span></summary>`;
       for (const it of items) {
-        const d = document.createElement('div'); d.className = 'evbi'; const st = it.now && it.now.length && it.rule === 'yes' ? 'rule' : it.rule;
-        const pill = { rule: ['a rule now', 's-kept'], yes: ['can be a rule', 's-made'], partly: ['partly a rule', 's-made'], no: ['stays in code', ''] }[st] || [st || '?', ''];
+        const d = document.createElement('div'); d.className = 'evbi'; const st = it.now && it.now.length && (it.rule === 'yes' || it.via) ? (it.via === 'code' ? 'code' : 'rule') : it.rule;
+        const pill = { rule: ['a rule now', 's-kept'], code: ['a rule now (runs code)', 's-kept'], yes: ['can be a rule', 's-made'], partly: ['partly a rule', 's-made'], no: ['stays in code', ''] }[st] || [st || '?', ''];
         d.innerHTML = `<div><b>${esc(it.does || '')}</b></div><div class="small">when ${esc(it.when || '')}${it.who && it.who !== this.who ? ` <span class="muted">(${esc(it.who === '*' ? 'anything' : it.who.replace('group:', 'every '))})</span>` : ''}</div>`
           + `<div class="small"><span class="pill ${pill[1]}">${pill[0]}</span>${it.why ? ` <span class="muted">${esc(it.why)}</span>` : ''}</div>`
           + `<div class="muted small mono">${esc(it.where || '')}${(it.settings || []).length ? ' · ' + it.settings.map(esc).join(', ') : ''}${(it.now || []).length ? ' · rules: ' + it.now.map(esc).join(', ') : ''}</div>`;
-        if ((it.rule === 'yes' || it.rule === 'partly') && st !== 'rule') { const b = document.createElement('button'); b.textContent = it.rule === 'partly' ? 'Make the rule part a rule' : 'Make it a rule';
+        if ((it.rule === 'yes' || it.rule === 'partly') && st !== 'rule' && st !== 'code') { const b = document.createElement('button'); b.textContent = it.rule === 'partly' ? 'Make the rule part a rule' : 'Make it a rule';
           b.title = 'one builder run: it adds what the rule needs, takes the reaction out of the code and puts in rules that do exactly the same, checked with a playtest before and after';
           b.onclick = () => { if (confirm(`Make “${it.does}” a rule you can change? One builder run moves it out of the code${(it.needs || []).length ? ', adding: ' + it.needs.join('; ') : ''}.`)) this.post({ do: 'convert', item: it.id }, j => j.queued ? 'the builder is busy: it converts this on its next run' : 'the builder is making it a rule; it appears in the rules when done'); };
           d.appendChild(b); }

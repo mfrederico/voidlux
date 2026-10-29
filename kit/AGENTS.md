@@ -134,6 +134,10 @@ its header is the format. Your part, once per game and whenever the game learns 
   state, `Events.target(name, (ctx, args) => [{ key, obj }, …])` for every target (never the thing itself);
   `Events.clock` and `Events.rng` set to the game's own time and random if it has them; `await Events.load()` before play
   starts, `Events.update()` once a frame, `Events.reset('game')` when a new run starts.
+- A reaction is a rule wherever it can be: first a **full rule** from the game's smaller actions (a status's per-second
+  effect on a `status-tick` event); failing exactly that, a **rule that runs code** (the existing code wrapped unchanged as
+  one action with `"code": true` and its numbers as settings), so it can still be switched off, limited and chained; only a
+  formula inside other code (damage maths, armour, movement) stays code.
 - `Events.emit(event, key, fields, object)` at the one place each event happens. Rules are data: never read
   `assets/events.json` yourself and never write a reaction in code that a rule could hold. You do not edit the producer's
   rules, except when asked to move a hard-wired reaction into one that reproduces it exactly.
