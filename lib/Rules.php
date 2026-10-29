@@ -190,9 +190,9 @@ class Rules {
         $lines = [];
         foreach ($itemIds as $id) {
             if (!isset($found[$id])) throw new \InvalidArgumentException("no {$id} in the catalogue"); [$sys, $it] = $found[$id];
-            if (($it['rule'] ?? '') === 'no') throw new \InvalidArgumentException("{$id} stays in code: " . ($it['why'] ?? ''));
+            // (an item marked "no" may be asked for too: the game may have grown what it needs since; the ladder decides)
             if (!empty($it['now']) && ($it['rule'] ?? '') === 'yes') throw new \InvalidArgumentException("{$id} is a rule already: " . implode(', ', (array) $it['now']));
-            $lines[] = "- {$id} (" . ($sys['name'] ?? '') . '): when ' . ($it['when'] ?? '') . ', ' . ($it['does'] ?? '') . ' (' . ($it['where'] ?? '') . ').' . (!empty($it['needs']) ? ' Needs: ' . implode('; ', (array) $it['needs']) . '.' : '') . (($it['rule'] ?? '') === 'partly' ? ' Only part can be a rule: ' . ($it['why'] ?? '') . ' Move that part, leave the rest in code.' : '');
+            $lines[] = "- {$id} (" . ($sys['name'] ?? '') . '): when ' . ($it['when'] ?? '') . ', ' . ($it['does'] ?? '') . ' (' . ($it['where'] ?? '') . ').' . (!empty($it['needs']) ? ' Needs: ' . implode('; ', (array) $it['needs']) . '.' : '') . (($it['rule'] ?? '') === 'partly' ? ' Only part can be a rule: ' . ($it['why'] ?? '') . ' Move that part, leave the rest in code.' : '') . (($it['rule'] ?? '') === 'no' ? ' It was listed as staying in code (' . ($it['why'] ?? '') . '); look again with what the vocabulary has now, and keep it in code only if it is a formula inside other code.' : '');
         }
         $p = "Make built-in behaviours of the game rules the producer can change (\"Events\" in ../../kit/AGENTS.md; items of assets/events-builtin.json):\n" . implode("\n", $lines) . "\n" . ($also !== '' ? "Also: {$also}\n" : '')
            . "First run ../../studio/bin/soak 60 4 and keep its report. Then, item by item:\n"
