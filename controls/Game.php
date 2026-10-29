@@ -124,11 +124,20 @@ class Game extends BaseControls\Control {
         $l = GameGit::link($g->slug); $acct = ''; $err = ''; if (!$l) { try { $acct = GameGit::account(); } catch (\Throwable $e) { $err = $e->getMessage(); } }
         $this->jsonSuccess(['link' => $l, 'account' => $acct, 'connection' => $err === '' ? 'ok' : $err, 'canLink' => (int) $g->memberId === (int) $this->member->id || Flight::hasLevel(LEVELS['ADMIN'])]); }
     public function gitlink($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; if (!$this->gitManager($g)) return; $b = $this->body();
-        try { $this->jsonSuccess(GameGit::linkGame($g->slug, trim((string) ($b['repo'] ?? '')), !empty($b['create']), !isset($b['private']) || !empty($b['private']), (int) $this->member->id), 'Linked.'); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 400); } }
+        try { $this->jsonSuccess(GameGit::linkGame($g->slug, trim((string) ($b['repo'] ?? '')), !empty($b['create']), !isset($b['private']) || !empty($b['private']), (int) $this->member->id, trim((string) ($b['branch'] ?? ''))), 'Linked.'); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 400); } }
     public function gitunlink($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; if (!$this->gitManager($g)) return;
         try { $this->jsonSuccess(GameGit::unlinkGame($g->slug), 'Unlinked.'); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 400); } }
     public function gitpush($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
         try { $r = GameGit::push($g->slug); $r['ok'] ? $this->jsonSuccess($r, 'Pushed.') : $this->jsonError($r['text'], 400); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 400); } }
+    /** POST /game/fork/<slug> { slug, title, goal }: anyone who can open a game forks it into a private game of their own. */
+    public function fork($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $b = $this->body();
+        try { $n = GameStore::fork($g, trim((string) ($b['slug'] ?? '')), (string) ($b['title'] ?? ''), (string) ($b['goal'] ?? ''), (int) $this->member->id); $this->jsonSuccess(['slug' => (string) $n->slug, 'url' => '/game/view/' . $n->slug], 'Forked.'); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 400); } }
+    public function upstream($params = []): void { if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $this->jsonSuccess(['upstream' => GameStore::upstream($g->slug)]); }
+    public function pullupstream($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        try { $this->jsonSuccess(GameStore::pullUpstream($g->slug), 'Pulled.'); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 400); } }
+    public function proposeback($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        if ((int) $g->memberId !== (int) $this->member->id && !Flight::hasLevel(LEVELS['ADMIN'])) { $this->jsonError('Only the fork\'s owner (or an admin) offers it back.', 403); return; }
+        try { $this->jsonSuccess(GameStore::proposeBack($g->slug), 'Offered.'); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 400); } }
     /** POST /game/astemplate/<slug> { name, label }: an admin turns the game into a template new games can be summoned from. */
     public function astemplate($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;

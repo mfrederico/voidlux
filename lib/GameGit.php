@@ -70,8 +70,12 @@ class GameGit {
 
     // ---- linking ----
     /** Link a game to owner/name (made first when $create): a deploy key made for it, the game's origin pointed at it, then a first push. */
-    public static function linkGame(string $slug, string $repo, bool $create, bool $private, int $memberId): array {
+    public static function linkGame(string $slug, string $repo, bool $create, bool $private, int $memberId, string $branch = ''): array {
         if (!preg_match('/^[A-Za-z0-9_.-]{1,39}\/[A-Za-z0-9_.-]{1,100}$/', $repo)) throw new \InvalidArgumentException('the repository is owner/name, e.g. mfrederico/lonelycat');
+        // the branch this game pushes to: main, or for a fork its own name, so it never lands on its source's main
+        $isFork = (bool) GameStore::upstream($slug); $branch = trim($branch) !== '' ? trim($branch) : ($isFork ? $slug : 'main');
+        if (!preg_match('#^[A-Za-z0-9._/-]{1,100}$#', $branch) || str_contains($branch, '..')) throw new \InvalidArgumentException('not a branch name');
+        foreach (glob(Paths::root() . '/data/gitlinks/*.json') ?: [] as $f) { $o = json_decode((string) file_get_contents($f), true); if (is_array($o) && basename($f, '.json') !== $slug && strcasecmp((string) $o['repo'], $repo) === 0 && ($o['branch'] ?? 'main') === $branch) throw new \InvalidArgumentException('the game ' . basename($f, '.json') . " already pushes to {$repo} on {$branch}: pick another branch for this one"); }
         $d = GameStore::dir($slug); if (self::link($slug)) throw new \InvalidArgumentException('this game is linked already: unlink it first');
         [$owner, $name] = explode('/', $repo, 2); $keyId = null; $url = '';
         if (self::$remoteForTests === null) {
@@ -86,7 +90,7 @@ class GameGit {
             $url = "git@github.com:$repo.git";
         } else $url = self::$remoteForTests;
         [, $has] = GameStore::git($d, ['remote']); GameStore::git($d, in_array('origin', array_map('trim', explode("\n", $has)), true) ? ['remote', 'set-url', 'origin', $url] : ['remote', 'add', 'origin', $url]);
-        $link = ['repo' => $repo, 'url' => $url, 'key_id' => $keyId, 'private' => $private, 'linked_at' => date('c'), 'linked_by' => GameStore::memberName($memberId)];
+        $link = ['repo' => $repo, 'branch' => $branch, 'url' => $url, 'key_id' => $keyId, 'private' => $private, 'linked_at' => date('c'), 'linked_by' => GameStore::memberName($memberId)];
         file_put_contents(self::linkFile($slug), json_encode($link, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
         GameStore::emit($slug, 'note', ['text' => "linked to GitHub: $repo" . ($create ? ' (made just now)' : '')]);
         $p = self::push($slug); return self::link($slug) + ['push' => $p];
@@ -110,7 +114,7 @@ class GameGit {
     // ---- pushing with the game's own key ----
     public static function push(string $slug): array {
         $l = self::link($slug); if (!$l) return ['ok' => false, 'text' => 'not linked'];
-        $d = GameStore::dir($slug); [, $br] = GameStore::git($d, ['rev-parse', '--abbrev-ref', 'HEAD']); $br = trim($br) ?: 'main';
+        $d = GameStore::dir($slug); $br = (string) ($l['branch'] ?? 'main'); // the game's HEAD goes to its own branch on the repository
         $env = ''; $t = null;
         if (self::$remoteForTests === null) {
             $enc = (string) @file_get_contents(self::keyFile($slug)); if ($enc === '') throw new \RuntimeException("the game's deploy key is missing (secure/gamekeys/$slug.enc): unlink the game and link it again");
@@ -119,7 +123,7 @@ class GameGit {
             $kh = Paths::root() . '/data/gitlinks/known_hosts';
             $env = 'GIT_SSH_COMMAND=' . escapeshellarg('ssh -i ' . escapeshellarg("$t/k") . ' -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=' . escapeshellarg($kh)) . ' ';
         }
-        exec($env . 'git -C ' . escapeshellarg($d) . ' push -q origin ' . escapeshellarg($br) . ' 2>&1', $o, $rc);
+        exec($env . 'git -C ' . escapeshellarg($d) . ' push -q origin ' . escapeshellarg('HEAD:refs/heads/' . $br) . ' 2>&1', $o, $rc);
         if ($t) { @unlink("$t/k"); @rmdir($t); }
         $text = $rc === 0 ? "pushed {$br} to {$l['repo']}" : 'push to ' . $l['repo'] . ' failed: ' . mb_substr(trim(implode(' ', $o)), -400);
         $l['last_push'] = date('c'); $l['last_push_ok'] = $rc === 0; $l['last_push_text'] = $text; file_put_contents(self::linkFile($slug), json_encode($l, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");

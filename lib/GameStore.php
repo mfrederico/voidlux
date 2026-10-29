@@ -266,6 +266,59 @@ class GameStore {
         error_log("INFO scrap: {$slug} scrapped by member {$memberId}: " . implode(', ', $out['archived']));
         return $out;
     }
+    // ---- forks: a full, private copy of a game with its history, its source kept as `upstream` so changes can flow both ways ----
+    /**
+     * Fork $g into a new game: cloned with its whole history (a separate repository, so the jail sees all of it), owned by
+     * $memberId, private (no team, not public, never published), fresh forge state (.studio is not in git), and a GAME.md
+     * that leads with the fork's goal and keeps the source's tasks as history, so the planner plans toward the goal.
+     */
+    public static function fork(object $g, string $slug, string $title, string $goal, int $memberId): object {
+        if (!preg_match(self::SLUG, $slug)) throw new \InvalidArgumentException('a slug is lowercase letters, digits and dashes, 2 to 41 characters');
+        $src = self::dir((string) $g->slug); $dst = self::gamesDir() . '/' . $slug; if (file_exists($dst) || self::row($slug)) throw new \InvalidArgumentException("a game named {$slug} exists");
+        $title = trim($title) !== '' ? mb_substr(trim($title), 0, 60) : $slug; $goal = trim(mb_substr($goal, 0, 4000)); if ($goal === '') throw new \InvalidArgumentException('say what the fork is for: its goal leads its GAME.md and steers the planner');
+        [, $dirty] = self::git($src, ['status', '--porcelain', '--untracked-files=no']); if (trim($dirty) !== '') self::checkpoint((string) $g->slug, 'before forking to ' . $slug); // the fork starts from everything committed
+        exec('git clone -q --no-local ' . escapeshellarg($src) . ' ' . escapeshellarg($dst) . ' 2>&1', $o, $rc); if ($rc !== 0) throw new \RuntimeException('could not clone the game: ' . implode(' ', $o));
+        self::git($dst, ['remote', 'rename', 'origin', 'upstream']); self::git($dst, ['config', 'user.email', 'forge@voidlux.com']); self::git($dst, ['config', 'user.name', 'VoidLux Forge']);
+        [, $base] = self::git($dst, ['rev-parse', '--short', 'HEAD']); $base = trim($base); $from = (string) $g->title;
+        // GAME.md: the goal first; the source's tasks kept as history under a heading the task list does not read
+        $doc = (string) @file_get_contents("$dst/GAME.md"); $doc = preg_replace('/^## Tasks\b/m', "## Upstream tasks ({$g->slug}, history)", $doc, 1);
+        $head = "# {$title}\n\n**Fork of** `{$g->slug}` at `{$base}` · **Forked:** " . date('Y-m-d') . "\n\n## Fork goal\n\n{$goal}\n\n"
+              . "_This game is a fork: it starts as all of {$from}, with its history. Build toward the goal above; keep what it does not ask to change. "
+              . "It shares a browser origin with {$from} in the forge, so change its save and settings keys first (anything stored under {$g->slug}'s names) so the two never overwrite each other's saves._\n\n";
+        $doc = preg_replace('/^# .*\n/', '', $doc, 1); $doc = $head . $doc;
+        if (!preg_match('/^## Tasks\b/m', $doc)) $doc = preg_replace('/^## Log\b/m', "## Tasks\n\n_The planner writes the fork's tasks here, from the goal._\n\n## Log", $doc, 1);
+        self::writeAtomic("$dst/GAME.md", $doc);
+        $gj = json_decode((string) @file_get_contents("$dst/game.json"), true) ?: []; $gj = array_merge($gj, ['slug' => $slug, 'title' => $title, 'status' => 'new', 'fork_of' => (string) $g->slug, 'fork_base' => $base]); unset($gj['price']); self::writeAtomic("$dst/game.json", json_encode($gj, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        self::git($dst, ['add', '-A']); self::git($dst, ['commit', '-q', '-m', "Fork of {$g->slug} at {$base}: {$title}\n\nGoal: " . mb_substr($goal, 0, 400)], true);
+        $n = Bean::dispense('game'); $n->slug = $slug; $n->title = $title; $n->template = 'fork:' . $g->slug; $n->brief = $goal; $n->status = 'new'; $n->memberId = $memberId; $n->teamId = null; $n->isPublic = 0;
+        $n->createdAt = date('c'); $n->publishedAt = null; $n->publishedUrl = ''; $n->tags = (string) $g->tags; Bean::store($n);
+        self::emit($slug, 'note', ['text' => "forked from {$g->slug} at {$base} by " . self::memberName($memberId) . ': private, with its own builder, notes and playtests']);
+        self::emit((string) $g->slug, 'note', ['text' => "forked to {$slug} (private) by " . self::memberName($memberId)]);
+        return $n;
+    }
+    /** The fork's source, if this game is one: its slug, and how far the two have drifted (commits each has that the other lacks). */
+    public static function upstream(string $slug): ?array {
+        $d = self::dir($slug); [$rc, $url] = self::git($d, ['remote', 'get-url', 'upstream']); if ($rc !== 0) return null; $src = basename(rtrim(trim($url), '/')); if (!self::row($src)) return null;
+        self::git($d, ['fetch', '-q', 'upstream']); [, $ab] = self::git($d, ['rev-list', '--left-right', '--count', 'HEAD...upstream/main']); [$ahead, $behind] = array_map('intval', preg_split('/\s+/', trim($ab)) + [0, 0]);
+        return ['slug' => $src, 'ahead' => $ahead, 'behind' => $behind];
+    }
+    /** Bring the source's newer commits into the fork: a merge; on a conflict nothing changes and the files are named. */
+    public static function pullUpstream(string $slug): array {
+        if (self::agentState($slug)['busy']) throw new \RuntimeException('the builder is running on this game: pull when it is idle');
+        $u = self::upstream($slug); if (!$u) throw new \InvalidArgumentException('this game is not a fork'); if (!$u['behind']) return ['merged' => 0, 'text' => "already has everything from {$u['slug']}"];
+        $d = self::dir($slug); [, $dirty] = self::git($d, ['status', '--porcelain', '--untracked-files=no']); if (trim($dirty) !== '') self::checkpoint($slug, 'before pulling from ' . $u['slug']);
+        [$rc, $out] = self::git($d, ['merge', '--no-edit', '-m', "Pull from {$u['slug']}: {$u['behind']} commit(s)", 'upstream/main']);
+        if ($rc !== 0) { [, $files] = self::git($d, ['diff', '--name-only', '--diff-filter=U']); self::git($d, ['merge', '--abort']);
+            throw new \RuntimeException("{$u['slug']}'s changes clash with this fork's in: " . implode(', ', array_filter(explode("\n", trim($files)))) . '. Nothing was changed; ask the builder to bring them in by hand.'); }
+        self::emit($slug, 'note', ['text' => "pulled {$u['behind']} commit(s) from {$u['slug']}"]); return ['merged' => $u['behind'], 'text' => "brought in {$u['behind']} commit(s) from {$u['slug']}"];
+    }
+    /** Offer the fork's work to its source as a branch fork/<slug> in the source's repository; nothing in the source changes until someone merges it. */
+    public static function proposeBack(string $slug): array {
+        $u = self::upstream($slug); if (!$u) throw new \InvalidArgumentException('this game is not a fork'); if (!$u['ahead']) return ['branch' => '', 'text' => "nothing to offer: {$u['slug']} already has everything here"];
+        $src = self::dir($u['slug']); $b = "fork/{$slug}"; [$rc, $o] = self::git($src, ['fetch', '-q', self::dir($slug), "+HEAD:refs/heads/{$b}"]); if ($rc !== 0) throw new \RuntimeException('could not offer the branch: ' . mb_substr($o, -300));
+        [, $stat] = self::git($src, ['diff', '--shortstat', "main...{$b}"]); self::emit($u['slug'], 'note', ['text' => "{$slug} offers its work as the branch {$b} (" . trim($stat) . '); nothing changes here until it is merged']);
+        return ['branch' => $b, 'text' => "offered as {$b} in {$u['slug']}: " . trim($stat)];
+    }
     /** The game's owner becomes another member (found by email or username). The old owner keeps access through the game's team, if it has one. */
     public static function transfer(object $g, string $to, int $byMemberId): array {
         $to = trim($to); if ($to === '') throw new \InvalidArgumentException('say who: their email or username');
