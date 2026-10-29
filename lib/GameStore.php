@@ -646,6 +646,25 @@ class GameStore {
             return $n;
         });
     }
+    /** Where the game stands, for a builder starting a fresh session: built from the game's own record, not from the old
+     *  conversation (asking that would cost one more turn at its full size). */
+    public static function handoff(string $slug): string {
+        $d = self::dir($slug); $out = ["HANDOFF. This is a fresh session: the previous conversation about this game grew too long and was closed. Everything that matters is in the repository; read AGENTS.md, ../../kit/AGENTS.md and GAME.md as usual. Where things stand:"];
+        $gm = is_file("$d/GAME.md") ? (string) file_get_contents("$d/GAME.md") : '';
+        $open = []; foreach (explode("\n", $gm) as $l) if (preg_match('/^\s*- \[[ ~]\]/', $l)) $open[] = mb_substr(trim($l), 0, 300);
+        $out[] = "Open tasks in GAME.md:\n" . ($open ? implode("\n", array_slice($open, 0, 15)) : '(none)');
+        $log = []; foreach (explode("\n", $gm) as $l) if (preg_match('/^- 20\d\d-\d\d-\d\d /', $l)) $log[] = mb_substr(trim($l), 0, 400);
+        if ($log) $out[] = "The latest entries of GAME.md's log:\n" . implode("\n", array_slice($log, -6));
+        $out[] = "Recent commits:\n" . trim((string) shell_exec('git -C ' . escapeshellarg($d) . ' log --oneline -12 2>&1'));
+        $st = trim((string) shell_exec('git -C ' . escapeshellarg($d) . ' status --short 2>&1')); if ($st !== '') $out[] = "Uncommitted changes:\n" . implode("\n", array_slice(explode("\n", $st), 0, 15));
+        $runs = []; $ev = self::studioDir($slug) . '/events.jsonl';
+        if (is_file($ev)) { $tail = (string) shell_exec('tail -c 400000 ' . escapeshellarg($ev)); foreach (explode("\n", $tail) as $l) { $j = json_decode($l, true); if (is_array($j) && ($j['kind'] ?? '') === 'done' && ($j['label'] ?? '') !== 'art' && trim((string) ($j['text'] ?? '')) !== '') $runs[] = $j; } }
+        foreach (array_slice($runs, -3) as $j) $out[] = 'A recent run ended (' . date('Y-m-d H:i', (int) $j['t']) . ') saying: ' . mb_substr(trim((string) $j['text']), 0, 900);
+        $sk = glob(self::studioDir($slug) . '/soaks/*.json') ?: []; rsort($sk);
+        if ($sk) { $s = json_decode((string) file_get_contents($sk[0]), true) ?: []; $fails = array_map(fn($c) => $c['what'] ?? '?', (array) ($s['checks'] ?? [])); $out[] = 'The last playtest (' . basename($sk[0], '.json') . '): ' . (!empty($s['ok']) ? 'ok' : 'NOT ok') . ($fails ? '; failing: ' . implode('; ', $fails) : '') . (!empty($s['errors']) ? '; ' . count((array) $s['errors']) . ' error(s)' : ''); }
+        $n = count(self::peekNotes($slug)); if ($n) $out[] = "{$n} producer note(s) are queued; they come with this run if it is the one that takes them.";
+        return implode("\n\n", $out);
+    }
     public static function memberName(int $id): string { if ($id <= 0) return 'the forge'; $m = Bean::load('member', $id); return (string) ($m->username ?: $m->email ?: 'member ' . $id); }
     /** A note for the builder's next run: one JSON line per note in .studio/inbox.jsonl, so a note may span lines and each is answered on its own. */
     public static function queueNote(string $slug, string $text, int $tries = 0): void { file_put_contents(self::studioDir($slug) . '/inbox.jsonl', json_encode(['text' => trim($text), 'at' => time(), 'tries' => $tries], JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND); }

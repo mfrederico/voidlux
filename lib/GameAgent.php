@@ -72,6 +72,14 @@ class GameAgent {
         $result = ['ok' => false, 'text' => '', 'cost' => 0.0, 'turns' => 0];
         try { [$env, $bin, $note] = self::environment(GameStore::root()); } catch (\Throwable $e) { $this->emit('error', ['text' => $e->getMessage()]); return $result; }
         $sid = $fresh ? null : ($this->state['session'] ?? null);
+        // A long conversation makes every turn expensive (each one re-reads all of it): once the builder's session is over
+        // [forge] session_max_tokens (default 150000), the next run starts a fresh session and gets a handoff instead, built
+        // from the game itself (GameStore::handoff: tasks, recent log, commits, the last runs' answers, the last playtest).
+        $max = (int) GameStore::cfg('session_max_tokens', 150000);
+        if ($resume && $sid && $this->lane === 'build' && $max > 0 && (int) ($this->state['context'] ?? 0) > $max) {
+            $this->emit('note', ['text' => 'the builder\'s conversation is ' . round(((int) $this->state['context']) / 1000) . 'k tokens (over ' . round($max / 1000) . "k): this run starts a fresh session with a handoff from the game's own record"]);
+            $prompt = GameStore::handoff($this->slug) . "\n\n---\nTHE TASK:\n" . $prompt; $sid = null; $resume = false; $this->state['session'] = null; $this->state['context'] = 0; $this->save();
+        }
         $jail = (string) GameStore::cfg('jail', '0') === '1' && is_executable('/usr/bin/bwrap');
         $cmd = [$bin, '-p', $prompt, '--output-format', 'stream-json', '--verbose', '--max-turns', (string) ($maxTurns ?: (int) GameStore::cfg('max_turns', 60))];
         // Jailed ([forge] jail = 1): bubblewrap is the boundary (studio/jail.sh: the OS read-only, only this game writable, nothing
@@ -108,6 +116,7 @@ class GameAgent {
                 if (!empty($m['session_id'])) { $this->state['session'] = $m['session_id']; $this->save(); }
                 $this->emit('note', ['text' => 'model ' . ($m['model'] ?? '?') . ' · ' . count($m['tools'] ?? []) . ' tools']);
             } elseif ($kind === 'assistant') {
+                $u = $m['message']['usage'] ?? null; if (is_array($u)) $this->state['context'] = (int) ($u['input_tokens'] ?? 0) + (int) ($u['cache_read_input_tokens'] ?? 0) + (int) ($u['cache_creation_input_tokens'] ?? 0) + (int) ($u['output_tokens'] ?? 0); // how big the conversation is now
                 foreach ($m['message']['content'] ?? [] as $c) {
                     if (($c['type'] ?? '') === 'text' && trim($c['text'] ?? '') !== '') { $last[] = $c['text']; $this->emit('text', ['text' => $c['text']]); }
                     elseif (($c['type'] ?? '') === 'tool_use') $this->emit('tool', ['name' => $c['name'] ?? '', 'input' => $this->brief($c['name'] ?? '', $c['input'] ?? [])]);
@@ -120,6 +129,7 @@ class GameAgent {
             } elseif ($kind === 'result') {
                 $result = array_merge($result, ['ok' => empty($m['is_error']), 'text' => (string) ($m['result'] ?? end($last) ?: ''), 'cost' => (float) ($m['total_cost_usd'] ?? 0), 'turns' => (int) ($m['num_turns'] ?? 0), 'subtype' => $m['subtype'] ?? '']);
                 if (!empty($m['session_id'])) $this->state['session'] = $m['session_id'];
+                if ($this->lane === 'build') { $this->save(); $this->emit('note', ['text' => 'conversation size now ' . round(((int) ($this->state['context'] ?? 0)) / 1000) . 'k tokens']); }
             }
             if ($this->stop) { proc_terminate($proc); break; }
         }
