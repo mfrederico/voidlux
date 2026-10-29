@@ -177,6 +177,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
     <section class="panel" id="editor">
       <div class="head"><div><h2 id="title">no sprite</h2><div class="meta" id="meta"></div></div><div class="row"><button id="useBtn">Use in game</button><button id="animCurBtn" title="rig this sprite into a run, idle, jump… as a new code sprite">⟳ Animate…</button><button id="vecBtn" title="the artist redraws this picture as SVG, under a new key">Make it vector…</button><button id="modelBtn" title="the artist models this in 3D with mojulo, as a glTF model, under a new key">3D model of it…</button><button id="dupBtn" title="a copy of this sprite under a new key">Duplicate…</button><button id="dlBtn">Download</button><button class="danger" id="delBtn">Delete</button><button class="primary" id="saveBtn">Save</button></div></div>
       <div id="empty" class="muted">Pick a sprite on the left, make a new one, or ask the builder for one.</div>
+      <div id="modelMode" class="hidden"><div id="modelStage"></div><div class="muted small" id="modelNote"></div></div>
       <div id="pix" class="hidden" style="display: grid; gap: 12px;">
         <div class="row tools" id="tools">
           <button data-tool="pen" class="on" title="pencil (B)">✎ pen</button><button data-tool="eraser" title="eraser (E)">◻ erase</button><button data-tool="fill" title="fill (G)">◉ fill</button><button data-tool="line" title="line (L)">／ line</button><button data-tool="rect" title="rectangle (R)">▭ rect</button><button data-tool="pick" title="pick a colour (I)">⌖ pick</button>
@@ -384,15 +385,24 @@ const artBusy = text => { el('artBusy').classList.add('on'); el('artBusyText').t
 el('q').oninput = drawList;
 
 function leaveOk() { return !dirty || confirm('This sprite has unsaved changes. Leave them behind?'); }
-function show(m) { mode = m; el('empty').classList.toggle('hidden', m !== 'none'); el('pix').classList.toggle('hidden', m !== 'pix'); el('svgMode').classList.toggle('hidden', m !== 'svg'); el('codeMode').classList.toggle('hidden', m !== 'code'); for (const id of ['useBtn', 'dlBtn', 'delBtn', 'saveBtn']) el(id).disabled = m === 'none'; if (playing) el('fPlay').click(); }
+function show(m) { mode = m; el('empty').classList.toggle('hidden', m !== 'none'); el('pix').classList.toggle('hidden', m !== 'pix'); el('svgMode').classList.toggle('hidden', m !== 'svg'); el('codeMode').classList.toggle('hidden', m !== 'code'); el('modelMode').classList.toggle('hidden', m !== 'model'); for (const id of ['useBtn', 'dlBtn', 'delBtn', 'saveBtn']) el(id).disabled = m === 'none'; el('saveBtn').disabled ||= m === 'model'; for (const id of ['animCurBtn', 'vecBtn', 'modelBtn']) el(id).classList.toggle('hidden', m === 'model'); if (playing) el('fPlay').click(); }
 function loadImage(url) { return new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error('could not load ' + url)); im.src = url; }); }
 function docFromImage(im, fw) { const w = im.naturalWidth, h = im.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.drawImage(im, 0, 0); const all = g.getImageData(0, 0, w, h).data; fw = fw && w % fw === 0 ? fw : w; const n = w / fw, d = { w: fw, h, frames: [], fps: 8 }; for (let k = 0; k < n; k++) { const f = blank(fw, h); for (let y = 0; y < h; y++) f.set(all.subarray((y * w + k * fw) * 4, (y * w + k * fw + fw) * 4), y * fw * 4); d.frames.push(f); } return d; }
 async function open(k) {
   if (!leaveOk()) return; const s = M.sprites[k]; cur = k; entry = s; undo = []; redo = []; dirty = false; fi = 0; el('title').textContent = k; drawList(); remember(); if (location.hash === '#move' || s.kind === 'rig') { showTab('move'); } else showTab('draw');
   if (s.kind === 'code' || s.kind === 'rig' || /\.js$/i.test(s.file)) { try { codeSet(await (await fetch(ASSET(s.file) + '?t=' + Date.now(), { cache: 'no-store' })).text()); say(''); } catch (e) { say(e.message, 'err'); } return; }
+  if (s.kind === 'model' || /\.glb$/i.test(s.file)) { show('model'); try { await modelShow(ASSET(s.file) + '?t=' + Date.now(), s); say(''); } catch (e) { say(e.message, 'err'); } return; } // a 3D model: shown turning; it is kept from a take, not edited here
   if (/\.svg$/i.test(s.file)) { try { svgSet(await (await fetch(ASSET(s.file) + '?t=' + Date.now(), { cache: 'no-store' })).text(), s); } catch (e) { say(e.message, 'err'); } return; }
   try { const im = await loadImage(ASSET(s.file) + '?t=' + Date.now()); doc = docFromImage(im, s.frames > 1 ? s.w : im.naturalWidth); doc.fps = s.fps || 8; el('splitW').value = doc.w; show('pix'); fitZoom(); render(); drawSwatches(); el('aiKey').value = ''; say(''); }
   catch (e) { say(e.message, 'err'); }
+}
+let modelT = 0;
+async function modelShow(url, s) { // a kept 3D model, turning; drag to turn it
+  const st = el('modelStage'); st.innerHTML = ''; clearInterval(modelT); const sc = await glbScene(url), n = 360, cv = document.createElement('canvas'); cv.width = cv.height = n; st.appendChild(cv); const r = new sc.T.WebGLRenderer({ canvas: cv, alpha: true, antialias: true });
+  let a = 0.7, drag = null; cv.addEventListener('pointerdown', e => { drag = e.clientX; cv.setPointerCapture(e.pointerId); }); cv.addEventListener('pointermove', e => { if (drag !== null) { a += (e.clientX - drag) / 120; drag = e.clientX; } }); cv.addEventListener('pointerup', () => { drag = null; });
+  modelT = setInterval(() => { if (!cv.isConnected || mode !== 'model') { clearInterval(modelT); r.dispose(); return; } if (drag === null) a += 0.01; sc.aim(a); r.render(sc.scene, sc.cam); }, 33);
+  el('modelNote').textContent = `3D model, assets/${s.file}, ${((s.w || 100) / 100)} world units across · drag to turn it. A new version is a new 3D model job (Make, builder: 3D model).`;
+  el('meta').textContent = `model · ${s.file}`;
 }
 async function adopt(f) { // a file in assets/ that the manifest does not name yet
   if (!leaveOk()) return; const k = f.replace(/\.[a-z0-9]+$/i, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[^a-z]+/, '') || 'sprite';
@@ -519,7 +529,7 @@ el('delBtn').onclick = async () => {
   try { const r = await fetch(apiUrl('spritedelete'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: cur, file: true }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); M = { sprites: j.sprites, files: j.files }; say(`${cur} is gone`, 'ok'); cur = null; doc = null; dirty = false; show('none'); el('title').textContent = 'no sprite'; el('meta').textContent = ''; drawList(); }
   catch (e) { say(e.message, 'err'); }
 };
-el('dlBtn').onclick = () => { const a = document.createElement('a'); if (mode === 'code') { a.href = 'data:text/javascript;charset=utf-8,' + encodeURIComponent(el('codeSrc').value); a.download = cur + '.js'; } else if (mode === 'svg') { a.href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(el('svgSrc').value); a.download = cur + '.svg'; } else { a.href = stripDataUrl(); a.download = cur + '.png'; } a.click(); };
+el('dlBtn').onclick = () => { const a = document.createElement('a'); if (mode === 'code') { a.href = 'data:text/javascript;charset=utf-8,' + encodeURIComponent(el('codeSrc').value); a.download = cur + '.js'; } else if (mode === 'model') { a.href = ASSET(entry.file); a.download = entry.file; } else if (mode === 'svg') { a.href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(el('svgSrc').value); a.download = cur + '.svg'; } else { a.href = stripDataUrl(); a.download = cur + '.png'; } a.click(); };
 el('vecBtn').onclick = async () => { // the artist redraws a kept picture as SVG, kept under a new key
   if (!cur || !entry) { say('save the sprite first', 'err'); return; } if (entry.kind === 'code' || entry.kind === 'rig' || /\.js$/i.test(entry.file)) { say('that is code, not a picture: the artist traces pictures (pixels or SVG)', 'err'); return; }
   const key = prompt(`The artist redraws ${cur} as SVG. Keep the vector as (a new key):`, cur.replace(/-px$/, '') + '-vector'); if (!key) return; if (!KEY_RE.test(key)) { say('a key is lowercase letters, digits, - and _, starting with a letter', 'err'); return; }
@@ -541,6 +551,7 @@ el('dupBtn').onclick = async () => { // a copy under a new key: file, manifest e
 };
 el('useBtn').onclick = async () => { // the call for the code, copied; and, if asked, the builder told to put the sprite to use
   if (!cur || !entry) { say('save the sprite first', 'err'); return; }
+  if (entry.kind === 'model') return useModel();
   const w = entry.w || 32, isRig = entry.kind === 'rig', frames = (entry.frames || 1) > 1, code = isRig ? `Draw.rig('${cur}', 'run', Game.time, x, y, ${w}, facingLeft)` : frames ? `Draw.anim('${cur}', Game.time, x, y, ${w})` : `Draw.pic('${cur}', x, y, ${w})`;
   try { await navigator.clipboard.writeText(code); } catch (e) {}
   const what = prompt(`The sprite is in the game's assets already; the game draws it with\n\n  ${code}\n\n(copied). What should the game use ${cur} for? Say it in a few words and the builder wires it in, or Cancel to only copy the call.`, '');
@@ -548,6 +559,18 @@ el('useBtn').onclick = async () => { // the call for the code, copied; and, if a
   try { const r = await fetch(`/game/agent/${GAME}`, { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ mode: 'chat', prompt: `Use the sprite "${cur}" from assets/sprites.json (${isRig ? 'a skeleton rig with motions ' + '(see kit-rig.js)' : frames ? 'a code sprite with frames' : 'a still'}; the game draws it with ${code}) for: ${what.trim()}. Replace the coded drawing of that thing with the sprite where it is drawn, keep its size and placement sensible, run node --check, and commit. Do not run a soak unless the change is in play the autopilot reaches.` }) }); const j = await r.json(); if (!r.ok || j.success === false) throw new Error(j.message || j.error || r.status); say(`the builder is wiring ${cur} in${j.data && j.data.queued ? ' after its current run' : ''}; the Build tab on the game page shows it. Reload the game when it finishes.`, 'ok'); }
   catch (e) { say('copied the call, but the builder could not be asked: ' + e.message, 'err'); }
 };
+async function useModel() { // a 3D model goes into the game's three.js layer, not through Draw
+  const size = (entry.w || 100) / 100, file = `assets/${entry.file}`;
+  try { await navigator.clipboard.writeText(file); } catch (e) {}
+  const what = prompt(`${cur} is a 3D model, ${file} (binary glTF, about ${size} world units across); the game's three.js layer loads it with three's GLTFLoader (path copied).\n\nWhat should it be in the game? Say what it replaces or where it goes, in a few words, and the builder puts it in, or Cancel to only copy the path.`, '');
+  if (what === null || !what.trim()) { say(`copied: ${file}`, 'ok'); return; }
+  const prompt2 = `Use the 3D model "${cur}" (${file}, binary glTF made with mojulo, about ${size} world units across its largest side; see "3D models" in ../../kit/AGENTS.md) for: ${what.trim()}. `
+    + `Load it once with three's GLTFLoader (three/addons/loaders/GLTFLoader.js, from the same three the game already uses; if the game has no three.js layer, say so and stop rather than adding one for this), `
+    + `scale it to fit what it replaces, ground it, and clone its scene (SkeletonUtils.clone if it is skinned) for every place that thing appears, instead of the stand-in that draws it now. If it carries animations, play them with an AnimationMixer. `
+    + `Keep the stand-in as the fallback only while the model is loading, and log an error, never silently keep the stand-in, if the file fails to load. Run node --check and commit. Do not run a soak unless the change is in play the autopilot reaches; for a look at it, use ../../studio/bin/shot.`;
+  try { const r = await fetch(`/game/agent/${GAME}`, { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ mode: 'chat', prompt: prompt2 }) }); const j = await r.json(); if (!r.ok || j.success === false) throw new Error(j.message || j.error || r.status); say((j.data && j.data.queued ? 'the builder is busy: it puts the model in on its next run. ' : 'the builder is putting the model in. ') + `Watch it on the game page's Build tab.`, 'ok'); }
+  catch (e) { say('copied the path, but the builder could not be asked: ' + e.message, 'err'); }
+}
 
 // ---- the AI panel: messages to the builder, which runs its plugins ----
 async function ask(prompt) {
