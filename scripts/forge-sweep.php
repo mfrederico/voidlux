@@ -28,8 +28,8 @@ foreach (\app\Bean::find('game') as $g) {
                 if ($notes && !$fresh) { $did[] = "$slug: " . count($notes) . ' queued note(s)'; if (!$dry) { \app\GameStore::emit($slug, 'note', ['text' => 'the sweep found ' . count($notes) . ' note(s) waiting with nothing running: a run for them starts']); \app\GameStore::startRunner($slug, 'chat', 'The producer sent notes while you were busy; they are listed below, numbered. Handle each one.', 0); } } }
         }
         if (!$dry && (is_file(\app\Cast::path($slug)) || is_file(\app\GameStore::studioDir($slug) . "/cast-list.json"))) foreach (\app\Cast::settle($slug) as $d) $did[] = "$slug: $d"; // 3D cast jobs that landed with no runner end to settle them
-        $a = \app\GameStore::artState($slug); $aq = \app\GameStore::studioDir($slug) . '/art-queue.jsonl';
-        if (!$a['busy'] && is_file($aq) && trim((string) file_get_contents($aq)) !== '') { $did[] = "$slug: a queued sprite job"; if (!$dry) \app\GameStore::startQueuedArt($slug); }
+        $aq = \app\GameStore::studioDir($slug) . '/art-queue.jsonl'; // queued sprite jobs and free slots in the art lane: they start
+        if (is_file($aq) && trim((string) file_get_contents($aq)) !== '') { if ($dry) $did[] = "$slug: queued sprite jobs"; elseif ($n = \app\GameStore::startQueuedArt($slug)) $did[] = "$slug: $n queued sprite job(s)"; }
     } catch (\Throwable $e) { fwrite(STDERR, date('c') . " ERROR sweep $slug: " . $e->getMessage() . "\n"); }
 }
 if ($did) echo date('c') . ($dry ? ' would start: ' : ' started: ') . implode('; ', $did) . "\n";

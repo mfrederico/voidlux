@@ -18,7 +18,7 @@ const Cast = {
   draw() {
     const S = this.S, all = this.items(), n = s => all.filter(([, it]) => it.state === s).length, missing = all.filter(([, it]) => it.state === 'none' || it.state === 'failed').length;
     el('castSub').textContent = !S.three ? 'This game has no three.js of its own (js/vendor/three.*.js): the cast is for games that draw in 3D.'
-      : all.length ? `${all.length} things · ${n('kept')} with a model · ${n('making')} being made · ${missing} still the stand-in · ${all.filter(([, it]) => it.hooked).length} hooked into the game` + (S.wired ? '' : ' · not wired in yet')
+      : all.length ? `${all.length} things · ${n('kept')} with a model · ${n('making')} being made${S.working ? ` (${S.working} at a time)` : ''} · ${missing} still the stand-in · ${all.filter(([, it]) => it.hooked).length} hooked into the game` + (S.wired ? '' : ' · not wired in yet')
       : 'No cast yet: list the 3D things first.';
     const L = S.list; el('castList').textContent = L && L.busy ? 'Listing…' : all.length ? 'List again' : 'List the 3D things'; el('castList').disabled = !S.three || !!(L && L.busy);
     el('castMake').textContent = `Make all missing (${missing})`; el('castMake').disabled = !missing;
@@ -80,7 +80,7 @@ const Cast = {
 };
 el('castList').onclick = () => Cast.act({ do: 'list' }, j => j.queued ? 'another sprite job is running: listing the cast is next' : 'the artist is reading the game for its 3D things (a few minutes); the list appears here');
 el('castMake').onclick = () => { const n = Cast.items().filter(([, it]) => it.state === 'none' || it.state === 'failed').length;
-  if (!confirm(`Make ${n} model(s)? The artist makes them one at a time, about 2 minutes each (about ${Math.ceil(n * 2.5)} minutes in all), each a run of the forge's Claude. Each is kept as it lands; revise any of them afterwards.`)) return;
+  const k = Cast.S.slots || 1; if (!confirm(`Make ${n} model(s)? The artist makes ${k} at a time, about 2 to 3 minutes each (about ${Math.ceil(n / k) * 2.5} minutes in all), each a run of the forge's Claude. Each is kept as it lands; revise any of them afterwards.`)) return;
   Cast.act({ do: 'make' }, j => `${(j.started || []).length} model job(s) started; they are made one after another`); };
 el('castWire').onclick = () => { if (!confirm('Ask the builder to hook every thing in the cast into the game (one run)? After that, a model kept or revised here shows up in the game by itself.')) return;
   Cast.act({ do: 'wire' }, j => j.queued ? 'the builder is busy: wiring the cast is its next run' : 'the builder is wiring the cast in; watch it on the game page\'s Build tab'); };

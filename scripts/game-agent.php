@@ -2,7 +2,7 @@
 <?php
 /**
  * The agent runner for one game, started detached by the web (GameStore::startRunner) and run to the end of its mode:
- *   php scripts/game-agent.php <slug> chat|pipeline|review|fix|soak <memberId>
+ *   php scripts/game-agent.php <slug> chat|pipeline|review|fix|soak|art <memberId> [art slot]
  * The prompt (chat, or the producer's note to the planner) is read from games/<slug>/.studio/prompt.txt. Progress goes to
  * .studio/events.jsonl; the lock is .studio/agent.json (busy, pid). When it ends, the owner gets a Communications
  * notice saying how it went.
@@ -14,13 +14,14 @@ define('BASE_PATH', \app\Paths::root());
 new \app\Bootstrap('conf/config.ini');
 [$slug, $mode, $memberId] = [(string) ($argv[1] ?? ''), (string) ($argv[2] ?? 'chat'), (int) ($argv[3] ?? 0)];
 $dir = \app\GameStore::dir($slug);
-$art = $mode === 'art'; // the art lane: a sprite job beside the builder, with its own prompt file and lock
-$pf = $dir . '/.studio/' . ($art ? 'art-prompt.txt' : 'prompt.txt');
+$art = $mode === 'art'; // the art lane: a sprite job beside the builder, in its slot (argv 4) with that slot's prompt file and lock
+$slot = $art ? max(0, min(5, (int) ($argv[4] ?? 0))) : 0;
+$pf = $dir . '/.studio/' . ($art ? 'art-prompt' . ($slot ? "-$slot" : '') . '.txt' : 'prompt.txt');
 $prompt = is_file($pf) ? trim((string) file_get_contents($pf)) : '';
-$state = $art ? \app\GameStore::artState($slug) : \app\GameStore::agentState($slug);
+$state = $art ? \app\GameStore::artState($slug, $slot) : \app\GameStore::agentState($slug);
 $state = array_merge($state, ['busy' => true, 'mode' => $mode, 'pid' => getmypid(), 'started' => date('c')]);
-if ($art) \app\GameStore::saveArtState($slug, $state); else \app\GameStore::saveAgentState($slug, $state);
-$agent = new \app\GameAgent($slug, $memberId, $art ? 'art' : 'build');
+if ($art) \app\GameStore::saveArtState($slug, $state, $slot); else \app\GameStore::saveAgentState($slug, $state);
+$agent = new \app\GameAgent($slug, $memberId, $art ? 'art' : 'build', $slot);
 $outcome = 'finished';
 try {
     switch ($mode) {
@@ -36,8 +37,8 @@ try {
     \app\GameStore::emit($slug, 'error', ['text' => 'runner: ' . $e->getMessage()]);
 } finally {
     if ($art) {
-        $s = \app\GameStore::artState($slug);
-        if ((int) $s['pid'] === getmypid() || !\app\GameStore::alive((int) $s['pid'])) { $s['busy'] = false; $s['mode'] = ''; $s['pid'] = 0; \app\GameStore::saveArtState($slug, $s); }
+        $s = \app\GameStore::artState($slug, $slot);
+        if ((int) $s['pid'] === getmypid() || !\app\GameStore::alive((int) $s['pid'])) { $s['busy'] = false; $s['mode'] = ''; $s['pid'] = 0; \app\GameStore::saveArtState($slug, $s, $slot); }
         \app\GameStore::emit($slug, 'artdone', ['text' => $outcome]);
         try { foreach (\app\Cast::settle($slug) as $d) \app\GameStore::emit($slug, 'note', ['text' => "3D cast: {$d}"]); } catch (\Throwable $e) { \app\GameStore::emit($slug, 'error', ['text' => '3D cast: ' . $e->getMessage()]); } // a cast list or batch model that just landed
         \app\GameStore::startQueuedArt($slug); // the next sprite job that waited

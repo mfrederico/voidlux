@@ -16,6 +16,14 @@ namespace app;
 class Cast {
     public const GROUPS = ['player', 'enemy', 'boss', 'npc', 'prop', 'pickup', 'terrain', 'other'];
 
+    private static int $depth = 0;
+    /** Runs $fn holding the cast's lock, re-entrantly: art runners ending together settle one at a time, so no change to
+     *  models.json (or sprites.json, through saveSprite) is lost between a read and a write. */
+    public static function locked(string $slug, callable $fn) {
+        if (self::$depth > 0) { self::$depth++; try { return $fn(); } finally { self::$depth--; } }
+        $lk = fopen(GameStore::studioDir($slug) . '/cast.lock', 'c'); flock($lk, LOCK_EX); self::$depth = 1;
+        try { return $fn(); } finally { self::$depth = 0; flock($lk, LOCK_UN); fclose($lk); }
+    }
     public static function path(string $slug): string { return GameStore::dir($slug) . '/assets/models.json'; }
     public static function read(string $slug): array {
         $p = self::path($slug); if (!is_file($p)) return ['version' => 1, 'items' => []];
@@ -30,7 +38,8 @@ class Cast {
     }
 
     /** A model was kept (from saveSprite): its item points at the file, with a version for the game's cache. */
-    public static function kept(string $slug, string $key, string $file, float $size, bool $recipe, string $job = ''): void {
+    public static function kept(string $slug, string $key, string $file, float $size, bool $recipe, string $job = ''): void { self::locked($slug, fn() => self::keptIn($slug, $key, $file, $size, $recipe, $job)); }
+    private static function keptIn(string $slug, string $key, string $file, float $size, bool $recipe, string $job = ''): void {
         $c = self::read($slug); $it = (array) ($c['items'][$key] ?? ['what' => $key, 'group' => 'other']);
         $it['file'] = $file; $it['size'] = $size; $it['v'] = substr((string) sha1_file(GameStore::dir($slug) . "/assets/$file"), 0, 10); $it['recipe'] = $recipe;
         if ($job !== '') $it['kept'] = $job; unset($it['error']);
@@ -49,7 +58,7 @@ class Cast {
             $out[$k] = $it + ['state' => $state, 'hooked' => in_array($k, $hooks, true)];
         }
         $page = is_file("$dir/index.html") ? (string) file_get_contents("$dir/index.html") : '';
-        return ['items' => (object) $out, 'wired' => str_contains($page, 'kit-models.js'), 'list' => self::listJob($slug), 'three' => self::threeRevision($slug)];
+        return ['items' => (object) $out, 'wired' => str_contains($page, 'kit-models.js'), 'list' => self::listJob($slug), 'three' => self::threeRevision($slug), 'slots' => GameStore::artSlots(), 'working' => (int) (GameStore::artState($slug)['working'] ?? 0)];
     }
     /** The keys the game's code asks Models.make() for. */
     public static function hooks(string $slug): array {
@@ -88,7 +97,8 @@ class Cast {
         return ['id' => $id, 'queued' => !empty($r['queued'])];
     }
     /** The list job's cast.json joins models.json: new keys are added, items already there are left as they are. Returns the keys added. */
-    public static function adoptList(string $slug, string $id): array {
+    public static function adoptList(string $slug, string $id): array { return self::locked($slug, fn() => self::adoptListIn($slug, $id)); }
+    private static function adoptListIn(string $slug, string $id): array {
         $f = GameStore::sketchDir($slug, $id) . '/cast.json'; if (!is_file($f)) return [];
         $j = json_decode((string) file_get_contents($f), true); if (!is_array($j) || !is_array($j['items'] ?? null)) throw new \RuntimeException("the cast list sketches/{$id}/cast.json is not the expected JSON");
         $c = self::read($slug); $sprites = (array) GameStore::readSprites($slug)['sprites']; $added = [];
@@ -109,7 +119,8 @@ class Cast {
             'note' => $s($it['note'] ?? '', 900), 'moves' => $s($it['moves'] ?? '', 300)];
     }
     /** A person's change to an item: its words and size, or dropping it from the cast (its kept model file stays in assets/). */
-    public static function editItem(string $slug, string $key, array $b): array {
+    public static function editItem(string $slug, string $key, array $b): array { return self::locked($slug, fn() => self::editItemIn($slug, $key, $b)); }
+    private static function editItemIn(string $slug, string $key, array $b): array {
         $c = self::read($slug); if (!isset($c['items'][$key])) throw new \InvalidArgumentException("no {$key} in the cast");
         if (!empty($b['drop'])) { unset($c['items'][$key]); self::write($slug, $c); return []; }
         $it = $c['items'][$key]; $cl = self::clean(array_merge($it, array_intersect_key($b, array_flip(['what', 'note', 'size', 'group', 'replaces', 'moves']))));
@@ -119,7 +130,8 @@ class Cast {
 
     // ---- make: one model job per item ----
     /** Starts (or queues) a model job for each key given, or for every item with no model and no job running. Returns the keys started. */
-    public static function make(string $slug, array $keys, int $memberId): array {
+    public static function make(string $slug, array $keys, int $memberId): array { return self::locked($slug, fn() => self::makeIn($slug, $keys, $memberId)); }
+    private static function makeIn(string $slug, array $keys, int $memberId): array {
         $st = (array) self::status($slug)['items']; $c = self::read($slug); $started = [];
         if (!$keys) $keys = array_keys(array_filter($st, fn($it) => $it['state'] === 'none' || $it['state'] === 'failed'));
         foreach ($keys as $k) {
@@ -136,7 +148,8 @@ class Cast {
     }
     /** Finished cast jobs land: the list joins models.json, and each batch model's take is kept. Safe to call any time (the art
      *  runner's end and the sweep both do). Returns what it did. */
-    public static function settle(string $slug): array {
+    public static function settle(string $slug): array { return self::locked($slug, fn() => self::settleIn($slug)); }
+    private static function settleIn(string $slug): array {
         $did = [];
         if (($l = self::listJob($slug)) && !$l['busy'] && !empty($l['result']['ok'])) {
             $mark = GameStore::studioDir($slug) . '/cast-list.json'; $m = json_decode((string) file_get_contents($mark), true) ?: [];

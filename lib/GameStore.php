@@ -256,7 +256,7 @@ class GameStore {
     public static function scrap(object $g, int $memberId): array {
         $slug = (string) $g->slug; $stamp = date('Ymd-His'); $out = ['slug' => $slug, 'archived' => [], 'site' => null];
         try { self::stopRunner($slug); } catch (\Throwable $e) {}
-        $a = self::artState($slug); if ($a['busy'] && self::alive((int) $a['pid'])) { @posix_kill(-(int) $a['pid'], SIGTERM); @posix_kill((int) $a['pid'], SIGTERM); }
+        foreach (self::artPids($slug) as $ap) { @posix_kill(-$ap, SIGTERM); @posix_kill($ap, SIGTERM); }
         $d = self::dir($slug); $arch = self::root() . '/games/.scrapped'; if (!is_dir($arch)) mkdir($arch, 0775, true);
         if (is_dir($d)) { $to = "$arch/$slug-$stamp"; if (!rename($d, $to)) throw new \RuntimeException("could not move the game folder to $to"); $out['archived'][] = $to; }
         $root = rtrim((string) self::cfg('publish_root', '/var/www/html/default'), '/'); $label = explode('.', (string) self::cfg('domain', 'voidlux.com'))[0];
@@ -584,38 +584,66 @@ class GameStore {
         }
         return self::startRunner($slug, 'chat', $prompt, $memberId) + ['queued' => false];
     }
-    // ---- the art lane: sprite jobs run beside the builder, in their own runner with their own lock (.studio/art.json), fresh
-    //      sessions and no commits; they touch only sketches/<id>/. One at a time per game; more wait in art-queue.jsonl ----
-    public static function artState(string $slug): array {
-        $f = self::dir($slug) . '/.studio/art.json'; $s = is_file($f) ? (json_decode((string) file_get_contents($f), true) ?: []) : [];
+    // ---- the art lane: sprite jobs run beside the builder, in their own runners with their own locks, fresh sessions and no
+    //      commits; they touch only sketches/<id>/. Up to [forge] art_parallel (default 3) at once per game, each in a slot:
+    //      slot 0 is .studio/art.json + art-prompt.txt, slot n is art-<n>.json + art-prompt-<n>.txt. More wait in art-queue.jsonl.
+    //      One job is about 630 MB (claude and mojulo's server), so the slots are what the machine can carry. ----
+    public static function artSlots(): int { return max(1, min(6, (int) self::cfg('art_parallel', 3))); }
+    private static function artFile(string $slug, int $slot, string $what = 'state'): string { return self::studioDir($slug) . '/' . ($what === 'prompt' ? 'art-prompt' . ($slot ? "-$slot" : '') . '.txt' : 'art' . ($slot ? "-$slot" : '') . '.json'); }
+    /** One slot's lock (with $slot), or the lane as a whole: busy when any slot is, with how many are and the cost of all. */
+    public static function artState(string $slug, ?int $slot = null): array {
+        if ($slot === null) {
+            $all = []; for ($n = 0; $n < max(self::artSlots(), 6); $n++) if ($n === 0 || is_file(self::artFile($slug, $n))) $all[$n] = self::artState($slug, $n);
+            $busy = array_filter($all, fn($s) => $s['busy']); $first = $busy ? reset($busy) : $all[0];
+            return array_merge($all[0], ['busy' => (bool) $busy, 'mode' => $busy ? 'art' : '', 'pid' => (int) $first['pid'], 'working' => count($busy), 'slots' => self::artSlots(), 'cost' => array_sum(array_map(fn($s) => (float) $s['cost'], $all)), 'runs' => array_sum(array_map(fn($s) => (int) $s['runs'], $all))]);
+        }
+        $f = self::artFile($slug, $slot); $s = is_file($f) ? (json_decode((string) file_get_contents($f), true) ?: []) : [];
         $s += ['busy' => false, 'mode' => '', 'pid' => 0, 'session' => null, 'runs' => 0, 'cost' => 0.0];
         if ($s['busy'] && !self::alive((int) $s['pid'])) { $s['busy'] = false; $s['mode'] = ''; $s['pid'] = 0; }
         return $s;
     }
-    public static function saveArtState(string $slug, array $s): void { self::writeAtomic(self::studioDir($slug) . '/art.json', json_encode($s, JSON_PRETTY_PRINT)); }
-    public static function startArt(string $slug, string $prompt, int $memberId): array {
-        $s = self::artState($slug); $sd = self::studioDir($slug);
-        if ($s['busy']) {
+    public static function saveArtState(string $slug, array $s, int $slot = 0): void { self::writeAtomic(self::artFile($slug, $slot), json_encode($s, JSON_PRETTY_PRINT)); }
+    /** Every art runner of a game that is alive (to stop them all). */
+    public static function artPids(string $slug): array { $p = []; for ($n = 0; $n < 6; $n++) { $s = self::artState($slug, $n); if ($s['busy']) $p[] = (int) $s['pid']; } return $p; }
+    private static int $artLockDepth = 0;
+    /** Runs $fn holding the game's art-lane lock (slot choice and the queue), re-entrantly: one process takes it once. */
+    public static function withArtLock(string $slug, callable $fn) {
+        if (self::$artLockDepth > 0) { self::$artLockDepth++; try { return $fn(); } finally { self::$artLockDepth--; } }
+        $lk = fopen(self::studioDir($slug) . '/art-queue.lock', 'c'); flock($lk, LOCK_EX); self::$artLockDepth = 1;
+        try { return $fn(); } finally { self::$artLockDepth = 0; flock($lk, LOCK_UN); fclose($lk); }
+    }
+    public static function startArt(string $slug, string $prompt, int $memberId): array { return self::withArtLock($slug, fn() => self::startArtIn($slug, $prompt, $memberId)); }
+    private static function startArtIn(string $slug, string $prompt, int $memberId): array {
+        $free = null; for ($n = 0; $n < self::artSlots(); $n++) if (!self::artState($slug, $n)['busy']) { $free = $n; break; }
+        $sd = self::studioDir($slug);
+        if ($free === null) {
             file_put_contents($sd . '/art-queue.jsonl', json_encode(['prompt' => $prompt, 'memberId' => $memberId, 'at' => time()], JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND);
-            self::emit($slug, 'note', ['text' => 'art: another sprite job is running; this one is next: ' . mb_substr($prompt, 0, 120)]);
-            return $s + ['queued' => true];
+            self::emit($slug, 'note', ['text' => 'art: ' . self::artSlots() . ' sprite jobs are running; this one waits its turn: ' . mb_substr($prompt, 0, 120)]);
+            return self::artState($slug) + ['queued' => true];
         }
-        file_put_contents($sd . '/art-prompt.txt', $prompt);
+        file_put_contents(self::artFile($slug, $free, 'prompt'), $prompt);
         $log = $sd . '/runner.log';
-        $cmd = 'setsid nohup php ' . escapeshellarg(self::root() . '/scripts/game-agent.php') . ' ' . escapeshellarg($slug) . ' art ' . escapeshellarg((string) $memberId) . ' >> ' . escapeshellarg($log) . ' 2>&1 & echo $!';
+        $cmd = 'setsid nohup php ' . escapeshellarg(self::root() . '/scripts/game-agent.php') . ' ' . escapeshellarg($slug) . ' art ' . escapeshellarg((string) $memberId) . ' ' . $free . ' >> ' . escapeshellarg($log) . ' 2>&1 & echo $!';
         $pid = (int) trim((string) shell_exec($cmd));
         if ($pid <= 0) throw new \RuntimeException('the art runner did not start; see ' . $log);
-        $s = array_merge($s, ['busy' => true, 'mode' => 'art', 'pid' => $pid, 'started' => date('c'), 'by' => $memberId]);
-        self::saveArtState($slug, $s);
-        return $s + ['queued' => false];
+        $s = array_merge(self::artState($slug, $free), ['busy' => true, 'mode' => 'art', 'pid' => $pid, 'started' => date('c'), 'by' => $memberId]);
+        self::saveArtState($slug, $s, $free);
+        return $s + ['queued' => false, 'slot' => $free];
     }
-    public static function startQueuedArt(string $slug): bool {
-        $q = self::studioDir($slug) . '/art-queue.jsonl'; if (!is_file($q)) return false;
-        $lines = array_values(array_filter(array_map('trim', file($q)), fn($l) => $l !== '')); if (!$lines) { @unlink($q); return false; }
-        $next = json_decode(array_shift($lines), true); if ($lines) self::writeAtomic($q, implode("\n", $lines) . "\n"); else @unlink($q);
-        if (!is_array($next) || trim((string) ($next['prompt'] ?? '')) === '') return self::startQueuedArt($slug);
-        try { self::startArt($slug, (string) $next['prompt'], (int) ($next['memberId'] ?? 0)); return true; }
-        catch (\Throwable $e) { self::emit($slug, 'error', ['text' => 'art: the queued job could not start: ' . $e->getMessage()]); return false; }
+    /** Queued sprite jobs start in every free slot. Returns how many started. */
+    public static function startQueuedArt(string $slug): int {
+        $q = self::studioDir($slug) . '/art-queue.jsonl';
+        return self::withArtLock($slug, function () use ($slug, $q) { $n = 0; // two runners ending together must not start the same job twice
+            while (is_file($q)) {
+                $free = false; for ($i = 0; $i < self::artSlots(); $i++) if (!self::artState($slug, $i)['busy']) { $free = true; break; } if (!$free) break;
+                $lines = array_values(array_filter(array_map('trim', file($q)), fn($l) => $l !== '')); if (!$lines) { @unlink($q); break; }
+                $next = json_decode(array_shift($lines), true); if ($lines) self::writeAtomic($q, implode("\n", $lines) . "\n"); else @unlink($q);
+                if (!is_array($next) || trim((string) ($next['prompt'] ?? '')) === '') continue;
+                try { self::startArt($slug, (string) $next['prompt'], (int) ($next['memberId'] ?? 0)); $n++; }
+                catch (\Throwable $e) { self::emit($slug, 'error', ['text' => 'art: the queued job could not start: ' . $e->getMessage()]); break; }
+            }
+            return $n;
+        });
     }
     public static function memberName(int $id): string { if ($id <= 0) return 'the forge'; $m = Bean::load('member', $id); return (string) ($m->username ?: $m->email ?: 'member ' . $id); }
     /** A note for the builder's next run: one JSON line per note in .studio/inbox.jsonl, so a note may span lines and each is answered on its own. */

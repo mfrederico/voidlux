@@ -32,14 +32,15 @@ class GameAgent {
 
     private array $pendingNotes = []; // the queued notes this run was given, to check its answer against
     private string $lane = 'build'; // 'build': the builder (its session, its inbox, its checkpoints); 'art': a sprite job beside it (fresh session, no inbox, no commits)
-    public function __construct(string $slug, int $memberId = 0, string $lane = 'build') {
-        $this->slug = $slug; $this->dir = GameStore::dir($slug); $this->memberId = $memberId; $this->lane = $lane === 'art' ? 'art' : 'build';
-        $this->state = $this->lane === 'art' ? GameStore::artState($slug) : GameStore::agentState($slug);
+    private int $slot = 0; // an art runner's slot in the lane (GameStore::startArt)
+    public function __construct(string $slug, int $memberId = 0, string $lane = 'build', int $slot = 0) {
+        $this->slug = $slug; $this->dir = GameStore::dir($slug); $this->memberId = $memberId; $this->lane = $lane === 'art' ? 'art' : 'build'; $this->slot = $slot;
+        $this->state = $this->lane === 'art' ? GameStore::artState($slug, $slot) : GameStore::agentState($slug);
         pcntl_async_signals(true);
         pcntl_signal(SIGTERM, function () { $this->stop = true; });
     }
     private function emit(string $kind, array $d = []): void { GameStore::emit($this->slug, $kind, $d); }
-    private function save(): void { if ($this->lane === 'art') GameStore::saveArtState($this->slug, $this->state); else GameStore::saveAgentState($this->slug, $this->state); }
+    private function save(): void { if ($this->lane === 'art') GameStore::saveArtState($this->slug, $this->state, $this->slot); else GameStore::saveAgentState($this->slug, $this->state); }
     /** A sprite job: one fresh, self-contained run, nothing committed. */
     public function art(string $prompt): array { return $this->run($prompt, false, true, 0, 'art'); }
 
