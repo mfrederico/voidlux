@@ -4,7 +4,7 @@
  * forge-sweep.php — every minute, start whatever is waiting with nothing running to carry it: queued notes for a builder
  * that is idle, runs queued behind a builder run that is gone, sprite jobs queued behind an art run that is gone. The
  * runner's own after-run hook does this when a run ends normally; the sweep covers a runner that was killed, a restart,
- * or a note that landed in the instant between two runs. Deterministic and cheap: file reads, and a run only when one
+ * or a note that landed in the instant between two runs. It also settles the 3D cast (lib/Cast.php): models a batch made are kept. Deterministic and cheap: file reads, and a run only when one
  * is due. A note it has started twice (tries) is left for a person, as the hook does.
  *   cron: * * * * *   (scripts/install-retro-cron.sh installs it)
  *   php scripts/forge-sweep.php --dry   says what it would start
@@ -27,6 +27,7 @@ foreach (\app\Bean::find('game') as $g) {
                 $f = \app\GameStore::studioDir($slug) . '/inbox.jsonl'; $fresh = is_file($f) && time() - filemtime($f) < 45;
                 if ($notes && !$fresh) { $did[] = "$slug: " . count($notes) . ' queued note(s)'; if (!$dry) { \app\GameStore::emit($slug, 'note', ['text' => 'the sweep found ' . count($notes) . ' note(s) waiting with nothing running: a run for them starts']); \app\GameStore::startRunner($slug, 'chat', 'The producer sent notes while you were busy; they are listed below, numbered. Handle each one.', 0); } } }
         }
+        if (!$dry && (is_file(\app\Cast::path($slug)) || is_file(\app\GameStore::studioDir($slug) . "/cast-list.json"))) foreach (\app\Cast::settle($slug) as $d) $did[] = "$slug: $d"; // 3D cast jobs that landed with no runner end to settle them
         $a = \app\GameStore::artState($slug); $aq = \app\GameStore::studioDir($slug) . '/art-queue.jsonl';
         if (!$a['busy'] && is_file($aq) && trim((string) file_get_contents($aq)) !== '') { $did[] = "$slug: a queued sprite job"; if (!$dry) \app\GameStore::startQueuedArt($slug); }
     } catch (\Throwable $e) { fwrite(STDERR, date('c') . " ERROR sweep $slug: " . $e->getMessage() . "\n"); }

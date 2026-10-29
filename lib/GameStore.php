@@ -503,6 +503,8 @@ class GameStore {
             $tid = (string) ($b['take']['id'] ?? ''); $tf = basename((string) ($b['take']['file'] ?? '')); $tp = self::sketchDir($slug, $tid) . '/' . $tf;
             if (!preg_match(self::SKETCH_ID, $tid) || !preg_match(self::TAKE, $tf) && str_ends_with($tf, '.glb') || !is_file($tp) || !self::takeIsSafe($tp)) throw new \InvalidArgumentException('no such model take');
             $file = "$key.glb"; copy($tp, "$dir/$file"); $kind = 'model'; $frames = 1; $w = $h = max(1, (int) round((float) ($b['size'] ?? 1) * 100)); // w: the size in hundredths of a world unit
+            $rp = preg_replace('/\.glb$/', '.recipe.json', $tp); $hasRecipe = is_file($rp); if ($hasRecipe) { copy($rp, "$dir/$key.recipe.json"); self::git(self::dir($slug), ['add', "assets/$key.recipe.json"]); } // what made it: a revision edits this
+            $castKept = [$key, $file, max(0.01, (float) ($b['size'] ?? 1)), $hasRecipe, $tid];
         } elseif (!empty($b['copyOf'])) { // a duplicate of a kept sprite under this key: its file copied, its entry too
             $src = (string) $b['copyOf']; $all0 = self::readSprites($slug); $e0 = ((array) $all0['sprites'])[$src] ?? null; if (!$e0) throw new \InvalidArgumentException("no sprite named {$src} to copy");
             $e0 = (array) $e0; $sf = basename((string) $e0['file']); $ext = preg_replace('/^.*?(\.rig)?\.([a-z0-9]+)$/i', '$1.$2', $sf); $file = $key . $ext;
@@ -522,6 +524,7 @@ class GameStore {
         $sprites[$key] = $entry; ksort($sprites);
         self::writeAtomic("$dir/sprites.json", json_encode(['version' => 1, 'sprites' => (object) $sprites], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
         self::git(self::dir($slug), ['add', 'assets/sprites.json', "assets/$file"]);
+        if (!empty($castKept)) Cast::kept($slug, ...$castKept); // a model: the 3D cast points at it, and the game picks it up
         return $entry;
     }
     /** A code sprite is a script the game runs: only drawing, and it must parse. Throws with the reason. */
@@ -670,7 +673,13 @@ class GameStore {
         }
         $mk = (string) ($b['maker'] ?? 'svg'); $maker = in_array($mk, ['svg', 'code', 'spritecook', 'model'], true) ? $mk : 'svg';
         $model = null; // a 3D model through mojulo: what it is, how big, a reference (the pad's drawing and/or a kept sprite)
-        if ($maker === 'model') { $model = ['size' => max(0.1, min(500, (float) ($b['model']['size'] ?? 1))), 'animate' => !empty($b['model']['animate'])];
+        if ($maker === 'model') { $model = ['size' => max(0.01, min(10000, (float) ($b['model']['size'] ?? 1))), 'animate' => !empty($b['model']['animate']), 'takes' => (int) ($b['model']['takes'] ?? 2) === 1 ? 1 : 2];
+            if (!empty($b['model']['cast']) && preg_match(self::SPRITE_KEY, (string) $b['model']['cast'])) $model['cast'] = (string) $b['model']['cast']; // a batch job of the 3D cast: Cast::settle keeps its take
+            if (!empty($b['model']['from'])) { // a revision of a kept model: the model and, when it was kept, its mojulo recipe
+                $fk = (string) $b['model']['from']; $all0 = self::readSprites($slug); $e0 = ((array) $all0['sprites'])[$fk] ?? null;
+                if (!$e0 || (((array) $e0)['kind'] ?? '') !== 'model') throw new \InvalidArgumentException("{$fk} is not a kept 3D model");
+                $ad = self::dir($slug) . '/assets'; copy("$ad/" . basename((string) ((array) $e0)['file']), "$dir/base.glb"); $model['from'] = $fk; $model['asset'] = $fk;
+                if (is_file("$ad/$fk.recipe.json")) { copy("$ad/$fk.recipe.json", "$dir/base.recipe.json"); $model['recipe'] = 'base.recipe.json'; } }
             if (!empty($b['asset'])) { $all0 = self::readSprites($slug); $e0 = ((array) $all0['sprites'])[(string) $b['asset']] ?? null; if (!$e0) throw new \InvalidArgumentException('no sprite named ' . $b['asset']); $af = basename((string) ((array) $e0)['file']);
                 if (is_file(self::dir($slug) . "/assets/$af")) { copy(self::dir($slug) . "/assets/$af", "$dir/ref." . pathinfo($af, PATHINFO_EXTENSION)); $model['ref'] = 'ref.' . pathinfo($af, PATHINFO_EXTENSION); $model['asset'] = (string) $b['asset']; } } }
         // a re-skin job: a kept rig and a kept drawing (an SVG the producer edited, with layers named after bones if they can); the
@@ -778,10 +787,22 @@ class GameStore {
            . "Do not add anything to assets/ or assets/sprites.json and do not commit: the producer chooses what to keep on the sprite page. If anything stops you (SpriteCook needs authentication, no credits, an error), write sketches/{$id}/result.json as {\"ok\": false, \"error\": \"<why, in one line>\"} and stop. Do not run a soak. Reply with one line.";
         if ($model) { // a 3D model, made with mojulo, as binary glTF
             $refs = array_values(array_filter([$has ? "sketches/{$id}/sketch.png (the producer's rough drawing" . ($strokes ? "; sketch.svg holds its strokes" : '') . ')' : '', !empty($model['ref']) ? "sketches/{$id}/{$model['ref']} (the game's own sprite of it" . (!empty($model['asset']) ? ", key {$model['asset']}" : '') . ')' : '']));
+            $one = $model['takes'] === 1;
+            $recipe = "Keep the recipe of each take: when export_model writes the model, mojulo keeps its recipe beside it (~/.mojulo/data/outcomes/<ref>/recipe.json, the ref is the stored sketch's); copy it next to its model, as sketches/{$id}/out-1.recipe.json beside out-1.glb" . ($one ? '' : ' and out-2.recipe.json beside out-2.glb') . ", so the model can be revised later from what made it.";
+            $look = "BEFORE you model anything, read GAME.md's Design and, if the game draws in 3D, its three.js code (js/iso3d*.js or similar): the model must fit its look (how chunky, how lit) and its scale. Its colours come from, in this order: the producer's note, the references (sample them from the pictures), the game's own palette (the colours its code draws this thing, or things like it, with). Never invent a palette the game does not have. ";
+            $form = "Size: about {$model['size']} world units across its largest side, standing on the ground plane (y up, its base at y = 0), facing +x, centred on x and z";
+            if (!empty($model['from'])) {
+                $p = "3D MODEL REVISION. sketches/{$id}/base.glb is the kept 3D model {$model['from']}. The producer wants ONE change to it: \"{$note}\". Make exactly that change and keep everything else as it is (shape, proportions, colours, size, facing).\n"
+                   . (!empty($model['recipe']) ? "sketches/{$id}/base.recipe.json is the mojulo recipe that made it: with the mojulo MCP server (call forward_context first), store that recipe as a sketch (its kind names the minting tool), edit it in place for the change, and export with export_model as binary glTF. "
+                                               : "No mojulo recipe was kept for it, so it cannot be edited in place: with the mojulo MCP server (forward_context first), model it anew to match base.glb as closely as you can (inspect it with node: its meshes, materials and colours, its bounds) with the change made, and export with export_model as binary glTF. Say in your note that it was remade, not edited. ")
+                   . "{$form}.\n" . $recipe . "\n"
+                   . "Write sketches/{$id}/out-1.glb (under 8 MB) and sketches/{$id}/result.json as {\"ok\": true, \"files\": [\"out-1.glb\"], \"note\": \"<what you changed, in one line>\"}. Do not add anything to assets/ and do not commit. If something stops you, write result.json as {\"ok\": false, \"error\": \"<why>\"} and stop. Do not run a soak. Reply with one line.";
+            } else
             $p = "3D MODEL. The producer wants a 3D model for this game, made with the mojulo tools (the mojulo MCP server: call forward_context first, it is mojulo's routing index, then the entry tool it names for a single object or prop or creature; iterate on the stored recipe in place; export with export_model as binary glTF). What it is: " . ($note !== '' ? "\"{$note}\"" : 'see the references') . '. ' . ($refs ? 'References, look at them with Read: ' . implode('; ', $refs) . '. Keep their shapes, proportions and colours. ' : '')
-               . "BEFORE you model anything, read GAME.md's Design and, if the game draws in 3D, its three.js code (js/iso3d*.js or similar): the model must fit its look (how chunky, how lit) and its scale. Its colours come from, in this order: the producer's note, the references (sample them from the pictures), the game's own palette (the colours its code draws this thing, or things like it, with). Never invent a palette the game does not have. Size: about {$model['size']} world units across its largest side, standing on the ground plane (y up, its base at y = 0), facing +x, centred on x and z" . ($model['animate'] ? '; give it a simple idle or walk as a rig clip and export it with that clip baked in (clips)' : '') . ".\n"
-               . "Make two takes: sketches/{$id}/out-1.glb faithful to the references, and sketches/{$id}/out-2.glb bolder (more character, stronger silhouette). Copy each exported .glb from wherever mojulo wrote it into those paths. Each under 8 MB. If mojulo can render a preview picture, also save sketches/{$id}/out-1.png and out-2.png (not required).\n"
-               . "Then write sketches/{$id}/result.json as {\"ok\": true, \"files\": [\"out-1.glb\", \"out-2.glb\"], \"note\": \"<what you made, its size, and where its colours came from, in one line>\"}. Do not add anything to assets/ or assets/sprites.json and do not commit. If mojulo is not available or something stops you, write result.json as {\"ok\": false, \"error\": \"<why>\"} and stop. Do not run a soak. Reply with one line.";
+               . $look . $form . ($model['animate'] ? '; give it a simple idle or walk as a rig clip and export it with that clip baked in (clips)' : '') . ".\n"
+               . ($one ? "Make one take: sketches/{$id}/out-1.glb, faithful to the references. " : "Make two takes: sketches/{$id}/out-1.glb faithful to the references, and sketches/{$id}/out-2.glb bolder (more character, stronger silhouette). ")
+               . "Copy each exported .glb from wherever mojulo wrote it into " . ($one ? 'that path' : 'those paths') . ". Each under 8 MB. " . $recipe . "\n"
+               . "Then write sketches/{$id}/result.json as {\"ok\": true, \"files\": [" . ($one ? '\"out-1.glb\"' : '\"out-1.glb\", \"out-2.glb\"') . "], \"note\": \"<what you made, its size, and where its colours came from, in one line>\"}. Do not add anything to assets/ or assets/sprites.json and do not commit. If mojulo is not available or something stops you, write result.json as {\"ok\": false, \"error\": \"<why>\"} and stop. Do not run a soak. Reply with one line.";
         } elseif ($reskin) { // the rig's parts redrawn from the drawing, everything else kept
             $sf = $reskin['skinfile']; $isSvg = str_ends_with($sf, '.svg');
             $p = "RE-SKIN. sketches/{$id}/base.js is a kept skeleton rig (read ../../kit/js/kit-rig.js for the format) and sketches/{$id}/{$sf} is the producer's new drawing of the same character" . ($isSvg ? ' (an SVG they edited by hand; read it)' : ' (look at it with Read)') . ". Rewrite ONLY the rig's parts so the character looks like the new drawing. Keep every bone, chain, limit, the half, the ground and every motion EXACTLY as they are: the producer merges your parts into their rig and discards the rest of your file, so nothing else you change survives.\n"
@@ -874,7 +895,7 @@ class GameStore {
     }
     /** A job's kind, its base file (for a rig, an animation or a refinement) and the sprite it started from, from its request. */
     public static function jobFacts(array $req): array {
-        $kind = !empty($req['model']) ? 'model' : (!empty($req['reskin']) ? 'reskin' : (!empty($req['rig']) ? 'rig' : (!empty($req['animate']) ? 'animate' : (!empty($req['vector']) ? 'vector' : (!empty($req['refine']) ? 'refine' : (!empty($req['from']) ? 'revision' : 'sketch'))))));
+        $kind = !empty($req['cast']) ? 'cast' : (!empty($req['model']) ? (!empty($req['model']['from']) ? 'remodel' : 'model') : (!empty($req['reskin']) ? 'reskin' : (!empty($req['rig']) ? 'rig' : (!empty($req['animate']) ? 'animate' : (!empty($req['vector']) ? 'vector' : (!empty($req['refine']) ? 'refine' : (!empty($req['from']) ? 'revision' : 'sketch')))))));
         $base = $req['model']['ref'] ?? $req['reskin']['skinfile'] ?? $req['rig']['base'] ?? $req['animate']['base'] ?? $req['vector']['base'] ?? (!empty($req['refine']['ext']) ? 'base.' . $req['refine']['ext'] : '');
         return ['kind' => $kind, 'basefile' => (string) $base, 'asset' => (string) ($req['model']['asset'] ?? $req['reskin']['asset'] ?? $req['rig']['asset'] ?? $req['animate']['asset'] ?? $req['vector']['asset'] ?? ''), 'cycle' => (string) ($req['animate']['name'] ?? '')];
     }
@@ -998,6 +1019,7 @@ class GameStore {
             if (!is_file($from)) throw new \RuntimeException("index.html loads {$src}, which does not exist"); copy($from, $dist . '/js/' . $b); }
         if ($kitUsed && is_file(self::root() . '/kit/js/kit-rig.js')) copy(self::root() . '/kit/js/kit-rig.js', $dist . '/js/kit-rig.js');
         if (is_dir($d . '/icons')) self::copyTree($d . '/icons', $dist . '/icons');
+        if (is_dir($d . '/js/vendor')) self::copyTree($d . '/js/vendor', $dist . '/js/vendor'); // libraries the game imports as modules (three.js and its loaders), which no <script src> names
         if (is_dir($d . '/assets')) self::copyTree($d . '/assets', $dist . '/assets'); // sprites and pictures the game draws
         $cv = self::cover($slug); foreach (['jpg', 'png'] as $x) if ($cv !== '' && is_file("$d/.studio/soaks/$cv.$x")) copy("$d/.studio/soaks/$cv.$x", "$dist/cover.$x"); // the store card's pictures ship with the game
         $gf = self::gif($slug); if ($gf !== '') copy("$d/.studio/soaks/$gf.gif", "$dist/cover.gif");

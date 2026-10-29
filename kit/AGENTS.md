@@ -91,13 +91,27 @@ will not load is a console error, which the soak reports.
   a platformer wants. `Draw.anim`
   on a rig key plays its first motion. Motions are data: a motion made for one biped fits any other. The same safety
   rules as a code sprite apply (only drawing, node --check).
-- A **3D model** is `assets/<key>.glb` (binary glTF, made by the sprite page's 3D model job with mojulo) with
-  `"kind": "model"` and `w` = its size in hundredths of a world unit. `Draw.models()` lists them; a game drawing in three.js
-  loads one with GLTFLoader (vendor `examples/jsm/loaders/GLTFLoader.js` of the same three.js version beside three) and
-  uses it in place of the generated stand-in for that thing, keeping the stand-in until the model has loaded. 2D games ignore them.
-- Publishing copies `assets/` with the game.
+- A **3D model** is `assets/<key>.glb` (binary glTF, made with mojulo on the sprite page's 3D tab), listed with
+  `"kind": "model"` in sprites.json and, with what it is for, in **`assets/models.json`, the 3D cast**: one item per
+  thing the game draws in 3D (`what`, `replaces`: the code that draws its stand-in, `size` in world units, and `file`
+  once a model is kept). A model may change or arrive at any time without you: the producer revises them on the page.
+  **Wire models in once, through `../../kit/js/kit-models.js`, never with a loader of your own:**
+  1. Vendor three's `examples/jsm/loaders/GLTFLoader.js`, `examples/jsm/utils/BufferGeometryUtils.js` and
+     `examples/jsm/utils/SkeletonUtils.js` of the game's own three.js version (its REVISION) into
+     `js/vendor/addons/loaders/` and `js/vendor/addons/utils/`, from `https://cdn.jsdelivr.net/npm/three@0.<REVISION>.0/`.
+  2. Give index.html an import map, before any module script, mapping `"three"` to the game's own
+     `./js/vendor/three.module.min.js` (one three instance, not two), and `<script src="../../kit/js/kit-models.js">`.
+  3. Where the module script makes `window.THREE`, import the loader and SkeletonUtils and call
+     `Models.init(THREE, GLTFLoader, SkeletonUtils)`.
+  4. For EVERY item in models.json, kept or not: where the game builds that thing's stand-in, use `Models.make('<key>')`
+     when it returns an object, the stand-in otherwise, and in `Models.on(key => …)` swap live stand-ins for the model.
+     The model comes scaled to the item's size, standing on y = 0, centred, facing +x: place it as the stand-in is placed.
+     Parts the stand-in animated in code (legs, eyes, colour flashes) need a decision per thing: keep those parts in code
+     beside the model, tint the model's materials, or play its clips (`Models.clips(key)`) with an AnimationMixer.
+  Then a model kept later appears without another change. 2D games ignore all of this.
+- Publishing copies `assets/` and `js/vendor/` with the game.
 - The sprite page's `>>` sends the producer's sketch to you with a message that says exactly what to draw and where
-  (`sketches/<id>/out-N.svg` or `.png`, then `result.json`). Follow it to the letter: nothing goes into `assets/` or the
+  (`sketches/<id>/<key>-N.svg` or `.png`, then `result.json`). Follow it to the letter: nothing goes into `assets/` or the
   manifest until the producer keeps a take.
 
 ## Plugins the builder has

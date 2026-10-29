@@ -36,6 +36,12 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
 .tab.hidden { display: none !important; } .cards2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; } .card2 { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 6px; align-content: start; } .card2.soon { border-style: dashed; } .card2 p { margin: 0; }
 .more { border-top: 1px solid var(--line); padding-top: 10px; }
 /* Move: the stage with the figure large, the panel beside it (under it on a phone), the timeline under the stage */
+.castgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; } .castgrp { grid-column: 1 / -1; margin: 10px 0 0; text-transform: capitalize; }
+.ccard { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: center; text-align: left; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; font: inherit; cursor: pointer; } .ccard.on { border-color: var(--accent); }
+.ccard img { width: 64px; height: 64px; object-fit: contain; } .pill { display: inline-block; padding: 0 7px; border-radius: 99px; font-size: 12px; border: 1px solid var(--line); }
+.pill.s-kept, .pill.s-hooked { border-color: var(--ok); color: var(--ok); } .pill.s-making, .pill.s-made { border-color: var(--accent); color: var(--accent); } .pill.s-failed { border-color: var(--set); color: var(--set); }
+.cdetail { grid-column: 1 / -1; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 14px; padding: 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--surface); } @media (max-width: 700px) { .cdetail { grid-template-columns: 1fr; } }
+.cform { display: grid; gap: 8px; align-content: start; } .cform label { display: grid; gap: 3px; } .crev { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 6px; border: 1px dashed var(--line); border-radius: 8px; } .crev img { width: 64px; height: 64px; }
 .movegrid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; } @media (max-width: 900px) { .movegrid { grid-template-columns: 1fr; } }
 .movestage { display: grid; gap: 8px; } #moveCv { width: 100%; max-width: 560px; aspect-ratio: 1; height: auto; display: block; border: 1px solid var(--line); border-radius: 10px; background: repeating-conic-gradient(var(--check1) 0 25%, var(--check2) 0 50%) 0 0 / 24px 24px; touch-action: none; cursor: crosshair; }
 .tl { display: grid; gap: 4px; max-width: 560px; } .tlbar { position: relative; height: 28px; border: 1px solid var(--line); border-radius: 8px; background: var(--plot); } .tlkey { position: absolute; top: 50%; width: 14px; height: 14px; transform: translate(-50%, -50%) rotate(45deg); background: var(--surface); border: 2px solid var(--muted); cursor: pointer; } .tlkey.on { border-color: var(--accent); background: var(--accent); } .tlcursor { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--focus); transform: translateX(-1px); pointer-events: none; }
@@ -120,7 +126,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
 </style></head><body>
 <div class="wrap">
   <div class="crumbs"><a href="/forge">Forge</a> / <a id="crumbGame" href="#">game</a> / Sprites</div>
-  <div class="top"><h1>Sprites</h1><nav class="tabs" id="tabs"><a href="#make" data-tab="make" class="on">Make</a><a href="#draw" data-tab="draw">Draw</a><a href="#move" data-tab="move">Move</a></nav></div>
+  <div class="top"><h1>Sprites</h1><nav class="tabs" id="tabs"><a href="#make" data-tab="make" class="on">Make</a><a href="#draw" data-tab="draw">Draw</a><a href="#move" data-tab="move">Move</a><a href="#3d" data-tab="3d">3D</a></nav></div>
   <p class="lede" id="lede">Draw a rough sketch, say what it is, press &gt;&gt;: the artist draws two takes. Keep one and it is in the game as <code>Draw.pic('key', x, y, size)</code>.</p>
   <div id="msg" class="msg"></div>
   <div id="fresh" class="hidden" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 12px;border:1px solid var(--accent);border-radius:10px;background:var(--surface)"><span>This page was updated behind you.</span><button class="primary" id="freshBtn">Reload it</button><span class="muted small" id="freshWhy"></span></div>
@@ -200,6 +206,11 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
       </div>
     </section>
     </section>
+    <section class="tab panel hidden" id="tab-3d">
+      <div class="head"><div><h2>The 3D cast</h2><div class="meta muted small" id="castSub">loading…</div></div><div class="row"><button id="castList">List the 3D things</button><button id="castMake" class="primary" disabled>Make all missing</button><button id="castWire" disabled>Wire into the game</button></div></div>
+      <div class="small" id="castNote"></div>
+      <div id="castGrid" class="castgrid"></div>
+    </section>
     <section class="tab panel hidden" id="tab-move">
       <div class="head"><div><h2 id="moveTitle">no sprite chosen</h2><div class="meta muted small" id="moveSub">pick a kept sprite on the left to give it motion</div></div><div class="row"><button id="moveDupBtn" disabled title="a copy of this whole sprite (or rig) under a new key">Duplicate sprite…</button><button id="moveAnimBtn" disabled title="the artist animates it as code frames, no rig">⟳ Let the artist animate it…</button></div></div>
       <div class="movegrid">
@@ -250,8 +261,8 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
 <script src="/kit/js/kit-rig.js"></script>
 <script>
 const el = id => document.getElementById(id);
-const LEDE = { make: "Draw a rough sketch, say what it is, press >>: the artist draws two takes. Keep one and it is in the game as Draw.pic('key', x, y, size).", draw: 'Edit a kept sprite: its pixels frame by frame, its SVG source, or its drawing code, with a live preview.', move: 'Give a kept sprite motion. Today: the artist animates it as code frames. Next: a skeleton rig with keyframes and inverse kinematics.' };
-function showTab(name) { if (!['make', 'draw', 'move'].includes(name)) name = 'make'; if (typeof UX !== 'undefined') UX.tab(name); for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('on', a.dataset.tab === name); for (const s of document.querySelectorAll('.tab')) s.classList.toggle('hidden', s.id !== 'tab-' + name); el('lede').textContent = LEDE[name]; if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name); if (name === 'move') moveRefresh(); else el('moveJobs').classList.add('hidden'); }
+const LEDE = { make: "Draw a rough sketch, say what it is, press >>: the artist draws two takes. Keep one and it is in the game as Draw.pic('key', x, y, size).", draw: 'Edit a kept sprite: its pixels frame by frame, its SVG source, or its drawing code, with a live preview.', '3d': 'Everything the game draws in 3D, each with its model: list them, make the missing ones in one go, wire them into the game once, then revise any one of them.', move: 'Give a kept sprite motion. Today: the artist animates it as code frames. Next: a skeleton rig with keyframes and inverse kinematics.' };
+function showTab(name) { if (!['make', 'draw', 'move', '3d'].includes(name)) name = 'make'; if (typeof UX !== 'undefined') UX.tab(name); for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('on', a.dataset.tab === name); for (const s of document.querySelectorAll('.tab')) s.classList.toggle('hidden', s.id !== 'tab-' + name); el('lede').textContent = LEDE[name]; if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name); if (name === '3d' && typeof Cast !== 'undefined') Cast.refresh(); if (name === 'move') moveRefresh(); else el('moveJobs').classList.add('hidden'); }
 for (const a of document.querySelectorAll('#tabs a')) a.onclick = e => { e.preventDefault(); showTab(a.dataset.tab); };
 window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
 function moveRefresh() { if (typeof Move !== 'undefined') Move.refresh(); }
@@ -379,7 +390,7 @@ function drawList() {
   for (const f of files) { const b = document.createElement('button'); b.className = 'slot'; b.innerHTML = `<img class="th" src="${ASSET(f)}" alt=""><span><div class="k">${esc(f)}</div><div class="d">click to add it as a sprite</div></span>`; b.onclick = () => adopt(f); L.appendChild(b); }
 }
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-function jobTitle(j) { const who = j.asset || j.key || 'sprite'; if (j.kind === 'rig') return `skeleton rig of ${who}`; if (j.kind === 'animate') return `${j.cycle || 'motion'} cycle of ${who}`; if (j.kind === 'vector') return `${who} as vector`; if (j.kind === 'model') return `3D model: ${j.key}`; if (j.kind === 'reskin') return `re-skin of ${who}`; if (j.note) return j.note; if (j.kind === 'refine') return `refinement of ${j.key}`; if (j.kind === 'revision') return `revision of ${j.key}`; return j.key || '(no description)'; }
+function jobTitle(j) { const who = j.asset || j.key || 'sprite'; if (j.kind === 'rig') return `skeleton rig of ${who}`; if (j.kind === 'animate') return `${j.cycle || 'motion'} cycle of ${who}`; if (j.kind === 'vector') return `${who} as vector`; if (j.kind === 'model') return `3D model: ${j.key}`; if (j.kind === 'remodel') return `3D model revision: ${j.key}`; if (j.kind === 'cast') return 'the 3D cast (what the game draws in 3D)'; if (j.kind === 'reskin') return `re-skin of ${who}`; if (j.note) return j.note; if (j.kind === 'refine') return `refinement of ${j.key}`; if (j.kind === 'revision') return `revision of ${j.key}`; return j.key || '(no description)'; }
 const takeLabel = (j, i) => `${j.key || 'sprite'} · take ${i + 1}`;
 const artBusy = text => { el('artBusy').classList.add('on'); el('artBusyText').textContent = text || 'the artist is working…'; }, artIdle = () => el('artBusy').classList.remove('on');
 el('q').oninput = drawList;
@@ -762,7 +773,7 @@ window.addEventListener('resize', () => { if (doc && mode === 'pix') { fitZoom()
 // ---- a newer version of this page: noticed every 20 s by the files' Last-Modified; reloaded by hand, or by itself after a
 //      minute without unsaved work or a touch, so a fix lands without anyone having to refresh the game page ----
 (() => {
-  const FILES = [location.pathname, '/kit/editor/sprites/move.js', '/kit/js/kit-draw.js', '/kit/js/kit-rig.js']; let stamp = null, since = 0, lastTouch = Date.now();
+  const FILES = [location.pathname, '/kit/editor/sprites/move.js', '/kit/editor/sprites/models.js', '/kit/js/kit-draw.js', '/kit/js/kit-rig.js']; let stamp = null, since = 0, lastTouch = Date.now();
   for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, () => { lastTouch = Date.now(); }, true);
   async function fingerprint() { const parts = []; for (const f of FILES) { try { const r = await fetch(f, { method: 'HEAD', cache: 'no-store' }); parts.push(r.headers.get('last-modified') || r.headers.get('etag') || ''); } catch (e) { parts.push('?'); } } return parts.join('|'); }
   async function check() {
@@ -776,4 +787,5 @@ window.addEventListener('resize', () => { if (doc && mode === 'pix') { fitZoom()
 })();
 </script>
 <script src="/kit/editor/sprites/move.js"></script>
+<script src="/kit/editor/sprites/models.js"></script>
 </body></html>

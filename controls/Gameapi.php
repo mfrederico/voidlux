@@ -8,6 +8,7 @@
  *   GET  sprites    POST spritesave { key, png|svg|file, w, h, frames, fps, source }    POST spritedelete { key, file }
  *   POST sketch { png, note, style, pixel, size, key, palette } → { id }      GET sketch?id= → { result, base, busy }
  *   GET  sketches → { jobs }      POST sketchdelete { id }      GET spritehints?key=   POST spritehints { key, plan, joints, notes }
+ *   GET  cast → the 3D cast       POST cast { do: list | make | wire | revise | edit }
  */
 namespace app;
 
@@ -89,6 +90,25 @@ class Gameapi extends BaseControls\Control {
         $f = GameStore::studioDir($g->slug) . '/ux.jsonl'; if (is_file($f) && filesize($f) > 2 * 1024 * 1024) @rename($f, $f . '.1'); // keep it small: one old file at most
         if ($lines !== '') file_put_contents($f, $lines, FILE_APPEND | LOCK_EX);
         http_response_code(204); exit;
+    }
+    /** The 3D cast (lib/Cast.php): GET its items and states; POST { do: list | make (keys?) | wire | revise (key, note) | edit (key, fields | drop) }. */
+    public function cast($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $slug = (string) $g->slug; $who = (int) $this->member->id;
+        try {
+            if ($this->post()) { $b = $this->getJsonInput() ?? []; $out = [];
+                switch ((string) ($b['do'] ?? '')) {
+                    case 'list': $out = Cast::startList($slug, $who); break;
+                    case 'make': $out = ['started' => Cast::make($slug, array_values(array_map('strval', (array) ($b['keys'] ?? []))), $who)]; break;
+                    case 'wire': $r = Cast::wire($slug, $who); $out = ['queued' => !empty($r['queued'])]; break;
+                    case 'revise': $out = Cast::revise($slug, (string) ($b['key'] ?? ''), trim(mb_substr((string) ($b['note'] ?? ''), 0, 600)), $who); break;
+                    case 'edit': $out = ['item' => Cast::editItem($slug, (string) ($b['key'] ?? ''), (array) ($b['fields'] ?? []) + (!empty($b['drop']) ? ['drop' => true] : []))]; break;
+                    default: $this->raw(['error' => 'do: list, make, wire, revise or edit'], 400);
+                }
+                $this->raw($out + Cast::status($slug));
+            }
+            $this->raw(Cast::status($slug));
+        } catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
+        catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 409); }
     }
     public function sketches($params = []): void { if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $this->raw(GameStore::listSketches($g->slug)); }
     public function sketchdelete($params = []): void {

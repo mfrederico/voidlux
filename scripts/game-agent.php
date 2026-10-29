@@ -39,6 +39,7 @@ try {
         $s = \app\GameStore::artState($slug);
         if ((int) $s['pid'] === getmypid() || !\app\GameStore::alive((int) $s['pid'])) { $s['busy'] = false; $s['mode'] = ''; $s['pid'] = 0; \app\GameStore::saveArtState($slug, $s); }
         \app\GameStore::emit($slug, 'artdone', ['text' => $outcome]);
+        try { foreach (\app\Cast::settle($slug) as $d) \app\GameStore::emit($slug, 'note', ['text' => "3D cast: {$d}"]); } catch (\Throwable $e) { \app\GameStore::emit($slug, 'error', ['text' => '3D cast: ' . $e->getMessage()]); } // a cast list or batch model that just landed
         \app\GameStore::startQueuedArt($slug); // the next sprite job that waited
     } else {
         $s = \app\GameStore::agentState($slug);
