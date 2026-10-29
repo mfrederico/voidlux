@@ -91,6 +91,10 @@ will not load is a console error, which the soak reports.
   a platformer wants. `Draw.anim`
   on a rig key plays its first motion. Motions are data: a motion made for one biped fits any other. The same safety
   rules as a code sprite apply (only drawing, node --check).
+- A **3D model** is `assets/<key>.glb` (binary glTF, made by the sprite page's 3D model job with mojulo) with
+  `"kind": "model"` and `w` = its size in hundredths of a world unit. `Draw.models()` lists them; a game drawing in three.js
+  loads one with GLTFLoader (vendor `examples/jsm/loaders/GLTFLoader.js` of the same three.js version beside three) and
+  uses it in place of the generated stand-in for that thing, keeping the stand-in until the model has loaded. 2D games ignore them.
 - Publishing copies `assets/` with the game.
 - The sprite page's `>>` sends the producer's sketch to you with a message that says exactly what to draw and where
   (`sketches/<id>/out-N.svg` or `.png`, then `result.json`). Follow it to the letter: nothing goes into `assets/` or the

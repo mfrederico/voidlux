@@ -58,7 +58,7 @@ const Draw = {
         // at top level (const limb, const parts) do not collide the way plain <script> tags would
         const runFile = (src, what) => fetch(src, { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); }).then(t => { new Function(t + '\n//# sourceURL=' + src)(); }).catch(e => console.error(`Draw.loadManifest: ${src} (${what}): ${e.message}`));
         const rigs = S.filter(([, m]) => m.kind === 'rig'); let n = 0;
-        for (const [k, m] of S) { n++; this.meta.set(k, m); if (m.kind === 'code') runFile(dir + m.file, 'code sprite ' + k); else if (m.kind !== 'rig') this.load(k, dir + m.file, m); }
+        for (const [k, m] of S) { n++; this.meta.set(k, m); if (m.kind === 'code') runFile(dir + m.file, 'code sprite ' + k); else if (m.kind !== 'rig' && m.kind !== 'model') this.load(k, dir + m.file, m); } // a model (.glb) is the 3D layer's to load (Draw.models lists them)
         if (rigs.length) { const go = () => { for (const [k, m] of rigs) runFile(dir + m.file, 'rig ' + k); }; if (typeof Rig !== 'undefined') go(); else addScript(KIT_JS + 'kit-rig.js', 'the rig module').onload = go; } // the rig module first, then the rigs
         return n; })
       .catch(e => { console.error('Draw.loadManifest: ' + e.message); return 0; });
@@ -77,6 +77,7 @@ const Draw = {
     const t = c.getTransform(); c.translate(x, y); if (flip) c.scale(-1, 1); c.rotate(flip ? -(a || 0) : (a || 0)); c.drawImage(im, f * fw, 0, fw, fh, -w / 2, -h / 2, w, h); c.setTransform(t.a, t.b, t.c, t.d, t.e, t.f); c.imageSmoothingEnabled = sm; return true;
   },
   anim(key, t, x, y, w, h, a, flip) { if (typeof Rig !== 'undefined' && Rig.rigs.has(key)) return this.rig(key, null, t, x, y, w, flip); const m = this.painters.get(key) || this.meta.get(key); return this.pic(key, x, y, w, h, a, m ? Math.floor(t * (m.fps || 8)) : 0, flip); },
+  models() { return [...this.meta.entries()].filter(([, m]) => m.kind === 'model').map(([k, m]) => ({ key: k, file: 'assets/' + m.file, size: (m.w || 100) / 100 })); }, // 3D models in the manifest: { key, file, size in world units }
   rig(key, motion, t, x, y, w, flip, stand) { // a rig's motion at time t: one atlas sprite per frame, stamped scaled like a code sprite; stand: (x, y) is where the feet stand (the rig's ground line), not the centre
     if (typeof Rig === 'undefined') return false; const R = Rig.rigs.get(key); if (!R) return false;
     if (stand && R.ground !== null && R.ground !== undefined) y -= R.ground * (w ? w / (R.half * 2) : 1);

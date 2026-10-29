@@ -499,6 +499,10 @@ class GameStore {
             if ($w < 1 || $h < 1) { $w = $h = (int) round($half * 2); }
             if (preg_match('/frames:\s*([0-9]+)/', $code, $fm)) $frames = max(1, (int) $fm[1]); if (preg_match('/fps:\s*([0-9]+)/', $code, $pm)) $fps = min(60, max(1, (int) $pm[1]));
             self::writeAtomic("$dir/$file", rtrim($code) . "\n"); $kind = 'code';
+        } elseif (!empty($b['take']) && is_array($b['take'])) { // a take kept as it is, from its job folder (a 3D model: binary glTF)
+            $tid = (string) ($b['take']['id'] ?? ''); $tf = basename((string) ($b['take']['file'] ?? '')); $tp = self::sketchDir($slug, $tid) . '/' . $tf;
+            if (!preg_match(self::SKETCH_ID, $tid) || !preg_match('/^out-[0-9]+\.glb$/', $tf) || !is_file($tp) || !self::takeIsSafe($tp)) throw new \InvalidArgumentException('no such model take');
+            $file = "$key.glb"; copy($tp, "$dir/$file"); $kind = 'model'; $frames = 1; $w = $h = max(1, (int) round((float) ($b['size'] ?? 1) * 100)); // w: the size in hundredths of a world unit
         } elseif (!empty($b['copyOf'])) { // a duplicate of a kept sprite under this key: its file copied, its entry too
             $src = (string) $b['copyOf']; $all0 = self::readSprites($slug); $e0 = ((array) $all0['sprites'])[$src] ?? null; if (!$e0) throw new \InvalidArgumentException("no sprite named {$src} to copy");
             $e0 = (array) $e0; $sf = basename((string) $e0['file']); $ext = preg_replace('/^.*?(\.rig)?\.([a-z0-9]+)$/i', '$1.$2', $sf); $file = $key . $ext;
@@ -638,7 +642,7 @@ class GameStore {
     /** @param array{note?:string,style?:string,pixel?:bool,size?:int,key?:string,palette?:array,png?:string} $b */
     public static function startSketch(string $slug, array $b, int $memberId): array {
         $note = trim(mb_substr((string) ($b['note'] ?? ''), 0, 600)); $png = (string) ($b['png'] ?? '');
-        if ($note === '' && $png === '' && empty($b['animate']) && empty($b['rigjob']) && empty($b['vectorize']) && empty($b['reskin'])) throw new \InvalidArgumentException('a sketch needs a drawing, a note, or both');
+        if ($note === '' && $png === '' && empty($b['animate']) && empty($b['rigjob']) && empty($b['vectorize']) && empty($b['reskin']) && empty($b['asset'])) throw new \InvalidArgumentException('a sketch needs a drawing, a note, or both');
         $size = max(8, min(256, (int) ($b['size'] ?? 32))); $key = (string) ($b['key'] ?? 'sprite'); if (!preg_match(self::SPRITE_KEY, $key)) $key = 'sprite';
         $style = trim(mb_substr((string) ($b['style'] ?? 'pixel art'), 0, 120)); $pixel = !empty($b['pixel']);
         $pal = array_values(array_filter(array_map('strval', (array) ($b['palette'] ?? [])), fn($c) => preg_match('/^#[0-9a-f]{6}$/i', $c)));
@@ -662,7 +666,11 @@ class GameStore {
             $paths = ''; foreach ($strokes as $s) { $d = ''; foreach ($s['pts'] as $i => $p) $d .= ($i ? ' L' : 'M') . $p[0] . ' ' . $p[1]; if (count($s['pts']) === 1) $d .= ' L' . ($s['pts'][0][0] + 1) . ' ' . $s['pts'][0][1]; $paths .= '  <path d="' . $d . '" stroke="' . ($s['pen'] === 'erase' ? '#ffffff' : ($s['pen'] === 'remove' ? '#ff2bd6' : $s['pen'])) . '" stroke-width="' . $s['w'] . ($s['pen'] === 'remove' ? '" data-mark="remove' : '') . "\"/>\n"; }
             self::writeAtomic($dir . '/sketch.svg', "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 512 512\" width=\"512\" height=\"512\" fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n" . $paths . "</svg>\n");
         }
-        $mk = (string) ($b['maker'] ?? 'svg'); $maker = in_array($mk, ['svg', 'code', 'spritecook'], true) ? $mk : 'svg';
+        $mk = (string) ($b['maker'] ?? 'svg'); $maker = in_array($mk, ['svg', 'code', 'spritecook', 'model'], true) ? $mk : 'svg';
+        $model = null; // a 3D model through mojulo: what it is, how big, a reference (the pad's drawing and/or a kept sprite)
+        if ($maker === 'model') { $model = ['size' => max(0.1, min(500, (float) ($b['model']['size'] ?? 1))), 'animate' => !empty($b['model']['animate'])];
+            if (!empty($b['asset'])) { $all0 = self::readSprites($slug); $e0 = ((array) $all0['sprites'])[(string) $b['asset']] ?? null; if (!$e0) throw new \InvalidArgumentException('no sprite named ' . $b['asset']); $af = basename((string) ((array) $e0)['file']);
+                if (is_file(self::dir($slug) . "/assets/$af")) { copy(self::dir($slug) . "/assets/$af", "$dir/ref." . pathinfo($af, PATHINFO_EXTENSION)); $model['ref'] = 'ref.' . pathinfo($af, PATHINFO_EXTENSION); $model['asset'] = (string) $b['asset']; } } }
         // a re-skin job: a kept rig and a kept drawing (an SVG the producer edited, with layers named after bones if they can); the
         // rig's parts are rewritten from the drawing; bones, chains, motions and ground stay (the page merges only the parts)
         $reskin = null;
@@ -732,7 +740,7 @@ class GameStore {
             }
         }
         $saveOnly = !empty($b['save_only']);
-        $req = ['id' => $id, 'note' => $note, 'style' => $style, 'pixel' => $pixel, 'size' => $size, 'key' => $key, 'palette' => $pal, 'sketch' => $has, 'strokes' => count($strokes), 'maker' => $maker, 'refine' => $refine, 'from' => $from, 'animate' => $anim, 'rig' => $rigjob, 'vector' => $vector, 'reskin' => $reskin, 'saved' => $saveOnly, 'by' => $memberId, 'at' => time()];
+        $req = ['id' => $id, 'note' => $note, 'style' => $style, 'pixel' => $pixel, 'size' => $size, 'key' => $key, 'palette' => $pal, 'sketch' => $has, 'strokes' => count($strokes), 'maker' => $maker, 'refine' => $refine, 'from' => $from, 'animate' => $anim, 'rig' => $rigjob, 'vector' => $vector, 'reskin' => $reskin, 'model' => $model, 'saved' => $saveOnly, 'by' => $memberId, 'at' => time()];
         self::writeAtomic($dir . '/request.json', json_encode($req, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
         if ($saveOnly) return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'saved' => true]; // kept in the gallery, not sent
         $what = $note !== '' ? "\"{$note}\"" : 'nothing written: go by the drawing';
@@ -766,7 +774,13 @@ class GameStore {
            . "a prompt built from the note" . ($has ? ' and what the drawing shows' : '') . ", width and height {$size}, pixel=" . ($pixel ? 'true' : 'false') . ", bg_mode transparent, variations=2. "
            . "Download each result's sprite_url to sketches/{$id}/out-1.png and sketches/{$id}/out-2.png. Then write sketches/{$id}/result.json as {\"ok\": true, \"files\": [\"out-1.png\", \"out-2.png\"], \"note\": \"<one line on what you made>\"}.\n"
            . "Do not add anything to assets/ or assets/sprites.json and do not commit: the producer chooses what to keep on the sprite page. If anything stops you (SpriteCook needs authentication, no credits, an error), write sketches/{$id}/result.json as {\"ok\": false, \"error\": \"<why, in one line>\"} and stop. Do not run a soak. Reply with one line.";
-        if ($reskin) { // the rig's parts redrawn from the drawing, everything else kept
+        if ($model) { // a 3D model, made with mojulo, as binary glTF
+            $refs = array_values(array_filter([$has ? "sketches/{$id}/sketch.png (the producer's rough drawing" . ($strokes ? "; sketch.svg holds its strokes" : '') . ')' : '', !empty($model['ref']) ? "sketches/{$id}/{$model['ref']} (the game's own sprite of it" . (!empty($model['asset']) ? ", key {$model['asset']}" : '') . ')' : '']));
+            $p = "3D MODEL. The producer wants a 3D model for this game, made with the mojulo tools (the mojulo MCP server: call forward_context first, it is mojulo's routing index, then the entry tool it names for a single object or prop or creature; iterate on the stored recipe in place; export with export_model as binary glTF). What it is: " . ($note !== '' ? "\"{$note}\"" : 'see the references') . '. ' . ($refs ? 'References, look at them with Read: ' . implode('; ', $refs) . '. Keep their shapes, proportions and colours. ' : '')
+               . "Read GAME.md's Design and, if the game draws in 3D, its three.js code (js/iso3d*.js or similar) so the model fits its look (palette, how chunky, how lit) and its scale. Size: about {$model['size']} world units across its largest side, standing on the ground plane (y up, its base at y = 0), facing +x, centred at the origin" . ($model['animate'] ? '; give it a simple idle or walk as a rig clip and export it with that clip baked in (clips)' : '') . ".\n"
+               . "Make two takes: sketches/{$id}/out-1.glb faithful to the references, and sketches/{$id}/out-2.glb bolder (more character, stronger silhouette). Copy each exported .glb from wherever mojulo wrote it into those paths. Each under 8 MB. If mojulo can render a preview picture, also save sketches/{$id}/out-1.png and out-2.png (not required).\n"
+               . "Then write sketches/{$id}/result.json as {\"ok\": true, \"files\": [\"out-1.glb\", \"out-2.glb\"], \"note\": \"<what you made, its size, in one line>\"}. Do not add anything to assets/ or assets/sprites.json and do not commit. If mojulo is not available or something stops you, write result.json as {\"ok\": false, \"error\": \"<why>\"} and stop. Do not run a soak. Reply with one line.";
+        } elseif ($reskin) { // the rig's parts redrawn from the drawing, everything else kept
             $sf = $reskin['skinfile']; $isSvg = str_ends_with($sf, '.svg');
             $p = "RE-SKIN. sketches/{$id}/base.js is a kept skeleton rig (read ../../kit/js/kit-rig.js for the format) and sketches/{$id}/{$sf} is the producer's new drawing of the same character" . ($isSvg ? ' (an SVG they edited by hand; read it)' : ' (look at it with Read)') . ". Rewrite ONLY the rig's parts so the character looks like the new drawing. Keep every bone, chain, limit, the half, the ground and every motion EXACTLY as they are: the producer merges your parts into their rig and discards the rest of your file, so nothing else you change survives.\n"
                . ($isSvg ? "If the SVG has layers or groups named after bones (inkscape:label or id equal to a bone name, or close to one: head, spine, armL, handL, kneeR…), bind each layer to that bone and draw its paths AS THEY ARE: build each path with new Path2D(d) from the layer's path data and fill/stroke it with the layer's own colours, transformed into the bone's space. The transform: the SVG's viewBox maps to the rig's space (centre (0, 0), the viewBox's width = half × 2), and a part is drawn with (0, 0) at its bone's joint and +x along the bone, so apply the inverse of the bone's rest transform (its joint position and world angle at rest: compute them with node and kit-rig.js, Rig.solve with an empty pose) as g.translate/rotate/scale before the Path2D calls. Flatten any transform attributes on the layers. The layer order, bottom to top, is the z order. A layer with no bone name you split by judgement; an unnamed drawing you split as a rigger would.\n" : "Split the picture into the parts the rig has, in bone space, in the picture's colours and outline weight.\n")
@@ -827,7 +841,7 @@ class GameStore {
                 . (!empty($from['over']) ? "and this time they drew DIRECTLY ON TOP of {$from['liked']}: sketch.png shows your take, faded, with their marks over it, and sketch.svg holds only their marks (in the take's 512-grid frame; the take fills the middle of it). Read each mark as an edit of that spot: lines drawn over a part of the take are the NEW shape of that part and REPLACE it (new arms drawn over the old arms means: these arms instead of those, not both); lines where the take had nothing add a part there; a scribble over something means remove or rework it; the note says the rest. Everything they did not mark stays exactly as it was in the take, down to the colours."
                    : "and apply what the new drawing and note change (compare the drawing with what you drew before: what moved, grew, shrank, appeared or vanished is the point of this round). Keep what they did not change.");
         }
-        $facts = self::jobFacts($req); $what = $facts['kind'] === 'rig' ? 'rig the character ' . ($facts['asset'] ?: $key) : ($facts['kind'] === 'animate' ? "a {$facts['cycle']} motion for " . ($facts['asset'] ?: $key) : ($facts['kind'] === 'reskin' ? "re-skin {$facts['asset']} from the drawing" : ($facts['kind'] === 'vector' ? "{$facts['asset']} as vector, kept as {$key}" : ($facts['kind'] === 'refine' ? "refine {$key}" : ($facts['kind'] === 'revision' ? "a revision of {$key}" : "a sprite: {$key}")))));
+        $facts = self::jobFacts($req); $what = $facts['kind'] === 'rig' ? 'rig the character ' . ($facts['asset'] ?: $key) : ($facts['kind'] === 'animate' ? "a {$facts['cycle']} motion for " . ($facts['asset'] ?: $key) : ($facts['kind'] === 'model' ? "a 3D model: {$key}" : ($facts['kind'] === 'reskin' ? "re-skin {$facts['asset']} from the drawing" : ($facts['kind'] === 'vector' ? "{$facts['asset']} as vector, kept as {$key}" : ($facts['kind'] === 'refine' ? "refine {$key}" : ($facts['kind'] === 'revision' ? "a revision of {$key}" : "a sprite: {$key}"))))));
         self::emit($slug, 'prompt', ['text' => "Sprite job: {$what}" . ($note !== '' ? "\n{$note}" : '') . ($has ? "\n(with a drawing)" : ''), 'mode' => 'art', 'by' => self::memberName($memberId), 'job' => $id]);
         $r = self::startArt($slug, $p, $memberId); // the art lane: beside the builder, never inside its run
         return ['id' => $id, 'key' => $key, 'at' => $req['at'], 'queued' => !empty($r['queued']), 'rig' => (bool) $rigjob, 'animate' => (bool) $anim];
@@ -850,27 +864,28 @@ class GameStore {
     }
     /** A take the page may show: an svg without script, a js that only draws (checked like a saved code sprite), a png. */
     private static function takeIsSafe(string $path): bool {
+        if (str_ends_with($path, '.glb')) return filesize($path) <= 8 * 1024 * 1024 && (string) file_get_contents($path, false, null, 0, 4) === 'glTF';
         if (str_ends_with($path, '.svg')) return !preg_match('/<script|\son[a-z]+\s*=|javascript:|<foreignObject|<image/i', (string) file_get_contents($path));
         if (str_ends_with($path, '.js')) { try { self::checkSpriteCode((string) file_get_contents($path)); return true; } catch (\InvalidArgumentException $e) { error_log("ERROR sprite take {$path} refused: " . $e->getMessage()); return false; } }
         return true;
     }
     /** A job's kind, its base file (for a rig, an animation or a refinement) and the sprite it started from, from its request. */
     public static function jobFacts(array $req): array {
-        $kind = !empty($req['reskin']) ? 'reskin' : (!empty($req['rig']) ? 'rig' : (!empty($req['animate']) ? 'animate' : (!empty($req['vector']) ? 'vector' : (!empty($req['refine']) ? 'refine' : (!empty($req['from']) ? 'revision' : 'sketch')))));
-        $base = $req['reskin']['skinfile'] ?? $req['rig']['base'] ?? $req['animate']['base'] ?? $req['vector']['base'] ?? (!empty($req['refine']['ext']) ? 'base.' . $req['refine']['ext'] : '');
-        return ['kind' => $kind, 'basefile' => (string) $base, 'asset' => (string) ($req['reskin']['asset'] ?? $req['rig']['asset'] ?? $req['animate']['asset'] ?? $req['vector']['asset'] ?? ''), 'cycle' => (string) ($req['animate']['name'] ?? '')];
+        $kind = !empty($req['model']) ? 'model' : (!empty($req['reskin']) ? 'reskin' : (!empty($req['rig']) ? 'rig' : (!empty($req['animate']) ? 'animate' : (!empty($req['vector']) ? 'vector' : (!empty($req['refine']) ? 'refine' : (!empty($req['from']) ? 'revision' : 'sketch'))))));
+        $base = $req['model']['ref'] ?? $req['reskin']['skinfile'] ?? $req['rig']['base'] ?? $req['animate']['base'] ?? $req['vector']['base'] ?? (!empty($req['refine']['ext']) ? 'base.' . $req['refine']['ext'] : '');
+        return ['kind' => $kind, 'basefile' => (string) $base, 'asset' => (string) ($req['model']['asset'] ?? $req['reskin']['asset'] ?? $req['rig']['asset'] ?? $req['animate']['asset'] ?? $req['vector']['asset'] ?? ''), 'cycle' => (string) ($req['animate']['name'] ?? '')];
     }
     public static function sketchStatus(string $slug, string $id): array {
         if (!preg_match(self::SKETCH_ID, $id)) throw new \InvalidArgumentException('not a sketch id');
         $dir = self::sketchDir($slug, $id); if (!is_file($dir . '/request.json')) throw new \InvalidArgumentException('no such sketch');
         $req = json_decode((string) file_get_contents($dir . '/request.json'), true) ?: [];
         if (!is_file($dir . '/result.json') && empty($req['saved']) && !self::artState($slug)['busy']) { // the artist finished without its result file: its takes on disk are the result
-            $found = array_values(array_filter(scandir($dir), fn($f) => preg_match('/^out-[0-9]+\.(png|svg|js)$/', $f))); sort($found);
+            $found = array_values(array_filter(scandir($dir), fn($f) => preg_match('/^out-[0-9]+\.(png|svg|js|glb)$/', $f))); sort($found);
             if ($found && filemtime($dir . '/' . $found[0]) < time() - 20) self::writeAtomic($dir . '/result.json', json_encode(['ok' => true, 'files' => $found, 'note' => 'the artist finished without leaving a note; these are its takes'], JSON_UNESCAPED_SLASHES));
         }
         $res = is_file($dir . '/result.json') ? json_decode((string) file_get_contents($dir . '/result.json'), true) : null;
         if (is_file($dir . '/result.json') && !is_array($res)) $res = ['ok' => false, 'error' => 'the builder wrote a result.json that is not JSON'];
-        if (is_array($res) && !empty($res['ok'])) $res['files'] = array_values(array_filter((array) ($res['files'] ?? []), fn($f) => preg_match('/^out-[0-9]+\.(png|svg|js)$/', (string) $f) && is_file($dir . '/' . $f) && self::takeIsSafe($dir . '/' . $f)));
+        if (is_array($res) && !empty($res['ok'])) $res['files'] = array_values(array_filter((array) ($res['files'] ?? []), fn($f) => preg_match('/^out-[0-9]+\.(png|svg|js|glb)$/', (string) $f) && is_file($dir . '/' . $f) && self::takeIsSafe($dir . '/' . $f)));
         $busy = self::artState($slug)['busy'];
         $saved = !empty($req['saved']) && $res === null;
         $qf = self::studioDir($slug) . '/art-queue.jsonl'; $queued = is_file($qf) && str_contains((string) file_get_contents($qf), "sketches/{$id}/");
