@@ -117,11 +117,12 @@ class Gameapi extends BaseControls\Control {
                     case 'describe': $out = Rules::describe($slug, (string) ($b['text'] ?? ''), $who); break;
                     case 'add': $out = ['added' => Rules::settleProposal($slug, (string) ($b['id'] ?? ''), true)]; break;
                     case 'dismiss': Rules::settleProposal($slug, (string) ($b['id'] ?? ''), false); break;
+                    case 'build': $out = Rules::buildMissing($slug, (string) ($b['id'] ?? ''), $who); break;
                     case 'wire': $r = Rules::wire($slug, $who, trim(mb_substr((string) ($b['extra'] ?? ''), 0, 600))); $out = ['queued' => !empty($r['queued'])]; break;
                     case 'ask': $r = Rules::askFor($slug, (string) ($b['what'] ?? ''), $who); $out = ['queued' => !empty($r['queued'])]; break;
-                    default: $this->raw(['error' => 'do: save, describe, add, dismiss, wire or ask'], 400);
+                    default: $this->raw(['error' => 'do: save, describe, add, dismiss, build, wire or ask'], 400);
                 }
-                $what = ['save' => 'saved the event rules (' . ($out['saved'] ?? 0) . ' rules)', 'describe' => 'asked for event rules: ' . ($b['text'] ?? ''), 'add' => 'added event rules ' . implode(', ', (array) ($out['added'] ?? [])), 'wire' => 'asked the builder to wire events in' . (!empty($b['extra']) ? ': ' . $b['extra'] : ''), 'ask' => 'asked the builder for a new event action: ' . ($b['what'] ?? '')][(string) ($b['do'] ?? '')] ?? '';
+                $what = ['save' => 'saved the event rules (' . ($out['saved'] ?? 0) . ' rules)', 'describe' => 'asked for event rules: ' . ($b['text'] ?? ''), 'add' => 'added event rules ' . implode(', ', (array) ($out['added'] ?? [])), 'wire' => 'asked the builder to wire events in' . (!empty($b['extra']) ? ': ' . $b['extra'] : ''), 'ask' => 'asked the builder for a new event action: ' . ($b['what'] ?? ''), 'build' => 'asked the builder to add what an event concept needs, then write its rules'][(string) ($b['do'] ?? '')] ?? '';
                 if ($what !== '') GameStore::activity($slug, (string) ($this->member->username ?: $this->member->email), $what);
                 $this->raw($out + Rules::status($slug));
             }

@@ -126,9 +126,14 @@ its header is the format. Your part, once per game and whenever the game learns 
   the code knows then: hit has type, amount, source) and the **actions** it can do (each wrapping the game's own function,
   with settings and defaults; `"lasting": true` for one with a duration). The producer can use nothing else, so declare
   what the game really does, in words a producer reads.
+- **state** a rule can ask about (`self.hp`, `self.burning`, `player.segments`, `game.level`…) and **targets** an action can
+  be aimed at (`nearby` with a radius, `player`, `source`…). The engine itself adds counters (Count, SetCount), delays and
+  limits: never build those per game.
 - `<script src="../../kit/js/kit-events.js">`; `Events.action(name, (ctx, args, end) => …)` for every action (ctx.target is
-  the object, end() for a lasting one when its effect is over); `Events.clock` and `Events.rng` set to the game's own time
-  and random if it has them; then `await Events.load()` before play starts.
+  the object, end() for a lasting one when its effect is over), `Events.state(name, (target, ctx) => value)` for every
+  state, `Events.target(name, (ctx, args) => [{ key, obj }, …])` for every target (never the thing itself);
+  `Events.clock` and `Events.rng` set to the game's own time and random if it has them; `await Events.load()` before play
+  starts, `Events.update()` once a frame, `Events.reset('game')` when a new run starts.
 - `Events.emit(event, key, fields, object)` at the one place each event happens. Rules are data: never read
   `assets/events.json` yourself and never write a reaction in code that a rule could hold. You do not edit the producer's
   rules, except when asked to move a hard-wired reaction into one that reproduces it exactly.

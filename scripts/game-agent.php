@@ -47,6 +47,7 @@ try {
         $s = \app\GameStore::agentState($slug);
         if ((int) $s['pid'] === getmypid() || !\app\GameStore::alive((int) $s['pid'])) { $s['busy'] = false; $s['mode'] = ''; $s['pid'] = 0; \app\GameStore::saveAgentState($slug, $s); } // only my own lock
         \app\GameStore::emit($slug, 'idle', []);
+        if (!$art) { try { if ($ids = \app\Rules::afterBuild($slug, $memberId)) \app\GameStore::emit($slug, 'note', ['text' => 'event rules: the concept is written again now that the builder added what it needed (' . implode(', ', $ids) . ')']); } catch (\Throwable $e) { \app\GameStore::emit($slug, 'error', ['text' => 'event rules: ' . $e->getMessage()]); } }
         if ($mode !== 'soak') \app\GameNotices::finished($slug, $mode, $outcome, $memberId);
         if (!\app\GameStore::startQueued($slug) && $mode !== 'soak') { // nothing else queued: notes that arrived during this run get a run of their own now
             $waiting = \app\GameStore::peekNotes($slug); $fresh = array_filter($waiting, fn($n) => (int) ($n['tries'] ?? 0) < 2);

@@ -11,12 +11,15 @@ namespace app;
 
 class Rules {
     public const OPS = ['is', 'not', '>', '<', '>=', '<=', 'has', 'chance'];
+    /** The engine's own actions (kit-events.js), there in every game: counters, per thing or for the whole game. */
+    public const BUILTIN = ['Count' => ['name', 'by', 'on'], 'SetCount' => ['name', 'value', 'on']];
+    public const COUNTER = '/^[A-Za-z][A-Za-z0-9_-]{0,30}$/';
 
     private static function file(string $slug, string $f): string { return GameStore::dir($slug) . "/assets/$f"; }
     public static function vocab(string $slug): ?array {
         $p = self::file($slug, 'events-vocab.json'); if (!is_file($p)) return null;
         $v = json_decode((string) file_get_contents($p), true); if (!is_array($v)) throw new \RuntimeException("assets/events-vocab.json in {$slug} is not JSON: the builder must fix it");
-        return ['events' => (array) ($v['events'] ?? []), 'actions' => (array) ($v['actions'] ?? []), 'subjects' => (array) ($v['subjects'] ?? [])];
+        return ['events' => (array) ($v['events'] ?? []), 'actions' => (array) ($v['actions'] ?? []), 'subjects' => (array) ($v['subjects'] ?? []), 'state' => (array) ($v['state'] ?? []), 'targets' => (array) ($v['targets'] ?? [])];
     }
     public static function read(string $slug): array {
         $p = self::file($slug, 'events.json'); if (!is_file($p)) return ['version' => 1, 'rules' => []];
@@ -38,18 +41,29 @@ class Rules {
             foreach ((array) ($r['if'] ?? []) as $c) {
                 $op = (string) ($c['op'] ?? ''); if (!in_array($op, self::OPS, true)) throw new \InvalidArgumentException("$at: unknown condition \"{$op}\"");
                 if ($op === 'chance') { $p = (float) ($c['value'] ?? 1); if ($p <= 0 || $p > 1) throw new \InvalidArgumentException("$at: a chance is between 0 and 1"); $if[] = ['op' => 'chance', 'value' => $p]; continue; }
+                $val = $c['value'] ?? ''; if (!is_scalar($val)) throw new \InvalidArgumentException("$at: a condition's value is a word or a number"); $val = is_string($val) ? mb_substr($val, 0, 80) : $val;
+                if (isset($c['state'])) { $s = (string) $c['state']; if (!isset($v['state'][$s])) throw new \InvalidArgumentException("$at: \"{$s}\" is not a state the game can read"); $if[] = ['state' => $s, 'op' => $op, 'value' => $val]; continue; }
+                if (isset($c['count'])) { $n = (string) $c['count']; $on2 = (string) ($c['on'] ?? 'self'); if (!preg_match(self::COUNTER, $n)) throw new \InvalidArgumentException("$at: a counter's name is letters, digits, - and _"); if (!in_array($on2, ['self', 'game'], true)) throw new \InvalidArgumentException("$at: a counter is on self or game"); $if[] = ['count' => $n, 'on' => $on2, 'op' => $op, 'value' => $val]; continue; }
                 $f = (string) ($c['field'] ?? ''); if (!isset(((array) ($ev['fields'] ?? []))[$f])) throw new \InvalidArgumentException("$at: the event \"{$on}\" has no field \"{$f}\"");
-                $val = $c['value'] ?? ''; if (!is_scalar($val)) throw new \InvalidArgumentException("$at: a condition's value is a word or a number");
-                $if[] = ['field' => $f, 'op' => $op, 'value' => is_string($val) ? mb_substr($val, 0, 80) : $val];
+                $if[] = ['field' => $f, 'op' => $op, 'value' => $val];
             }
             $do = [];
             foreach ((array) ($r['do'] ?? []) as $a) {
                 $lim = [];
                 foreach (['max' => [1, 1000], 'cooldown' => [0, 3600]] as $k => [$lo, $hi]) if (isset($a[$k]) && $a[$k] !== '' && $a[$k] !== null && (float) $a[$k] > 0) $lim[$k] = max($lo, min($hi, $k === 'max' ? (int) $a[$k] : (float) $a[$k]));
+                if (isset($a['delay']) && (float) $a['delay'] > 0) $lim['delay'] = min(600, round((float) $a['delay'], 2));
+                if (!empty($a['to'])) { $to = (array) $a['to']; $tn = (string) ($to['target'] ?? ''); $td = $v['targets'][$tn] ?? null; if ($td === null) throw new \InvalidArgumentException("$at: \"{$tn}\" is not a target the game can find");
+                    $ta = []; foreach ((array) ($to['args'] ?? []) as $k => $x) { if (!isset(((array) ($td['params'] ?? []))[$k]) || !is_scalar($x)) throw new \InvalidArgumentException("$at: the target {$tn} has no setting \"{$k}\""); $ta[$k] = $x; }
+                    $tw = (string) ($to['who'] ?? ''); if ($tw !== '' && !($tw === '*' || isset($v['subjects'][$tw]) || (str_starts_with($tw, 'group:') && isset($groups[substr($tw, 6)])))) throw new \InvalidArgumentException("$at: \"{$tw}\" is not a subject or group to aim at");
+                    $lim['to'] = ['target' => $tn] + ($ta ? ['args' => $ta] : []) + ($tw !== '' ? ['who' => $tw] : []); }
                 if (!empty($a['once'])) $lim['once'] = true; if (isset($a['chance']) && $a['chance'] !== '' && (float) $a['chance'] < 1) { $p = (float) $a['chance']; if ($p <= 0) throw new \InvalidArgumentException("$at: an action's chance is above 0"); $lim['chance'] = $p; }
                 $args = []; foreach ((array) ($a['args'] ?? []) as $k => $x) { if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,30}$/', (string) $k) || !is_scalar($x)) throw new \InvalidArgumentException("$at: an argument is a name and a word or number"); $args[$k] = $x; }
                 if (!empty($a['emit'])) { $e = (string) $a['emit']; if (!isset($v['events'][$e])) throw new \InvalidArgumentException("$at: it emits \"{$e}\", which is not an event the game has"); $do[] = ['emit' => $e] + ($args ? ['args' => $args] : []) + $lim; continue; }
-                $fn = (string) ($a['fn'] ?? ''); $def = $v['actions'][$fn] ?? null; if ($def === null) throw new \InvalidArgumentException("$at: \"{$fn}\" is not an action the game can do");
+                $fn = (string) ($a['fn'] ?? '');
+                if (isset(self::BUILTIN[$fn])) { $nm = (string) ($args['name'] ?? ''); if (!preg_match(self::COUNTER, $nm)) throw new \InvalidArgumentException("$at: {$fn} needs a counter name (letters, digits, - and _)"); $on2 = (string) ($args['on'] ?? 'self'); if (!in_array($on2, ['self', 'game'], true)) throw new \InvalidArgumentException("$at: a counter is on self or game");
+                    foreach (array_keys($args) as $k) if (!in_array($k, self::BUILTIN[$fn], true)) throw new \InvalidArgumentException("$at: {$fn} has no setting \"{$k}\"");
+                    $do[] = ['fn' => $fn, 'args' => $args] + $lim; continue; }
+                $def = $v['actions'][$fn] ?? null; if ($def === null) throw new \InvalidArgumentException("$at: \"{$fn}\" is not an action the game can do");
                 foreach (array_keys($args) as $k) if (!isset(((array) ($def['params'] ?? []))[$k])) throw new \InvalidArgumentException("$at: the action {$fn} has no setting \"{$k}\"");
                 $do[] = ['fn' => $fn] + ($args ? ['args' => $args] : []) + $lim;
             }
@@ -78,17 +92,17 @@ class Rules {
 
     // ---- rules from words ----
     private static function propFile(string $slug): string { return GameStore::studioDir($slug) . '/rule-requests.json'; }
-    public static function describe(string $slug, string $text, int $memberId): array {
+    public static function describe(string $slug, string $text, int $memberId, string $extra = '', string $after = ''): array {
         $text = trim(mb_substr($text, 0, 1200)); if ($text === '') throw new \InvalidArgumentException('describe the rule');
         if (!self::vocab($slug)) throw new \InvalidArgumentException('the game declares no events yet: wire events into the game first');
         $id = date('Ymd-His') . '-' . bin2hex(random_bytes(3)); $dir = GameStore::sketchDir($slug, $id); mkdir($dir, 0775, true);
         GameStore::writeAtomic("$dir/request.json", json_encode(['id' => $id, 'note' => $text, 'key' => 'rules', 'maker' => 'rules', 'rules' => true, 'by' => $memberId, 'at' => time()], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
         $all = is_file(self::propFile($slug)) ? (json_decode((string) file_get_contents(self::propFile($slug)), true) ?: []) : [];
-        array_unshift($all, ['id' => $id, 'text' => $text, 'at' => time(), 'state' => 'reading']); GameStore::writeAtomic(self::propFile($slug), json_encode(array_slice($all, 0, 20), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-        $p = "EVENT RULES FROM WORDS. The producer describes how things in this game should react, in their words: \"{$text}\"\n"
-           . "Read ../../kit/js/kit-events.js (its header is the rule format and what each part means), assets/events-vocab.json (the only events, fields, actions, settings and subjects there are) and assets/events.json (the rules there already). Write the rules that do what the producer said, using ONLY names from the vocabulary. A chain of reactions is a rule whose action emits an event that another rule reacts to. Limits (max, once, cooldown, chance) are how \"at most\", \"only the first time\", \"not more than every\" and \"sometimes\" are said.\n"
-           . "If what they ask needs an event, field or action the vocabulary does not have, do not invent it and do not bend another one to fit: name it under \"missing\", one line each, as what the game would have to add.\n"
-           . "Write sketches/{$id}/rules.json as {\"rules\": [ …rules in the events.json format, new ids… ], \"explain\": \"<what the rules do, in the producer's words, two or three sentences>\", \"missing\": [\"<what the game would need>\", …]}, check it parses with `node -e`, then sketches/{$id}/result.json as {\"ok\": true, \"files\": [], \"note\": \"<how many rules, in one line>\"}. Change no other file. Do not run a soak and do not commit. Reply with one line.";
+        array_unshift($all, ['id' => $id, 'text' => $text, 'at' => time(), 'state' => 'reading'] + ($after !== '' ? ['after' => $after] : [])); GameStore::writeAtomic(self::propFile($slug), json_encode(array_slice($all, 0, 20), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $p = "EVENT RULES FROM WORDS. The producer describes a concept, how things in this game should behave, in their words: \"{$text}\"\n" . ($extra !== '' ? "{$extra}\n" : '')
+           . "Read ../../kit/js/kit-events.js (its header is the whole rule format), assets/events-vocab.json (the only events, fields, states, targets, actions, settings and subjects there are) and assets/events.json (the rules there already, so yours fit beside them and do not repeat them). Turn the concept into rules, using everything the format offers: conditions on the event's fields, on the game's state (\"state\") and on counters (\"count\", on self or game); actions on the thing itself or, with \"to\", on what a target finds (nearby things, the player, the source…, filtered with who); the built-in Count and SetCount for anything that must be counted or remembered (\"the third time\", \"only 3 times a game\", \"until it is hit again\"); delay for \"after a while\"; max, once, cooldown and chance for \"at most\", \"only the first time\", \"not more than every\" and \"sometimes\"; emit for chains of reactions.\n"
+           . "If the concept needs something the vocabulary does not have, do not invent it and do not bend another one to fit: list it under \"missing\", each as an exact piece for the builder to add: {\"kind\": \"action\" | \"state\" | \"target\" | \"field\" | \"event\" | \"subject\", \"name\": \"<the name a rule would use>\", \"what\": \"<what it does or reads, its settings and defaults, in one or two sentences>\"}. Then still write the rules as they will be once those pieces exist (they are checked again after the builder adds them).\n"
+           . "Write sketches/{$id}/rules.json as {\"rules\": [ …rules in the events.json format, new ids… ], \"explain\": \"<what the rules do, in the producer's words, two or three sentences>\", \"missing\": [ …pieces, or empty… ]}, check it parses with `node -e`, then sketches/{$id}/result.json as {\"ok\": true, \"files\": [], \"note\": \"<how many rules and missing pieces, in one line>\"}. Change no other file. Do not run a soak and do not commit. Reply with one line.";
         GameStore::emit($slug, 'prompt', ['text' => "Event rules: {$text}", 'mode' => 'art', 'by' => GameStore::memberName($memberId), 'job' => $id]);
         $r = GameStore::startArt($slug, $p, $memberId);
         return ['id' => $id, 'queued' => !empty($r['queued'])];
@@ -97,13 +111,14 @@ class Rules {
     public static function proposals(string $slug): array {
         $all = is_file(self::propFile($slug)) ? (json_decode((string) file_get_contents(self::propFile($slug)), true) ?: []) : []; $v = self::vocab($slug); $out = [];
         foreach ($all as $q) {
-            if (in_array($q['state'], ['added', 'dismissed'], true)) { if (time() - (int) $q['at'] < 86400) $out[] = $q; continue; }
+            if (in_array($q['state'], ['added', 'dismissed', 'superseded'], true)) { if (time() - (int) $q['at'] < 86400) $out[] = $q; continue; }
+            if ($q['state'] === 'building') { $out[] = $q; continue; }
             try { $s = GameStore::sketchStatus($slug, (string) $q['id']); } catch (\InvalidArgumentException $e) { continue; }
             if (empty($s['result'])) { $q['state'] = 'reading'; $out[] = $q; continue; }
             if (empty($s['result']['ok'])) { $q['state'] = 'failed'; $q['error'] = (string) ($s['result']['error'] ?? 'the artist could not write rules for it'); $out[] = $q; continue; }
             $j = json_decode((string) @file_get_contents(GameStore::sketchDir($slug, (string) $q['id']) . '/rules.json'), true);
             if (!is_array($j) || !is_array($j['rules'] ?? null)) { $q['state'] = 'failed'; $q['error'] = 'its rules.json is missing or not JSON'; $out[] = $q; continue; }
-            $q['state'] = 'proposed'; $q['explain'] = mb_substr((string) ($j['explain'] ?? ''), 0, 600); $q['missing'] = array_slice(array_map(fn($x) => mb_substr((string) $x, 0, 200), (array) ($j['missing'] ?? [])), 0, 8);
+            $q['state'] = 'proposed'; $q['explain'] = mb_substr((string) ($j['explain'] ?? ''), 0, 600); $q['missing'] = array_slice(array_map(fn($x) => is_array($x) ? mb_substr(trim(($x['kind'] ?? '') . ' ' . ($x['name'] ?? '') . ': ' . ($x['what'] ?? '')), 0, 300) : mb_substr((string) $x, 0, 300), (array) ($j['missing'] ?? [])), 0, 10);
             try { $q['rules'] = $v ? self::clean($j['rules'], $v) : []; } catch (\InvalidArgumentException $e) { $q['rules'] = []; $q['error'] = 'the proposed rules do not fit the game: ' . $e->getMessage(); }
             $out[] = $q;
         }
@@ -123,6 +138,29 @@ class Rules {
         return $added;
     }
 
+    // ---- the loop for a concept that needs more than the game has: the builder adds the missing pieces, then the rules are
+    //      written again against the grown vocabulary, and the producer adds them ----
+    private static function saveProps(string $slug, array $all): void { GameStore::writeAtomic(self::propFile($slug), json_encode(array_slice($all, 0, 20), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)); }
+    public static function buildMissing(string $slug, string $id, int $memberId): array {
+        $p = null; foreach (self::proposals($slug) as $q) if ($q['id'] === $id) $p = $q; if (!$p || $p['state'] !== 'proposed' || empty($p['missing'])) throw new \InvalidArgumentException('that proposal has nothing missing to build');
+        $mark = "[for the rules request {$id}]";
+        $r = GameStore::askBuilder($slug, "Add these to the game's events {$mark}, so the producer's concept \"{$p['text']}\" can be written as rules (\"Events\" in ../../kit/AGENTS.md):\n- " . implode("\n- ", $p['missing'])
+            . "\nFor each: implement it (an action with Events.action, a state with Events.state, a target with Events.target, a field by passing it where the event is emitted, an event by emitting it where it happens) and declare it in assets/events-vocab.json with its settings, defaults and a line a producer understands. Keep the names given unless one clashes, and say if you renamed. Do not write or change the producer's rules in assets/events.json. node --check, run ../../studio/bin/soak 60 4, commit.", $memberId, true);
+        $all = json_decode((string) @file_get_contents(self::propFile($slug)), true) ?: []; foreach ($all as &$q) if ($q['id'] === $id) { $q['state'] = 'building'; $q['asked'] = time(); } unset($q); self::saveProps($slug, $all);
+        return ['queued' => !empty($r['queued'])];
+    }
+    /** A builder run ended: a concept waiting on it is written again (unless the builder's run for it is still queued). */
+    public static function afterBuild(string $slug, int $memberId = 0): array {
+        $all = json_decode((string) @file_get_contents(self::propFile($slug)), true) ?: []; $q = GameStore::studioDir($slug) . '/queue.jsonl'; $queued = is_file($q) ? (string) file_get_contents($q) : ''; $did = [];
+        foreach ($all as $i => $p) {
+            if (($p['state'] ?? '') !== 'building' || str_contains($queued, "[for the rules request {$p['id']}]")) continue;
+            $all[$i]['state'] = 'superseded'; self::saveProps($slug, $all);
+            $n = self::describe($slug, (string) $p['text'], $memberId, 'The builder has just added what an earlier reading of this concept found missing; use it.', (string) $p['id']); $did[] = $n['id'];
+            $all = json_decode((string) @file_get_contents(self::propFile($slug)), true) ?: [];
+        }
+        return $did;
+    }
+
     // ---- the builder's part ----
     /** One builder run: the runtime in, the vocabulary written, events emitted where they happen, actions implemented, and the
      *  reactions the code hard-wires today moved into rules where a rule reproduces them exactly. */
@@ -133,6 +171,9 @@ class Rules {
            . "The producer will write rules on the sprite page's Events tab using only what you declare, so the vocabulary is the game's whole vocabulary of reactions:\n"
            . "- subjects: every kind of thing that can be hit, touched, spawn or die (the player, each enemy and boss type, props, pickups), keyed by its sprite or model key where it has one" . ($cast ? ' (the 3D cast\'s keys and groups are in assets/models.json: use them)' : ($keys ? ' (' . implode(', ', array_slice($keys, 0, 40)) . ')' : '')) . ", each with its groups (player, enemy, boss, prop, pickup…).\n"
            . "- events: at least spawn, hit, die, touch (the player touching it) and pickup where they apply, each with the fields the code knows at that moment (hit: type, amount, source; …). Emit each with Events.emit(name, key, fields, theObject) at the one place in the code where it happens.\n"
+           . "- state: what a rule may ask about, read live with Events.state(name, (target, ctx) => …): the thing's own (self.hp as 0 to 1, self.burning / self.frozen / self.poisoned as yes or no, self.elite…) and the game's (player.segments, player.hp, game.level, game.score, game.region, game.time…), each with its kind or values.\n"
+           . "- targets: whom an action can be aimed at, found with Events.target(name, (ctx, args) => [{ key, obj }, …]) and never including the thing itself: nearby (a radius setting, default about two body lengths), player, source (what caused the event, when the event knows it), and every-<group> on screen if the game can list them.\n"
+           . "- Call Events.update() once a frame (delayed actions), and Events.reset('game') when a new run starts (game-wide counters).\n"
            . "- actions: what the game can already do to a thing (set it burning, freeze, poison, knock back, heal, an effect burst, a sound, spawn something, award points, drop a pickup…), each wrapping the game's own function, with its settings and defaults; mark lasting the ones with a duration and call end() when they are over.\n"
            . "Then move the reactions the code hard-wires today (a fire hit adding burn, and the like) into assets/events.json as rules, but ONLY where the rule reproduces the behaviour exactly (same numbers, same order); leave the rest in code and list them in the commit message.\n"
            . ($extra !== '' ? "Also: {$extra}\n" : '')
