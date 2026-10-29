@@ -180,18 +180,27 @@ class Rules {
            . "Words a producer understands; ids lowercase with dots and dashes; the reactions already moved into rules (assets/events.json) are listed with now set. Check it parses with node, commit it. No soak (no code changed).";
         return GameStore::askBuilder($slug, $p, $memberId, true);
     }
-    /** One catalogue item becomes a rule: the builder adds what it needs, moves the reaction out of the code into rules that do
-     *  exactly the same, and marks the item with the rules that now hold it. */
-    public static function convert(string $slug, string $itemId, int $memberId): array {
+    /** Catalogue items become rules, in one builder run: it adds what they need, moves each reaction out of the code into rules
+     *  that do exactly the same, and marks each item with the rules that now hold it. $also: more the run should add (words). */
+    public static function convert(string $slug, array $itemIds, int $memberId, string $also = ''): array {
         $cat = self::builtin($slug); if (!$cat) throw new \InvalidArgumentException('there is no catalogue yet');
-        $it = null; $sys = null; foreach ($cat['systems'] as $s) foreach ((array) ($s['items'] ?? []) as $x) if (($x['id'] ?? '') === $itemId) { $it = $x; $sys = $s; }
-        if (!$it) throw new \InvalidArgumentException("no {$itemId} in the catalogue"); if (($it['rule'] ?? '') === 'no') throw new \InvalidArgumentException("{$itemId} stays in code: " . ($it['why'] ?? ''));
-        if (!empty($it['now']) && ($it['rule'] ?? '') === 'yes') throw new \InvalidArgumentException("{$itemId} is a rule already: " . implode(', ', (array) $it['now']));
-        $p = "Make a built-in behaviour of the game a rule the producer can change (\"Events\" in ../../kit/AGENTS.md). From assets/events-builtin.json, system \"" . ($sys['name'] ?? '') . "\", item {$itemId}: when " . ($it['when'] ?? '') . ', ' . ($it['does'] ?? '') . ' (' . ($it['where'] ?? '') . ').' . (!empty($it['needs']) ? ' It needs: ' . implode('; ', (array) $it['needs']) . '.' : '') . (($it['rule'] ?? '') === 'partly' ? ' Only part of it can be a rule: ' . ($it['why'] ?? '') . ' Move that part, leave the rest in code.' : '') . "\n"
-           . "1. Add to the vocabulary and the code what the rule needs (events emitted where they happen, fields, states, targets, actions wrapping the game's own functions), declared in assets/events-vocab.json.\n"
-           . "2. Remove the hard-wired reaction from the code and add rules to assets/events.json that reproduce it EXACTLY (the same numbers from the same settings, the same order, the same conditions), with a note saying it was built in.\n"
-           . "3. In assets/events-builtin.json set the item's now to the new rules' ids (and its rule/why if only part moved).\n"
-           . "4. Check: node --check; ../../studio/bin/soak 60 4 before you change anything and after, and compare (no new errors, the same kind of run: deaths, kills, level within noise); never loosen a check. Commit, naming the item.";
+        $itemIds = array_values(array_unique(array_filter(array_map('strval', $itemIds)))); if (!$itemIds) throw new \InvalidArgumentException('name the items to make rules of');
+        if (count($itemIds) > 8) throw new \InvalidArgumentException('at most 8 items in one run: a smaller run keeps a mistake small');
+        $found = []; foreach ($cat['systems'] as $s) foreach ((array) ($s['items'] ?? []) as $x) if (in_array($x['id'] ?? '', $itemIds, true)) $found[$x['id']] = [$s, $x];
+        $lines = [];
+        foreach ($itemIds as $id) {
+            if (!isset($found[$id])) throw new \InvalidArgumentException("no {$id} in the catalogue"); [$sys, $it] = $found[$id];
+            if (($it['rule'] ?? '') === 'no') throw new \InvalidArgumentException("{$id} stays in code: " . ($it['why'] ?? ''));
+            if (!empty($it['now']) && ($it['rule'] ?? '') === 'yes') throw new \InvalidArgumentException("{$id} is a rule already: " . implode(', ', (array) $it['now']));
+            $lines[] = "- {$id} (" . ($sys['name'] ?? '') . '): when ' . ($it['when'] ?? '') . ', ' . ($it['does'] ?? '') . ' (' . ($it['where'] ?? '') . ').' . (!empty($it['needs']) ? ' Needs: ' . implode('; ', (array) $it['needs']) . '.' : '') . (($it['rule'] ?? '') === 'partly' ? ' Only part can be a rule: ' . ($it['why'] ?? '') . ' Move that part, leave the rest in code.' : '');
+        }
+        $p = "Make built-in behaviours of the game rules the producer can change (\"Events\" in ../../kit/AGENTS.md; items of assets/events-builtin.json):\n" . implode("\n", $lines) . "\n" . ($also !== '' ? "Also: {$also}\n" : '')
+           . "First run ../../studio/bin/soak 60 4 and keep its report. Then, item by item:\n"
+           . "1. Add to the vocabulary and the code what it needs (events emitted where they happen, fields, states, targets, actions wrapping the game's own functions), declared in assets/events-vocab.json in words a producer reads.\n"
+           . "2. Remove the hard-wired reaction from the code and add rules to assets/events.json that reproduce it EXACTLY (the same numbers from the same settings, the same order, the same conditions), each with a note saying it was built in.\n"
+           . "3. In assets/events-builtin.json set the item's now to the new rules' ids (and its rule and why, if only part moved).\n"
+           . "If an item turns out not to be exactly reproducible, leave it in code, say why in the catalogue and in your reply, and go on to the next.\n"
+           . "At the end: node --check; ../../studio/bin/soak 60 4 again and compare with the first (no new errors; deaths, kills and level within noise); never loosen a check. Commit, naming the items moved and any left.";
         return GameStore::askBuilder($slug, $p, $memberId, true);
     }
 
