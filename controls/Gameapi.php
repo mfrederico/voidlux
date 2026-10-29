@@ -9,6 +9,7 @@
  *   POST sketch { png, note, style, pixel, size, key, palette } → { id }      GET sketch?id= → { result, base, busy }
  *   GET  sketches → { jobs }      POST sketchdelete { id }      GET spritehints?key=   POST spritehints { key, plan, joints, notes }
  *   GET  cast → the 3D cast       POST cast { do: list | make | wire | revise | edit | request | go | cancel | keepall }
+ *   POST thumb { name, data } (a 3D turntable strip, cached in thumbs/)
  *   GET  events → rules, vocabulary, proposals      POST events { do: save | describe | add | dismiss | wire | ask }
  */
 namespace app;
@@ -90,6 +91,19 @@ class Gameapi extends BaseControls\Control {
             $lines .= json_encode($keep, JSON_UNESCAPED_SLASHES) . "\n"; }
         $f = GameStore::studioDir($g->slug) . '/ux.jsonl'; if (is_file($f) && filesize($f) > 2 * 1024 * 1024) @rename($f, $f . '.1'); // keep it small: one old file at most
         if ($lines !== '') file_put_contents($f, $lines, FILE_APPEND | LOCK_EX);
+        http_response_code(204); exit;
+    }
+    /** A 3D thumbnail strip the sprite page rendered (lib: none, it is a cache): POST { name, data: a data:image/webp URL } →
+     *  games/<slug>/thumbs/<name>.webp, kept out of git and out of published builds. */
+    public function thumb($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; if (!$this->post()) { $this->raw(['error' => 'POST'], 405); }
+        $b = $this->getJsonInput() ?? []; $name = (string) ($b['name'] ?? '');
+        if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,90}$/', $name)) $this->raw(['error' => 'a thumbnail name is lowercase letters, digits, - and _'], 400);
+        if (!preg_match('#^data:image/webp;base64,([A-Za-z0-9+/=]+)$#', (string) ($b['data'] ?? ''), $m)) $this->raw(['error' => 'data must be a data:image/webp URL'], 400);
+        $bin = base64_decode($m[1], true); if ($bin === false || strlen($bin) > 1024 * 1024 || substr($bin, 0, 4) !== 'RIFF' || substr($bin, 8, 4) !== 'WEBP') $this->raw(['error' => 'not a WebP under 1 MB'], 400);
+        $d = GameStore::dir((string) $g->slug); if (!is_dir("$d/thumbs")) mkdir("$d/thumbs", 0775, true);
+        $gi = "$d/.gitignore"; $have = is_file($gi) ? (string) file_get_contents($gi) : ''; if (!preg_match('#^/?thumbs/?$#m', $have)) file_put_contents($gi, rtrim($have) . ($have === '' ? '' : "\n") . "thumbs/\n");
+        GameStore::writeAtomic("$d/thumbs/$name.webp", $bin);
         http_response_code(204); exit;
     }
     /** The events (lib/Rules.php): GET the vocabulary, rules and proposals; POST { do: save (rules) | describe (text) | add (id) |

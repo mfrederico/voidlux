@@ -61,6 +61,8 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
 #artBusy { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 40; display: none; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 999px; background: var(--surface); border: 1px solid var(--accent); box-shadow: 0 8px 24px rgba(0,0,0,.25); font-size: 13px; max-width: 92vw; }
 #artBusy.on { display: flex; } #artBusy .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: artblink 1s ease-in-out infinite; flex: none; } #artBusy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @keyframes artblink { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .25; transform: scale(.7); } }
+img.spin { background-size: 1600% 100%; background-repeat: no-repeat; animation: stripspin 1.8s steps(16) infinite; } @keyframes stripspin { from { background-position: 0 0; } to { background-position: 106.6667% 0; } } @media (prefers-reduced-motion: reduce) { img.spin { animation: none; } }
+.main.solo { grid-template-columns: 1fr; } .main.solo > aside.list { display: none; }
 @media (max-width: 760px) { .main { grid-template-columns: 1fr; } .list { position: static; max-height: none; } }
 /* nothing may be wider than the phone: grid children shrink, selects and inputs cap at their box, long words break */
 .wrap > *, .main > *, .panel > *, .sketch > *, .pad > *, .out > *, .note > * { min-width: 0; }
@@ -283,7 +285,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
 <script>
 const el = id => document.getElementById(id);
 const LEDE = { make: "Draw a rough sketch, say what it is, press >>: the artist draws two takes. Keep one and it is in the game as Draw.pic('key', x, y, size).", draw: 'Edit a kept sprite: its pixels frame by frame, its SVG source, or its drawing code, with a live preview.', events: 'How things react: on an event, if conditions hold, do actions. Rules per sprite, per group or for everything, using only what the game can do.', '3d': 'Everything the game draws in 3D, each with its model: list them, make the missing ones in one go, wire them into the game once, then revise any one of them.', move: 'Give a kept sprite motion. Today: the artist animates it as code frames. Next: a skeleton rig with keyframes and inverse kinematics.' };
-function showTab(name) { if (!['make', 'draw', 'move', '3d', 'events'].includes(name)) name = 'make'; if (typeof UX !== 'undefined') UX.tab(name); for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('on', a.dataset.tab === name); for (const s of document.querySelectorAll('.tab')) s.classList.toggle('hidden', s.id !== 'tab-' + name); el('lede').textContent = LEDE[name]; if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name); if (name === '3d' && typeof Cast !== 'undefined') Cast.refresh(); if (name === 'events' && typeof Ev !== 'undefined') Ev.refresh(true); if (name === 'move') moveRefresh(); else el('moveJobs').classList.add('hidden'); }
+function showTab(name) { if (!['make', 'draw', 'move', '3d', 'events'].includes(name)) name = 'make'; document.querySelector('.main').classList.toggle('solo', name === '3d' || name === 'events'); if (typeof UX !== 'undefined') UX.tab(name); for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('on', a.dataset.tab === name); for (const s of document.querySelectorAll('.tab')) s.classList.toggle('hidden', s.id !== 'tab-' + name); el('lede').textContent = LEDE[name]; if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name); if (name === '3d' && typeof Cast !== 'undefined') Cast.refresh(); if (name === 'events' && typeof Ev !== 'undefined') Ev.refresh(true); if (name === 'move') moveRefresh(); else el('moveJobs').classList.add('hidden'); }
 for (const a of document.querySelectorAll('#tabs a')) a.onclick = e => { e.preventDefault(); showTab(a.dataset.tab); };
 window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
 function moveRefresh() { if (typeof Move !== 'undefined') Move.refresh(); }
@@ -403,10 +405,12 @@ async function load() {
 }
 function drawList() {
   const q = el('q').value.trim().toLowerCase(), I = el('listIn'), L = el('listLoose'); I.innerHTML = ''; L.innerHTML = '';
-  const keys = Object.keys(M.sprites).filter(k => !q || k.includes(q)).sort();
+  const models = Object.keys(M.sprites).filter(k => M.sprites[k].kind === 'model').length; // 3D models are on the 3D tab, not here
+  const keys = Object.keys(M.sprites).filter(k => M.sprites[k].kind !== 'model' && (!q || k.includes(q))).sort();
   if (!keys.length) I.innerHTML = '<div class="muted small">none yet</div>';
   for (const k of keys) { const s = M.sprites[k], b = document.createElement('button'); b.className = 'slot' + (k === cur ? ' on' : ''); b.innerHTML = `<img class="th" alt=""><span><div class="k">${esc(k)}</div><div class="d">${s.w}×${s.h}${s.frames > 1 ? ' · ' + s.frames + ' fr' : ''}${s.kind === 'code' ? ' · code' : s.kind === 'rig' ? ' · rig' : ''}${s.source && s.source !== 'editor' ? ' · ' + esc(s.source) : ''}</div></span>`; b.onclick = () => open(k); I.appendChild(b); takeThumb(b.querySelector('img'), ASSET(s.file) + '?t=' + Date.now()); }
-  const files = M.files.filter(f => !q || f.toLowerCase().includes(q));
+  if (models) { const a = document.createElement('a'); a.href = '#3d'; a.className = 'small'; a.style.display = 'block'; a.style.margin = '6px 0'; a.textContent = `${models} 3D model${models > 1 ? 's' : ''}: on the 3D tab →`; a.onclick = e => { e.preventDefault(); showTab('3d'); }; I.prepend(a); }
+  const files = M.files.filter(f => !/\.(glb|json)$/i.test(f) && (!q || f.toLowerCase().includes(q)));
   if (!files.length) L.innerHTML = '<div class="muted small">every picture in assets/ is in the game</div>';
   for (const f of files) { const b = document.createElement('button'); b.className = 'slot'; b.innerHTML = `<img class="th" src="${ASSET(f)}" alt=""><span><div class="k">${esc(f)}</div><div class="d">click to add it as a sprite</div></span>`; b.onclick = () => adopt(f); L.appendChild(b); }
 }
@@ -463,7 +467,28 @@ let THREE3 = null; async function three() { if (!THREE3) { const T = await impor
 async function glbScene(url) { const { T, loader } = await three(); const g = await loader.loadAsync(url); const scene = new T.Scene(); scene.add(new T.HemisphereLight(0xffffff, 0x445566, 2.2)); const d = new T.DirectionalLight(0xffffff, 2); d.position.set(3, 5, 4); scene.add(d); scene.add(g.scene);
   const box = new T.Box3().setFromObject(g.scene), size = box.getSize(new T.Vector3()).length() || 1, c = box.getCenter(new T.Vector3()); const cam = new T.PerspectiveCamera(35, 1, size / 100, size * 100);
   const aim = a => { cam.position.set(c.x + Math.cos(a) * size * 1.1, c.y + size * 0.6, c.z + Math.sin(a) * size * 1.1); cam.lookAt(c); }; aim(0.7); return { T, scene, cam, aim, gltf: g }; }
-async function glbThumb(img, url, n) { try { const s = await glbScene(url), cv = document.createElement('canvas'); cv.width = cv.height = n || 144; const r = new s.T.WebGLRenderer({ canvas: cv, alpha: true, antialias: true, preserveDrawingBuffer: true }); r.render(s.scene, s.cam); img.src = cv.toDataURL(); r.dispose(); } catch (e) { img.alt = '3D: ' + e.message; img.title = e.message; } }
+// 3D thumbnails: a 16-frame turntable strip (250×250 a frame), rendered once with ONE shared WebGL renderer, one model at a time
+// (a browser allows about 16 WebGL contexts a page; a renderer per card ran out), kept on the server under the game's thumbs/
+// so the next visit shows it at once, and played as a little animation scaled to whatever size the icon is.
+const STRIP = { N: 16, PX: 250, r: null, chain: Promise.resolve() };
+const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+function stripName(url) { let m = /sketches\/([0-9]{8}-[0-9]{6}-[a-f0-9]{6})\/([a-z0-9_-]+)\.glb/.exec(url); if (m) return `${m[1]}-${m[2]}`; m = /assets\/([a-z0-9_-]+)\.glb\?v=([a-z0-9]+)/.exec(url); return m ? `${m[1]}-${m[2]}` : ''; }
+function showStrip(img, src) { img.src = BLANK; img.style.backgroundImage = `url("${src}")`; img.classList.add('spin'); }
+async function renderStrip(url) { // the strip as a canvas, made in turn with the shared renderer
+  const job = STRIP.chain.then(async () => { const { T } = await three();
+    if (!STRIP.r) { const cv = document.createElement('canvas'); cv.width = cv.height = STRIP.PX; STRIP.r = new T.WebGLRenderer({ canvas: cv, alpha: true, antialias: true, preserveDrawingBuffer: true }); }
+    const s = await glbScene(url), out = document.createElement('canvas'); out.width = STRIP.PX * STRIP.N; out.height = STRIP.PX; const g = out.getContext('2d');
+    for (let i = 0; i < STRIP.N; i++) { s.aim(0.7 + i * Math.PI * 2 / STRIP.N); STRIP.r.render(s.scene, s.cam); g.drawImage(STRIP.r.domElement, i * STRIP.PX, 0); }
+    s.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); for (const m of [].concat(o.material || [])) { for (const v of Object.values(m)) if (v && v.isTexture) v.dispose(); m.dispose(); } });
+    return out; });
+  STRIP.chain = job.catch(() => {}); return job; }
+async function glbThumb(img, url, n) { // n: kept for callers; the strip scales to the img's own size
+  const name = stripName(url), cached = name && `/games/${GAME}/thumbs/${name}.webp`;
+  if (cached) { const ok = await new Promise(res => { const p = new Image(); p.onload = () => res(true); p.onerror = () => res(false); p.src = cached; }); if (ok) { showStrip(img, cached); return; } }
+  try { const out = await renderStrip(url), blob = await new Promise(res => out.toBlob(res, 'image/webp', 0.82)); if (!blob) throw new Error('the strip could not be encoded');
+    showStrip(img, URL.createObjectURL(blob));
+    if (name && CSRF && blob.type === 'image/webp') { const data = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); }); fetch(apiUrl('thumb'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ name, data }) }).catch(() => {}); } }
+  catch (e) { img.alt = '3D: ' + e.message; img.title = e.message; } }
 el('maker').addEventListener('change', () => el('modelOpts').classList.toggle('hidden', el('maker').value !== 'model'));
 let takeN = 0; const scratch = document.createElement('canvas'); scratch.width = scratch.height = 8; Draw.init(scratch);
 function asRealKey(R, fn) { // while a take paints, Rig.rigs answers to the sprite's own key too, for parts that look it up by name
