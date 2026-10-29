@@ -109,6 +109,8 @@ will not load is a console error, which the soak reports.
      Parts the stand-in animated in code (legs, eyes, colour flashes) need a decision per thing: keep those parts in code
      beside the model, tint the model's materials, or play its clips (`Models.clips(key)`) with an AnimationMixer.
   Then a model kept later appears without another change. 2D games ignore all of this.
+  To see a model without a browser: `node ../../studio/bin/glb-strip.mjs assets/<key>.glb /tmp/look.png 4 300`, then
+  Read the PNG (four views turning, drawn in software).
 - Publishing copies `assets/` (models, events-vocab.json and events.json with them) and `js/vendor/` with the game.
 - The sprite page's `>>` sends the producer's sketch to you with a message that says exactly what to draw and where
   (`sketches/<id>/<key>-N.svg` or `.png`, then `result.json`). Follow it to the letter: nothing goes into `assets/` or the

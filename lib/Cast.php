@@ -44,6 +44,7 @@ class Cast {
         $it['file'] = $file; $it['size'] = $size; $it['v'] = substr((string) sha1_file(GameStore::dir($slug) . "/assets/$file"), 0, 10); $it['recipe'] = $recipe;
         if ($job !== '') $it['kept'] = $job; unset($it['error']);
         $c['items'][$key] = $it; self::write($slug, $c);
+        try { self::strip($slug, GameStore::dir($slug) . "/assets/$file", "$key-{$it['v']}"); } catch (\Throwable $e) { error_log("ERROR strip {$slug}/{$key}: " . $e->getMessage()); }
     }
 
     /** The cast with each item's state, for the 3D tab. */
@@ -167,6 +168,36 @@ class Cast {
             catch (\Throwable $e) { $c = self::read($slug); $c['items'][$k]['error'] = 'not kept: ' . $e->getMessage(); self::write($slug, $c); error_log("ERROR cast {$slug}/{$k}: " . $e->getMessage()); }
         }
         return $did;
+    }
+
+    // ---- strips: every model's turntable picture, made on the server as the model lands (studio/bin/glb-strip.mjs draws it in
+    //      software; GD writes the WebP), so no page renders 3D to show a thumbnail. thumbs/<key>-<v>.webp for a kept model,
+    //      thumbs/<job id>-<take>.webp for a take. Not in git, not published. ----
+    public static function strip(string $slug, string $glb, string $name): bool {
+        $out = GameStore::dir($slug) . "/thumbs/$name.webp"; if (is_file($out) && filemtime($out) >= filemtime($glb)) return false;
+        if (!is_dir(dirname($out))) mkdir(dirname($out), 0775, true);
+        $gi = GameStore::dir($slug) . '/.gitignore'; $have = is_file($gi) ? (string) file_get_contents($gi) : ''; if (!preg_match('#^/?thumbs/?$#m', $have)) file_put_contents($gi, rtrim($have) . ($have === '' ? '' : "\n") . "thumbs/\n");
+        $nb = (string) GameStore::cfg('node_bin', ''); $node = $nb !== '' ? rtrim($nb, '/') . '/node' : 'node';
+        $png = tempnam(sys_get_temp_dir(), 'strip') . '.png';
+        exec(escapeshellarg($node) . ' ' . escapeshellarg(GameStore::root() . '/studio/bin/glb-strip.mjs') . ' ' . escapeshellarg($glb) . ' ' . escapeshellarg($png) . ' 16 250 2>&1', $o, $rc);
+        try {
+            if ($rc !== 0 || !is_file($png)) throw new \RuntimeException('glb-strip: ' . trim(implode(' ', $o)));
+            $im = imagecreatefrompng($png); if (!$im) throw new \RuntimeException('the strip PNG could not be read');
+            imagealphablending($im, false); imagesavealpha($im, true); $ok = imagewebp($im, $out . '.tmp', 82); imagedestroy($im);
+            if (!$ok) throw new \RuntimeException('GD could not write the WebP'); rename($out . '.tmp', $out); return true;
+        } finally { @unlink($png); @unlink(substr($png, 0, -4)); }
+    }
+    /** Makes every strip that is missing: kept models and the takes of model jobs. Returns how many it made. One at a time per game. */
+    public static function strips(string $slug): int {
+        $lk = fopen(GameStore::studioDir($slug) . '/strips.lock', 'c'); if (!flock($lk, LOCK_EX | LOCK_NB)) { fclose($lk); return 0; }
+        $n = 0; $d = GameStore::dir($slug);
+        try {
+            foreach (self::read($slug)['items'] as $k => $it) if (!empty($it['file']) && !empty($it['v']) && is_file("$d/assets/{$it['file']}"))
+                try { $n += (int) self::strip($slug, "$d/assets/{$it['file']}", "$k-{$it['v']}"); } catch (\Throwable $e) { error_log("ERROR strip {$slug}/{$k}: " . $e->getMessage()); }
+            foreach (glob("$d/sketches/*/*.glb") ?: [] as $g) { $id = basename(dirname($g)); $f = basename($g, '.glb'); if (!preg_match(GameStore::SKETCH_ID, $id) || in_array($f, ['base', 'ref'], true)) continue;
+                try { $n += (int) self::strip($slug, $g, "$id-$f"); } catch (\Throwable $e) { error_log("ERROR strip {$slug}/{$id}/{$f}: " . $e->getMessage()); } }
+        } finally { flock($lk, LOCK_UN); fclose($lk); }
+        return $n;
     }
 
     // ---- wire: one builder run hooks every item in ----
