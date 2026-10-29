@@ -38,6 +38,9 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
 /* Move: the stage with the figure large, the panel beside it (under it on a phone), the timeline under the stage */
 .castask { display: grid; gap: 6px; margin: 10px 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); } .castask label { display: grid; gap: 2px; }
 .creq, .castwait { display: grid; gap: 6px; margin: 0 0 10px; padding: 10px; border: 1px dashed var(--accent); border-radius: 10px; } .creq ul { margin: 0; padding-left: 18px; } .creq li { margin: 2px 0; }
+.casthist { display: grid; gap: 6px; margin: 10px 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); } .hlist { display: grid; gap: 4px; max-height: 340px; overflow-y: auto; }
+.hrow { display: grid; grid-template-columns: 48px minmax(90px, auto) minmax(0, 1fr) auto auto; gap: 10px; align-items: center; text-align: left; padding: 4px 6px; border: 1px solid transparent; border-radius: 8px; background: none; color: inherit; font: inherit; cursor: pointer; } .hrow:hover, .hrow.on { border-color: var(--accent); } .hrow img { width: 48px; height: 48px; object-fit: contain; }
+@media (max-width: 700px) { .hrow { grid-template-columns: 48px 1fr; } .hrow .small { grid-column: 2; } } .crev.on { border-color: var(--accent); border-style: solid; } .linkish { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0; justify-self: start; font: inherit; }
 .castgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; } .castgrp { grid-column: 1 / -1; margin: 10px 0 0; text-transform: capitalize; }
 .ccard { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: center; text-align: left; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; font: inherit; cursor: pointer; } .ccard.on { border-color: var(--accent); }
 .ccard img { width: 64px; height: 64px; object-fit: contain; } .pill { display: inline-block; padding: 0 7px; border-radius: 99px; font-size: 12px; border: 1px solid var(--line); }
@@ -211,6 +214,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
     <section class="tab panel hidden" id="tab-3d">
       <div class="head"><div><h2>The 3D cast</h2><div class="meta muted small" id="castSub">loading…</div></div><div class="row"><button id="castList">List the 3D things</button><button id="castMake" class="primary" disabled>Make all missing</button><button id="castWire" disabled>Wire into the game</button></div></div>
       <div class="small" id="castNote"></div>
+      <div id="castHist" class="casthist hidden"></div>
       <div class="castask"><label for="castAsk"><b>Describe a change to the 3D models</b> <span class="muted small">in your own words: one model (“the hive queen's wings should be see-through”) or many (“all the trees a darker green”, “every enemy a bit bigger”). The artist works out which models you mean and shows you the list before anything changes.</span></label>
         <textarea id="castAsk" rows="2" placeholder="e.g. the ants should have six legs and darker heads"></textarea><div class="row"><button class="primary" id="castAskBtn">Work out which models &gt;&gt;</button></div></div>
       <div id="castReqs"></div>

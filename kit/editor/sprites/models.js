@@ -5,7 +5,7 @@
 //   Wire into the game   one builder run hooks every item in through kit/js/kit-models.js; after that a kept model shows up by itself
 //   per item             look at it turning, change what it is or its size, make it again, or revise it with one change
 const Cast = {
-  S: null, jobs: [], open: '', t: 0, viewT: 0,
+  S: null, jobs: [], open: '', focus: '', t: 0, viewT: 0,
   async refresh() {
     try {
       const [c, j] = await Promise.all([fetch(apiUrl('cast'), { cache: 'no-store' }), fetch(apiUrl('sketches'), { cache: 'no-store' })]);
@@ -24,7 +24,7 @@ const Cast = {
     el('castMake').textContent = `Make all missing (${missing})`; el('castMake').disabled = !missing;
     const unhooked = all.filter(([, it]) => !it.hooked).length; el('castWire').textContent = S.wired && !unhooked ? 'Wired in' : `Wire into the game${unhooked ? ` (${unhooked})` : ''}`; el('castWire').disabled = !all.length || (S.wired && !unhooked);
     el('castNote').textContent = L && L.result && !L.result.ok ? 'the last listing failed: ' + (L.result.error || '') : '';
-    this.drawRequests();
+    this.drawRequests(); this.drawHistory();
     const W = S.waiting || [], wb = el('castWaiting'); wb.classList.toggle('hidden', !W.length);
     if (W.length) { wb.innerHTML = `<div><b>${W.length} revision${W.length > 1 ? 's' : ''} waiting</b> <span class="muted small">${W.map(esc).join(', ')}: open one below to compare it, or keep them all.</span></div><div class="row"><button class="primary">Keep all ${W.length}</button></div>`;
       wb.querySelector('button').onclick = () => { if (confirm(`Keep all ${W.length} revisions? Each replaces the model the game has now (git keeps the old ones).`)) this.act({ do: 'keepall' }, j => `${(j.kept || []).length} revision(s) kept; the game loads them next time it starts`); }; }
@@ -36,10 +36,24 @@ const Cast = {
         const d = document.createElement('button'); d.className = 'ccard' + (this.open === k ? ' on' : ''); d.type = 'button';
         d.innerHTML = `<img alt=""><div><div><b class="mono">${esc(k)}</b> ${W.includes(k) ? '<span class="pill s-made">revision ready</span> ' : ''}<span class="pill s-${esc(it.state)}">${{ kept: 'model', made: 'made', making: 'making…', failed: 'failed', none: 'stand-in' }[it.state] || esc(it.state)}</span>${it.hooked ? ' <span class="pill s-hooked" title="the game asks Models.make for it">in game</span>' : ''}</div><div class="muted small">${esc(it.what || '')}</div><div class="muted small">${+it.size || '?'} units${it.error ? ' · ' + esc(it.error) : ''}</div></div>`;
         const img = d.querySelector('img'); if (it.file) glbThumb(img, ASSET(it.file) + '?v=' + (it.v || ''), 96); else img.style.visibility = 'hidden';
-        d.onclick = () => { this.open = this.open === k ? '' : k; this.draw(); };
+        d.onclick = () => { this.open = this.open === k ? '' : k; this.focus = ''; this.draw(); };
         g.appendChild(d); if (this.open === k) g.appendChild(this.detail(k, it));
       }
     }
+  },
+  drawHistory() { // every revision, newest first: what was asked, where it stands, and a link to it on its model
+    const box = el('castHist'), revs = this.jobs.filter(j => j.kind === 'remodel'), items = this.S.items; box.classList.toggle('hidden', !revs.length); if (!revs.length) return;
+    const ago = t => { const s = Date.now() / 1000 - t; return s < 90 ? 'just now' : s < 5400 ? Math.round(s / 60) + ' min ago' : s < 129600 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' d ago'; };
+    const state = j => !j.result ? ['making…', 's-making'] : !j.result.ok ? ['failed', 's-failed'] : items[j.key] && items[j.key].kept === j.id ? ['kept', 's-kept'] : (this.S.waiting || []).includes(j.key) && this.jobs.find(x => x.kind === 'remodel' && x.key === j.key) === j ? ['ready to keep', 's-made'] : ['not kept', ''];
+    const shown = this.histAll ? revs : revs.slice(0, 8);
+    box.innerHTML = `<div class="row"><b>Revision history</b><span class="muted small">${revs.length} revision${revs.length > 1 ? 's' : ''}; click one to see it on its model</span></div><div class="hlist"></div>` + (revs.length > 8 ? `<button class="linkish">${this.histAll ? 'show fewer' : `show all ${revs.length}`}</button>` : '');
+    const L = box.querySelector('.hlist');
+    for (const j of shown) { const [st, cls] = state(j), a = document.createElement('button'); a.type = 'button'; a.className = 'hrow' + (this.focus === j.id ? ' on' : '');
+      a.innerHTML = `<img alt=""><span class="mono">${esc(j.key)}</span><span class="small">${esc((j.note || '').slice(0, 90))}</span><span class="pill ${cls}">${st}</span><span class="muted small">${ago(j.at)}</span>`;
+      const f = j.result && j.result.ok && (j.result.files || [])[0]; if (f) glbThumb(a.querySelector('img'), j.base + f, 48); else a.querySelector('img').style.visibility = 'hidden';
+      a.onclick = () => { this.open = j.key; this.focus = j.id; this.draw(); const c = document.querySelector('.cdetail'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+      L.appendChild(a); }
+    const more = box.querySelector('.linkish'); if (more) more.onclick = () => { this.histAll = !this.histAll; this.drawHistory(); };
   },
   drawRequests() { // the plain-words requests: the artist's reading of each, to start or cancel
     const box = el('castReqs'); box.innerHTML = '';
@@ -58,7 +72,7 @@ const Cast = {
     }
   },
   detail(k, it) {
-    const d = document.createElement('div'); d.className = 'cdetail'; const revs = this.jobs.filter(j => j.kind === 'remodel' && j.key === k).slice(0, 3);
+    const d = document.createElement('div'); d.className = 'cdetail'; const mine = this.jobs.filter(j => j.kind === 'remodel' && j.key === k), revs = mine.slice(0, 3); const fj = mine.find(j => j.id === this.focus); if (fj && !revs.includes(fj)) revs.push(fj);
     d.innerHTML = `<div class="cview"></div><div class="cform">
       <label>What it is <input data-f="what" value="${esc(it.what || '')}"></label>
       <label>For the modeller <textarea data-f="note" rows="3">${esc(it.note || '')}</textarea></label>
@@ -67,10 +81,12 @@ const Cast = {
       ${it.file ? `<label>Change one thing <textarea data-f="rev" rows="2" placeholder="e.g. bigger eyes, antennae curled forward"></textarea></label><div class="row"><button class="primary" data-a="revise">Revise &gt;&gt;</button></div>` : ''}
       <div class="crevs"></div>
       <div class="row"><button data-a="make">${it.file ? 'Make it again from scratch' : 'Make it'}</button><button data-a="drop" title="out of the cast; a kept model file stays in assets/">Drop from the cast</button></div></div>`;
-    const v = d.querySelector('.cview'); if (it.file) this.view(v, ASSET(it.file) + '?v=' + (it.v || '')); else v.innerHTML = `<div class="muted small">No model yet: the game draws its stand-in.${it.state === 'making' ? ' The artist is making one.' : ''}</div>`;
+    const v = d.querySelector('.cview'), ff = fj && fj.result && fj.result.ok && (fj.result.files || [])[0];
+    if (ff) { this.view(v, fj.base + ff); const cap = document.createElement('div'); cap.className = 'muted small'; cap.textContent = `showing the revision “${(fj.note || '').slice(0, 80)}”`; v.after(cap); }
+    else if (it.file) this.view(v, ASSET(it.file) + '?v=' + (it.v || '')); else v.innerHTML = `<div class="muted small">No model yet: the game draws its stand-in.${it.state === 'making' ? ' The artist is making one.' : ''}</div>`;
     const R = d.querySelector('.crevs');
     for (const j of revs) {
-      const r = document.createElement('div'); r.className = 'crev'; const ok = j.result && j.result.ok && (j.result.files || [])[0], kept = it.kept === j.id;
+      const r = document.createElement('div'); r.className = 'crev' + (j.id === this.focus ? ' on' : ''); const ok = j.result && j.result.ok && (j.result.files || [])[0], kept = it.kept === j.id;
       r.innerHTML = `<div class="small"><b>Revision:</b> ${esc(j.note || '')}<div class="muted">${!j.result ? 'the artist is on it…' : !j.result.ok ? 'failed: ' + esc(j.result.error || '') : kept ? 'kept: this is the model now' : esc(j.result.note || '')}</div></div>`;
       if (ok && !kept) { const im = document.createElement('img'); glbThumb(im, j.base + ok, 96); im.title = 'see it turning'; im.style.cursor = 'pointer'; im.onclick = () => this.view(v, j.base + ok); r.prepend(im);
         const b = document.createElement('div'); b.className = 'row'; b.innerHTML = '<button class="primary">Keep it</button><button>Discard</button>'; const [kb, db] = b.querySelectorAll('button');
