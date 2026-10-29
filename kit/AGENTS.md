@@ -156,6 +156,9 @@ in one line and stop; never work around it with an API key or a web form.
 
 ## House rules
 
+- **Never delete, loosen or skip a soak check or test to get a pass.** A check that already fails is reported as failing
+  (reply and commit message) and fixed only when that is the task.
+
 - Match the code around you: dense lines, several statements per line, plain-English comments that say what a thing is
   for and why. Every file starts with a header comment saying what it holds.
 - **Never splice a `//` comment into the middle of a line**: it silently comments out the rest. Use `/* ... */` inside a line.
