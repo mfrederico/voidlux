@@ -12,7 +12,7 @@
         <div class="vl-brief"><?= h($g['brief']) ?></div>
         <div class="vl-meta"><?= h($g['template']) ?> · <?= h($g['status']) ?> · <?= $t['total'] ? 'tasks ' . $t['done'] . '/' . $t['total'] : 'no plan yet' ?> · <?= (int) $g['checkpoints'] ?> checkpoints<?php if ($soak): ?> · playtest <?= $soak['ok'] ? '<b class="ok">ok</b>' : '<b class="bad">' . h(($soak['errors'] ?: $soak['status'])) . '</b>' ?><?= $soak['fps'] ? ' ' . $soak['fps'] . ' fps' : '' ?><?php endif; ?></div>
         <div class="vl-meta"><?= h($g['lastCommit']) ?></div>
-        <div class="vl-game-actions"><a class="btn btn-sm btn-primary" href="/game/view/<?= h($g['slug']) ?>#play">▶ Play</a><a class="btn btn-sm btn-outline-primary" href="/game/view/<?= h($g['slug']) ?>#build">⚒ Build</a><a class="btn btn-sm btn-outline-secondary" href="/game/view/<?= h($g['slug']) ?>#notes">✎ Notes</a><?php if (!empty($g['publishedUrl'])): ?><a class="btn btn-sm btn-outline-secondary" href="<?= h($g['publishedUrl']) ?>" target="_blank">Live ↗</a><?php endif; ?></div>
+        <div class="vl-game-actions"><a class="btn btn-sm btn-primary" href="/game/view/<?= h($g['slug']) ?>#play">▶ Play</a><a class="btn btn-sm btn-outline-primary" href="/game/view/<?= h($g['slug']) ?>#build">⚒ Build</a><a class="btn btn-sm btn-outline-secondary" href="/game/view/<?= h($g['slug']) ?>#notes">✎ Notes</a><?php if (!empty($g['publishedUrl'])): ?><a class="btn btn-sm btn-outline-secondary" href="<?= h($g['publishedUrl']) ?>" target="_blank">Live ↗</a><?php endif; ?><button type="button" class="btn btn-sm btn-outline-warning vl-fork" data-fork="<?= h($g['slug']) ?>" data-title="<?= h($g['title']) ?>" title="a private copy of this game with all its history, for a big experiment that must not touch the original">⑂ FORK!</button></div>
     </div>
 <?php endforeach; ?>
 </div>
@@ -29,3 +29,13 @@
     </div>
 </details>
 <script>for (const im of document.querySelectorAll('.vl-cover img[data-anim]')) { const still = im.src, a = im.closest('.vl-cover'); a.addEventListener('mouseenter', () => { im.src = im.dataset.anim; }); a.addEventListener('mouseleave', () => { im.src = still; }); }</script>
+<script>
+// FORK!: a private copy of the game, with its history, for an experiment; then straight to it
+document.addEventListener('click', async e => { const b = e.target.closest('[data-fork]'); if (!b) return; const src = b.dataset.fork, name = b.dataset.title;
+  const s = prompt(`Fork ${name}: slug for the copy (lowercase, dashes)`, `${src}-fork`); if (!s) return; const t = prompt('Its title:', `${name} (fork)`); if (t === null) return;
+  const goal = prompt('What is the fork for? This leads its GAME.md and steers the planner.\ne.g. "Convert to three.js as an isometric game; above-ground play becomes 3D"', ''); if (!goal) return;
+  b.disabled = true; b.textContent = 'forking…';
+  try { const r = await fetch(`/game/fork/${encodeURIComponent(src)}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': <?= json_encode(csrf_token()) ?>, 'X-Requested-With': 'XMLHttpRequest' }, body: JSON.stringify({ slug: s.trim(), title: t.trim(), goal: goal.trim() }) }); const j = await r.json(); if (!r.ok || j.success === false) throw new Error(j.message || r.status); location.href = j.data.url + '#status'; }
+  catch (err) { alert('Not forked: ' + err.message); b.disabled = false; b.textContent = '⑂ FORK!'; } });
+</script>
+
