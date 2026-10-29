@@ -79,6 +79,15 @@ class Game extends BaseControls\Control {
         $ok = GameStore::claimSoak($g->slug, (string) ($this->body()['id'] ?? '')); $this->jsonSuccess(['claimed' => $ok], $ok ? 'Yours.' : 'Someone else took it.');
     }
     /** A screenshot the builder asked for: the page claims it, then posts the PNG. */
+    /** The page a screenshot is taken of: the game's own index.html, with its folder as the base and kit/js/kit-shot.js first,
+     *  so its frames keep coming while the producer's tab is hidden (a browser stops them there and the shot came back blank). */
+    public function shotframe($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params, false)) return;
+        $page = GameStore::dir((string) $g->slug) . '/index.html'; if (!is_file($page)) { Flight::notFound(); return; }
+        $html = (string) file_get_contents($page); $inject = '<base href="/games/' . $g->slug . '/"><script src="/kit/js/kit-shot.js"></script>';
+        $n = 0; $html = preg_replace('/<head(\s[^>]*)?>/i', '$0' . $inject, $html, 1, $n); if (!$n) { http_response_code(500); echo "games/{$g->slug}/index.html has no <head>: the screenshot frame cannot load its shim first"; return; }
+        header('Content-Type: text/html; charset=utf-8'); header('Cache-Control: no-store'); echo $html;
+    }
     public function shotclaim($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $ok = GameStore::claimShot($g->slug, (string) ($this->body()['id'] ?? '')); $this->jsonSuccess(['claimed' => $ok]); }
     public function shotdone($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $b = $this->body();

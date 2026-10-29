@@ -211,7 +211,7 @@ async function runBrowserShot(req) {
   try {
     const c = await Forge.api(`/game/shotclaim/${slug}`, { id: req.id }); if (!c.claimed) return;
     win = document.createElement('div'); win.className = 'vl-soak-win'; win.innerHTML = `<div class="vl-soak-title"><span>📷 screenshot for the builder · ${req.secs} s${req.query ? ' · ?' + Forge.esc(req.query) : ''}</span><button type="button">–</button></div>`; win.querySelector('button').onclick = () => win.classList.toggle('min');
-    const f = document.createElement('iframe'); f.className = 'vl-soak-frame'; const q = (req.query || '').replace(/^\?/, ''); f.src = `/games/${slug}/?${q}${q ? '&' : ''}seed=7&r=${Date.now()}`; win.appendChild(f); document.body.appendChild(win);
+    const f = document.createElement('iframe'); f.className = 'vl-soak-frame'; const q = (req.query || '').replace(/^\?/, ''); f.src = `/game/shotframe/${slug}?${q}${q ? '&' : ''}seed=7&r=${Date.now()}`; /* the game with kit-shot.js first: it draws even while this tab is hidden */ win.appendChild(f); document.body.appendChild(win);
     const errs = []; f.addEventListener('load', () => { try { f.contentWindow.addEventListener('error', e => errs.push(String(e.message))); } catch (e) {} });
     await new Promise(r => setTimeout(r, Math.max(1, Math.min(120, +req.secs || 3)) * 1000));
     let png = '', w = 0, h = 0; try { const cv = f.contentWindow.document.querySelector('canvas'); w = cv.width; h = cv.height; png = cv.toDataURL('image/png'); } catch (e) { errs.push('could not read the canvas: ' + e.message); }
