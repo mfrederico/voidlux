@@ -87,7 +87,7 @@ class Rules {
         if ($v) foreach ($rules as &$r) { try { self::clean([$r], $v); } catch (\InvalidArgumentException $e) { $r['broken'] = preg_replace('/^rule 1 \([^)]*\): /', '', $e->getMessage()); } } unset($r);
         $page = is_file("$d/index.html") ? (string) file_get_contents("$d/index.html") : '';
         $emits = []; foreach (glob("$d/js/*.js") ?: [] as $f) if (preg_match_all('/Events\.emit\(\s*[\'"]([A-Za-z0-9_:-]+)[\'"]/', (string) file_get_contents($f), $m)) $emits = array_merge($emits, $m[1]);
-        return ['vocab' => $v, 'rules' => $rules, 'wired' => str_contains($page, 'kit-events.js'), 'emitted' => array_values(array_unique($emits)), 'proposals' => self::proposals($slug)];
+        return ['builtin' => self::builtin($slug), 'vocab' => $v, 'rules' => $rules, 'wired' => str_contains($page, 'kit-events.js'), 'emitted' => array_values(array_unique($emits)), 'proposals' => self::proposals($slug)];
     }
 
     // ---- rules from words ----
@@ -163,6 +163,36 @@ class Rules {
             $all = json_decode((string) @file_get_contents(self::propFile($slug)), true) ?: [];
         }
         return $did;
+    }
+
+    // ---- the catalogue: what the game does built in (assets/events-builtin.json, written by the builder), shown in the Events
+    //      tab beside the rules, so every reaction in the game is visible; an entry that can be a rule is converted on request ----
+    public static function builtin(string $slug): ?array {
+        $p = self::file($slug, 'events-builtin.json'); if (!is_file($p)) return null;
+        $j = json_decode((string) file_get_contents($p), true); if (!is_array($j) || !is_array($j['systems'] ?? null)) throw new \RuntimeException("assets/events-builtin.json in {$slug} is not the catalogue's JSON: the builder must fix it");
+        return $j;
+    }
+    public static function catalogue(string $slug, int $memberId): array {
+        if (!self::vocab($slug)) throw new \InvalidArgumentException('wire events into the game first');
+        $p = "Write the catalogue of what this game does BUILT IN, so the producer sees every reaction in the Events tab beside their rules (\"Events\" in ../../kit/AGENTS.md; the rule format is the header of ../../kit/js/kit-events.js). Change no code in this run.\n"
+           . "Go system by system (read docs/notebooks.md and each notebook, then the code): the player and its segments, bullets (every type), elements and status effects (burn, poison, freeze, electric…, how they start, tick and end), weapon combos, parasites, perks and gear, enemies and their attacks, bosses, pickups and loot, the world's props and summons, scoring, levels, death and last stand, and anything else that reacts to something. For each REACTION (when something happens to something, the game does something), one item. Per-frame mechanics that are formulas, not reactions (damage maths, armour, ticking, movement, AI) are items too, marked \"rule\": \"no\" with why, so the catalogue is complete.\n"
+           . "Write assets/events-builtin.json as {\"version\": 1, \"made\": \"<date>\", \"systems\": [ {\"id\": \"elements\", \"name\": \"Elements and status effects\", \"about\": \"<one line>\", \"items\": [ {\"id\": \"elements.poison-cloud\", \"who\": \"<a subject key of events-vocab.json, group:<group>, or *>\", \"when\": \"<what sets it off, in plain words>\", \"does\": \"<what the game does, with its numbers, in plain words>\", \"where\": \"<file:line>\", \"settings\": [\"<CFG paths its numbers come from>\"], \"rule\": \"yes\" | \"partly\" | \"no\", \"why\": \"<for partly or no: what stays in code and why>\", \"needs\": [\"<events, fields, states, targets or actions the vocabulary would need to hold it as a rule>\"], \"now\": [\"<ids of rules in assets/events.json that already hold it, if any>\"] } ] } ] }. "
+           . "Words a producer understands; ids lowercase with dots and dashes; the reactions already moved into rules (assets/events.json) are listed with now set. Check it parses with node, commit it. No soak (no code changed).";
+        return GameStore::askBuilder($slug, $p, $memberId, true);
+    }
+    /** One catalogue item becomes a rule: the builder adds what it needs, moves the reaction out of the code into rules that do
+     *  exactly the same, and marks the item with the rules that now hold it. */
+    public static function convert(string $slug, string $itemId, int $memberId): array {
+        $cat = self::builtin($slug); if (!$cat) throw new \InvalidArgumentException('there is no catalogue yet');
+        $it = null; $sys = null; foreach ($cat['systems'] as $s) foreach ((array) ($s['items'] ?? []) as $x) if (($x['id'] ?? '') === $itemId) { $it = $x; $sys = $s; }
+        if (!$it) throw new \InvalidArgumentException("no {$itemId} in the catalogue"); if (($it['rule'] ?? '') === 'no') throw new \InvalidArgumentException("{$itemId} stays in code: " . ($it['why'] ?? ''));
+        if (!empty($it['now']) && ($it['rule'] ?? '') === 'yes') throw new \InvalidArgumentException("{$itemId} is a rule already: " . implode(', ', (array) $it['now']));
+        $p = "Make a built-in behaviour of the game a rule the producer can change (\"Events\" in ../../kit/AGENTS.md). From assets/events-builtin.json, system \"" . ($sys['name'] ?? '') . "\", item {$itemId}: when " . ($it['when'] ?? '') . ', ' . ($it['does'] ?? '') . ' (' . ($it['where'] ?? '') . ').' . (!empty($it['needs']) ? ' It needs: ' . implode('; ', (array) $it['needs']) . '.' : '') . (($it['rule'] ?? '') === 'partly' ? ' Only part of it can be a rule: ' . ($it['why'] ?? '') . ' Move that part, leave the rest in code.' : '') . "\n"
+           . "1. Add to the vocabulary and the code what the rule needs (events emitted where they happen, fields, states, targets, actions wrapping the game's own functions), declared in assets/events-vocab.json.\n"
+           . "2. Remove the hard-wired reaction from the code and add rules to assets/events.json that reproduce it EXACTLY (the same numbers from the same settings, the same order, the same conditions), with a note saying it was built in.\n"
+           . "3. In assets/events-builtin.json set the item's now to the new rules' ids (and its rule/why if only part moved).\n"
+           . "4. Check: node --check; ../../studio/bin/soak 60 4 before you change anything and after, and compare (no new errors, the same kind of run: deaths, kills, level within noise); never loosen a check. Commit, naming the item.";
+        return GameStore::askBuilder($slug, $p, $memberId, true);
     }
 
     // ---- the builder's part ----

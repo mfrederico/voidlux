@@ -2,7 +2,7 @@
 // The producer's rules for how things react: on <event> → if <conditions> → do <actions>, per sprite, per group or for
 // everything. Only what the game declares (assets/events-vocab.json, the builder's) can be chosen; the rules are
 // assets/events.json (lib/Rules.php checks them before they are written; kit/js/kit-events.js runs them).
-const EV_OK = ['evFind', 'evAskFor', 'evAskForBox', 'evAskForOn', 'evAskForName', 'evSub', 'evWire', 'evSave', 'evBody', 'evAskBox', 'evAsk', 'evAskBtn', 'evProps', 'evWho', 'evRules', 'evWhoTitle', 'evNew'].every(id => el(id));
+const EV_OK = ['evCat', 'evBuiltin', 'evBiTitle', 'evFind', 'evAskFor', 'evAskForBox', 'evAskForOn', 'evAskForName', 'evSub', 'evWire', 'evSave', 'evBody', 'evAskBox', 'evAsk', 'evAskBtn', 'evProps', 'evWho', 'evRules', 'evWhoTitle', 'evNew'].every(id => el(id));
 if (!EV_OK) { el('fresh').classList.remove('hidden'); el('freshWhy').textContent = '(the Events tab is newer than this copy of the page)'; }
 const Ev = {
   S: null, rules: [], who: '*', dirty: false, t: 0,
@@ -20,6 +20,7 @@ const Ev = {
     const S = this.S, V = this.V(), nS = Object.keys(V.subjects).length, nE = Object.keys(V.events).length, nA = Object.keys(V.actions).length;
     el('evSub').textContent = !S.vocab ? 'The game declares no events yet. Wire events in first: the builder lists what can happen (hit, die, touch…), what the game can do about it (set burning, freeze, a burst…) and the things it happens to; then you write the rules here.'
       : `${this.rules.length} rule${this.rules.length === 1 ? '' : 's'} · the game has ${nE} events, ${nA} actions, ${nS} kinds of thing` + (S.wired ? '' : ' · the game does not load the rules yet (wire it in)') + (this.rules.some(r => r.broken) ? ' · some rules no longer fit the game (marked below)' : '');
+    el('evCat').textContent = S.builtin ? 'Refresh what\'s built in' : 'List what\'s built in'; el('evCat').disabled = !S.vocab;
     el('evWire').textContent = S.vocab ? 'Update the game\'s events…' : 'Wire events into the game'; el('evSave').disabled = !this.dirty; el('evSave').textContent = this.dirty ? 'Save rules *' : 'Saved';
     el('evBody').classList.toggle('hidden', !S.vocab); el('evAskBox').classList.toggle('hidden', !S.vocab);
     this.drawProposals(); if (!S.vocab) return;
@@ -35,6 +36,7 @@ const Ev = {
     el('evWhoTitle').textContent = this.who === '*' ? 'Rules for everything' : this.who.startsWith('group:') ? `Rules for every ${this.who.slice(6)}` : `Rules for ${this.who}`;
     if (!mine.length) R.innerHTML = '<div class="muted small">No rules here yet. Add one, or describe what you want above and the artist writes it.</div>';
     for (const r of mine) R.appendChild(this.card(r));
+    this.drawBuiltin();
   },
   say(r) { // a rule in words: on die → if self.burning is yes and count fires (game) < 3 → SetBurning to nearby enemies (radius 80)
     const lim = a => [a.max && `max ${a.max}`, a.once && 'once', a.cooldown && `every ${a.cooldown}s at most`, a.chance != null && a.chance < 1 && `${Math.round(a.chance * 100)}% chance`, a.delay && `after ${a.delay}s`].filter(Boolean).join(', ');
@@ -102,6 +104,33 @@ const Ev = {
     const nt = document.createElement('div'); nt.className = 'evrow'; nt.append(this.span('note', 'evk'), this.inp(r.note, v => r.note = v, 'why this rule (optional)', '100%')); d.appendChild(nt);
     return d;
   },
+  drawBuiltin() { // what the game does in code for the thing picked (the catalogue, assets/events-builtin.json): read-only, each can become a rule
+    const B = this.S.builtin, box = el('evBuiltin'), V = this.V(); box.innerHTML = '';
+    el('evBiTitle').textContent = 'Built into the game' + (this.who === '*' ? ', every system' : this.who.startsWith('group:') ? ` for every ${this.who.slice(6)}` : ` for ${this.who}`);
+    if (!B) { box.innerHTML = '<div class="muted small">Not listed yet. “List what\'s built in” asks the builder (one run) to write down every reaction the game has in code, system by system, so it shows here beside your rules; whatever can be a rule gets a “Make it a rule” button.</div>'; return; }
+    const groupsOf = k => ((V.subjects[k] || {}).groups || []);
+    const mine = it => this.who === '*' || it.who === this.who || (it.who || '').startsWith('group:') && groupsOf(this.who).includes(it.who.slice(6));
+    let n = 0;
+    for (const s of B.systems || []) {
+      const items = (s.items || []).filter(mine); if (!items.length) continue; n += items.length;
+      const det = document.createElement('details'); det.className = 'evsys'; det.open = this.who !== '*' || (B.systems || []).length < 3;
+      det.innerHTML = `<summary><b>${esc(s.name || s.id)}</b> <span class="muted small">${items.length} · ${esc(s.about || '')}</span></summary>`;
+      for (const it of items) {
+        const d = document.createElement('div'); d.className = 'evbi'; const st = it.now && it.now.length && it.rule === 'yes' ? 'rule' : it.rule;
+        const pill = { rule: ['a rule now', 's-kept'], yes: ['can be a rule', 's-made'], partly: ['partly a rule', 's-made'], no: ['stays in code', ''] }[st] || [st || '?', ''];
+        d.innerHTML = `<div><b>${esc(it.does || '')}</b></div><div class="small">when ${esc(it.when || '')}${it.who && it.who !== this.who ? ` <span class="muted">(${esc(it.who === '*' ? 'anything' : it.who.replace('group:', 'every '))})</span>` : ''}</div>`
+          + `<div class="small"><span class="pill ${pill[1]}">${pill[0]}</span>${it.why ? ` <span class="muted">${esc(it.why)}</span>` : ''}</div>`
+          + `<div class="muted small mono">${esc(it.where || '')}${(it.settings || []).length ? ' · ' + it.settings.map(esc).join(', ') : ''}${(it.now || []).length ? ' · rules: ' + it.now.map(esc).join(', ') : ''}</div>`;
+        if ((it.rule === 'yes' || it.rule === 'partly') && st !== 'rule') { const b = document.createElement('button'); b.textContent = it.rule === 'partly' ? 'Make the rule part a rule' : 'Make it a rule';
+          b.title = 'one builder run: it adds what the rule needs, takes the reaction out of the code and puts in rules that do exactly the same, checked with a playtest before and after';
+          b.onclick = () => { if (confirm(`Make “${it.does}” a rule you can change? One builder run moves it out of the code${(it.needs || []).length ? ', adding: ' + it.needs.join('; ') : ''}.`)) this.post({ do: 'convert', item: it.id }, j => j.queued ? 'the builder is busy: it converts this on its next run' : 'the builder is making it a rule; it appears in the rules when done'); };
+          d.appendChild(b); }
+        det.appendChild(d);
+      }
+      box.appendChild(det);
+    }
+    if (!n) box.innerHTML = `<div class="muted small">Nothing built in for this${this.who === '*' ? '' : ' (pick a group, or Everything, to see the rest)'}. Listed ${esc(B.made || '')}.</div>`;
+  },
   drawProposals() {
     const box = el('evProps'); box.innerHTML = '';
     for (const p of (this.S.proposals || []).filter(p => !['added', 'dismissed', 'superseded'].includes(p.state))) {
@@ -128,6 +157,7 @@ const Ev = {
 if (EV_OK) {
 el('evSave').onclick = () => Ev.post({ do: 'save', rules: Ev.rules.map(r => { const c = Object.assign({}, r); delete c.broken; return c; }) }, j => `${j.saved} rule(s) saved; the game uses them next time it starts`);
 el('evFind').oninput = () => Ev.draw();
+el('evCat').onclick = () => { if (confirm(Ev.S.builtin ? 'Ask the builder to list again what the game does built in (one run, no code changed)?' : 'Ask the builder to list everything the game does built in, system by system (one run, no code changed)? It shows here beside your rules.')) Ev.post({ do: 'catalogue' }, j => j.queued ? 'the builder is busy: it lists them on its next run' : 'the builder is listing what the game does built in; it appears here when done'); };
 el('evFind').onkeydown = e => { if (e.key === 'Enter') { const b = el('evWho').querySelector('.evwho:not(.on)') || el('evWho').querySelector('.evwho'); if (b) b.click(); } };
 el('evNew').onclick = () => { const V = Ev.V(), on = V.events.hit ? 'hit' : Object.keys(V.events).sort()[0]; if (!on) return; Ev.rules.push({ id: 'r' + Date.now().toString(36), who: Ev.who, on, if: [], do: [] }); Ev.touch(); Ev.draw(); };
 el('evAskBtn').onclick = () => { const t = el('evAsk').value.trim(); if (!t) { say('describe the rule first', 'err'); return; } Ev.post({ do: 'describe', text: t, about: el('evAskForOn').checked ? Ev.who : '*' }, j => { el('evAsk').value = ''; return j.queued ? 'the art lane is full: your rule is written when a slot frees' : 'the artist is writing the rules; they appear here to add or dismiss'; }); };
