@@ -13,7 +13,7 @@ const Cast = {
     } catch (e) { el('castSub').textContent = 'the cast could not be read: ' + e.message; return; }
     this.draw(); clearTimeout(this.t); if (this.busy()) this.t = setTimeout(() => { if (!el('tab-3d').classList.contains('hidden')) this.refresh(); }, 5000);
   },
-  busy() { const S = this.S; if (!S) return false; return (S.list && S.list.busy) || Object.values(S.items).some(it => it.state === 'making') || this.jobs.some(j => j.kind === 'remodel' && !j.result); },
+  busy() { const S = this.S; if (!S) return false; return (S.list && S.list.busy) || (S.requests || []).some(q => q.state === 'reading') || Object.values(S.items).some(it => it.state === 'making') || this.jobs.some(j => j.kind === 'remodel' && !j.result); },
   items() { return Object.entries(this.S ? this.S.items : {}); },
   draw() {
     const S = this.S, all = this.items(), n = s => all.filter(([, it]) => it.state === s).length, missing = all.filter(([, it]) => it.state === 'none' || it.state === 'failed').length;
@@ -24,17 +24,37 @@ const Cast = {
     el('castMake').textContent = `Make all missing (${missing})`; el('castMake').disabled = !missing;
     const unhooked = all.filter(([, it]) => !it.hooked).length; el('castWire').textContent = S.wired && !unhooked ? 'Wired in' : `Wire into the game${unhooked ? ` (${unhooked})` : ''}`; el('castWire').disabled = !all.length || (S.wired && !unhooked);
     el('castNote').textContent = L && L.result && !L.result.ok ? 'the last listing failed: ' + (L.result.error || '') : '';
+    this.drawRequests();
+    const W = S.waiting || [], wb = el('castWaiting'); wb.classList.toggle('hidden', !W.length);
+    if (W.length) { wb.innerHTML = `<div><b>${W.length} revision${W.length > 1 ? 's' : ''} waiting</b> <span class="muted small">${W.map(esc).join(', ')}: open one below to compare it, or keep them all.</span></div><div class="row"><button class="primary">Keep all ${W.length}</button></div>`;
+      wb.querySelector('button').onclick = () => { if (confirm(`Keep all ${W.length} revisions? Each replaces the model the game has now (git keeps the old ones).`)) this.act({ do: 'keepall' }, j => `${(j.kept || []).length} revision(s) kept; the game loads them next time it starts`); }; }
     const g = el('castGrid'); g.innerHTML = '';
     for (const grp of ['player', 'enemy', 'boss', 'npc', 'prop', 'pickup', 'terrain', 'other']) {
       const rows = all.filter(([, it]) => (it.group || 'other') === grp); if (!rows.length) continue;
       const h = document.createElement('h3'); h.textContent = grp; h.className = 'castgrp'; g.appendChild(h);
       for (const [k, it] of rows) {
         const d = document.createElement('button'); d.className = 'ccard' + (this.open === k ? ' on' : ''); d.type = 'button';
-        d.innerHTML = `<img alt=""><div><div><b class="mono">${esc(k)}</b> <span class="pill s-${esc(it.state)}">${{ kept: 'model', made: 'made', making: 'making…', failed: 'failed', none: 'stand-in' }[it.state] || esc(it.state)}</span>${it.hooked ? ' <span class="pill s-hooked" title="the game asks Models.make for it">in game</span>' : ''}</div><div class="muted small">${esc(it.what || '')}</div><div class="muted small">${+it.size || '?'} units${it.error ? ' · ' + esc(it.error) : ''}</div></div>`;
+        d.innerHTML = `<img alt=""><div><div><b class="mono">${esc(k)}</b> ${W.includes(k) ? '<span class="pill s-made">revision ready</span> ' : ''}<span class="pill s-${esc(it.state)}">${{ kept: 'model', made: 'made', making: 'making…', failed: 'failed', none: 'stand-in' }[it.state] || esc(it.state)}</span>${it.hooked ? ' <span class="pill s-hooked" title="the game asks Models.make for it">in game</span>' : ''}</div><div class="muted small">${esc(it.what || '')}</div><div class="muted small">${+it.size || '?'} units${it.error ? ' · ' + esc(it.error) : ''}</div></div>`;
         const img = d.querySelector('img'); if (it.file) glbThumb(img, ASSET(it.file) + '?v=' + (it.v || ''), 96); else img.style.visibility = 'hidden';
         d.onclick = () => { this.open = this.open === k ? '' : k; this.draw(); };
         g.appendChild(d); if (this.open === k) g.appendChild(this.detail(k, it));
       }
+    }
+  },
+  drawRequests() { // the plain-words requests: the artist's reading of each, to start or cancel
+    const box = el('castReqs'); box.innerHTML = '';
+    for (const q of (this.S.requests || []).filter(q => ['reading', 'planned', 'failed'].includes(q.state) || (q.state === 'started' && Date.now() / 1000 - q.at < 3600))) {
+      const d = document.createElement('div'); d.className = 'creq'; const ch = q.changes || [];
+      d.innerHTML = `<div><b>“${esc(q.text)}”</b></div>` + (q.state === 'reading' ? '<div class="muted small">the artist is working out which models this means…</div>'
+        : q.state === 'failed' ? `<div class="small">not worked out: ${esc(q.error || '')}</div><div class="row"><button data-a="cancel">Dismiss</button></div>`
+        : q.state === 'started' ? `<div class="muted small">started: ${(q.started || []).length} revision(s) (${esc((q.started || []).join(', '))}); each appears on its model below to keep or discard</div>`
+        : `<div class="small">${ch.length ? `${ch.length} model${ch.length > 1 ? 's' : ''} would change. Untick any to leave out:` : 'No kept model matches this.'}</div><ul>${ch.map(c => `<li><label><input type="checkbox" checked data-k="${esc(c.key)}"> <b class="mono">${esc(c.key)}</b>: ${esc(c.change)}</label></li>`).join('')}</ul>${q.unclear ? `<div class="muted small">Not placed: ${esc(q.unclear)}</div>` : ''}<div class="row">${ch.length ? `<button class="primary" data-a="go">Revise ${ch.length} &gt;&gt;</button>` : ''}<button data-a="cancel">Cancel</button></div>`);
+      const go = d.querySelector('[data-a="go"]'), cb = [...d.querySelectorAll('input[data-k]')];
+      if (go) { const upd = () => { const n = cb.filter(x => x.checked).length; go.textContent = `Revise ${n} >>`; go.disabled = !n; }; cb.forEach(x => x.onchange = upd);
+        go.onclick = () => { const keys = cb.filter(x => x.checked).map(x => x.dataset.k), k = this.S.slots || 1; if (keys.length > 3 && !confirm(`Revise ${keys.length} models? ${k} at a time, about ${Math.ceil(keys.length / k) * 2.5} minutes, each a run of the forge's Claude.`)) return;
+          this.act({ do: 'go', id: q.id, keys }, j => `${(j.started || []).length} revision(s) started; each appears on its model to keep or discard`); }; }
+      const cn = d.querySelector('[data-a="cancel"]'); if (cn) cn.onclick = () => this.act({ do: 'cancel', id: q.id }, 'dismissed');
+      box.appendChild(d);
     }
   },
   detail(k, it) {
@@ -78,6 +98,8 @@ const Cast = {
     this.refresh();
   },
 };
+el('castAskBtn').onclick = () => { const t = el('castAsk').value.trim(); if (!t) { say('describe the change first', 'err'); return; }
+  Cast.act({ do: 'request', text: t }, j => { el('castAsk').value = ''; return j.queued ? 'the art lane is full: your request is read when a slot frees' : 'the artist is working out which models you mean; the list appears here to check before anything changes'; }); };
 el('castList').onclick = () => Cast.act({ do: 'list' }, j => j.queued ? 'another sprite job is running: listing the cast is next' : 'the artist is reading the game for its 3D things (a few minutes); the list appears here');
 el('castMake').onclick = () => { const n = Cast.items().filter(([, it]) => it.state === 'none' || it.state === 'failed').length;
   const k = Cast.S.slots || 1; if (!confirm(`Make ${n} model(s)? The artist makes ${k} at a time, about 2 to 3 minutes each (about ${Math.ceil(n / k) * 2.5} minutes in all), each a run of the forge's Claude. Each is kept as it lands; revise any of them afterwards.`)) return;

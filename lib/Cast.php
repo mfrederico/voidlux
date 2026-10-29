@@ -58,7 +58,7 @@ class Cast {
             $out[$k] = $it + ['state' => $state, 'hooked' => in_array($k, $hooks, true)];
         }
         $page = is_file("$dir/index.html") ? (string) file_get_contents("$dir/index.html") : '';
-        return ['items' => (object) $out, 'wired' => str_contains($page, 'kit-models.js'), 'list' => self::listJob($slug), 'three' => self::threeRevision($slug), 'slots' => GameStore::artSlots(), 'working' => (int) (GameStore::artState($slug)['working'] ?? 0)];
+        return ['items' => (object) $out, 'wired' => str_contains($page, 'kit-models.js'), 'list' => self::listJob($slug), 'three' => self::threeRevision($slug), 'slots' => GameStore::artSlots(), 'requests' => self::requests($slug), 'waiting' => array_keys(self::waitingRevisions($slug)), 'working' => (int) (GameStore::artState($slug)['working'] ?? 0)];
     }
     /** The keys the game's code asks Models.make() for. */
     public static function hooks(string $slug): array {
@@ -185,6 +185,75 @@ class Cast {
     }
 
     // ---- revise: one change to a kept model, from its recipe ----
+    // ---- requests: a change described in plain words; the artist works out which models it means and the change for each,
+    //      a person sees that plan and starts it (go), and each model gets its own revision to keep or discard ----
+    private static function requestsFile(string $slug): string { return GameStore::studioDir($slug) . '/cast-requests.json'; }
+    private static function readRequests(string $slug): array { $f = self::requestsFile($slug); return is_file($f) ? (json_decode((string) file_get_contents($f), true) ?: []) : []; }
+    public static function request(string $slug, string $text, int $memberId): array {
+        $text = trim(mb_substr($text, 0, 1200)); if ($text === '') throw new \InvalidArgumentException('describe the change');
+        $c = self::read($slug); $kept = array_filter($c['items'], fn($it) => !empty($it['file'])); if (!$kept) throw new \InvalidArgumentException('no models are kept yet: make them first');
+        $id = date('Ymd-His') . '-' . bin2hex(random_bytes(3)); $dir = GameStore::sketchDir($slug, $id); mkdir($dir, 0775, true);
+        $req = ['id' => $id, 'note' => $text, 'key' => 'cast', 'maker' => 'cast', 'cast' => ['request' => true], 'by' => $memberId, 'at' => time()];
+        GameStore::writeAtomic("$dir/request.json", json_encode($req, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        $r = self::readRequests($slug); array_unshift($r, ['id' => $id, 'text' => $text, 'at' => time(), 'by' => $memberId, 'state' => 'reading']); GameStore::writeAtomic(self::requestsFile($slug), json_encode(array_slice($r, 0, 20), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $p = "3D CAST CHANGE REQUEST. The producer wants to change some of this game's 3D models. Their words: \"{$text}\"\n"
+           . "The models are listed in assets/models.json (each item: what it is, its group, the code its stand-in came from, its colours and note). Read it, and GAME.md if the words need the game's terms. Work out which models the request is about: a named thing is that item; a kind (\"all the trees\", \"the bosses\", \"every enemy\") is every item of that kind; \"everything\" is every item. Only models that are kept (they have a file) can be changed. Do not stretch the request to models it does not mean.\n"
+           . "For each model, write the change as one instruction for that model alone, concrete enough for a modeller who sees only that model (not \"like the others\"; say the colour, the count, the size).\n"
+           . "Write sketches/{$id}/changes.json as {\"changes\": [{\"key\": \"<item key>\", \"change\": \"<the instruction>\"}, …], \"unclear\": \"<what you could not place, or empty>\"} and check it parses with `node -e`. Then sketches/{$id}/result.json as {\"ok\": true, \"files\": [], \"note\": \"<how many models, in one line>\"}. Model nothing and change nothing else. Do not run a soak and do not commit. Reply with one line.";
+        GameStore::emit($slug, 'prompt', ['text' => "3D models: {$text}", 'mode' => 'art', 'by' => GameStore::memberName($memberId), 'job' => $id]);
+        $r2 = GameStore::startArt($slug, $p, $memberId);
+        return ['id' => $id, 'queued' => !empty($r2['queued'])];
+    }
+    /** The recent requests with their plans: reading (the artist is working out the plan), planned (changes to start), started, failed, cancelled. */
+    public static function requests(string $slug): array {
+        $out = []; $keys = self::read($slug)['items'];
+        foreach (self::readRequests($slug) as $q) {
+            if (($q['state'] ?? '') === 'reading') {
+                try { $s = GameStore::sketchStatus($slug, (string) $q['id']); } catch (\InvalidArgumentException $e) { continue; }
+                if (!empty($s['result'])) {
+                    if (empty($s['result']['ok'])) { $q['state'] = 'failed'; $q['error'] = (string) ($s['result']['error'] ?? 'the artist could not place it'); }
+                    else { $j = json_decode((string) @file_get_contents(GameStore::sketchDir($slug, (string) $q['id']) . '/changes.json'), true);
+                        if (!is_array($j) || !is_array($j['changes'] ?? null)) { $q['state'] = 'failed'; $q['error'] = 'the plan (changes.json) is missing or not JSON'; }
+                        else { $q['state'] = 'planned'; $q['unclear'] = trim(mb_substr((string) ($j['unclear'] ?? ''), 0, 400)); $q['changes'] = [];
+                            foreach ($j['changes'] as $ch) { $k = (string) ($ch['key'] ?? ''); $t = trim(mb_substr((string) ($ch['change'] ?? ''), 0, 600)); if ($t !== '' && !empty($keys[$k]['file'])) $q['changes'][] = ['key' => $k, 'change' => $t]; } } }
+                }
+            }
+            $out[] = $q;
+        }
+        return $out;
+    }
+    /** A planned request starts: a revision per model (all of them, or the keys given). */
+    public static function go(string $slug, string $id, array $only, int $memberId): array {
+        return self::locked($slug, function () use ($slug, $id, $only, $memberId) {
+            $all = self::requests($slug); $i = array_search($id, array_column($all, 'id'), true); if ($i === false) throw new \InvalidArgumentException('no such request');
+            $q = $all[$i]; if (($q['state'] ?? '') !== 'planned') throw new \InvalidArgumentException('that request is ' . ($q['state'] ?? '?') . ', not waiting to start');
+            $started = []; foreach ($q['changes'] as $ch) { if ($only && !in_array($ch['key'], $only, true)) continue; self::revise($slug, $ch['key'], $ch['change'], $memberId); $started[] = $ch['key']; }
+            $all[$i]['state'] = 'started'; $all[$i]['started'] = $started; GameStore::writeAtomic(self::requestsFile($slug), json_encode($all, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            return $started;
+        });
+    }
+    public static function cancelRequest(string $slug, string $id): void {
+        self::locked($slug, function () use ($slug, $id) { $all = self::requests($slug); foreach ($all as &$q) if ($q['id'] === $id && in_array($q['state'], ['planned', 'failed'], true)) $q['state'] = 'cancelled'; unset($q);
+            GameStore::writeAtomic(self::requestsFile($slug), json_encode($all, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)); });
+    }
+    /** Every revision that is done and not yet kept or discarded: [key => [id, file]] (the newest per model). */
+    public static function waitingRevisions(string $slug): array {
+        $c = self::read($slug); $out = [];
+        foreach (GameStore::listSketches($slug)['jobs'] as $j) { // newest first
+            if (($j['kind'] ?? '') !== 'remodel' || isset($out[$j['key']]) || empty($j['result']['ok']) || empty($j['result']['files'][0])) continue;
+            if (($c['items'][$j['key']]['kept'] ?? '') === $j['id']) { $out[$j['key']] = null; continue; } // the newest is kept already
+            $out[$j['key']] = ['id' => $j['id'], 'file' => (string) $j['result']['files'][0]];
+        }
+        return array_filter($out);
+    }
+    /** Keeps every waiting revision (or those of the keys given). Returns the keys kept. */
+    public static function keepRevisions(string $slug, array $only): array {
+        $kept = []; $c = self::read($slug);
+        foreach (self::waitingRevisions($slug) as $k => $w) { if ($only && !in_array($k, $only, true)) continue;
+            GameStore::saveSprite($slug, ['key' => $k, 'take' => $w, 'size' => (float) ($c['items'][$k]['size'] ?? 1), 'source' => 'cast']); $kept[] = $k; }
+        return $kept;
+    }
+
     public static function revise(string $slug, string $key, string $note, int $memberId): array {
         $c = self::read($slug); $it = $c['items'][$key] ?? null; if (!$it || empty($it['file'])) throw new \InvalidArgumentException("{$key} has no kept model to revise");
         if (trim($note) === '') throw new \InvalidArgumentException('say what to change');

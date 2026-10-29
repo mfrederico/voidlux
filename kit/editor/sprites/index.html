@@ -36,6 +36,8 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
 .tab.hidden { display: none !important; } .cards2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; } .card2 { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 6px; align-content: start; } .card2.soon { border-style: dashed; } .card2 p { margin: 0; }
 .more { border-top: 1px solid var(--line); padding-top: 10px; }
 /* Move: the stage with the figure large, the panel beside it (under it on a phone), the timeline under the stage */
+.castask { display: grid; gap: 6px; margin: 10px 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); } .castask label { display: grid; gap: 2px; }
+.creq, .castwait { display: grid; gap: 6px; margin: 0 0 10px; padding: 10px; border: 1px dashed var(--accent); border-radius: 10px; } .creq ul { margin: 0; padding-left: 18px; } .creq li { margin: 2px 0; }
 .castgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; } .castgrp { grid-column: 1 / -1; margin: 10px 0 0; text-transform: capitalize; }
 .ccard { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: center; text-align: left; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; font: inherit; cursor: pointer; } .ccard.on { border-color: var(--accent); }
 .ccard img { width: 64px; height: 64px; object-fit: contain; } .pill { display: inline-block; padding: 0 7px; border-radius: 99px; font-size: 12px; border: 1px solid var(--line); }
@@ -209,6 +211,10 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
     <section class="tab panel hidden" id="tab-3d">
       <div class="head"><div><h2>The 3D cast</h2><div class="meta muted small" id="castSub">loading…</div></div><div class="row"><button id="castList">List the 3D things</button><button id="castMake" class="primary" disabled>Make all missing</button><button id="castWire" disabled>Wire into the game</button></div></div>
       <div class="small" id="castNote"></div>
+      <div class="castask"><label for="castAsk"><b>Describe a change to the 3D models</b> <span class="muted small">in your own words: one model (“the hive queen's wings should be see-through”) or many (“all the trees a darker green”, “every enemy a bit bigger”). The artist works out which models you mean and shows you the list before anything changes.</span></label>
+        <textarea id="castAsk" rows="2" placeholder="e.g. the ants should have six legs and darker heads"></textarea><div class="row"><button class="primary" id="castAskBtn">Work out which models &gt;&gt;</button></div></div>
+      <div id="castReqs"></div>
+      <div id="castWaiting" class="castwait hidden"></div>
       <div id="castGrid" class="castgrid"></div>
     </section>
     <section class="tab panel hidden" id="tab-move">
@@ -390,7 +396,7 @@ function drawList() {
   for (const f of files) { const b = document.createElement('button'); b.className = 'slot'; b.innerHTML = `<img class="th" src="${ASSET(f)}" alt=""><span><div class="k">${esc(f)}</div><div class="d">click to add it as a sprite</div></span>`; b.onclick = () => adopt(f); L.appendChild(b); }
 }
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-function jobTitle(j) { const who = j.asset || j.key || 'sprite'; if (j.kind === 'rig') return `skeleton rig of ${who}`; if (j.kind === 'animate') return `${j.cycle || 'motion'} cycle of ${who}`; if (j.kind === 'vector') return `${who} as vector`; if (j.kind === 'model') return `3D model: ${j.key}`; if (j.kind === 'remodel') return `3D model revision: ${j.key}`; if (j.kind === 'cast') return 'the 3D cast (what the game draws in 3D)'; if (j.kind === 'reskin') return `re-skin of ${who}`; if (j.note) return j.note; if (j.kind === 'refine') return `refinement of ${j.key}`; if (j.kind === 'revision') return `revision of ${j.key}`; return j.key || '(no description)'; }
+function jobTitle(j) { const who = j.asset || j.key || 'sprite'; if (j.kind === 'rig') return `skeleton rig of ${who}`; if (j.kind === 'animate') return `${j.cycle || 'motion'} cycle of ${who}`; if (j.kind === 'vector') return `${who} as vector`; if (j.kind === 'model') return `3D model: ${j.key}`; if (j.kind === 'remodel') return `3D model revision: ${j.key}`; if (j.kind === 'cast') return 'the 3D cast (what the game draws in 3D)'; if (j.kind === 'castreq') return `3D change: ${(j.note || '').slice(0, 60)}`; if (j.kind === 'reskin') return `re-skin of ${who}`; if (j.note) return j.note; if (j.kind === 'refine') return `refinement of ${j.key}`; if (j.kind === 'revision') return `revision of ${j.key}`; return j.key || '(no description)'; }
 const takeLabel = (j, i) => `${j.key || 'sprite'} · take ${i + 1}`;
 const artBusy = text => { el('artBusy').classList.add('on'); el('artBusyText').textContent = text || 'the artist is working…'; }, artIdle = () => el('artBusy').classList.remove('on');
 el('q').oninput = drawList;

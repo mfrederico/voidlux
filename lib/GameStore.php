@@ -923,7 +923,7 @@ class GameStore {
     }
     /** A job's kind, its base file (for a rig, an animation or a refinement) and the sprite it started from, from its request. */
     public static function jobFacts(array $req): array {
-        $kind = !empty($req['cast']) ? 'cast' : (!empty($req['model']) ? (!empty($req['model']['from']) ? 'remodel' : 'model') : (!empty($req['reskin']) ? 'reskin' : (!empty($req['rig']) ? 'rig' : (!empty($req['animate']) ? 'animate' : (!empty($req['vector']) ? 'vector' : (!empty($req['refine']) ? 'refine' : (!empty($req['from']) ? 'revision' : 'sketch')))))));
+        $kind = !empty($req['cast']) ? (!empty($req['cast']['request']) ? 'castreq' : 'cast') : (!empty($req['model']) ? (!empty($req['model']['from']) ? 'remodel' : 'model') : (!empty($req['reskin']) ? 'reskin' : (!empty($req['rig']) ? 'rig' : (!empty($req['animate']) ? 'animate' : (!empty($req['vector']) ? 'vector' : (!empty($req['refine']) ? 'refine' : (!empty($req['from']) ? 'revision' : 'sketch')))))));
         $base = $req['model']['ref'] ?? $req['reskin']['skinfile'] ?? $req['rig']['base'] ?? $req['animate']['base'] ?? $req['vector']['base'] ?? (!empty($req['refine']['ext']) ? 'base.' . $req['refine']['ext'] : '');
         return ['kind' => $kind, 'basefile' => (string) $base, 'asset' => (string) ($req['model']['asset'] ?? $req['reskin']['asset'] ?? $req['rig']['asset'] ?? $req['animate']['asset'] ?? $req['vector']['asset'] ?? ''), 'cycle' => (string) ($req['animate']['name'] ?? '')];
     }

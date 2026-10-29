@@ -95,7 +95,7 @@ $slug = $game['slug'];
 </section>
 <div class="vl-lightbox" id="lightbox" onclick="this.classList.remove('on')"><img alt=""><div class="vl-lightbox-cap"></div></div>
 <section class="vl-pane" id="pane-sfx"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>Sound effects. Save writes them into the game; reload the game to hear them.</span><a href="/editor/sfx/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="sfxFrame"></iframe></section>
-<section class="vl-pane" id="pane-sprites"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>Sprites. Save writes the picture into the game's assets and its manifest; the game draws it with Draw.pic. The AI panel asks the builder.</span><a href="/editor/sprites/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="spritesFrame"></iframe></section>
+<section class="vl-pane" id="pane-sprites"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>Sprites. Save writes the picture into the game's assets and its manifest; the game draws it with Draw.pic. The AI panel asks the builder.<?php if (is_file(\app\Cast::path($slug))): ?> The 3D tab holds the game's 3D models: describe a change to them there.<?php endif; ?></span><a href="/editor/sprites/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="spritesFrame"></iframe></section>
 <section class="vl-pane" id="pane-tracker"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>The chip tracker. Press / to load or save a song into the game; name songs after where they play (title, play, boss).</span><a href="/editor/tracker/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="trackerFrame"></iframe></section>
 <section class="vl-pane" id="pane-config"><div class="vl-toolbar"><span>Every tuning number in the game, with its comment. Changes apply when the game reloads.</span><a href="/editor/config/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="configFrame"></iframe></section>
 
@@ -133,6 +133,7 @@ $slug = $game['slug'];
 <script>
 const slug = <?= json_encode($slug) ?>, $ = id => document.getElementById(id);
 let G = <?= json_encode($game, JSON_UNESCAPED_SLASHES) ?>, lastId = 0, loaded = {}, pollT = null;
+const HAS_CAST = <?= json_encode(is_file(\app\Cast::path($slug))) ?>; // a 3D game: its sprites open on the 3D cast
 const EDITOR_V = <?= json_encode(array_combine(['sfx', 'tracker', 'sprites', 'config'], array_map(fn($e) => @filemtime(\app\GameStore::root() . "/kit/editor/{$e}/index.html") ?: 0, ['sfx', 'tracker', 'sprites', 'config']))) ?>;
 const GROUP = { sfx: 'media', tracker: 'media', sprites: 'media', assets: 'media', design: 'advanced', status: 'advanced', config: 'advanced', history: 'advanced' };
 function askBuilder(text) { showTab('build'); const ta = $('chatForm').querySelector('textarea'); ta.value = text; ta.focus(); const i = text.indexOf('…'); if (i >= 0) ta.setSelectionRange(i, i + 1); }
@@ -143,7 +144,7 @@ function showTab(name) {
   for (const p of document.querySelectorAll('.vl-pane')) p.classList.toggle('on', p.id === 'pane-' + name);
   location.hash = name;
   if (name === 'play' && !loaded.play) { loaded.play = 1; $('playFrame').src = `/games/${slug}/`; }
-  if (['sfx', 'tracker', 'sprites', 'config'].includes(name) && !loaded[name]) { loaded[name] = 1; $(name + 'Frame').src = `/editor/${name}/?game=${slug}&v=${EDITOR_V[name] || 0}`; } // v: the editor file's mtime, so a changed editor is never the browser's stale copy
+  if (['sfx', 'tracker', 'sprites', 'config'].includes(name) && !loaded[name]) { loaded[name] = 1; $(name + 'Frame').src = `/editor/${name}/?game=${slug}&v=${EDITOR_V[name] || 0}` + (name === 'sprites' && HAS_CAST ? '#3d' : ''); } // v: the editor file's mtime, so a changed editor is never the browser's stale copy
   if (name === 'design') loadDoc();
   if (name === 'build') { const b = $('stream'); b.scrollTop = b.scrollHeight; }
   if (name === 'notes') loadNotes();

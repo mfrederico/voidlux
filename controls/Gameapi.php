@@ -91,7 +91,7 @@ class Gameapi extends BaseControls\Control {
         if ($lines !== '') file_put_contents($f, $lines, FILE_APPEND | LOCK_EX);
         http_response_code(204); exit;
     }
-    /** The 3D cast (lib/Cast.php): GET its items and states; POST { do: list | make (keys?) | wire | revise (key, note) | edit (key, fields | drop) }. */
+    /** The 3D cast (lib/Cast.php): GET its items and states; POST { do: list | make (keys?) | wire | revise (key, note) | edit (key, fields | drop) | request (text) | go (id, keys?) | cancel (id) | keepall (keys?) }. */
     public function cast($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $slug = (string) $g->slug; $who = (int) $this->member->id;
         try {
@@ -101,8 +101,12 @@ class Gameapi extends BaseControls\Control {
                     case 'make': $out = ['started' => Cast::make($slug, array_values(array_map('strval', (array) ($b['keys'] ?? []))), $who)]; break;
                     case 'wire': $r = Cast::wire($slug, $who); $out = ['queued' => !empty($r['queued'])]; break;
                     case 'revise': $out = Cast::revise($slug, (string) ($b['key'] ?? ''), trim(mb_substr((string) ($b['note'] ?? ''), 0, 600)), $who); break;
+                    case 'request': $out = Cast::request($slug, (string) ($b['text'] ?? ''), $who); break;
+                    case 'go': $out = ['started' => Cast::go($slug, (string) ($b['id'] ?? ''), array_values(array_map('strval', (array) ($b['keys'] ?? []))), $who)]; break;
+                    case 'cancel': Cast::cancelRequest($slug, (string) ($b['id'] ?? '')); break;
+                    case 'keepall': $out = ['kept' => Cast::keepRevisions($slug, array_values(array_map('strval', (array) ($b['keys'] ?? []))))]; break;
                     case 'edit': $out = ['item' => Cast::editItem($slug, (string) ($b['key'] ?? ''), (array) ($b['fields'] ?? []) + (!empty($b['drop']) ? ['drop' => true] : []))]; break;
-                    default: $this->raw(['error' => 'do: list, make, wire, revise or edit'], 400);
+                    default: $this->raw(['error' => 'do: list, make, wire, revise, edit, request, go, cancel or keepall'], 400);
                 }
                 $this->raw($out + Cast::status($slug));
             }
