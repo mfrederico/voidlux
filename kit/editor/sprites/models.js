@@ -4,6 +4,9 @@
 //   Make all missing     a model job per item with no model (one take each, one job at a time); each is kept as it lands
 //   Wire into the game   one builder run hooks every item in through kit/js/kit-models.js; after that a kept model shows up by itself
 //   per item             look at it turning, change what it is or its size, make it again, or revise it with one change
+// a message where the person is looking (the page's own line is at the top, out of sight when they are down at a model)
+function toast(t, cls) { let b = document.getElementById('toast'); if (!b) { b = document.createElement('div'); b.id = 'toast'; b.setAttribute('role', 'status'); document.body.appendChild(b); }
+  b.textContent = t; b.className = 'on ' + (cls || ''); clearTimeout(toast.t); toast.t = setTimeout(() => b.className = '', cls === 'err' ? 9000 : 6000); }
 const Cast = {
   S: null, jobs: [], open: '', focus: '', t: 0, viewT: 0,
   async refresh() {
@@ -26,8 +29,8 @@ const Cast = {
     el('castNote').textContent = L && L.result && !L.result.ok ? 'the last listing failed: ' + (L.result.error || '') : '';
     this.drawRequests(); this.drawHistory();
     const W = S.waiting || [], wb = el('castWaiting'); wb.classList.toggle('hidden', !W.length);
-    if (W.length) { wb.innerHTML = `<div><b>${W.length} revision${W.length > 1 ? 's' : ''} waiting</b> <span class="muted small">${W.map(esc).join(', ')}: open one below to compare it, or keep them all.</span></div><div class="row"><button class="primary">Keep all ${W.length}</button></div>`;
-      wb.querySelector('button').onclick = () => { if (confirm(`Keep all ${W.length} revisions? Each replaces the model the game has now (git keeps the old ones).`)) this.act({ do: 'keepall' }, j => `${(j.kept || []).length} revision(s) kept; the game loads them next time it starts`); }; }
+    if (W.length) { wb.innerHTML = `<div><b>${W.length} revision${W.length > 1 ? 's' : ''} waiting</b> <span class="muted small">${W.map(esc).join(', ')}: open one below to compare it, or use them all.</span></div><div class="row"><button class="primary">Use all ${W.length}</button></div>`;
+      wb.querySelector('button').onclick = () => { if (confirm(`Use all ${W.length} revisions? Each replaces the model the game has now; the old ones stay under Earlier versions on each model.`)) this.act({ do: 'keepall' }, j => `${(j.kept || []).length} revision(s) kept; the game loads them next time it starts`); }; }
     const g = el('castGrid'); g.innerHTML = '';
     for (const grp of ['player', 'enemy', 'boss', 'npc', 'prop', 'pickup', 'terrain', 'other']) {
       const rows = all.filter(([, it]) => (it.group || 'other') === grp); if (!rows.length) continue;
@@ -44,7 +47,7 @@ const Cast = {
   drawHistory() { // every revision, newest first: what was asked, where it stands, and a link to it on its model
     const box = el('castHist'), revs = this.jobs.filter(j => j.kind === 'remodel'), items = this.S.items; box.classList.toggle('hidden', !revs.length); if (!revs.length) return;
     const ago = t => { const s = Date.now() / 1000 - t; return s < 90 ? 'just now' : s < 5400 ? Math.round(s / 60) + ' min ago' : s < 129600 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' d ago'; };
-    const state = j => !j.result ? ['making…', 's-making'] : !j.result.ok ? ['failed', 's-failed'] : items[j.key] && items[j.key].kept === j.id ? ['kept', 's-kept'] : (this.S.waiting || []).includes(j.key) && this.jobs.find(x => x.kind === 'remodel' && x.key === j.key) === j ? ['ready to keep', 's-made'] : ['not kept', ''];
+    const state = j => !j.result ? ['making…', 's-making'] : !j.result.ok ? ['failed', 's-failed'] : items[j.key] && items[j.key].kept === j.id ? ['in use', 's-kept'] : items[j.key] && (items[j.key].history || []).some(e => e.job === j.id) ? ['used before', ''] : (this.S.waiting || []).includes(j.key) && this.jobs.find(x => x.kind === 'remodel' && x.key === j.key) === j ? ['ready to keep', 's-made'] : ['not kept', ''];
     const shown = this.histAll ? revs : revs.slice(0, 8);
     box.innerHTML = `<div class="row"><b>Revision history</b><span class="muted small">${revs.length} revision${revs.length > 1 ? 's' : ''}; click one to see it on its model</span></div><div class="hlist"></div>` + (revs.length > 8 ? `<button class="linkish">${this.histAll ? 'show fewer' : `show all ${revs.length}`}</button>` : '');
     const L = box.querySelector('.hlist');
@@ -80,6 +83,7 @@ const Cast = {
       <div class="muted small">Replaces: <span class="mono">${esc(it.replaces || '?')}</span>${it.moves ? ` · the game animates: ${esc(it.moves)}` : ''}${it.file ? ` · <span class="mono">assets/${esc(it.file)}</span>${it.recipe ? ', with its recipe' : ', no recipe kept (a revision remakes it)'}` : ''}</div>
       ${it.file ? `<label>Change one thing <textarea data-f="rev" rows="2" placeholder="e.g. bigger eyes, antennae curled forward"></textarea></label><div class="row"><button class="primary" data-a="revise">Revise &gt;&gt;</button></div>` : ''}
       <div class="crevs"></div>
+      <div class="cvers"></div>
       <div class="row"><button data-a="make">${it.file ? 'Make it again from scratch' : 'Make it'}</button><button data-a="drop" title="out of the cast; a kept model file stays in assets/">Drop from the cast</button></div></div>`;
     const v = d.querySelector('.cview'), ff = fj && fj.result && fj.result.ok && (fj.result.files || [])[0];
     if (ff) { this.view(v, fj.base + ff); const cap = document.createElement('div'); cap.className = 'muted small'; cap.textContent = `showing the revision “${(fj.note || '').slice(0, 80)}”`; v.after(cap); }
@@ -87,13 +91,21 @@ const Cast = {
     const R = d.querySelector('.crevs');
     for (const j of revs) {
       const r = document.createElement('div'); r.className = 'crev' + (j.id === this.focus ? ' on' : ''); const ok = j.result && j.result.ok && (j.result.files || [])[0], kept = it.kept === j.id;
-      r.innerHTML = `<div class="small"><b>Revision:</b> ${esc(j.note || '')}<div class="muted">${!j.result ? 'the artist is on it…' : !j.result.ok ? 'failed: ' + esc(j.result.error || '') : kept ? 'kept: this is the model now' : esc(j.result.note || '')}</div></div>`;
+      r.innerHTML = `<div class="small"><b>Revision:</b> ${esc(j.note || '')}<div class="muted">${!j.result ? 'the artist is on it…' : !j.result.ok ? 'failed: ' + esc(j.result.error || '') : kept ? '<b>in use</b>: this is the model the game has now' : esc(j.result.note || '')}</div></div>`;
       if (ok && !kept) { const im = document.createElement('img'); glbThumb(im, j.base + ok, 96); im.title = 'see it turning'; im.style.cursor = 'pointer'; im.onclick = () => this.view(v, j.base + ok); r.prepend(im);
-        const b = document.createElement('div'); b.className = 'row'; b.innerHTML = '<button class="primary">Keep it</button><button>Discard</button>'; const [kb, db] = b.querySelectorAll('button');
-        kb.onclick = () => this.post(apiUrl('spritesave'), { key: k, take: { id: j.id, file: ok }, size: +it.size || 1 }, `${k}: the revision is the model now; the game loads it next time it starts`);
+        const b = document.createElement('div'); b.className = 'row'; b.innerHTML = '<button class="primary" title="this revision replaces the model in the game; the one in use now is kept under Earlier versions">Use this model</button><button>Discard</button>'; const [kb, db] = b.querySelectorAll('button');
+        kb.onclick = async () => { kb.disabled = db.disabled = true; kb.textContent = 'Switching…'; this.focus = j.id;
+          await this.post(apiUrl('spritesave'), { key: k, take: { id: j.id, file: ok }, size: +it.size || 1 }, `${k}: this revision is now the model the game uses (it loads it next time it starts). The one it replaced is under Earlier versions.`); };
         db.onclick = () => this.post(apiUrl('sketchdelete'), { id: j.id }, 'revision discarded'); r.appendChild(b); }
       R.appendChild(r);
     }
+    const H = it.history || [], VB = d.querySelector('.cvers');
+    if (H.length) { VB.innerHTML = `<div class="small"><b>Earlier versions</b> <span class="muted">the models ${esc(k)} used before; any can be put back</span></div>`;
+      for (const e of H) { const r = document.createElement('div'); r.className = 'crev'; const when = new Date((e.until || 0) * 1000);
+        r.innerHTML = `<img alt="" title="see it turning" style="cursor:pointer"><div class="small">${esc(e.note || 'an earlier model')}<div class="muted">in use until ${when.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div></div><div class="row"><button>Use this model</button></div>`;
+        const im = r.querySelector('img'), url = `/games/${GAME}/thumbs/${k}-${e.v}.webp`; showStrip(im, url); im.onclick = () => this.view(v, `/games/${GAME}/versions/${k}/${e.v}.glb`);
+        const ub = r.querySelector('button'); ub.onclick = async () => { ub.disabled = true; ub.textContent = 'Switching…'; await this.act({ do: 'use', key: k, v: e.v }, `${k}: the earlier version is back in use; the one it replaced is now under Earlier versions`); };
+        VB.appendChild(r); } }
     const f = n => d.querySelector(`[data-f="${n}"]`);
     d.querySelector('[data-a="save"]').onclick = () => this.act({ do: 'edit', key: k, fields: { what: f('what').value, note: f('note').value, size: +f('size').value } }, 'saved');
     d.querySelector('[data-a="make"]').onclick = () => { if (it.file && !confirm(`Make ${k} again from scratch? When it is done it replaces the model the game has now.`)) return; this.act({ do: 'make', keys: [k] }, `the artist is making ${k}`); };
@@ -109,9 +121,9 @@ const Cast = {
   },
   async act(body, ok) { return this.post(apiUrl('cast'), body, ok); },
   async post(url, body, ok) {
-    try { const r = await fetch(url, { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); say(typeof ok === 'function' ? ok(j) : ok, 'ok'); }
-    catch (e) { say(e.message, 'err'); }
-    this.refresh();
+    try { const r = await fetch(url, { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); const t = typeof ok === 'function' ? ok(j) : ok; say(t, 'ok'); toast(t, 'ok'); }
+    catch (e) { say(e.message, 'err'); toast(e.message, 'err'); }
+    await this.refresh();
   },
 };
 el('castAskBtn').onclick = () => { const t = el('castAsk').value.trim(); if (!t) { say('describe the change first', 'err'); return; }

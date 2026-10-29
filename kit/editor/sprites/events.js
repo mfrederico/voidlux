@@ -91,8 +91,8 @@ const Ev = {
     }
   },
   async post(body, ok) {
-    try { const r = await fetch(apiUrl('events'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); say(typeof ok === 'function' ? ok(j) : ok, 'ok'); if (body.do === 'save') this.dirty = false; }
-    catch (e) { say(e.message, 'err'); return; }
+    try { const r = await fetch(apiUrl('events'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); const t = typeof ok === 'function' ? ok(j) : ok; say(t, 'ok'); toast(t, 'ok'); if (body.do === 'save') this.dirty = false; }
+    catch (e) { say(e.message, 'err'); toast(e.message, 'err'); return; }
     this.refresh(body.do !== 'save' && body.do !== 'add');
   },
 };

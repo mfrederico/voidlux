@@ -170,6 +170,34 @@ class Cast {
         return $did;
     }
 
+    // ---- versions: a model replaced is kept as an earlier version (versions/<key>/<v>.glb with its recipe; not in git's
+    //      working tree and not published), listed in its item's history, and can be put back ----
+    private static function versionDir(string $slug, string $key): string { return GameStore::dir($slug) . "/versions/$key"; }
+    /** The item's current model joins its history, before something replaces it. */
+    public static function archive(string $slug, string $key): void { self::locked($slug, function () use ($slug, $key) {
+        $c = self::read($slug); $it = $c['items'][$key] ?? null; $d = GameStore::dir($slug); if (!$it || empty($it['file']) || empty($it['v']) || !is_file("$d/assets/{$it['file']}")) return;
+        $vd = self::versionDir($slug, $key); if (!is_dir($vd)) mkdir($vd, 0775, true);
+        $gi = "$d/.gitignore"; $have = is_file($gi) ? (string) file_get_contents($gi) : ''; if (!preg_match('#^/?versions/?$#m', $have)) file_put_contents($gi, rtrim($have) . ($have === '' ? '' : "\n") . "versions/\n");
+        copy("$d/assets/{$it['file']}", "$vd/{$it['v']}.glb"); if (is_file("$d/assets/$key.recipe.json")) copy("$d/assets/$key.recipe.json", "$vd/{$it['v']}.recipe.json");
+        $note = ''; if (!empty($it['kept'])) { $rq = json_decode((string) @file_get_contents(GameStore::sketchDir($slug, (string) $it['kept']) . '/request.json'), true) ?: []; $note = !empty($rq['model']['from']) ? (string) ($rq['note'] ?? '') : (!empty($rq['model']['cast']) ? 'the first model, from the batch' : 'made on the Make tab'); }
+        $h = array_values(array_filter((array) ($it['history'] ?? []), fn($e) => ($e['v'] ?? '') !== $it['v']));
+        array_unshift($h, ['v' => $it['v'], 'job' => (string) ($it['kept'] ?? ''), 'note' => mb_substr($note, 0, 200), 'until' => time(), 'recipe' => is_file("$vd/{$it['v']}.recipe.json")]);
+        $c['items'][$key]['history'] = array_slice($h, 0, 20); self::write($slug, $c);
+    }); }
+    /** An earlier version becomes the model again; the one in use joins the history. */
+    public static function useVersion(string $slug, string $key, string $v): array { return self::locked($slug, function () use ($slug, $key, $v) {
+        if (!preg_match('/^[a-f0-9]{6,40}$/', $v)) throw new \InvalidArgumentException('not a version');
+        $it = self::read($slug)['items'][$key] ?? null; if (!$it) throw new \InvalidArgumentException("no {$key} in the cast");
+        $e = null; foreach ((array) ($it['history'] ?? []) as $x) if (($x['v'] ?? '') === $v) $e = $x; $vd = self::versionDir($slug, $key);
+        if (!$e || !is_file("$vd/$v.glb")) throw new \InvalidArgumentException("{$key} has no earlier version {$v}");
+        self::archive($slug, $key); $d = GameStore::dir($slug);
+        copy("$vd/$v.glb", "$d/assets/$key.glb"); $rec = is_file("$vd/$v.recipe.json"); if ($rec) copy("$vd/$v.recipe.json", "$d/assets/$key.recipe.json");
+        GameStore::git($d, ['add', "assets/$key.glb"] + ($rec ? [2 => "assets/$key.recipe.json"] : []));
+        self::kept($slug, $key, "$key.glb", (float) $it['size'], $rec, (string) ($e['job'] ?? ''));
+        $c = self::read($slug); $c['items'][$key]['history'] = array_values(array_filter((array) ($c['items'][$key]['history'] ?? []), fn($x) => ($x['v'] ?? '') !== $v)); self::write($slug, $c);
+        return $c['items'][$key];
+    }); }
+
     // ---- strips: every model's turntable picture, made on the server as the model lands (studio/bin/glb-strip.mjs draws it in
     //      software; GD writes the WebP), so no page renders 3D to show a thumbnail. thumbs/<key>-<v>.webp for a kept model,
     //      thumbs/<job id>-<take>.webp for a take. Not in git, not published. ----

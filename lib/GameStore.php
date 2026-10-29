@@ -501,7 +501,8 @@ class GameStore {
             self::writeAtomic("$dir/$file", rtrim($code) . "\n"); $kind = 'code';
         } elseif (!empty($b['take']) && is_array($b['take'])) { // a take kept as it is, from its job folder (a 3D model: binary glTF)
             $tid = (string) ($b['take']['id'] ?? ''); $tf = basename((string) ($b['take']['file'] ?? '')); $tp = self::sketchDir($slug, $tid) . '/' . $tf;
-            if (!preg_match(self::SKETCH_ID, $tid) || !preg_match(self::TAKE, $tf) && str_ends_with($tf, '.glb') || !is_file($tp) || !self::takeIsSafe($tp)) throw new \InvalidArgumentException('no such model take');
+            if (!preg_match(self::SKETCH_ID, $tid) || !(preg_match(self::TAKE, $tf) && str_ends_with($tf, '.glb')) || !is_file($tp) || !self::takeIsSafe($tp)) throw new \InvalidArgumentException('no such model take');
+            Cast::archive($slug, $key); // the model it replaces stays as an earlier version
             $file = "$key.glb"; copy($tp, "$dir/$file"); $kind = 'model'; $frames = 1; $w = $h = max(1, (int) round((float) ($b['size'] ?? 1) * 100)); // w: the size in hundredths of a world unit
             $rp = preg_replace('/\.glb$/', '.recipe.json', $tp); $hasRecipe = is_file($rp); if ($hasRecipe) { copy($rp, "$dir/$key.recipe.json"); self::git(self::dir($slug), ['add', "assets/$key.recipe.json"]); } // what made it: a revision edits this
             $castKept = [$key, $file, max(0.01, (float) ($b['size'] ?? 1)), $hasRecipe, $tid];
