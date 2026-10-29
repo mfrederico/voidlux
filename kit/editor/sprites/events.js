@@ -2,7 +2,7 @@
 // The producer's rules for how things react: on <event> → if <conditions> → do <actions>, per sprite, per group or for
 // everything. Only what the game declares (assets/events-vocab.json, the builder's) can be chosen; the rules are
 // assets/events.json (lib/Rules.php checks them before they are written; kit/js/kit-events.js runs them).
-const EV_OK = ['evSub', 'evWire', 'evSave', 'evBody', 'evAskBox', 'evAsk', 'evAskBtn', 'evProps', 'evWho', 'evRules', 'evWhoTitle', 'evNew'].every(id => el(id));
+const EV_OK = ['evFind', 'evAskFor', 'evAskForBox', 'evAskForOn', 'evAskForName', 'evSub', 'evWire', 'evSave', 'evBody', 'evAskBox', 'evAsk', 'evAskBtn', 'evProps', 'evWho', 'evRules', 'evWhoTitle', 'evNew'].every(id => el(id));
 if (!EV_OK) { el('fresh').classList.remove('hidden'); el('freshWhy').textContent = '(the Events tab is newer than this copy of the page)'; }
 const Ev = {
   S: null, rules: [], who: '*', dirty: false, t: 0,
@@ -24,10 +24,13 @@ const Ev = {
     el('evBody').classList.toggle('hidden', !S.vocab); el('evAskBox').classList.toggle('hidden', !S.vocab);
     this.drawProposals(); if (!S.vocab) return;
     // who: everything, each group, each subject; with how many rules each has
-    const L = el('evWho'); L.innerHTML = ''; const count = w => this.rules.filter(r => r.who === w).length;
-    const add = (w, label, sub) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'evwho' + (this.who === w ? ' on' : ''); b.innerHTML = `<span>${esc(label)}</span>${sub ? `<span class="muted small">${esc(sub)}</span>` : ''}<span class="pill">${count(w)}</span>`; b.onclick = () => { this.who = w; this.draw(); }; L.appendChild(b); };
+    const L = el('evWho'); L.innerHTML = ''; const count = w => this.rules.filter(r => r.who === w).length, q = el('evFind').value.trim().toLowerCase();
+    const add = (w, label, sub) => { if (q && !(label + ' ' + (sub || '') + ' ' + w).toLowerCase().includes(q) && w !== this.who) return; const b = document.createElement('button'); b.type = 'button'; b.className = 'evwho' + (this.who === w ? ' on' : ''); b.innerHTML = `<span>${esc(label)}</span>${sub ? `<span class="muted small">${esc(sub)}</span>` : ''}<span class="pill">${count(w)}</span>`; b.onclick = () => { this.who = w; this.draw(); }; L.appendChild(b); };
     add('*', 'Everything', 'every kind of thing'); for (const g of this.groups()) add('group:' + g, 'Every ' + g, 'group');
     for (const [k, s] of Object.entries(V.subjects).sort()) add(k, k, s.about || (s.groups || []).join(', '));
+    if (q && !L.querySelector('.evwho:not(.on)')) L.insertAdjacentHTML('beforeend', `<div class="muted small">nothing called “${esc(q)}”</div>`);
+    const label = this.who === '*' ? '' : this.who.startsWith('group:') ? 'every ' + this.who.slice(6) : this.who;
+    el('evAskFor').textContent = label ? ` — about ${label}` : ''; el('evAskForBox').classList.toggle('hidden', !label); el('evAskForName').textContent = label;
     const R = el('evRules'); R.innerHTML = ''; const mine = this.rules.filter(r => r.who === this.who);
     el('evWhoTitle').textContent = this.who === '*' ? 'Rules for everything' : this.who.startsWith('group:') ? `Rules for every ${this.who.slice(6)}` : `Rules for ${this.who}`;
     if (!mine.length) R.innerHTML = '<div class="muted small">No rules here yet. Add one, or describe what you want above and the artist writes it.</div>';
@@ -124,8 +127,10 @@ const Ev = {
 };
 if (EV_OK) {
 el('evSave').onclick = () => Ev.post({ do: 'save', rules: Ev.rules.map(r => { const c = Object.assign({}, r); delete c.broken; return c; }) }, j => `${j.saved} rule(s) saved; the game uses them next time it starts`);
+el('evFind').oninput = () => Ev.draw();
+el('evFind').onkeydown = e => { if (e.key === 'Enter') { const b = el('evWho').querySelector('.evwho:not(.on)') || el('evWho').querySelector('.evwho'); if (b) b.click(); } };
 el('evNew').onclick = () => { const V = Ev.V(), on = V.events.hit ? 'hit' : Object.keys(V.events).sort()[0]; if (!on) return; Ev.rules.push({ id: 'r' + Date.now().toString(36), who: Ev.who, on, if: [], do: [] }); Ev.touch(); Ev.draw(); };
-el('evAskBtn').onclick = () => { const t = el('evAsk').value.trim(); if (!t) { say('describe the rule first', 'err'); return; } Ev.post({ do: 'describe', text: t }, j => { el('evAsk').value = ''; return j.queued ? 'the art lane is full: your rule is written when a slot frees' : 'the artist is writing the rules; they appear here to add or dismiss'; }); };
+el('evAskBtn').onclick = () => { const t = el('evAsk').value.trim(); if (!t) { say('describe the rule first', 'err'); return; } Ev.post({ do: 'describe', text: t, about: el('evAskForOn').checked ? Ev.who : '*' }, j => { el('evAsk').value = ''; return j.queued ? 'the art lane is full: your rule is written when a slot frees' : 'the artist is writing the rules; they appear here to add or dismiss'; }); };
 el('evWire').onclick = () => { const extra = Ev.S.vocab ? prompt('What should the game be able to react to or do that it cannot yet? (blank: just bring the events up to date with the game)', '') : ''; if (extra === null) return;
   if (!Ev.S.vocab && !confirm('Ask the builder to wire events into the game (one run)? It declares what can happen and what the game can do, emits the events, and moves reactions that are fixed in code today into rules you can edit, checking with a playtest before and after.')) return;
   Ev.post({ do: 'wire', extra }, j => j.queued ? 'the builder is busy: wiring events is its next run' : 'the builder is wiring events in; watch it on the game page\'s Build tab'); };

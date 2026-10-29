@@ -92,14 +92,17 @@ class Rules {
 
     // ---- rules from words ----
     private static function propFile(string $slug): string { return GameStore::studioDir($slug) . '/rule-requests.json'; }
-    public static function describe(string $slug, string $text, int $memberId, string $extra = '', string $after = ''): array {
+    public static function describe(string $slug, string $text, int $memberId, string $extra = '', string $after = '', string $about = ''): array {
         $text = trim(mb_substr($text, 0, 1200)); if ($text === '') throw new \InvalidArgumentException('describe the rule');
-        if (!self::vocab($slug)) throw new \InvalidArgumentException('the game declares no events yet: wire events into the game first');
+        $v = self::vocab($slug); if (!$v) throw new \InvalidArgumentException('the game declares no events yet: wire events into the game first');
+        if ($about === '*') $about = ''; // "everything" is no context
+        if ($about !== '' && !(isset($v['subjects'][$about]) || (str_starts_with($about, 'group:') && array_filter($v['subjects'], fn($s) => in_array(substr($about, 6), (array) ($s['groups'] ?? []), true))))) throw new \InvalidArgumentException("\"{$about}\" is not a subject or group the game has");
         $id = date('Ymd-His') . '-' . bin2hex(random_bytes(3)); $dir = GameStore::sketchDir($slug, $id); mkdir($dir, 0775, true);
         GameStore::writeAtomic("$dir/request.json", json_encode(['id' => $id, 'note' => $text, 'key' => 'rules', 'maker' => 'rules', 'rules' => true, 'by' => $memberId, 'at' => time()], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
         $all = is_file(self::propFile($slug)) ? (json_decode((string) file_get_contents(self::propFile($slug)), true) ?: []) : [];
-        array_unshift($all, ['id' => $id, 'text' => $text, 'at' => time(), 'state' => 'reading'] + ($after !== '' ? ['after' => $after] : [])); GameStore::writeAtomic(self::propFile($slug), json_encode(array_slice($all, 0, 20), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        array_unshift($all, ['id' => $id, 'text' => $text, 'at' => time(), 'state' => 'reading'] + ($after !== '' ? ['after' => $after] : []) + ($about !== '' ? ['about' => $about] : [])); GameStore::writeAtomic(self::propFile($slug), json_encode(array_slice($all, 0, 20), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         $p = "EVENT RULES FROM WORDS. The producer describes a concept, how things in this game should behave, in their words: \"{$text}\"\n" . ($extra !== '' ? "{$extra}\n" : '')
+           . ($about !== '' ? "They wrote it with " . (str_starts_with($about, 'group:') ? 'the group \"' . substr($about, 6) . '\" (every ' . substr($about, 6) . ')' : "\"{$about}\" ({$v['subjects'][$about]['about']})") . " selected in the editor: what they say happens to \"it\", \"this\" or to no one in particular happens to that, so the rules' who is \"{$about}\" unless their words clearly name something else.\n" : '')
            . "Read ../../kit/js/kit-events.js (its header is the whole rule format), assets/events-vocab.json (the only events, fields, states, targets, actions, settings and subjects there are) and assets/events.json (the rules there already, so yours fit beside them and do not repeat them). Turn the concept into rules, using everything the format offers: conditions on the event's fields, on the game's state (\"state\") and on counters (\"count\", on self or game); actions on the thing itself or, with \"to\", on what a target finds (nearby things, the player, the source…, filtered with who); the built-in Count and SetCount for anything that must be counted or remembered (\"the third time\", \"only 3 times a game\", \"until it is hit again\"); delay for \"after a while\"; max, once, cooldown and chance for \"at most\", \"only the first time\", \"not more than every\" and \"sometimes\"; emit for chains of reactions.\n"
            . "A rule only fires if the game really emits its event for that subject, so CHECK IN THE CODE: for each subject and event your rules use, follow where that thing is created and where it ends or is hit (grep Events.emit and the game's emit helpers, e.g. EV.die / EV.hit in js/events.js) and confirm the event is sent on every way it can happen (a thing removed by setting dead itself, not through the usual kill, sends no die). If it is not sent, that is a missing piece of kind \"emit\": say where it must be emitted.\n"
            . "If the concept needs something the vocabulary does not have, do not invent it and do not bend another one to fit: list it under \"missing\", each as an exact piece for the builder to add: {\"kind\": \"action\" | \"state\" | \"target\" | \"field\" | \"event\" | \"emit\" | \"subject\", \"name\": \"<the name a rule would use>\", \"what\": \"<what it does or reads, its settings and defaults, in one or two sentences>\"}. Then still write the rules as they will be once those pieces exist (they are checked again after the builder adds them).\n"
@@ -156,7 +159,7 @@ class Rules {
         foreach ($all as $i => $p) {
             if (($p['state'] ?? '') !== 'building' || str_contains($queued, "[for the rules request {$p['id']}]")) continue;
             $all[$i]['state'] = 'superseded'; self::saveProps($slug, $all);
-            $n = self::describe($slug, (string) $p['text'], $memberId, 'The builder has just added what an earlier reading of this concept found missing; use it.', (string) $p['id']); $did[] = $n['id'];
+            $n = self::describe($slug, (string) $p['text'], $memberId, 'The builder has just added what an earlier reading of this concept found missing; use it.', (string) $p['id'], (string) ($p['about'] ?? '')); $did[] = $n['id'];
             $all = json_decode((string) @file_get_contents(self::propFile($slug)), true) ?: [];
         }
         return $did;
