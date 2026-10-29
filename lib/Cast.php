@@ -154,7 +154,7 @@ class Cast {
         $did = [];
         if (($l = self::listJob($slug)) && !$l['busy'] && !empty($l['result']['ok'])) {
             $mark = GameStore::studioDir($slug) . '/cast-list.json'; $m = json_decode((string) file_get_contents($mark), true) ?: [];
-            if (empty($m['adopted'])) { $added = self::adoptList($slug, $l['id']); $m['adopted'] = time(); GameStore::writeAtomic($mark, json_encode($m)); $did[] = 'cast: ' . count($added) . ' item(s) added'; GameStore::emit($slug, 'note', ['text' => 'the 3D cast: ' . count($added) . ' item(s) added' . ($added ? ': ' . implode(', ', $added) : '')]); }
+            if (empty($m['adopted'])) { $added = self::adoptList($slug, $l['id']); $m['adopted'] = time(); GameStore::writeAtomic($mark, json_encode($m)); $did[] = 'cast: ' . count($added) . ' item(s) added'; GameStore::activity($slug, 'forge', '3D cast listed: ' . count($added) . ' new item(s) in assets/models.json'); GameStore::emit($slug, 'note', ['text' => 'the 3D cast: ' . count($added) . ' item(s) added' . ($added ? ': ' . implode(', ', $added) : '')]); }
         }
         $c = self::read($slug);
         foreach ($c['items'] as $k => $it) {
@@ -164,7 +164,7 @@ class Cast {
             if (($req['model']['cast'] ?? '') !== $k || empty($s['result'])) continue; // a revision is kept by a person; a job still running waits
             if (empty($s['result']['ok']) || empty($s['result']['files'])) continue; // failed: status() shows its error, make() retries it
             $take = (string) $s['result']['files'][0]; if (!str_ends_with($take, '.glb')) continue;
-            try { GameStore::saveSprite($slug, ['key' => $k, 'take' => ['id' => $job, 'file' => $take], 'size' => (float) $it['size'], 'source' => 'cast']); $did[] = "kept {$k}"; }
+            try { GameStore::saveSprite($slug, ['key' => $k, 'take' => ['id' => $job, 'file' => $take], 'size' => (float) $it['size'], 'source' => 'cast']); $did[] = "kept {$k}"; GameStore::activity($slug, 'forge', "kept the new 3D model for {$k} (job {$job}): assets/{$k}.glb"); }
             catch (\Throwable $e) { $c = self::read($slug); $c['items'][$k]['error'] = 'not kept: ' . $e->getMessage(); self::write($slug, $c); error_log("ERROR cast {$slug}/{$k}: " . $e->getMessage()); }
         }
         return $did;

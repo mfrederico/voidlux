@@ -646,6 +646,20 @@ class GameStore {
             return $n;
         });
     }
+    /** The activity log: one line for everything that changes a game, whoever did it (builder runs, art jobs, the producer
+     *  in the editors), in .studio/activity.jsonl. Every builder run is told what the others did since its last run, and a
+     *  fresh session's handoff carries the latest; so each agent knows what is going on without reading the others' talk. */
+    public static function activity(string $slug, string $who, string $text): void {
+        $text = trim(preg_replace('/\s+/', ' ', $text)); if ($text === '') return;
+        file_put_contents(self::studioDir($slug) . '/activity.jsonl', json_encode(['at' => time(), 'who' => mb_substr($who, 0, 40), 'text' => mb_substr($text, 0, 400)], JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
+    }
+    /** Activity since a time (newest last), leaving out $notWho's own lines; at most $max. */
+    public static function activitySince(string $slug, int $since, string $notWho = '', int $max = 25): array {
+        $f = self::studioDir($slug) . '/activity.jsonl'; if (!is_file($f)) return [];
+        $out = []; foreach (explode("\n", (string) shell_exec('tail -n 400 ' . escapeshellarg($f))) as $l) { $j = json_decode($l, true); if (is_array($j) && (int) $j['at'] > $since && ($notWho === '' || $j['who'] !== $notWho)) $out[] = $j; }
+        return array_slice($out, -$max);
+    }
+    public static function activityLines(array $rows): string { return implode("\n", array_map(fn($j) => '- ' . date('M j H:i', (int) $j['at']) . ' ' . $j['who'] . ': ' . $j['text'], $rows)); }
     /** Where the game stands, for a builder starting a fresh session: built from the game's own record, not from the old
      *  conversation (asking that would cost one more turn at its full size). */
     public static function handoff(string $slug): string {
@@ -662,6 +676,7 @@ class GameStore {
         foreach (array_slice($runs, -3) as $j) $out[] = 'A recent run ended (' . date('Y-m-d H:i', (int) $j['t']) . ') saying: ' . mb_substr(trim((string) $j['text']), 0, 900);
         $sk = glob(self::studioDir($slug) . '/soaks/*.json') ?: []; rsort($sk);
         if ($sk) { $s = json_decode((string) file_get_contents($sk[0]), true) ?: []; $fails = array_map(fn($c) => $c['what'] ?? '?', (array) ($s['checks'] ?? [])); $out[] = 'The last playtest (' . basename($sk[0], '.json') . '): ' . (!empty($s['ok']) ? 'ok' : 'NOT ok') . ($fails ? '; failing: ' . implode('; ', $fails) : '') . (!empty($s['errors']) ? '; ' . count((array) $s['errors']) . ' error(s)' : ''); }
+        $act = self::activitySince($slug, time() - 3 * 86400, '', 20); if ($act) $out[] = "The activity log, latest (everything that changed the game, by whom):\n" . self::activityLines($act);
         $n = count(self::peekNotes($slug)); if ($n) $out[] = "{$n} producer note(s) are queued; they come with this run if it is the one that takes them.";
         return implode("\n\n", $out);
     }

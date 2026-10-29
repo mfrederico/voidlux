@@ -56,7 +56,7 @@ class Gameapi extends BaseControls\Control {
     }
     public function spritesave($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; if (!$this->post()) { $this->raw(['error' => 'POST'], 405); }
-        try { $e = GameStore::saveSprite($g->slug, $this->getJsonInput() ?? []); GameStore::emit($g->slug, 'note', ['text' => 'sprite saved by ' . ($this->member->username ?: $this->member->email) . ': assets/' . $e['file']]); $this->raw(['ok' => true, 'sprite' => $e] + GameStore::readSprites($g->slug)); }
+        try { $in = $this->getJsonInput() ?? []; $e = GameStore::saveSprite($g->slug, $in); GameStore::activity($g->slug, (string) ($this->member->username ?: $this->member->email), (($e['kind'] ?? '') === 'model' ? 'used a new 3D model for ' : 'saved the sprite ') . ($in['key'] ?? '?') . (!empty($in['take']['id']) ? ' (from job ' . $in['take']['id'] . ')' : '') . ': assets/' . $e['file']); GameStore::emit($g->slug, 'note', ['text' => 'sprite saved by ' . ($this->member->username ?: $this->member->email) . ': assets/' . $e['file']]); $this->raw(['ok' => true, 'sprite' => $e] + GameStore::readSprites($g->slug)); }
         catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
     }
     public function spritedelete($params = []): void {
@@ -121,6 +121,8 @@ class Gameapi extends BaseControls\Control {
                     case 'ask': $r = Rules::askFor($slug, (string) ($b['what'] ?? ''), $who); $out = ['queued' => !empty($r['queued'])]; break;
                     default: $this->raw(['error' => 'do: save, describe, add, dismiss, wire or ask'], 400);
                 }
+                $what = ['save' => 'saved the event rules (' . ($out['saved'] ?? 0) . ' rules)', 'describe' => 'asked for event rules: ' . ($b['text'] ?? ''), 'add' => 'added event rules ' . implode(', ', (array) ($out['added'] ?? [])), 'wire' => 'asked the builder to wire events in' . (!empty($b['extra']) ? ': ' . $b['extra'] : ''), 'ask' => 'asked the builder for a new event action: ' . ($b['what'] ?? '')][(string) ($b['do'] ?? '')] ?? '';
+                if ($what !== '') GameStore::activity($slug, (string) ($this->member->username ?: $this->member->email), $what);
                 $this->raw($out + Rules::status($slug));
             }
             $this->raw(Rules::status($slug));
@@ -145,6 +147,8 @@ class Gameapi extends BaseControls\Control {
                     case 'edit': $out = ['item' => Cast::editItem($slug, (string) ($b['key'] ?? ''), (array) ($b['fields'] ?? []) + (!empty($b['drop']) ? ['drop' => true] : []))]; break;
                     default: $this->raw(['error' => 'do: list, make, wire, revise, edit, request, go, cancel, keepall or use'], 400);
                 }
+                $what = ['list' => 'asked the artist to list the 3D cast', 'make' => 'started model jobs for: ' . implode(', ', (array) ($out['started'] ?? [])), 'wire' => 'asked the builder to wire the 3D cast in', 'revise' => 'asked for a revision of ' . ($b['key'] ?? '') . ': ' . ($b['note'] ?? ''), 'edit' => (!empty($b['drop']) ? 'dropped ' : 'edited ') . ($b['key'] ?? '') . ' in the 3D cast', 'request' => 'asked for a change to the 3D models: ' . ($b['text'] ?? ''), 'go' => 'started revisions of: ' . implode(', ', (array) ($out['started'] ?? [])), 'keepall' => 'used the revisions of: ' . implode(', ', (array) ($out['kept'] ?? [])), 'use' => 'put an earlier version of ' . ($b['key'] ?? '') . ' back in use'][(string) ($b['do'] ?? '')] ?? '';
+                if ($what !== '') GameStore::activity($slug, (string) ($this->member->username ?: $this->member->email), $what);
                 $this->raw($out + Cast::status($slug));
             }
             $this->raw(Cast::status($slug));

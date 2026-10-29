@@ -80,6 +80,11 @@ class GameAgent {
             $this->emit('note', ['text' => 'the builder\'s conversation is ' . round(((int) $this->state['context']) / 1000) . 'k tokens (over ' . round($max / 1000) . "k): this run starts a fresh session with a handoff from the game's own record"]);
             $prompt = GameStore::handoff($this->slug) . "\n\n---\nTHE TASK:\n" . $prompt; $sid = null; $resume = false; $this->state['session'] = null; $this->state['context'] = 0; $this->save();
         }
+        if ($this->lane === 'build') { // what the other lanes and the producer did since this builder's last run
+            $news = GameStore::activitySince($this->slug, (int) ($this->state['seenAt'] ?? (time() - 86400)), 'builder', 25);
+            if ($news) $prompt = "SINCE YOUR LAST RUN (the forge's activity log; take it into account, the files are the truth):\n" . GameStore::activityLines($news) . "\n\n---\n" . $prompt;
+            $this->state['seenAt'] = time(); $this->save();
+        }
         $jail = (string) GameStore::cfg('jail', '0') === '1' && is_executable('/usr/bin/bwrap');
         $cmd = [$bin, '-p', $prompt, '--output-format', 'stream-json', '--verbose', '--max-turns', (string) ($maxTurns ?: (int) GameStore::cfg('max_turns', 60))];
         // Jailed ([forge] jail = 1): bubblewrap is the boundary (studio/jail.sh: the OS read-only, only this game writable, nothing
@@ -153,6 +158,8 @@ class GameAgent {
             if ($missing) foreach ($this->pendingNotes as $i => $n) if (!isset($ans[$i + 1])) GameStore::queueNote($this->slug, $n['text'], $n['tries'] + 1); // back in the queue, one try spent
             $this->pendingNotes = []; }
         $this->state['runs'] = ($this->state['runs'] ?? 0) + 1; $this->state['cost'] = ($this->state['cost'] ?? 0) + $result['cost']; $this->save();
+        if (!$this->stop) { $first = trim((string) $result['text']); $first = mb_substr(preg_replace('/\s+/', ' ', preg_replace('/[*`#]/', '', $first)), 0, 300);
+            GameStore::activity($this->slug, $this->lane === 'art' ? 'artist' : 'builder', ($label !== '' && $label !== 'art' ? "{$label}: " : '') . ($result['ok'] ? '' : 'FAILED: ') . ($first !== '' ? $first : '(no answer)')); }
         $this->emit('done', ['ok' => $result['ok'], 'cost' => round($result['cost'], 4), 'turns' => $result['turns'], 'text' => mb_substr((string) $result['text'], 0, 2000), 'label' => $label]);
         return $result;
     }
