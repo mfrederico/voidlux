@@ -107,10 +107,12 @@ const Ev = {
   drawBestiary() { // the creature's resistances and stats (js/bestiary.js), when the vocabulary says which rows are its: own row first, then its family's
     const box = el('evBest'), B = this.S.bestiary, s = this.V().subjects[this.who], rows = s && s.bestiary; box.innerHTML = ''; box.classList.toggle('hidden', !B || !rows || !rows.length); if (!B || !rows || !rows.length) return;
     const R = B.resist || {}, S = B.stats || {}, EL = ['fire', 'poison', 'ice', 'electric'], word = v => v === 0 ? 'immune' : v < 1 ? 'resists' : v > 1 ? 'weak' : 'normal';
-    const cells = EL.map(x => { const from = rows.find(r => R[r] && R[r][x] != null), v = from ? R[from][x] : 1; return `<td><b>${v}×</b> <span class="muted">${word(v)}</span><div class="muted small">${from ? esc(from) : 'default'}</div></td>`; }).join('');
+    const fam = rows.filter(r => r.startsWith('family-')), own = rows.filter(r => !r.startsWith('family-')); // one thing may cover several variants (a snake: snake, bone, python…): a line each
+    const line = chain => EL.map(x => { const from = chain.find(r => R[r] && R[r][x] != null), v = from ? R[from][x] : 1; return `<td><b>${v}×</b> <span class="muted">${word(v)}</span><div class="muted small">${from ? esc(from) : 'default'}</div></td>`; }).join('');
+    const cells = own.length > 1 ? own.map(o => `<tr><th>${esc(o)}</th>${line([o, ...fam])}</tr>`).join('') : `<tr>${line(rows)}</tr>`;
     const st = rows.map(r => S[r] ? Object.entries(S[r]).map(([k, v]) => `${k} ${v}`).join(', ') : '').filter(Boolean).join(' · ');
     const note = rows.map(r => R[r] && R[r].note).find(Boolean);
-    box.innerHTML = `<h3 style="margin:18px 0 6px">Resistances and stats</h3><table class="evres"><tr>${EL.map(x => `<th>${x}</th>`).join('')}</tr><tr>${cells}</tr></table>`
+    box.innerHTML = `<h3 style="margin:18px 0 6px">Resistances and stats</h3><table class="evres"><tr>${own.length > 1 ? '<th></th>' : ''}${EL.map(x => `<th>${x}</th>`).join('')}</tr>${cells}</table>`
       + `<div class="small">${note ? esc(note) + ' · ' : ''}${st ? 'stats: ' + esc(st) : 'stats as the game has them'} · <a href="/game/view/${encodeURIComponent(GAME)}#bestiary" target="_top">edit in the Bestiary</a></div><div class="muted small">damage from an element is multiplied by this (0 immune, 2 very weak); the level's own row adds on top.</div>`;
   },
   drawBuiltin() { // what the game does in code for the thing picked (the catalogue, assets/events-builtin.json): read-only, each can become a rule
