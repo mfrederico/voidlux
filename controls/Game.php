@@ -79,6 +79,24 @@ class Game extends BaseControls\Control {
         $ok = GameStore::claimSoak($g->slug, (string) ($this->body()['id'] ?? '')); $this->jsonSuccess(['claimed' => $ok], $ok ? 'Yours.' : 'Someone else took it.');
     }
     /** A screenshot the builder asked for: the page claims it, then posts the PNG. */
+    /** A game's own editor page (games/<slug>/editor/<e>/index.html, written for the original game's dev server), served in the
+     *  forge: its folder as the base, and its /api/<e> calls sent to the forge's /gameapi/<e>/<slug> with the CSRF token. Only
+     *  the editors the forge has an endpoint for. */
+    public const GAME_EDITORS = ['bestiary'];
+    public function gameeditor($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params, false)) return;
+        $e = (string) $this->getParam('e', ''); if (!in_array($e, self::GAME_EDITORS, true)) { Flight::notFound(); return; }
+        $page = GameStore::dir((string) $g->slug) . "/editor/{$e}/index.html"; if (!is_file($page)) { Flight::notFound(); return; }
+        $slug = (string) $g->slug; $html = (string) file_get_contents($page);
+        $shim = '<base href="/games/' . $slug . '/editor/' . $e . '/"><script>/* the forge: this editor\'s /api/' . $e . ' is the forge\'s /gameapi/' . $e . '/' . $slug . ' */'
+              . '(() => { const real = window.fetch.bind(window), api = "/api/' . $e . '", to = "/gameapi/' . $e . '/' . $slug . '"; let tok = null;'
+              . ' const token = async () => tok || (tok = (await (await real("/gameapi/token/' . $slug . '", { headers: { "X-Requested-With": "XMLHttpRequest" }, cache: "no-store" })).json()).token);'
+              . ' window.fetch = async (u, o) => { const s = typeof u === "string" ? u : (u && u.url) || ""; if (!s.startsWith(api)) return real(u, o); o = Object.assign({}, o || {}); o.headers = Object.assign({ "X-Requested-With": "XMLHttpRequest" }, o.headers || {});'
+              . ' if ((o.method || "GET").toUpperCase() !== "GET") o.headers["X-CSRF-TOKEN"] = await token(); return real(to + s.slice(api.length), o); }; })();</script>'
+              . '<script src="/kit/editor/ux.js"></script>';
+        $n = 0; $html = preg_replace('/<head(\s[^>]*)?>/i', '$0' . $shim, $html, 1, $n); if (!$n) { http_response_code(500); echo "games/{$slug}/editor/{$e}/index.html has no <head>"; return; }
+        header('Content-Type: text/html; charset=utf-8'); header('Cache-Control: no-store'); echo $html;
+    }
     /** The page a screenshot is taken of: the game's own index.html, with its folder as the base and kit/js/kit-shot.js first,
      *  so its frames keep coming while the producer's tab is hidden (a browser stops them there and the shot came back blank). */
     public function shotframe($params = []): void {

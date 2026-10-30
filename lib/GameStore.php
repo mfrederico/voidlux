@@ -1026,6 +1026,51 @@ class GameStore {
         $designed = array_keys(self::readSfx($slug)); sort($designed);
         return ['sounds' => $out, 'designed' => $designed, 'themes' => $themes];
     }
+    // ---- the bestiary: a game's creature data (js/bestiary.js: resistances per element and stat overrides), edited in the game's
+    //      own bestiary editor (games/<slug>/editor/bestiary/, served by Game::gameeditor). Read and written exactly as the
+    //      original Centipede dev server did (tools/devserver.py): the same checks, the same file, one row per line. ----
+    public const BESTIARY_ELEMENTS = ['fire', 'poison', 'ice', 'electric'];
+    public const BESTIARY_STATS = ['speed' => [0, 1000], 'speedR' => [0, 100], 'cd' => [0.1, 30], 'range' => [0, 2000], 'shotSpeed' => [50, 2000], 'hold' => [0, 30], 'tempo' => [0.25, 4], 'spawn' => [0, 5]];
+    public static function readBestiary(string $slug): array {
+        $p = self::dir($slug) . '/js/bestiary.js'; if (!is_file($p)) return [];
+        $src = (string) file_get_contents($p); $i = strpos($src, 'const BESTIARY = '); if ($i === false) return [];
+        $j = json_decode(rtrim(rtrim(substr($src, $i + 17)), ';'), true);
+        if (!is_array($j)) throw new \RuntimeException("js/bestiary.js in {$slug} is not the bestiary's JSON: fix it by hand or in the editor");
+        return $j;
+    }
+    public static function saveBestiary(string $slug, array $data): int {
+        $num = fn($v) => is_int($v) || is_float($v);
+        $tidy = fn($v, int $dp) => (is_int($v) || floor($v) == $v && abs($v) < 1e15) && round($v, $dp) == (int) $v ? (int) $v : round($v, $dp); // 1 stays 1, as Python's round keeps an int
+        if (!is_array($data['resist'] ?? null)) throw new \InvalidArgumentException('expected { resist: { ... } }');
+        $clean = [];
+        foreach ($data['resist'] as $rid => $row) {
+            if (!preg_match('/^[a-z]+-[a-z0-9]+$/', (string) $rid) || !is_array($row)) throw new \InvalidArgumentException("bad row: {$rid}");
+            $out = [];
+            foreach (self::BESTIARY_ELEMENTS as $el) { $v = $row[$el] ?? null; if ($v !== null && (!$num($v) || $v < 0 || $v > 5)) throw new \InvalidArgumentException("{$rid}.{$el}: " . json_encode($v) . ' is not a number from 0 to 5'); $out[$el] = $v === null ? null : $tidy($v, 2); }
+            $note = trim((string) ($row['note'] ?? '')); if ($note !== '') $out['note'] = mb_substr($note, 0, 300);
+            $clean[$rid] = $out;
+        }
+        $stats = [];
+        foreach ((array) ($data['stats'] ?? []) as $rid => $row) {
+            if (!preg_match('/^[a-z]+-[a-z0-9]+$/', (string) $rid) || !is_array($row)) throw new \InvalidArgumentException("bad row: {$rid}");
+            $out = [];
+            foreach ($row as $f => $v) { if ($v === null) continue; if (!isset(self::BESTIARY_STATS[$f])) throw new \InvalidArgumentException("{$rid}: unknown stat {$f}"); [$lo, $hi] = self::BESTIARY_STATS[$f];
+                if (!$num($v) || $v < $lo || $v > $hi) throw new \InvalidArgumentException("{$rid}.{$f}: " . json_encode($v) . " is outside {$lo} to {$hi}"); $out[$f] = $tidy($v, 3); }
+            if ($out) $stats[$rid] = $out;
+        }
+        $obj = fn(array $a) => '{' . implode(', ', array_map(fn($k) => json_encode((string) $k) . ': ' . json_encode($a[$k], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION), array_keys($a))) . '}'; // Python's json.dumps spacing
+        $section = function (array $rows) use ($obj) { ksort($rows, SORT_STRING); return implode(",\n", array_map(fn($k) => '    ' . json_encode((string) $k) . ': ' . $obj($rows[$k]), array_keys($rows))); };
+        $head = "// Creature data, edited in the bestiary editor (the forge's Media → Bestiary; tools/devserver.py outside the forge).\n"
+              . "// resist: per row (a family default or one creature), a multiplier per element: 0 immune, 0.5 suppressed, 1 normal,\n"
+              . "// 1.5 weak, 2 very weak (any value from 0 to 5); null = use the family default.\n"
+              . "// stats: per creature, only what differs from js/config.js: move speed (px/s) + speedR per region, cd (s between\n"
+              . "// attacks), range (px), shotSpeed (px/s), hold (a parasite's s jammed), tempo (a boss: x every ability cooldown),\n"
+              . "// spawn (x how often it appears: 0 never, 1 as the game has it).\n"
+              . "// The editor rewrites this file on every save.\n";
+        self::writeAtomic(self::dir($slug) . '/js/bestiary.js', $head . "const BESTIARY = {\n  \"resist\": {\n" . $section($clean) . "\n  },\n  \"stats\": {\n" . $section($stats) . "\n  }\n};\n");
+        self::git(self::dir($slug), ['add', 'js/bestiary.js']);
+        return count($clean) + count($stats);
+    }
     public static function readTuning(string $slug): array {
         $p = self::dir($slug) . '/js/tuning.js'; if (!is_file($p)) return [];
         $src = (string) file_get_contents($p); $i = strpos($src, 'const TUNING = '); if ($i === false) return [];

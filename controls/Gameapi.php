@@ -9,6 +9,7 @@
  *   POST sketch { png, note, style, pixel, size, key, palette } → { id }      GET sketch?id= → { result, base, busy }
  *   GET  sketches → { jobs }      POST sketchdelete { id }      GET spritehints?key=   POST spritehints { key, plan, joints, notes }
  *   GET  cast → the 3D cast       POST cast { do: list | make | wire | revise | edit | request | go | cancel | keepall }
+ *   GET/POST bestiary (js/bestiary.js, for the game's own bestiary editor)
  *   POST thumb { name, data } (a 3D turntable strip, cached in thumbs/)
  *   GET  events → rules, vocabulary, proposals      POST events { do: save | describe | add | dismiss | wire | ask }
  */
@@ -105,6 +106,16 @@ class Gameapi extends BaseControls\Control {
         $gi = "$d/.gitignore"; $have = is_file($gi) ? (string) file_get_contents($gi) : ''; if (!preg_match('#^/?thumbs/?$#m', $have)) file_put_contents($gi, rtrim($have) . ($have === '' ? '' : "\n") . "thumbs/\n");
         GameStore::writeAtomic("$d/thumbs/$name.webp", $bin);
         http_response_code(204); exit;
+    }
+    /** The bestiary (js/bestiary.js): GET it as JSON; POST { resist, stats } rewrites it (GameStore::saveBestiary). Used by the
+     *  game's own bestiary editor through Game::gameeditor, which points its /api/bestiary here. */
+    public function bestiary($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $slug = (string) $g->slug;
+        try {
+            if ($this->post()) { $n = GameStore::saveBestiary($slug, $this->getJsonInput() ?? []); GameStore::activity($slug, (string) ($this->member->username ?: $this->member->email), "saved the bestiary ({$n} rows of resistances and stats)"); GameStore::emit($slug, 'note', ['text' => 'bestiary saved: js/bestiary.js']); $this->raw(['ok' => true, 'rows' => $n, 'file' => 'js/bestiary.js']); }
+            $this->raw(GameStore::readBestiary($slug) ?: (object) []);
+        } catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
+        catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 500); }
     }
     /** The events (lib/Rules.php): GET the vocabulary, rules and proposals; POST { do: save (rules) | describe (text) | add (id) |
      *  dismiss (id) | wire (extra?) | ask (what) }. */

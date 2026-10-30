@@ -2,7 +2,7 @@
 // The producer's rules for how things react: on <event> → if <conditions> → do <actions>, per sprite, per group or for
 // everything. Only what the game declares (assets/events-vocab.json, the builder's) can be chosen; the rules are
 // assets/events.json (lib/Rules.php checks them before they are written; kit/js/kit-events.js runs them).
-const EV_OK = ['evCat', 'evBuiltin', 'evBiTitle', 'evFind', 'evAskFor', 'evAskForBox', 'evAskForOn', 'evAskForName', 'evSub', 'evWire', 'evSave', 'evBody', 'evAskBox', 'evAsk', 'evAskBtn', 'evProps', 'evWho', 'evRules', 'evWhoTitle', 'evNew'].every(id => el(id));
+const EV_OK = ['evBest', 'evCat', 'evBuiltin', 'evBiTitle', 'evFind', 'evAskFor', 'evAskForBox', 'evAskForOn', 'evAskForName', 'evSub', 'evWire', 'evSave', 'evBody', 'evAskBox', 'evAsk', 'evAskBtn', 'evProps', 'evWho', 'evRules', 'evWhoTitle', 'evNew'].every(id => el(id));
 if (!EV_OK) { el('fresh').classList.remove('hidden'); el('freshWhy').textContent = '(the Events tab is newer than this copy of the page)'; }
 const Ev = {
   S: null, rules: [], who: '*', dirty: false, t: 0,
@@ -36,7 +36,7 @@ const Ev = {
     el('evWhoTitle').textContent = this.who === '*' ? 'Rules for everything' : this.who.startsWith('group:') ? `Rules for every ${this.who.slice(6)}` : `Rules for ${this.who}`;
     if (!mine.length) R.innerHTML = '<div class="muted small">No rules here yet. Add one, or describe what you want above and the artist writes it.</div>';
     for (const r of mine) R.appendChild(this.card(r));
-    this.drawBuiltin();
+    this.drawBuiltin(); this.drawBestiary();
   },
   say(r) { // a rule in words: on die → if self.burning is yes and count fires (game) < 3 → SetBurning to nearby enemies (radius 80)
     const lim = a => [a.max && `max ${a.max}`, a.once && 'once', a.cooldown && `every ${a.cooldown}s at most`, a.chance != null && a.chance < 1 && `${Math.round(a.chance * 100)}% chance`, a.delay && `after ${a.delay}s`].filter(Boolean).join(', ');
@@ -103,6 +103,15 @@ const Ev = {
     d1.onclick = () => { r.do.push({ fn: Object.keys(V.actions).sort()[0] || '' }); redraw(); }; d2.onclick = () => { r.do.push({ fn: 'Count', args: { name: 'times', on: 'self' } }); redraw(); }; d3.onclick = () => { r.do.push({ emit: Object.keys(V.events).sort()[0] || '' }); redraw(); }; d.appendChild(addDo);
     const nt = document.createElement('div'); nt.className = 'evrow'; nt.append(this.span('note', 'evk'), this.inp(r.note, v => r.note = v, 'why this rule (optional)', '100%')); d.appendChild(nt);
     return d;
+  },
+  drawBestiary() { // the creature's resistances and stats (js/bestiary.js), when the vocabulary says which rows are its: own row first, then its family's
+    const box = el('evBest'), B = this.S.bestiary, s = this.V().subjects[this.who], rows = s && s.bestiary; box.innerHTML = ''; box.classList.toggle('hidden', !B || !rows || !rows.length); if (!B || !rows || !rows.length) return;
+    const R = B.resist || {}, S = B.stats || {}, EL = ['fire', 'poison', 'ice', 'electric'], word = v => v === 0 ? 'immune' : v < 1 ? 'resists' : v > 1 ? 'weak' : 'normal';
+    const cells = EL.map(x => { const from = rows.find(r => R[r] && R[r][x] != null), v = from ? R[from][x] : 1; return `<td><b>${v}×</b> <span class="muted">${word(v)}</span><div class="muted small">${from ? esc(from) : 'default'}</div></td>`; }).join('');
+    const st = rows.map(r => S[r] ? Object.entries(S[r]).map(([k, v]) => `${k} ${v}`).join(', ') : '').filter(Boolean).join(' · ');
+    const note = rows.map(r => R[r] && R[r].note).find(Boolean);
+    box.innerHTML = `<h3 style="margin:18px 0 6px">Resistances and stats</h3><table class="evres"><tr>${EL.map(x => `<th>${x}</th>`).join('')}</tr><tr>${cells}</tr></table>`
+      + `<div class="small">${note ? esc(note) + ' · ' : ''}${st ? 'stats: ' + esc(st) : 'stats as the game has them'} · <a href="/game/view/${encodeURIComponent(GAME)}#bestiary" target="_top">edit in the Bestiary</a></div><div class="muted small">damage from an element is multiplied by this (0 immune, 2 very weak); the level's own row adds on top.</div>`;
   },
   drawBuiltin() { // what the game does in code for the thing picked (the catalogue, assets/events-builtin.json): read-only, each can become a rule
     const B = this.S.builtin, box = el('evBuiltin'), V = this.V(); box.innerHTML = '';

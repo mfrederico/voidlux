@@ -129,6 +129,8 @@ its header is the format. Your part, once per game and whenever the game learns 
 - **state** a rule can ask about (`self.hp`, `self.burning`, `player.segments`, `game.level`…) and **targets** an action can
   be aimed at (`nearby` with a radius, `player`, `source`…). The engine itself adds counters (Count, SetCount), delays and
   limits: never build those per game.
+- A subject whose numbers live in a data table the producer edits (centipede's js/bestiary.js) names its rows in the
+  vocabulary, most specific first: `"gnat": { …, "bestiary": ["bug-gnat", "family-bug"] }`; the Events tab shows them beside its rules.
 - `<script src="../../kit/js/kit-events.js">`; `Events.action(name, (ctx, args, end) => …)` for every action (ctx.target is
   the object, end() for a lasting one when its effect is over), `Events.state(name, (target, ctx) => value)` for every
   state, `Events.target(name, (ctx, args) => [{ key, obj }, …])` for every target (never the thing itself);

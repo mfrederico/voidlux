@@ -87,7 +87,8 @@ class Rules {
         if ($v) foreach ($rules as &$r) { try { self::clean([$r], $v); } catch (\InvalidArgumentException $e) { $r['broken'] = preg_replace('/^rule 1 \([^)]*\): /', '', $e->getMessage()); } } unset($r);
         $page = is_file("$d/index.html") ? (string) file_get_contents("$d/index.html") : '';
         $emits = []; foreach (glob("$d/js/*.js") ?: [] as $f) if (preg_match_all('/Events\.emit\(\s*[\'"]([A-Za-z0-9_:-]+)[\'"]/', (string) file_get_contents($f), $m)) $emits = array_merge($emits, $m[1]);
-        return ['builtin' => self::builtin($slug), 'vocab' => $v, 'rules' => $rules, 'wired' => str_contains($page, 'kit-events.js'), 'emitted' => array_values(array_unique($emits)), 'proposals' => self::proposals($slug)];
+        $best = is_file($d . '/js/bestiary.js') ? GameStore::readBestiary($slug) : null; // resistances and stats, shown beside a creature's rules
+        return ['bestiary' => $best ?: null, 'builtin' => self::builtin($slug), 'vocab' => $v, 'rules' => $rules, 'wired' => str_contains($page, 'kit-events.js'), 'emitted' => array_values(array_unique($emits)), 'proposals' => self::proposals($slug)];
     }
 
     // ---- rules from words ----

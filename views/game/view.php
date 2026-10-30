@@ -29,6 +29,9 @@ $slug = $game['slug'];
     <a class="vl-media-card" href="#tracker" onclick="showTab('tracker'); return false;"><div class="vl-media-icon">▦</div><div class="vl-media-title">Tracker</div><div class="vl-media-sub">Make chiptune music on an 8-track tracker with the game's own synth and drums. Songs save by name (title, play, boss) straight into the game.</div></a>
     <a class="vl-media-card" href="#assets" onclick="showTab('assets'); return false;"><div class="vl-media-icon">◈</div><div class="vl-media-title">Media</div><div class="vl-media-sub">Upload and download SVG and image files for the builder to use. Tell it which, in a note or a message.</div></a>
     <a class="vl-media-card" href="#sprites" onclick="showTab('sprites'); return false;"><div class="vl-media-icon">✦</div><div class="vl-media-title">Sprites</div><div class="vl-media-sub">Draw pixel art and SVG sprites, frame by frame, or have the builder make them with its AI plugins. Saved sprites land in the game's assets and the builder draws them.</div></a>
+<?php if (is_file(\app\GameStore::dir($slug) . '/editor/bestiary/index.html')): ?>
+    <a class="vl-media-card" href="#bestiary" onclick="showTab('bestiary'); return false;"><div class="vl-media-icon">☠</div><div class="vl-media-title">Bestiary</div><div class="vl-media-sub">Every creature's resistances (fire, poison, ice, electric) and its stats: speed, attack timing, range, how often it appears. The game's own editor; saves go into the game.</div></a>
+<?php endif; ?>
     <a class="vl-media-card" href="#events" onclick="showTab('events'); return false;"><div class="vl-media-icon">⚡</div><div class="vl-media-title">Events</div><div class="vl-media-sub">How things react: on an event, if conditions hold, do actions. Describe a concept in your words and it becomes rules; see what the game does built in, and make any of it a rule you can change.</div></a>
   </div>
 </section>
@@ -98,6 +101,7 @@ $slug = $game['slug'];
 <section class="vl-pane" id="pane-sfx"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>Sound effects. Save writes them into the game; reload the game to hear them.</span><a href="/editor/sfx/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="sfxFrame"></iframe></section>
 <section class="vl-pane" id="pane-sprites"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>Sprites. Save writes the picture into the game's assets and its manifest; the game draws it with Draw.pic. The AI panel asks the builder.<?php if (is_file(\app\Cast::path($slug))): ?> The 3D tab holds the game's 3D models: describe a change to them there.<?php endif; ?></span><a href="/editor/sprites/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="spritesFrame"></iframe></section>
 <section class="vl-pane" id="pane-events"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>Events: the rules for how things react, and what the game does built in. Rules take effect the next time the game starts.</span><a href="/editor/sprites/?game=<?= h($slug) ?>#events" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="eventsFrame"></iframe></section>
+<section class="vl-pane" id="pane-bestiary"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>Bestiary: resistances and stats per creature. Each save rewrites js/bestiary.js; the game uses it next time it starts.</span><a href="/game/gameeditor/<?= h($slug) ?>?e=bestiary&game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="bestiaryFrame"></iframe></section>
 <section class="vl-pane" id="pane-tracker"><div class="vl-toolbar"><a href="#media" onclick="showTab('media'); return false;">← Media</a><span>The chip tracker. Press / to load or save a song into the game; name songs after where they play (title, play, boss).</span><a href="/editor/tracker/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="trackerFrame"></iframe></section>
 <section class="vl-pane" id="pane-config"><div class="vl-toolbar"><span>Every tuning number in the game, with its comment. Changes apply when the game reloads.</span><a href="/editor/config/?game=<?= h($slug) ?>" target="_blank">open in a tab</a></div><iframe class="vl-frame tall" id="configFrame"></iframe></section>
 
@@ -137,7 +141,7 @@ const slug = <?= json_encode($slug) ?>, $ = id => document.getElementById(id);
 let G = <?= json_encode($game, JSON_UNESCAPED_SLASHES) ?>, lastId = 0, loaded = {}, pollT = null;
 const HAS_CAST = <?= json_encode(is_file(\app\Cast::path($slug))) ?>; // a 3D game: its sprites open on the 3D cast
 const EDITOR_V = <?= json_encode(array_combine(['sfx', 'tracker', 'sprites', 'config'], array_map(fn($e) => @filemtime(\app\GameStore::root() . "/kit/editor/{$e}/index.html") ?: 0, ['sfx', 'tracker', 'sprites', 'config']))) ?>;
-const GROUP = { sfx: 'media', tracker: 'media', sprites: 'media', events: 'media', assets: 'media', design: 'advanced', status: 'advanced', config: 'advanced', history: 'advanced' };
+const GROUP = { sfx: 'media', tracker: 'media', sprites: 'media', events: 'media', bestiary: 'media', assets: 'media', design: 'advanced', status: 'advanced', config: 'advanced', history: 'advanced' };
 function askBuilder(text) { showTab('build'); const ta = $('chatForm').querySelector('textarea'); ta.value = text; ta.focus(); const i = text.indexOf('…'); if (i >= 0) ta.setSelectionRange(i, i + 1); }
 function showTab(name) {
   if (name === 'advanced') { document.querySelector('.vl-tab-menu').classList.toggle('open'); return; }
@@ -146,6 +150,7 @@ function showTab(name) {
   for (const p of document.querySelectorAll('.vl-pane')) p.classList.toggle('on', p.id === 'pane-' + name);
   location.hash = name;
   if (name === 'play' && !loaded.play) { loaded.play = 1; $('playFrame').src = `/games/${slug}/`; }
+  if (name === 'bestiary' && !loaded.bestiary) { loaded.bestiary = 1; $('bestiaryFrame').src = `/game/gameeditor/${slug}?e=bestiary&game=${slug}`; } // the game's own editor, through the forge
   if (name === 'events' && !loaded.events) { loaded.events = 1; $('eventsFrame').src = `/editor/sprites/?game=${slug}&v=${EDITOR_V.sprites || 0}#events`; } // the sprite page, on its Events tab
   if (['sfx', 'tracker', 'sprites', 'config'].includes(name) && !loaded[name]) { loaded[name] = 1; $(name + 'Frame').src = `/editor/${name}/?game=${slug}&v=${EDITOR_V[name] || 0}` + (name === 'sprites' && HAS_CAST ? '#3d' : ''); } // v: the editor file's mtime, so a changed editor is never the browser's stale copy
   if (name === 'design') loadDoc();
