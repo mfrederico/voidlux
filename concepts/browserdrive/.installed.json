@@ -1,7 +1,7 @@
 {
     "name": "browserdrive",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "source": "control-plane catalog",
-    "installed_at": "2026-10-31T20:23:21+00:00",
-    "bundle_sha256": "ef0c4817f510447183d27a51ba898624af02bf8265a2143d3042ed0e1a389e0d"
+    "installed_at": "2026-10-31T21:09:14+00:00",
+    "bundle_sha256": "4bc4567d1b5aa5d66035ef065d57c5f3a6a123b3f4c8d793162adb41175ddd65"
 }
