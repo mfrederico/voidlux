@@ -1,6 +1,14 @@
 {
     "version": 1,
     "concepts": {
+        "browserdrive": {
+            "version": "1.0.0",
+            "enabled": true,
+            "source": "authored here",
+            "installed_at": "2026-10-31T18:26:59+00:00",
+            "hash": "sha256:2c2d6ffb1851ffae3c7806372962c9e28be4d13131518af752bdf548b5c2cafb",
+            "enabled_at": "2026-10-31T18:26:59+00:00"
+        },
         "consent": {
             "version": "1.4.2",
             "enabled": true,
