@@ -17,7 +17,7 @@ $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES);
 </style>
 <div class="bd">
   <h1>Browser drive</h1>
-  <p>Leave this page open: it is the browser for <b>browser-drive sessions</b>. When an agent or a script opens one, this page claims it, shows the page below and plays each step (click, type, wait, read, screenshot…), then sends the result back. The steps act as <b>you</b>, signed in here, so sessions may only open the sandbox pages listed below. It keeps working in a background tab.</p>
+  <p>Leave this page open: it is the browser for <b>browser-drive sessions</b>. When an agent or a script opens one using <b>your own</b> API key, this page claims it, shows the page below and plays each step (click, type, wait, read, screenshot…), then sends the result back. The steps act as <b>you</b>, signed in here, so sessions may only open the sandbox pages listed below. It keeps working in a background tab.</p>
   <div class="bd-bar"><button type="button" id="bdStart" data-auto="<?= $allowed ? '1' : '0' ?>">Start</button><span id="bdStatus"><?= $allowed ? 'starting…' : 'No path is allowed yet: list the sandbox pages below first.' ?></span></div>
   <div class="bd-stage" id="bdStage"><iframe id="bdFrame" title="the driven page"></iframe></div>
   <ul id="bdLog"></ul>
@@ -25,13 +25,14 @@ $h = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES);
     <?= csrf_field() ?>
     <label><b>Sandbox pages a session may open</b> (one per line; <code>/demo</code> exactly, <code>/demo/*</code> it and everything under it). Only pages and data that are safe to change.</label>
     <textarea name="paths" rows="4"><?= $h(implode("\n", $allowed)) ?></textarea>
+    <label class="d-block my-2"><input type="checkbox" name="scripts" value="1"<?= $scripts ? ' checked' : '' ?>> <b>Let sessions run JavaScript</b> (<code>evaluate</code>, <code>waitFor</code> with <code>js</code>). Script runs as you and can reach every page of this site, not only the ones listed above.</label>
     <button type="submit">Save</button>
   </form>
   <h3>Recent sessions</h3>
   <table><tr><th>#</th><th>Path</th><th>Status</th><th>Steps</th><th>Opened</th><th>Note</th></tr>
   <?php foreach ($recent as $s): ?><tr><td><?= (int) $s->id ?></td><td><code><?= $h($s->path) ?></code></td><td><?= $h($s->status) ?><?= $s->why ? ' · ' . $h($s->why) : '' ?></td><td><?= (int) $s->steps ?></td><td><?= $h($s->openedAt) ?></td><td><?= $h($s->note) ?></td></tr><?php endforeach; ?>
   </table>
-  <p class="small">Agents: <code>POST /browserdrive/open</code>, <code>/step</code>, <code>/close</code> with an admin API key, the MCP tool <code>browserdrive_drive</code>, or the Node client <a href="/browserdrive/client">/browserdrive/client</a>.</p>
+  <p class="small">Agents and scripts: your own API key, with the MCP tool <code>browserdrive_drive</code> or the Node client <a href="/browserdrive/client">/browserdrive/client</a>.</p>
 </div>
 <script>window.BD_CSRF = <?= json_encode(csrf_token()) ?>;</script>
 <script src="/browserdrive/runnerjs"></script>

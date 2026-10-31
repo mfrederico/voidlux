@@ -3,9 +3,9 @@ Playwright-style browser automation with **no browser on the server**. Classes `
 
 ### How it works
 
-An agent opens a **session** on a page of this site and sends **steps**. A person's open **runner page** (`/browserdrive`, an
-admin leaves it open, any tab) claims the session, shows the page in a frame of this site, plays each step with the events a
-person's mouse and keyboard fire, and posts the result back. No runner open = nothing plays: a session nobody claims expires
+An agent opens a **session** on a page of this site and sends **steps**. The **runner page** (`/browserdrive`, left open by the admin
+whose API key opened the session, any tab) claims it, shows the page in a frame of this site, plays each step with the events a
+person's mouse and keyboard fire, and posts the result back. That admin's runner not open = nothing plays: a session nobody claims expires
 after 5 minutes and says so. That is not a fault in the page; say in your reply that the check is still to do.
 
 ### Driving it
@@ -26,8 +26,9 @@ after 5 minutes and says so. That is not a fault in the page; say in your reply 
 - **Sandbox only.** A driven page acts as the person whose runner plays it, signed in as them. Sessions may only open paths
   an admin listed on `/browserdrive` (setting `browserdrive_allow`); `goto` is checked too. Never ask for real customer pages
   to be allowed; build or use a demo page and demo data.
-- The API key must be an admin's. `evaluate` runs JavaScript in the page as that person: use it to read state, not to bypass
-  the page.
+- The API key must be an admin's, the same admin whose tab plays the session: nobody else's key can open a session in it or send it steps.
+- `evaluate` and `waitFor` with `js` are refused until an admin switches script on at `/browserdrive`: script reaches every page of the
+  site, not only the sandbox ones. Do not ask for it unless a check cannot be done without it. Read the page with `text`, `attr`, `count`.
 - Input is synthetic (`isTrusted` false): pointer lock, fullscreen, starting audio, file pickers and the clipboard cannot be
   driven. A canvas screenshots exactly; other parts are drawn from the page (close, not pixel-perfect).
 - Use it to check what you built and what a page test cannot reach (a flow across pages, an editor, a canvas). Not as a

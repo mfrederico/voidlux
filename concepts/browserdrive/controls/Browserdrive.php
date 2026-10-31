@@ -2,7 +2,7 @@
 /**
  * Browserdrive — Playwright-style steps, played in a person's open page instead of a browser on the server.
  *   For people (admins):  GET /browserdrive          the runner: leave it open; it claims sessions and plays their steps
- *                         POST /browserdrive/allow   { paths }  the sandbox paths a session may open (one per line)
+ *                         POST /browserdrive/allow   { paths, scripts }  the sandbox paths a session may open (one per line); whether script may run
  *                         /browserdrive/claim, /next, /done, /runnerjs, /shimjs   what the runner page calls
  *   For agents:          the MCP tool browserdrive_drive (open, step, result, close) at /mcp/message, with an admin's API key
  *                         GET  /browserdrive/client  the Node client (assets/client.js, saved as browserdrive-client.mjs): page.goto, click, fill… through that tool
@@ -19,11 +19,11 @@ class Browserdrive extends Control {
     public function index($params = []) {
         Session::expire();
         $recent = \app\Bean::find('drivesession', ' ORDER BY id DESC LIMIT 15 ');
-        $this->render('browserdrive/index', ['title' => 'Browser drive', 'allowed' => Session::allowed(), 'recent' => $recent]);
+        $this->render('browserdrive/index', ['title' => 'Browser drive', 'allowed' => Session::allowed(), 'scripts' => Session::scriptsOn(), 'recent' => $recent]);
     }
     public function allow($params = []) {
         if (!$this->validateCSRF()) return;
-        try { $list = Session::setAllowed((string) $this->getParam('paths', '')); $this->flash('success', $list ? 'Sessions may open: ' . implode(', ', $list) : 'No path is allowed: no session can open until one is.'); }
+        try { $list = Session::setAllowed((string) $this->getParam('paths', '')); Session::setScripts((string) $this->getParam('scripts', '') === '1'); $this->flash('success', $list ? 'Sessions may open: ' . implode(', ', $list) : 'No path is allowed: no session can open until one is.'); }
         catch (\InvalidArgumentException $e) { $this->flash('error', $e->getMessage()); }
         Flight::redirect('/browserdrive');
     }

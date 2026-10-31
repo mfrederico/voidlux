@@ -7,6 +7,9 @@
  *   drivestep     one command: n, cmd (JSON), status queued → sent → done | failed, result (JSON), timestamps; ownDrivestepList
  * Only paths of this site that the admins allowed (the setting browserdrive_allow) can be opened or gone to: a driven
  * session acts as the person whose browser runs it, so it must only ever touch sandbox pages and data.
+ * Two things keep that true. A session is played only in the tab of the member who opened it, and only they can send it steps:
+ * another admin's key never acts as you, whatever level you are. And script (evaluate, waitFor with js) is off until an admin
+ * switches it on (the setting browserdrive_scripts): a script in a page of this site can reach every other page, whatever the list says.
  */
 
 namespace app\concepts\browserdrive;
@@ -16,6 +19,7 @@ use app\Bean;
 class Session {
 
     public const SETTING = 'browserdrive_allow';
+    public const SCRIPTS = 'browserdrive_scripts';
     /** Each command and the arguments it takes; anything else is refused before it reaches a browser. */
     public const COMMANDS = [
         'goto' => ['path'], 'reload' => [], 'back' => [], 'viewport' => ['width', 'height'],
@@ -56,6 +60,15 @@ class Session {
         throw new \InvalidArgumentException("'{$only}' is not an allowed path. Allowed: " . implode(', ', $allow));
     }
 
+    // ---- script in a driven page: off until an admin switches it on ----
+    public static function scriptsOn(): bool { return (string) (\Flight::getSetting(self::SCRIPTS, 0) ?? '') === '1'; }
+    public static function setScripts(bool $on): void { \Flight::setSetting(self::SCRIPTS, $on ? '1' : '0', 0); }
+    /** Refuses a command that runs script while it is off (no database: what the tests call). */
+    public static function checkScript(array $cmd, bool $on): void {
+        if ($on || !(($cmd['do'] ?? '') === 'evaluate' || isset($cmd['js']))) return;
+        throw new \InvalidArgumentException(($cmd['do'] ?? '') . ' with script is off on this site: script runs as the person whose tab plays it and can reach every page, not only the sandbox ones. An admin can switch it on at /browserdrive.');
+    }
+
     // ---- the driving side ----
     public static function open(int $memberId, string $path, string $note = ''): object {
         self::expire();
@@ -65,11 +78,11 @@ class Session {
         Bean::store($s);
         return $s;
     }
-    /** A session the member may drive: their own (or any, for an admin), not closed. */
+    /** A session the member may drive: only their own. It plays in their tab, so nobody else's key may send it steps, whatever their level. */
     public static function mine(int $sessionId, object $member): object {
         $s = Bean::load('drivesession', $sessionId);
         if (!$s->id) throw new \InvalidArgumentException("no session {$sessionId}");
-        if ((int) $s->openedBy !== (int) $member->id && (int) $member->level > 50) throw new \InvalidArgumentException("session {$sessionId} is not yours");
+        if ((int) $s->openedBy !== (int) $member->id) throw new \InvalidArgumentException("session {$sessionId} is not yours");
         return $s;
     }
     public static function clean(array $cmd): array {
@@ -84,6 +97,7 @@ class Session {
         self::expire();
         if (!in_array($session->status, ['open', 'claimed'], true)) throw new \RuntimeException("session {$session->id} is {$session->status}" . ($session->why ? ": {$session->why}" : ''));
         $c = self::clean($cmd);
+        self::checkScript($c, self::scriptsOn());
         $st = Bean::dispense('drivestep'); $st->n = (int) $session->steps + 1; $st->cmd = json_encode($c, JSON_UNESCAPED_SLASHES); $st->status = 'queued'; $st->queuedAt = date('Y-m-d H:i:s');
         $session->steps = $st->n; $session->ownDrivestepList[] = $st; Bean::store($session);
         return $st;
@@ -115,7 +129,7 @@ class Session {
     }
 
     // ---- the runner side (a person's page) ----
-    /** The oldest open session, now this runner's; null when none waits. Atomic: two runners never take the same one. */
+    /** The oldest open session THIS member opened, now this runner's; null when none waits. A session never plays in someone else's tab. Atomic: two runners never take the same one. */
     public static function claim(int $runnerId): ?object {
         self::expire();
         // this runner's page was reloaded mid-session: it takes its own session back, and the step it was playing is played again
@@ -126,7 +140,7 @@ class Session {
             Bean::exec('UPDATE drivesession SET seen_at = ? WHERE id = ?', [date('Y-m-d H:i:s'), (int) $mine['id']]);
             return Bean::load('drivesession', (int) $mine['id']);
         }
-        foreach (Bean::find('drivesession', ' status = ? ORDER BY id ', ['open']) as $s) {
+        foreach (Bean::find('drivesession', ' status = ? AND opened_by = ? ORDER BY id ', ['open', $runnerId]) as $s) {
             $n = Bean::exec('UPDATE drivesession SET status = ?, runner = ?, claimed_at = ?, seen_at = ? WHERE id = ? AND status = ?', ['claimed', $runnerId, date('Y-m-d H:i:s'), date('Y-m-d H:i:s'), (int) $s->id, 'open']);
             if ($n === 1) return Bean::load('drivesession', (int) $s->id);
         }
@@ -161,7 +175,7 @@ class Session {
         $now = time();
         foreach (Bean::find('drivesession', ' status IN (?, ?) ', ['open', 'claimed']) as $s) {
             $why = '';
-            if ($s->status === 'open' && $now - strtotime((string) $s->openedAt) > self::CLAIM_WAIT) $why = 'no runner page claimed it within ' . self::CLAIM_WAIT . ' s: nobody has /browserdrive open';
+            if ($s->status === 'open' && $now - strtotime((string) $s->openedAt) > self::CLAIM_WAIT) $why = 'no runner page claimed it within ' . self::CLAIM_WAIT . ' s: the member whose key opened it does not have /browserdrive open';
             elseif ($s->status === 'claimed' && $now - strtotime((string) $s->seenAt) > self::RUNNER_GONE) $why = 'its runner page stopped answering (closed, or the computer slept)';
             else { $last = Bean::findOne('drivestep', ' drivesession_id = ? ORDER BY n DESC ', [(int) $s->id]); $t = $last ? strtotime((string) $last->queuedAt) : strtotime((string) $s->openedAt); if ($now - $t > self::IDLE) $why = 'no step for ' . self::IDLE . ' s'; }
             if ($why !== '') { self::close($s, $why); $s->status = 'expired'; Bean::store($s); }
