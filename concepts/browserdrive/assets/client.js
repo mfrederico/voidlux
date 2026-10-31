@@ -1,12 +1,13 @@
 // Browser drive: the Node client (Node 18+, no dependencies). Playwright-style calls to the site's MCP tool browserdrive_drive;
 // a person's open runner page (/browserdrive on the same site) plays each step in a real browser and the result comes back.
 //
-//   import { connect } from './client.mjs';
+//   curl -o browserdrive-client.mjs https://<site>/browserdrive/client   (an ES module: keep the .mjs name)
+//   import { connect } from './browserdrive-client.mjs';
 //   const page = await connect({ base: 'https://example.com', key: process.env.BROWSERDRIVE_KEY, path: '/demo' });
 //   await page.click('text=Add rack'); await page.fill('#name', 'Aisle 4'); await page.press('Enter');
 //   console.log(await page.text('.status')); await page.screenshot('after.png'); await page.close();
 //
-// Or as a command:  BROWSERDRIVE_BASE=https://example.com BROWSERDRIVE_KEY=tk_… node client.mjs script.mjs /demo
+// Or as a command:  BROWSERDRIVE_BASE=https://example.com BROWSERDRIVE_KEY=tk_… node browserdrive-client.mjs script.mjs /demo
 // where script.mjs is  export default async (page) => { … }.  A failed step throws, with the runner's reason.
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -56,9 +57,9 @@ export async function connect({ base, key, path, note = '', wait = 25, log = fal
   };
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] || '').href) { // node client.mjs script.mjs /start-path
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) { // node browserdrive-client.mjs script.mjs /start-path
   const [script, path] = process.argv.slice(2);
-  if (!script || !path) { console.error('usage: BROWSERDRIVE_BASE=… BROWSERDRIVE_KEY=… node client.mjs script.mjs /start-path'); process.exit(2); }
+  if (!script || !path) { console.error('usage: BROWSERDRIVE_BASE=… BROWSERDRIVE_KEY=… node browserdrive-client.mjs script.mjs /start-path'); process.exit(2); }
   const page = await connect({ base: process.env.BROWSERDRIVE_BASE, key: process.env.BROWSERDRIVE_KEY, path, note: script, log: true });
   console.error(`session ${page.session}: waiting for a runner page to claim it…`);
   try { await (await import(pathToFileURL(script).href)).default(page); console.error('done'); }

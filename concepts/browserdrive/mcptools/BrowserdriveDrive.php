@@ -4,7 +4,7 @@ namespace app\concepts\browserdrive\mcptools;
 use app\concepts\browserdrive\Session;
 
 /** Browser drive for agents and scripts: open a session, send steps one by one (each answered once a person's runner page
- *  has played it), close it. The platform checks the caller's API key at /mcp/message; the Node client (assets/client.mjs)
+ *  has played it), close it. The platform checks the caller's API key at /mcp/message; the Node client (assets/client.js)
  *  calls this tool there. The queue is lib/Session.php. */
 class BrowserdriveDrive extends \app\mcptools\BaseTool {
     public static string $name = 'browserdrive_drive';

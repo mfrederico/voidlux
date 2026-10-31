@@ -5,7 +5,7 @@
  *                         POST /browserdrive/allow   { paths }  the sandbox paths a session may open (one per line)
  *                         /browserdrive/claim, /next, /done, /runnerjs, /shimjs   what the runner page calls
  *   For agents:          the MCP tool browserdrive_drive (open, step, result, close) at /mcp/message, with an admin's API key
- *                         GET  /browserdrive/client  the Node client (assets/client.mjs): page.goto, click, fill… through that tool
+ *                         GET  /browserdrive/client  the Node client (assets/client.js, saved as browserdrive-client.mjs): page.goto, click, fill… through that tool
  */
 
 namespace app\concepts\browserdrive;
@@ -54,9 +54,11 @@ class Browserdrive extends Control {
     public function shimjs($params = []) { $this->asset('shim.js'); }
     private function asset(string $f): void {
         $body = file_get_contents(dirname(__DIR__) . '/assets/' . $f); if ($body === false) throw new \RuntimeException("browserdrive: cannot read assets/{$f}");
-        header('Content-Type: ' . (str_ends_with($f, '.mjs') ? 'text/javascript' : 'application/javascript') . '; charset=utf-8'); header('Cache-Control: no-cache'); echo $body; exit;
+        header('Content-Type: application/javascript; charset=utf-8'); header('Cache-Control: no-cache');
+        if ($f === 'client.js') header('Content-Disposition: inline; filename="browserdrive-client.mjs"'); // an ES module: Node runs it as .mjs
+        echo $body; exit;
     }
 
     // ---- for agents: the MCP tool browserdrive_drive (the platform checks their API key at /mcp/message); the Node client calls it ----
-    public function client($params = []) { $this->asset('client.mjs'); }
+    public function client($params = []) { $this->asset('client.js'); }
 }

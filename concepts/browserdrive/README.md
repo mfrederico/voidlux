@@ -18,7 +18,7 @@ with the pointer, mouse and keyboard events a person's input fires, and sends ba
 ## Drive it
 
 ```js
-import { connect } from './client.mjs';            // GET /browserdrive/client
+import { connect } from './browserdrive-client.mjs';   // curl -o browserdrive-client.mjs https://your.site/browserdrive/client
 const page = await connect({ base: 'https://your.site', key: process.env.BROWSERDRIVE_KEY, path: '/demo' });
 await page.click('text=Add rack');
 await page.fill('#label', 'Aisle 4');
@@ -29,7 +29,7 @@ await page.screenshot('after.png');
 await page.close();
 ```
 
-Or `BROWSERDRIVE_BASE=… BROWSERDRIVE_KEY=… node client.mjs script.mjs /demo` with `export default async (page) => {…}`.
+Or `BROWSERDRIVE_BASE=… BROWSERDRIVE_KEY=… node browserdrive-client.mjs script.mjs /demo` with `export default async (page) => {…}`.
 
 Under the hood both use the MCP tool `browserdrive_drive` (`open`, `step`, `result`, `close`) at `/mcp/message`, which
 the platform authenticates by API key: agents with the app's MCP connection call it directly.

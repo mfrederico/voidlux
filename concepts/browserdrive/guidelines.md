@@ -13,7 +13,7 @@ after 5 minutes and says so. That is not a fault in the page; say in your reply 
 - MCP: `browserdrive_drive` with `action: open {path}`, then `step {session, cmd}` per command (`result {step}` asks
   again for one still pending; `png: true` returns a screenshot's PNG), then `close`.
 - Scripts: the same tool at `/mcp/message` (JSON-RPC `tools/call`, `Authorization: Bearer <an admin API key>`).
-- Node: `/browserdrive/client` serves `client.mjs`: `const page = await connect({ base, key, path })`, then `page.click(…)`,
+- Node: `/browserdrive/client` serves the client (save it as `browserdrive-client.mjs`): `const page = await connect({ base, key, path })`, then `page.click(…)`,
   `page.fill(…)`, `page.press('Enter')`, `page.waitForText('Saved')`, `page.text('.total')`, `page.evaluate('…')`,
   `page.screenshot('a.png')`, `page.close()`. A failed step throws with the runner's reason.
 - Commands (`cmd.do`): goto reload back viewport click dblclick hover fill type press check uncheck select drag mouse wheel
