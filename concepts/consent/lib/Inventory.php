@@ -51,12 +51,18 @@ class Inventory {
      */
     public static function fromConnections(): array {
         $out = [];
+        // what the install itself says it needs (Flight config consent.needed, host => [group, name, purpose]): the control plane's own tools
+        foreach ((array) (\Flight::get('consent.needed') ?? []) as $h => $row) $out[(string) $h] = array_values((array) $row);
         $live = \app\ConnectionMentions::liveRows();
         if (isset($live['s3']) && \app\Storage::isConnected()) {
             // the bucket's own address (signed links to private files) and the public one (a CDN in front, when set)
             try {
                 $s = \app\Storage::settings();
-                foreach ([\app\Storage::url(\app\Storage::key('consent-probe.txt', \app\Storage::PRIVATE_)), $s['public_url'] !== '' ? $s['public_url'] : \app\Storage::url(\app\Storage::key('consent-probe.txt', \app\Storage::PUBLIC_))] as $u) {
+                $urls = [\app\Storage::url(\app\Storage::key('consent-probe.txt', \app\Storage::PRIVATE_))];
+                // a store with no bucket policy and no Public address serves no public files, so there is no second address to list
+                if ($s['public_url'] !== '') $urls[] = $s['public_url'];
+                elseif ($s['policy']) $urls[] = \app\Storage::url(\app\Storage::key('consent-probe.txt', \app\Storage::PUBLIC_));
+                foreach ($urls as $u) {
                     $h = strtolower((string) parse_url($u, PHP_URL_HOST));
                     if ($h !== '') $out[$h] = ['necessary', 'File storage (' . ($s['provider'] ?: 'S3') . ')', 'Keeps the photos and files people upload here.'];
                 }
