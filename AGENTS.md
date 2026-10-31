@@ -9,7 +9,9 @@
 4. **`Bean::`, never `R::`** (except schema seeds)
 5. String external IDs end in `_eid`, never `_id` (reserved for RedBean integer FKs)
 6. **No fallbacks. Fail loudly** — see [No Fallbacks](#no-fallbacks)
-7. **Data and permissions ship as seeds**, never as direct DB writes — see [Codebase Introspection](#codebase-introspection-mcp)
+7. **Data and permissions ship as seeds**, never as direct DB writes — see [Codebase Introspection](#codebase-introspection-mcp).
+   A seed is for what the APP needs (a table, a permission row, starter data); never for one owner's records —
+   "record a delivery", "set this price" is done through the app's own pages, not committed as code
 
 ## No Fallbacks
 
@@ -44,6 +46,13 @@ php scripts/resetcache.php                           # reload the permission cac
 
 Concise, descriptive messages; no emojis; no Claude Code footer or co-author lines.
 
+**A commit on `main` is the whole delivery — there is nothing to push.** In an app Tiknix hosts,
+this checkout IS the running app, and every build task starts as a worktree of its `main` at
+HEAD: what you commit here is what the site serves and what the next task builds on. The one
+remote, `seed`, is where the app was first cloned from and is read-only (a push answers 403);
+that is by design, not a fault to work around or to escalate. So: commit, check `git status` is
+clean, and say the change is in. Push only where `git remote -v` shows a remote other than `seed`.
+
 ## Codebase Introspection (MCP)
 
 The app's `tiknix` MCP server answers questions about this codebase — prefer it over scanning the tree.
@@ -73,6 +82,12 @@ A new route needs an `authcontrol` row and starter data needs a seeder: an idemp
 `services/Schema/Seeds/NN_Name.php` (`php scripts/clitool.php --build` runs them). RedBean creates a
 table on first store — there is no `CREATE TABLE`.
 
+A seed that must make a table before anyone stores a row stores one sample row and lets the build
+remove it: `$b = $_dispensePadding('ticket'); $b->code = str_repeat('x', 40); … Bean::store($b); $_defer($b);`
+— the model's own rules do not run on it, and every column gets its type from a full value (a NULL
+or a short first value types the column wrong). `$_tableCheck('ticket')` says whether it exists.
+Number a seed above the one that makes the table it changes, and give it a number no other seed has.
+
 **Set permission rows with `PermissionCache::seedRule()`**, and seed BEFORE fetching the route: the first
 request to an unseeded route creates an ADMIN-only row, which a hand-written "never widen" seed would
 then leave in place forever.
@@ -84,10 +99,16 @@ echo \app\PermissionCache::seedRule('cafe', '*', 100, 'Cafe pages (members)');  
 Print what it returns — `kept` means a rule a person set won. A wildcard also clears the
 auto-generated `cafe::<method>` rows that would shadow it.
 
-## When the Platform Is at Fault — Offer to Escalate, Then Ask
+## When the Platform Is at Fault — Look It Up, Then Offer to Escalate
 
 If the cause looks like the **Tiknix platform** (the builder, pipelines runtime, hosting, connectors,
-billing) rather than this app's own code, ASK the user: **"Should I escalate this to Tiknix support?"**
+billing, git or updates in a hosted app) rather than this app's own code, **first call
+`ask_tiknix(question)`** with what you saw and the exact error. It answers in seconds from what
+Tiknix's people have already written down: if an entry describes what you see, do what it says
+and tell the user — that is the whole fix, and nobody is asked to wait. "By design" is a common
+answer; do not escalate something an entry says is intended.
+
+Only when nothing known fits, ASK the user: **"Should I escalate this to Tiknix support?"**
 Only on a yes, call `send_to_tiknix_support(user_agreed: true, subject, message)`, written for a support
 engineer: what was attempted, what happened (exact errors, URLs, times), what you checked, what you
 suspect. The answer reaches the user in Communications and by email. 5 per hour at most.
@@ -143,6 +164,9 @@ $product->sharedTagList[] = $tag;                               // many-to-many 
   `IN (?,?)` binding, the keys become parameter positions → `column index out of range`. `array_values()`
   first.
 - `Bean::getAll()` / `getRow()` return **arrays**, not beans.
+- In a seed, `R` is not imported: write `\RedBeanPHP\R::…` (or `use RedBeanPHP\R;` at the top). Read a
+  table's columns with `Bean::inspect('type')` — `SHOW COLUMNS` is MySQL-only. In a test, never preset
+  a bean's `id`: on a new table RedBean takes it as an update; let it autoincrement.
 - RedBean runs in fluid mode: there are no real transactions (`begin`/`rollback` do not protect a write),
   and a wrong column name can read as an empty result — check with `database_schema`.
 
@@ -152,13 +176,167 @@ Controllers extend `BaseControls\Control` and live in `controls/` — one per fe
 
 - Views: `$this->render('cafe/customers', ['rows' => $rows])` → `views/cafe/customers.php`
 - Input: `$this->getParam('name')`, `$this->sanitize($v)`
-- POST: `$this->validateCSRF()` first; forms carry `<?= csrf_field() ?>`, AJAX sends `csrf_token()` as `X-CSRF-TOKEN`
+- POST: `$this->validateCSRF()` first (a wrong token ends the request there, and so does a GET: an action that changes something is a form submission, never a link); forms carry `<?= csrf_field() ?>`, AJAX sends `csrf_token()` as `X-CSRF-TOKEN`
+- A message after a redirect: `$this->flash('success' | 'error', $text)` — the layout shows nothing else (plain text, no links)
 - JSON: `Flight::jsonSuccess($data, 'msg')`, `Flight::jsonError('msg', 400)`; redirect: `Flight::redirect('/path')`
 - Levels: `LEVELS['ROOT']=1`, `ADMIN=50`, `MEMBER=100`, `PUBLIC=101` — lower is more privileged;
   `Flight::hasLevel(LEVELS['ADMIN'])`
 
+Shapes that are easy to guess wrong:
+
+- Config is `Flight::get('section.key')`. The base controller has no `isPost()`: test
+  `Flight::request()->method === 'POST'`.
+- Log with `$this->logger->error('…', [context])` (or `Flight::get('log')`) — that reaches
+  `log/app-*.log`; `error_log()` does not.
+- The `authcontrol` table's columns are `control`, `method`, `level` (not `controller`). A plugin's
+  seeded permission row is `kept` by `seedRule()`: to tighten it, write a seed that changes that row.
+- `lib/app.php` runs **before** plugins boot: a rule that needs a plugin's class goes in
+  `Flight::before('start', fn() => …)`. The layout's own slots (`Chrome` `head`/`scripts`) run in the
+  layout's scope, without `header.php`'s variables: use `$isLoggedIn`, `Flight::getMember()`,
+  `member_id()`. Who the layout shows is `$__mid` / `Flight::getMember()`, never a view's `$member`.
+
 The MCP endpoint `mcp::message` is PUBLIC (101) on purpose: it authenticates itself, and only discovery
 (`initialize`, `tools/list`, `ping`) works without an API key. `tools/call` without a key is a bug.
+
+## Navigation — a page nobody can reach is not done
+
+A feature is finished when a person can get to it by clicking. Every page you add needs a link,
+in the place its users will look — and `full_validation` on a controller reports one that has none.
+
+- **The sidebar** is the app's menu, and it is data, not markup. `lib/app.php` registers one part:
+  `\app\Chrome::add('prepare', 'app/nav');` and `views/app/nav.php` adds to `$__sections` — an
+  ordered map of heading => items, each `['url' => '/cafe/customers', 'label' => 'Customers',
+  'icon' => 'people']` (Bootstrap Icons names). `$__loggedIn` and `$__isAdmin` say who is
+  looking: show a member's pages to members and an admin's to admins. If the app has no
+  `views/app/nav.php` yet, create it and register it; if it has one, ADD to it — one part owns
+  the menu. Do not name a section `Admin`: the shell draws its own.
+- **A list page links to its own create / edit / delete**, and a detail page links back to its
+  list. Those inner links are not what makes the feature reachable: something outside the
+  feature's own views must link to its list page.
+- **A page that belongs under another** (a customer's orders) is linked from that page, not the
+  sidebar. **A public page** is linked from the home page, the footer (`Chrome::add('footer', …)`)
+  or the top bar (`'actions'`).
+- **Deliberately unlinked** — a webhook, an API, a page reached only from an email — say so in
+  the controller, on one line: `// nav: none — reached from the unsubscribe link in emails`.
+- Never edit the runtime's layout to add a link, and never add a method to a runtime controller
+  to hang a page off it (see File Structure).
+
+## Interface — say what is on the page, not how it looks
+
+A page of the app's own is described as data with `\app\Ui` (runtime `lib/Ui.php`): the view names
+the title, the one thing to do here, the rows, the fields — and `Ui` decides spacing, hierarchy,
+where actions sit, how a list reads on a phone, how a delete is confirmed. Do not hand-write
+`<div class="container">`, cards, tables, `alert`s or form markup for these; do not print flash
+messages (the layout already shows them); do not use `confirm()`.
+
+```php
+<?= \app\Ui::page(['title' => 'Customers', 'lead' => 'Everyone who has ordered.',
+                   'back' => ['label' => 'Cafe', 'url' => '/cafe'],
+                   'primary' => ['label' => 'Add a customer', 'url' => '/cafe/customer', 'icon' => 'plus-lg'],
+                   'more' => [['label' => 'Export', 'url' => '/cafe/export']]]) ?>
+<?= \app\Ui::table(['rows' => $rows, 'count' => 'customer',
+    'columns' => [['label' => 'Customer', 'value' => 'name', 'sub' => 'email', 'url' => fn($r) => '/cafe/customer?id=' . $r->id],
+                  ['label' => 'Status', 'value' => 'status', 'as' => 'badge', 'tones' => ['active' => 'success']],
+                  ['label' => 'Spent', 'value' => fn($r) => $r->total(), 'as' => 'money'],
+                  ['label' => 'Since', 'value' => 'created_at', 'as' => 'date', 'quiet' => true]],
+    'actions' => fn($r) => [['label' => 'Edit', 'url' => '/cafe/customer?id=' . $r->id, 'icon' => 'pencil'],
+                            ['label' => 'Delete', 'post' => '/cafe/delete', 'fields' => ['id' => $r->id],
+                             'confirm' => "Delete {$r->name}? Their orders stay.", 'danger' => true]],
+    'empty' => ['title' => 'No customers yet', 'text' => 'They appear here after their first order.',
+                'action' => ['label' => 'Add a customer', 'url' => '/cafe/customer']]]) ?>
+<?= \app\Ui::form(['action' => '/cafe/customer', 'submit' => 'Save customer', 'cancel' => '/cafe/customers',
+    'values' => $form, 'problems' => $problems, 'hidden' => ['id' => $id],
+    'fields' => [['name' => 'name', 'label' => 'Name', 'required' => true],
+                 ['name' => 'email', 'label' => 'Email', 'type' => 'email', 'required' => true, 'help' => 'Receipts go here.'],
+                 ['name' => 'tier', 'label' => 'Tier', 'type' => 'radio', 'options' => ['std' => 'Standard', 'gold' => 'Gold']],
+                 ['name' => 'notes', 'label' => 'Notes', 'type' => 'textarea', 'more' => true]]]) ?>
+<?= \app\Ui::agenda(['items' => $bookings, 'at' => 'startsAt', 'until' => 'endsAt',   // things that happen at a time
+    'title' => fn($b) => $b->className(), 'sub' => 'room',
+    'badge' => ['value' => 'status', 'tones' => ['confirmed' => 'success', 'pending' => 'warning'], 'labels' => ['pending' => 'Waiting for confirmation']],
+    'actions' => fn($b) => [['label' => 'Add to calendar', 'url' => '/class/ics/' . $b->id, 'icon' => 'calendar-plus']],
+    'empty' => ['title' => 'Nothing booked yet', 'action' => ['label' => 'Book a class', 'url' => '/class']]]) ?>
+<?= \app\Ui::detail(['title' => 'Contact', 'items' => ['Email' => $c->email, 'Joined' => $joined]]) ?>
+<?= \app\Ui::notice(['tone' => 'warning', 'title' => 'No page yet.', 'text' => '…', 'action' => [...]]) ?>
+```
+
+The options of each are in the docblocks of `lib/Ui.php` (`describe("Ui")`). A spec it refuses
+throws with the fix in the message — read it; do not work around it with hand-written markup.
+
+What it holds you to, and why — each is about what a person must read and decide:
+
+- **One primary action per page**, named as a verb with its object ("Add a customer", never
+  "Submit" or "New"). Other actions go in `more`.
+- **A list shows what tells rows apart** — at most 7 columns. The first column names the row and
+  links to it; a second fact about it goes in `sub`; the rest belongs on the row's own page.
+  Mark the columns a phone can drop `quiet`.
+- **Things that happen at a time are an agenda, not a table**: `Ui::agenda()` groups them by day
+  (Today, Tomorrow, then dates), soonest first; what has already happened is a second agenda with
+  `'order' => 'desc'` and a `heading`. A date column in a table makes the reader do the grouping.
+- **Every list has an `empty`**: what belongs here and the way to add the first one.
+- **A form asks only what it needs now.** Rarely-needed fields are `'more' => true` (folded away);
+  a long form is grouped with `section`. Two to four choices are a `radio`, not a `select`.
+  `problems` keyed by field name show at the field. Pre-fill what you can guess (`values`).
+- **Words are the user's, not the schema's**: "Who sees it", not "Audience"; "Stop showing it at",
+  not "expires_at". Status values get `labels`.
+- **Something destructive is a `post` with `confirm`** that says what will be lost.
+
+What `Ui` refuses or does that agents keep tripping on (each has cost a 500 or a missing figure):
+
+- `Ui::table` needs `'empty'` on **every** call, even for a list that is never empty, and its heading key
+  is `'title'` (`'heading'` is refused). A `'quiet'` column is hidden below 992px wide — never mark
+  quiet the column the page exists to show. Badge `tones` match the rendered text exactly, so a
+  badge whose text varies ("Paid 3 Oct") needs its map built from those strings. There is no
+  per-group action: put it in a small row above the table.
+- `Ui::form` refuses more than 8 fields in one run (`Ui::MAX_FLAT_FIELDS`) — group them with
+  `'section'` or fold some with `'more' => true`. It escapes `help` (no links: put a link in a
+  `Ui::notice` with an action), adds its own blank "—" first option to an optional select (do not
+  add a `'' => …` one), and has no option groups (carry the kind in the label: "Material: Flour").
+  A short note for the whole form is its `'lead'`; `'width' => 6` sits two fields side by side.
+- `Ui::agenda`'s `'until'` must give a time for every item: when the end is optional, leave
+  `'until'` out and put the end in `'sub'`.
+
+A page that is not a list, a form or a record (a calendar, a chat, a dashboard, a public landing
+page) is written by hand — on the design system's classes (`ui-panel`, `ui-stat`, `ui-chip`,
+`ui-eyebrow`; `views/components/design-system.php`) and Bootstrap 5.3, still opening with
+`Ui::page()` and using `Ui::notice()` / `Ui::emptyState()` for those parts. A `ui-panel` with a
+title is `ui-panel-header` + `ui-panel-body`; one without holds its content directly and pads itself.
+
+**Which pages, before any view.** Call `ui_pattern` with the bean (or, for a table not built yet,
+its planned `columns`). From the record's shape it answers: the pattern (a list and a form, a
+page per record, an agenda by day, a conversation, one settings form, a list on its parent's
+page), each page and what it is for, the few columns that tell rows apart, what the form asks up
+front and what folds away, what is never asked — and `Ui` code to start from. Build that, in the
+users' words; if you know they need something else, build it and say why.
+
+**The check.** `full_validation` on a view (or on `views`) reports what a page does by hand that
+`Ui` decides — a hand-written table or form, more than one primary button, `confirm()`, its own
+flash output, a hard-coded colour, no heading. They are warnings: fix them in views you write or
+touch. A page that is rightly hand-made says so on one line, `// ui: hand-made — an agenda grouped
+by day`, which quiets the table/card/form rules (not the others).
+
+**Data first, design second.** When your task is the model, the rules and the routes, build the
+pages from `Ui` as above and stop: they are correct and usable, and that is the task. Shaping how a
+feature feels — the order of things, the wording, what is folded away, a hand-made page — is its
+own task (the planner gives it its own, after the data works), done by looking at the pages in a
+browser at phone and desktop width. A design task changes views and menu entries, not models,
+seeds or what a controller decides.
+
+## Project notebook
+
+This project keeps a notebook in `agent/notebook/` — `decisions.md`, `map.md`, `lessons.md`: what
+earlier runs and the owner wrote down so the next run does not rediscover it. A build task's and
+a planner's brief ends with it; from a terminal, call the `notebook` tool before you start (and pass it `add` to record something).
+
+- **Consult it first.** A decision recorded there is not yours to re-make without a reason; a
+  lesson there is a mistake you do not need to repeat. Where it disagrees with the code, the code
+  is right — say so in a `lesson`.
+- **Never edit the files in a build task.** Tasks run side by side and would collide; your edits
+  to that folder are discarded. Propose entries in your final message instead, in a section headed
+  exactly `## Notebook`, before `## Handoff`: at most six lines, each `- decision: …`, `- map: …`
+  or `- lesson: …`, one sentence each. They are added after your task merges.
+- **Write only what could not be seen from the code** and would cost the next agent time: a choice
+  and its reason, where something non-obvious lives, a mistake and its fix. Not what you built,
+  not what the code plainly shows, nothing you are unsure of. Nothing to add is a fine answer.
 
 ## File Structure — the runtime and the app
 
@@ -205,6 +383,8 @@ Find the app root with `\app\Paths::root()`, the runtime with `\app\Paths::runti
 - any edit under `vendor/tiknix/runtime/`
 - a new app file at a path the runtime already has, unless `overrides.lock` records it (use `--override`)
 - raw `R::` calls that `Bean::` wraps, and `R::dispense` names with underscores or capitals
+- a new `lib/X.php` when `controls/X.php` exists (or the reverse): both are `app\X`, and only one loads
+- `$_SESSION['flash_error']` and its kin, which no page shows — use `$this->flash()`
 
 It **warns** on `exec` used for CRUD and on hand-set foreign keys. It reads code only — comments and
 strings that mention `R::store` are not flagged.
@@ -235,6 +415,170 @@ Mailer::sendWelcome($email, $username);
 ```
 
 A site's `conf/sites/<slug>.ini` `[mail] from_email` overrides the from-address.
+
+## Uploaded Files (Storage)
+
+What people upload — photos, audio, video, documents — goes to the app's S3 bucket through
+`\app\Storage` (Connections → S3 storage; the `storage` role), never to `public/uploads/` or
+anywhere on the app's own disk once a bucket is connected: the disk is small and is rebuilt.
+No bucket is a legitimate state — `Storage::isConnected()` is false; say so on the page that
+needs it, and never fall back to local disk quietly.
+
+Say WHO may see a file; the key records it, and the link follows from it:
+
+```php
+// a profile photo, a published image: anyone with the link, for as long as it exists
+$key = Storage::putFile('avatars/' . Storage::name($_FILES['photo']['name']), $_FILES['photo']['tmp_name'], Storage::PUBLIC_, $mime);
+// a member's own document: opened only through the app
+$key = Storage::putFile('records/' . $memberId . '/' . Storage::name($name), $tmp, Storage::PRIVATE_, $mime);
+
+$record->photoKey = $key;                  // store the KEY (TEXT), never a URL — links are built when shown
+<img src="<?= htmlspecialchars(Storage::url($key)) ?>">
+Storage::shareUrl($key, 3);                // a link for someone outside the app, good for 3 days (1–7)
+$key = Storage::setAccess($key, Storage::PUBLIC_);   // publish (or take back): returns the NEW key — save it
+Storage::delete($key);                     // when the record goes, its file goes
+```
+
+- The key you get back is `public/<this site's address>/<your path>` (or `private/…`): each site of
+  an app files under its own address, so two domains can share a bucket. Never build a key by hand.
+- **Public** files live under `public/` and open by their plain link. **Private** files live
+  under `private/` and open only through `Storage::url($key)`, a link that works for 15 minutes:
+  check that this person may see the file (it is theirs, it was shared with them, they are a
+  member) BEFORE calling it — whoever holds the link can open the file until it runs out.
+- Decide the access from what the file IS, not from convenience: anything about one person
+  (a health record, an invoice, a message attachment) is private.
+- `Storage::name()` makes a safe, unguessable file name; never use the uploader's name as the key.
+- Check the type and size of an upload before storing it; pass the real content type.
+- A large file (video) uploads from the browser straight to the bucket:
+  `Storage::uploadUrl($path, $access, $contentType)` gives the page a URL to `PUT` the file to
+  and the key to send back to the app when it is done.
+- A failure throws with the store's own reason. Let it reach the log and tell the person their
+  file was not saved — do not catch it into an empty value.
+
+### A member's own photo (MemberPhoto)
+
+The account pages (`/member/edit`, `/member/profile`) and the shell's avatar chip show a member's
+photo through `\app\MemberPhoto`. With a bucket connected a member uploads one on `/member/edit`
+and nothing needs building. An app that keeps its own photos (a profile table, its own rules) says
+so ONCE in `lib/app.php` — never by copying a platform view:
+
+```php
+\app\MemberPhoto::provide(fn(int $memberId): string => \app\Avatar::urlFor($memberId), '/social/me');
+// $url(memberId) → the photo's address or ''; the second argument is the app's page for changing it
+```
+
+In the app's own pages, `MemberPhoto::chip($member, $initials, 48)` draws the round photo-or-initials.
+
+## Uploaded Videos (Video)
+
+A video someone uploads goes to the app's video library through `\app\Video` (Connections → Bunny
+Stream; the `video` role) — not to `\app\Storage`, and never to the app's disk. A phone's recording
+does not play in every browser and is far too big to send as it came; the service converts it, keeps
+a size for each screen, makes the thumbnail and plays it. Photos, audio and documents stay in Storage.
+No library is a legitimate state — `Video::isConnected()` is false; say so on the page that needs it.
+
+```php
+// 1. a controller, answering the page as JSON when a member has picked a file
+$up = Video::start($title);                 // ['id' => …, 'endpoint' => …, 'headers' => [ … ]]
+$post->videoEid = $up['id'];                // store the ID (TEXT, `_eid`) — it is all the app keeps
+// 2. the BROWSER sends the file to $up['endpoint'] with $up['headers'], using the tus protocol
+//    (tus-js-client, from /rt/vendor/tus-js-client-4.3.1/tus.min.js: new tus.Upload(file, {endpoint, headers, metadata: {filetype: file.type, title}}))
+// 3. showing it
+$v = Video::info($post->videoEid);          // state: waiting | processing | ready | failed; progress 0–100; seconds; thumbnail
+if ($v['state'] === 'ready') echo Video::embed($post->videoEid, ['ratio' => '16 / 9']);   // already escaped HTML
+Video::delete($post->videoEid);             // when the record goes, its video goes
+```
+
+- The file never passes through the app: do not post a video to a controller, and do not raise PHP's
+  upload limits for one.
+- A video is not ready the moment it is uploaded. Show `Video::STATE_LABELS[$v['state']]` and its
+  progress until it is `ready`, and say plainly when it `failed`; do not show a player that cannot play.
+- **Who may watch is the app's decision, made BEFORE `Video::embed()` / `Video::embedUrl()`**: the
+  player address they return is signed and works for an hour, and whoever holds it can watch until
+  then. Build it when the page is shown — never store it. `Video::isProtected()` is false when the
+  connection has no token authentication key: then every video plays for anyone who has its address,
+  so say so to an admin rather than promising members a private video.
+- Check the type and size in the browser before starting (a person should not wait through a
+  2 GB upload to be told no), and give `Video::start()` a title a person would recognise.
+- A refusal throws with the service's own reason. Let it reach the log and tell the person their
+  video was not saved — do not catch it into an empty value.
+
+## Text Messages (Sms)
+
+A text to someone's phone goes through `\app\Sms` (Connections → Quo; the `sms` role), from the
+business's own number. No number connected is a legitimate state — `Sms::isConnected()` is false;
+offer the other way (email) or say texting is off, and never pretend a text was sent.
+
+```php
+$to = Sms::e164($profile->phone, '1');      // what a person typed → +15551234567 ('1' = US/Canada, '91' = India)
+$sent = Sms::send($to, "Your Inresonance code is 482913. It works for 10 minutes.");   // ['id', 'status' => 'queued', 'to']
+```
+
+- **What a text is for:** a code to sign in, a link back into an account, a notice the person asked
+  for. Not marketing — that needs recorded consent and is not built here.
+- **Each text costs money**, per 160 characters — or per 70 when it has any emoji or accent
+  (`Sms::parts($text)` says how many it is). Keep it to one part, name the app, never put a password in one.
+- **A code or link sent by text is a key to the account.** Store only its hash, make it single-use
+  and short-lived (minutes for a code), limit tries and how often one can be asked for, and answer
+  the same whether or not the number belongs to anyone.
+- A link in a text is fetched by the phone's preview before the person taps it: a link that signs
+  someone in must land on a page with a button, and the BUTTON (a POST) does the signing in.
+- `'queued'` means the service took it, not that the phone has it. A refusal throws `SmsException`
+  with the service's own reason (the number is not registered with the carriers, out of credit, the
+  day's limit) — log it and tell the person the text could not be sent.
+
+## Build Events (pipelines that run when the Builder builds)
+
+The Builder tells this app about its own building, and a pipeline may run on it:
+
+```json
+"trigger": { "builder": { "events": ["request.finished", "check.finished"] } }
+```
+
+- `request.finished` — a request's build ended. Context: `status` (`done`, `attention` = some tasks failed, `stalled`), `request`, `asked`, `built[]`, `not_built[]`, `files[]`, `line` (the sentence written to the notebook's Built page).
+- `check.finished` — the browser check after a build ended. Context: `passed`, `failures`, `problems[]`, and the request's fields above.
+- `question.asked` — the planner or a task stopped to ask the owner something. Context: `by` (`planner` | `task`), `question`, `task`.
+- `request.undone` — a request was undone. Context: `checkpoint`, `line`.
+
+Each field is read as `{context.<name>}` in a step (`{context.event}` names which event, `{context.status}`, `{context.line}`). A "webhook when a build finishes" is a pipeline on `request.finished` with one `http` step; nothing else is needed. The events are a courtesy to the app: a pipeline that fails does not fail the build.
+
+## QuickBooks Online
+
+A person connects their QuickBooks company under **Connections → QuickBooks Online**; the app then
+holds that company's access (sealed with its own key) and reaches it through `\app\ConnectorCall`.
+The app never holds Intuit's app secret: when the access expires (every hour) it is renewed for you.
+There is no copy of anyone's books in the app unless the app itself saves one — read from QuickBooks
+when the page needs it.
+
+```php
+// any query — QuickBooks' own SQL-like syntax
+$r = ConnectorCall::call('quickbooks', 'query', ['environment' => 'development', 'query' => "SELECT * FROM Customer WHERE PrimaryEmailAddr = 'a@b.com'"]);
+$customers = $r['body']['QueryResponse']['Customer'] ?? [];
+// any endpoint, after /v3/company/<id>
+$r = ConnectorCall::call('quickbooks', 'request', ['environment' => 'development', 'method' => 'POST', 'path' => '/invoice', 'body' => [...]]);
+$invoice = $r['body']['Invoice'] ?? null;
+```
+
+- **Name the environment on every call.** A sandbox company is a `development` connection; a live one is
+  `production`, which is the default. A call without `environment` looks for live books and refuses when
+  there are none — check under Connections which one this app has, and keep it in one place (one
+  function or constant), not repeated in every call.
+- **Changes in QuickBooks can start a pipeline.** The platform receives Intuit's change notices and sends
+  this app those of its own companies:
+  ```json
+  "trigger": { "connector": { "quickbooks": { "entities": ["Invoice", "Payment"], "operations": ["Create", "Update"] } } }
+  ```
+  Context: `{context.entity}` ("Invoice"), `{context.id}`, `{context.operation}` ("Update"),
+  `{context.company}`, `{context.at}`. A notice says only WHAT changed — fetch the record to see it.
+- **Paying an invoice is a `Payment`,** not always an `Invoice` change: to notice "paid", listen for
+  `Payment` too and read the invoices it pays (`Line[].LinkedTxn` of type `Invoice`); paid = balance 0.
+- **An item books to an income account.** A product's item belongs to the product-sales account (an
+  Income account with `AccountSubType` `SalesOfProductIncome`) — never "the first Income account". When
+  there is none, refuse and say so; do not guess.
+- **Match records by something both sides have** (an email, a SKU) and store QuickBooks' id on yours
+  (`qbo_customer_eid`, `qbo_invoice_eid`) once matched.
+- A build task's sandbox copy of the app has **no connections**: there, QuickBooks calls refuse. Test what
+  you can without it (the refusal, the page), and say in the Handoff what only the live app can show.
 
 ## Plugins and Agent Guidance
 
@@ -273,12 +617,38 @@ Code changes are commits.
 
 - `json_encode([])` is `[]`, not `{}` — use `(object)[]` when the client expects an object
 - Cast query-string ints: `$page = (int)($page ?? 1)`
+- **Nothing loads from a CDN or Google Fonts.** A visitor's address must reach no one but the app before they
+  agree to anything (GDPR). Bootstrap, its icons, jQuery and the design system's fonts are already on every page;
+  `/rt/vendor/` holds the rest (its README lists them). A library that is not there goes in the app's own
+  `public/assets/<name>-<version>/` (not `public/vendor`: the app ignores every `vendor/`), downloaded once and
+  committed — never a `https://cdn…` tag. An outside service a person sees (a map's tiles, a review widget) is
+  not a library: it waits for the visitor's consent.
 - Escape view output: `<?= htmlspecialchars($var) ?>`; let an undefined view variable error rather
   than default it — a controller/view mismatch should surface
 - A lead is written one way: `Model_Lead::capture($email, $first, $last, ['gate' => …])` with
   `LeadGate::forPublicForm($params, $ip, [...])` for anything a visitor posted, or
   `LeadGate::trusted('why')`. Never `Bean::dispense('lead')` in a controller.
 - Before calling a task done, request every route it added and check the status code
+- **In a build task's sandbox:** your brief names its address and three signed-in cookie jars — use
+  those, do not sign in by hand. If you must, `GET /auth/login` for `_csrf_token`, then POST it with
+  `username` and `password` to `/auth/dologin` (not `/auth/login`); an admin is sent to 2FA setup
+  first, so POST `_csrf_token` to `/auth/twofaskip`. One cookie jar throughout. The sandbox has no
+  connections (S3, mail, QuickBooks…) and APCu is off: test the "not connected" path there, and say in
+  the Handoff what only the live app can show.
+- **When the brief says a browser is lent, use it** for every page whose view you changed — the
+  sandbox records which address asked for which page, and a view change the lent browser never
+  opened is not merged (curl does not count). Resize to 390×844 and compare `scrollWidth` with
+  `clientWidth`; read `browser_console_messages` after a JS change. If it cannot be used, say why on
+  a Handoff line that starts `Browser:`.
+- **Testing a controller in PHPUnit:** its constructor calls Flight maps — define the ones it uses
+  (`getMember`, `hasLevel`, `isLoggedIn`, `loadMenu`, `siteName`, `siteLogo`) and override `render()`
+  in a test subclass. `tests/support/` is not autoloaded: `require_once` it. `Storage` needs
+  `Flight::set('app.baseurl', …)` and has no fake bucket: test the key your code builds and the
+  not-connected refusal, not an upload.
+- **No browser lives in an app.** Never install Playwright, Puppeteer, Chromium, Selenium or Node in the app or
+  its container, and never plan a task that does: the container is small, and a build is lent a browser from the
+  platform's QA host (the `playwright` tools, which open the task's sandbox). What a person sees is checked
+  there; kept browser suites run in QA Testing.
 
 ## See Also
 
