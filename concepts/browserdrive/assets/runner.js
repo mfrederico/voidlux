@@ -55,11 +55,27 @@
   }
   async function point(target) {
     if (target && typeof target === 'object' && 'x' in target) return { x: +target.x, y: +target.y, el: D().elementFromPoint(+target.x, +target.y) || D().body };
-    const el = await find(target); el.scrollIntoView({ block: 'center', inline: 'center' }); await sleep(30);
+    const el = await find(target); el.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' }); await sleep(30);
     const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, hit = D().elementFromPoint(x, y);
     if (hit && hit !== el && !el.contains(hit) && !hit.contains(el)) throw new Error(`"${target}" is covered by ${describe(hit)} at its centre`);
     outline(el); showAt(x, y); await sleep(120); // a beat so a person watching sees where it goes
     return { x, y, el };
+  }
+  // A drag's two ends must be on screen together and measured AFTER the last scroll: measuring one, then scrolling to the other,
+  // presses wherever the first has moved away from. A {x, y} end is where the frame shows now.
+  async function dragPoints(from, to) {
+    const isAt = t => t && typeof t === 'object' && 'x' in t, fe = isAt(from) ? null : await find(from), te = isAt(to) ? null : await find(to);
+    const at = (t, el) => { if (!el) return { x: +t.x, y: +t.y, el: D().elementFromPoint(+t.x, +t.y) || D().body }; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, el }; };
+    const on = p => p.x >= 0 && p.y >= 0 && p.x < W().innerWidth && p.y < W().innerHeight;
+    const near = { behavior: 'instant', block: 'nearest', inline: 'nearest' }, mid = { behavior: 'instant', block: 'center', inline: 'center' }; // instant: a page with smooth scrolling has not moved yet when the ends are measured
+    let a, b, fits = false;
+    for (const move of [() => { if (te) te.scrollIntoView(near); if (fe) fe.scrollIntoView(near); }, () => { if (te) te.scrollIntoView(mid); }, () => { if (fe) fe.scrollIntoView(mid); }]) {
+      move(); await sleep(30); a = at(from, fe); b = at(to, te); if (on(a) && on(b)) { fits = true; break; }
+    }
+    if (!fits) throw new Error(`the drag's two ends do not fit on the screen together: make the frame taller first, with viewport { width, height }`);
+    for (const [p, t, el] of [[a, from, fe], [b, to, te]]) { if (!el) continue; const hit = D().elementFromPoint(p.x, p.y); if (hit && hit !== el && !el.contains(hit) && !hit.contains(el)) throw new Error(`"${t}" is covered by ${describe(hit)} at its centre`); }
+    if (fe) outline(fe); showAt(a.x, a.y); await sleep(120); if (te) outline(te); showAt(b.x, b.y); await sleep(120); showAt(a.x, a.y);
+    return { a, b };
   }
   const describe = el => el ? el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '') : 'nothing';
 
@@ -125,7 +141,7 @@
         return {}; }
       case 'check': case 'uncheck': { const el = await find(c.target); if (el.checked !== (c.do === 'check')) await click(await point(c.target)); return { checked: el.checked }; }
       case 'select': { const el = await find(c.target), want = String(c.value), opt = [...el.options].find(o => o.value === want || o.textContent.trim() === want); if (!opt) throw new Error(`"${c.target}" has no option "${want}"`); setValue(el, opt.value); fire(el, 'input'); fire(el, 'change'); return { value: el.value }; }
-      case 'drag': { const a = await point(c.from), b = await point(c.to), n = Math.max(1, +c.steps || 10);
+      case 'drag': { const { a, b } = await dragPoints(c.from, c.to), n = Math.max(1, +c.steps || 10);
         if (a.el && a.el.draggable) { const dt = new (W().DataTransfer)(), dev = (t, el, p) => el.dispatchEvent(new (W().DragEvent)(t, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: p.x, clientY: p.y })); // HTML drag and drop
           dev('dragstart', a.el, a); const tgt = D().elementFromPoint(b.x, b.y) || D().body; dev('dragenter', tgt, b); dev('dragover', tgt, b); dev('drop', tgt, b); dev('dragend', a.el, b); return { how: 'html-dnd' }; }
         mev('pointermove', a); mev('mousemove', a); mev('pointerdown', a, { buttons: 1 }); mev('mousedown', a, { buttons: 1, detail: 1 });
@@ -167,9 +183,10 @@
   async function run() {
     running = true; stop = false; $('bdStart').textContent = 'Stop'; status('waiting for a session…');
     SHIM = SHIM || await (await fetch('/browserdrive/shimjs', { cache: 'no-store' })).text();
+    let broken = false; // said on the page: a tab that cannot claim must not go on saying it is waiting
     while (!stop) {
       try {
-        if (!session) { const c = await api('claim'); if (!c.session) { await sleep(3000); continue; }
+        if (!session) { const c = await api('claim'); if (broken) { broken = false; status('waiting for a session…'); } if (!c.session) { await sleep(3000); continue; }
           session = c; status(`session ${c.session}: ${c.path}${c.note ? ' · ' + c.note : ''}`); say(`claimed session ${c.session} at ${c.path}`, 'ok'); await navigate(c.path); }
         const n = await api('next', { session: session.session, wait: 20 }), nx = n.next; if (!nx) continue;
         if (nx.closed) { say(`session ${session.session} ended: ${nx.why || 'closed'}`); session = null; frame.src = 'about:blank'; caption(''); ptr.classList.remove('on'); status('waiting for a session…'); continue; }
@@ -181,7 +198,7 @@
         await sleep(150); if (leaving && !['goto', 'reload', 'back'].includes(nx.cmd.do)) await Promise.race([loaded, sleep(15000)]); // a step that sent the page elsewhere is answered from where it landed
         let url = ''; try { url = W().location.pathname + W().location.search; } catch (e) { url = '(another site)'; } /* a page of another site cannot be read: it is outside the sandbox, and the server ends the session */
         await api('done', { session: session.session, step: nx.step, result: { ...result, url, ms: Math.round(performance.now() - t0), logs: nx.cmd.do === 'console' ? undefined : drain() } });
-      } catch (e) { say('runner: ' + e.message, 'bad'); if (/not claimed|no such session/.test(e.message)) { session = null; frame.src = 'about:blank'; } await sleep(3000); }
+      } catch (e) { say('runner: ' + e.message, 'bad'); if (!session) { broken = true; status('NOT WORKING: ' + e.message); } if (/not claimed|no such session/.test(e.message)) { session = null; frame.src = 'about:blank'; } await sleep(3000); }
     }
     running = false; $('bdStart').textContent = 'Start'; status('stopped: no session will be claimed by this page');
   }

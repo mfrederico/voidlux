@@ -18,7 +18,7 @@ after 5 minutes and says so. That is not a fault in the page; say in your reply 
   `page.screenshot('a.png')`, `page.close()`. A failed step throws with the runner's reason.
 - Commands (`cmd.do`): goto reload back viewport click dblclick hover fill type press check uncheck select drag mouse wheel
   waitFor wait evaluate text value attr count html url title screenshot console. Targets: a CSS selector, `text=Save`,
-  `xpath=//…`, or `{x, y}` in the frame. Actions wait up to 5 s for their target to exist and be visible.
+  `xpath=//…`, or `{x, y}` where the frame shows now. A drag's two ends must fit on screen together, or it fails and says to set a taller `viewport`. Actions wait up to 5 s for their target to exist and be visible.
 - Each result carries `url`, `ms` and the page's console lines and errors since the last step (`logs`): read them.
 
 ### Rules

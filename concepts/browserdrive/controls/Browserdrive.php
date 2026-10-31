@@ -17,6 +17,7 @@ class Browserdrive extends Control {
 
     /** The runner page: a person leaves it open and it plays whatever sessions agents open. */
     public function index($params = []) {
+        Session::ready();
         Session::expire();
         $recent = \app\Bean::find('drivesession', ' ORDER BY id DESC LIMIT 15 ');
         $this->render('browserdrive/index', ['title' => 'Browser drive', 'allowed' => Session::allowed(), 'scripts' => Session::scriptsOn(), 'recent' => $recent]);
@@ -31,7 +32,8 @@ class Browserdrive extends Control {
     // ---- what the runner page calls (admins, CSRF) ----
     public function claim($params = []) {
         if (!$this->validateCSRF()) return;
-        $s = Session::claim((int) $this->member->id);
+        try { $s = Session::claim((int) $this->member->id); }
+        catch (\Throwable $e) { $this->logger->error('browserdrive: a runner could not claim: ' . $e->getMessage()); return $this->fail('this site could not look for sessions: ' . $e->getMessage(), 500); } // the page says so; it does not go on saying it is waiting
         Flight::jsonSuccess($s ? ['session' => (int) $s->id, 'path' => (string) $s->path, 'note' => (string) $s->note] : ['session' => null]);
     }
     public function next($params = []) {

@@ -57,6 +57,24 @@ class SessionTest extends TestCase {
             try { Session::mine($id, $root); $this->fail('a ROOT key sent steps into a claimed session'); } catch (\InvalidArgumentException $e) { $this->addToAssertionCount(1); }
         } finally { if ($was !== null && \app\Bean::hasDatabase($was)) \app\Bean::selectDatabase($was); }
     }
+    public function testABrandNewAddressGetsItsTablesOnFirstUse(): void {
+        $was = \app\Bean::currentDatabaseKey();
+        $db = 'bd-fresh-' . bin2hex(random_bytes(4));
+        \app\Bean::addDatabase($db, 'sqlite::memory:');
+        \app\Bean::selectDatabase($db);
+        $ready = new \ReflectionProperty(Session::class, 'ready'); $ready->setAccessible(true); $ready->setValue(null, false);
+        try {
+            $this->assertNull(Session::claim(1), 'no tables yet: it sets them up and finds nothing to play, it does not fail');
+            foreach (['runner', 'claimed_at', 'seen_at', 'opened_by'] as $c) $this->assertArrayHasKey($c, \app\Bean::inspect('drivesession'));
+            foreach (['result', 'sent_at', 'done_at', 'drivesession_id'] as $c) $this->assertArrayHasKey($c, \app\Bean::inspect('drivestep'));
+            $this->assertSame('TEXT', strtoupper((string) \app\Bean::inspect('drivesession')['seen_at']), 'typed by the seed, never guessed from a first value');
+        } finally { $ready->setValue(null, false); if ($was !== null && \app\Bean::hasDatabase($was)) \app\Bean::selectDatabase($was); }
+    }
+    public function testADragMeasuresItsEndsAfterTheLastScroll(): void {
+        $runner = file_get_contents(dirname(__DIR__) . '/assets/runner.js');
+        $this->assertStringContainsString('await dragPoints(c.from, c.to)', $runner);
+        $this->assertStringNotContainsString('await point(c.from)', $runner, 'measuring one end, then scrolling to the other, presses the wrong thing');
+    }
     public function testEveryCommandTheRunnerPlaysIsKnown(): void {
         $runner = file_get_contents(dirname(__DIR__) . '/assets/runner.js');
         foreach (array_keys(Session::COMMANDS) as $c) $this->assertStringContainsString("case '{$c}'", $runner, "the runner does not play {$c}");

@@ -69,8 +69,27 @@ class Session {
         throw new \InvalidArgumentException(($cmd['do'] ?? '') . ' with script is off on this site: script runs as the person whose tab plays it and can reach every page, not only the sandbox ones. An admin can switch it on at /browserdrive.');
     }
 
+    // ---- this address's tables ----
+    private static bool $ready = false;
+    /**
+     * Every address of an app has its own database, and a plugin's seeds run where it was enabled, not on an address added later.
+     * Without the tables a claim fails and a step reads as "no step", so the first use on an address sets them up (the seeds are idempotent).
+     */
+    public static function ready(): void {
+        if (self::$ready) return;
+        $has = fn() => array_key_exists('runner', Bean::inspect('drivesession')) && array_key_exists('claimed_at', Bean::inspect('drivesession')) && array_key_exists('done_at', Bean::inspect('drivestep')) && array_key_exists('sent_at', Bean::inspect('drivestep'));
+        if (!$has()) {
+            ob_start();
+            try { foreach (glob(dirname(__DIR__) . '/seeds/*.php') as $seed) (static function (string $seed): void { require $seed; })($seed); }
+            finally { ob_end_clean(); }
+            if (!$has()) throw new \RuntimeException('browserdrive: this address has no session tables and setting them up failed. Run: TIKNIX_HOST=<this address> php scripts/clitool.php --concept-seeds=browserdrive');
+        }
+        self::$ready = true;
+    }
+
     // ---- the driving side ----
     public static function open(int $memberId, string $path, string $note = ''): object {
+        self::ready();
         self::expire();
         $s = Bean::dispense('drivesession');
         $s->path = self::checkPath($path); $s->note = mb_substr(trim($note), 0, 300); $s->status = 'open'; $s->openedBy = $memberId;
@@ -131,6 +150,7 @@ class Session {
     // ---- the runner side (a person's page) ----
     /** The oldest open session THIS member opened, now this runner's; null when none waits. A session never plays in someone else's tab. Atomic: two runners never take the same one. */
     public static function claim(int $runnerId): ?object {
+        self::ready();
         self::expire();
         // this runner's page was reloaded mid-session: it takes its own session back, and the step it was playing is played again
         $tick = (int) (microtime(true) * 1000);
