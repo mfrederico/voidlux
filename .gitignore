@@ -46,3 +46,6 @@ studio/__pycache__/
 .playwright-mcp/
 games/
 /centipede/
+
+# Claude Code's own state, never the app's (runtime-managed)
+/.aibuilder/
