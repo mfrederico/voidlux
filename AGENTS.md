@@ -657,7 +657,7 @@ Code changes are commits.
 - https://docs.flightphp.com/ — the FlightPHP manual (routing, views, request/response)
 - `vendor/tiknix/runtime/README.md` — what the runtime is and how an app extends or overrides it
 
-## Concept: browserdrive (1.0.2)
+## Concept: browserdrive (1.0.3)
 
 Playwright-style browser automation with **no browser on the server**. Classes `app\concepts\browserdrive\Session`; controller
 `Browserdrive` (`/browserdrive`); MCP tool `browserdrive_drive`; beans `drivesession`, `drivestep`.

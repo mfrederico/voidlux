@@ -1,6 +1,6 @@
 {
   "name": "browserdrive",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "kind": "capability",
   "icon": "mouse-pointer",
   "title": "Browser drive",
