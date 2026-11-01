@@ -146,6 +146,13 @@ its header is the format. Your part, once per game and whenever the game learns 
 - A broken rule or a missing implementation is an error in the console at load, naming it; fix the vocabulary or the code,
   not the rule. `?events` in the page's address logs every rule that fires; `Events.trace` holds the last 300 steps.
 
+## The Studio's inspect
+
+`/studio/open/<slug>` shows the running game and lets the producer pause and click anything in it. A game says what is under a
+point by defining `window.forgePick = (x, y) => [{ key, x, y, r, hp?, maxhp?, status? }, …]`, nearest first: x and y are canvas
+pixels, as the view on screen draws them (project through the camera in a 3D game); `key` is the thing's subject key in
+`assets/events-vocab.json`; x, y and r in the answer place the highlight. Without it, the Studio's list still works.
+
 ## Plugins the builder has
 
 The forge's agents share the plugins installed on /agents (Skills & plugins). A plugin's skills load when a task matches them

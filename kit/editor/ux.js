@@ -8,7 +8,7 @@
 //   session   one per visit: how long the page was open, how many actions, errors and fails
 // Nothing typed by the person, no file contents, no request bodies. Off when the page has no ?game.
 const UX = (() => {
-  const game = new URLSearchParams(location.search).get('game') || '', page = (location.pathname.match(/\/editor\/([a-z]+)/) || [])[1] || 'page';
+  const studio = location.pathname.match(/^\/studio\/open\/([a-z0-9-]+)/), game = new URLSearchParams(location.search).get('game') || (studio ? studio[1] : ''), page = studio ? 'studio' : (location.pathname.match(/\/editor\/([a-z]+)/) || [])[1] || 'page';
   const q = [], t0 = Date.now(), counts = { act: 0, error: 0, fail: 0, undo: 0 }; let tab = '', tabAt = Date.now(), sent = false;
   const push = (ev, d) => { if (!game) return; counts[ev] = (counts[ev] || 0) + 1; q.push(Object.assign({ ev, page, t: Math.round((Date.now() - t0) / 1000) }, d || {})); if (q.length >= 20) flush(); };
   const flush = (beacon) => { if (!game || !q.length) return; const body = JSON.stringify({ page, items: q.splice(0, q.length) });

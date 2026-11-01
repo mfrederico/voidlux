@@ -10,7 +10,7 @@ function toast(t, cls) { let b = document.getElementById('toast'); if (!b) { b =
 const CAST_OK = ['castGrid', 'castHist', 'castReqs', 'castWaiting', 'castAsk', 'castAskBtn', 'castList', 'castMake', 'castWire', 'castSub', 'castNote'].every(id => el(id));
 if (!CAST_OK) { el('fresh').classList.remove('hidden'); el('freshWhy').textContent = '(the 3D tab is newer than this copy of the page)'; }
 const Cast = {
-  S: null, jobs: [], open: '', focus: '', t: 0, viewT: 0, seenWaiting: null, title: document.title,
+  S: null, jobs: [], open: new URLSearchParams(location.search).get('item') || '', focus: '', t: 0, viewT: 0, seenWaiting: null, title: document.title,
   async refresh() {
     if (!CAST_OK) return;
     try {

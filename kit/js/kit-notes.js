@@ -33,8 +33,9 @@ const Notes = {
   // ---- pause: a kit game has Game.paused; a Centipede-style game gets its G.update wrapped ----
   pause(on) {
     if (typeof Game !== 'undefined' && Game.scenes) { Game.paused = on; if (typeof Input !== 'undefined') { Input.keys = {}; Input.joy = null; } return; }
-    if (typeof G !== 'undefined' && typeof G.update === 'function') { if (!this._u) { this._u = G.update.bind(G); G.update = dt => { if (!this.open) this._u(dt); }; } }
+    if (typeof G !== 'undefined' && typeof G.update === 'function') { if (!this._u) { this._u = G.update.bind(G); G.update = dt => { if (!this.open && !this.frozen) this._u(dt); }; } }
   },
+  freeze(on) { this.frozen = !!on; this.pause(!!on); }, // the game held still with none of note mode's own screen: the Studio's inspect
   scene() { return typeof Game !== 'undefined' && Game.state ? Game.state : typeof G !== 'undefined' ? (G.state + (G.state === 'playing' && G.mode ? ':' + G.mode : '')) : '?'; },
   cam() { const c = (typeof Game !== 'undefined' && Game.cam) || (typeof G !== 'undefined' && G.cam) || { x: 0, y: 0 }; return { x: c.x || 0, y: c.y || 0 }; },
   logical(cx, cy) { const r = this.canvas.getBoundingClientRect(); return { x: (cx - r.left) / r.width * this.canvas.width, y: (cy - r.top) / r.height * this.canvas.height }; },

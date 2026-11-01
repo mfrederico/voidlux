@@ -3,7 +3,7 @@
 $slug = $game['slug']; 
 ?>
 <meta name="csrf-token" content="<?= h(csrf_token()) ?>">
-<div class="vl-gamebar"><span class="vl-pill" id="statusPill"><?= h($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span>
+<div class="vl-gamebar"><span class="vl-pill" id="statusPill"><?= h($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span><a class="btn btn-sm btn-primary" href="/studio/open/<?= h($slug) ?>" title="the running game: pause and click anything in it">Open in Studio</a>
   <?php if ($game['publishedUrl']): ?><a class="btn btn-sm btn-outline-primary ms-auto" href="<?= h($game['publishedUrl']) ?>" target="_blank">Live</a><?php endif; ?></div>
 <div class="vl-tabs" id="tabs">
   <a href="#play" data-tab="play" class="on">Play</a><a href="#build" data-tab="build">Build</a><a href="#notes" data-tab="notes">Notes <span id="notesTab"></span></a><a href="#test" data-tab="test">Test</a><a href="#media" data-tab="media">Media</a><a href="#ship" data-tab="ship">Ship</a>

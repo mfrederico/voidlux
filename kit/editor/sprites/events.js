@@ -5,7 +5,7 @@
 const EV_OK = ['evBest', 'evCat', 'evBuiltin', 'evBiTitle', 'evFind', 'evAskFor', 'evAskForBox', 'evAskForOn', 'evAskForName', 'evSub', 'evWire', 'evSave', 'evBody', 'evAskBox', 'evAsk', 'evAskBtn', 'evProps', 'evWho', 'evRules', 'evWhoTitle', 'evNew'].every(id => el(id));
 if (!EV_OK) { el('fresh').classList.remove('hidden'); el('freshWhy').textContent = '(the Events tab is newer than this copy of the page)'; }
 const Ev = {
-  S: null, rules: [], who: '*', dirty: false, t: 0,
+  S: null, rules: [], who: new URLSearchParams(location.search).get('who') || '*', dirty: false, t: 0, // who: a link from the Studio's card opens on that thing
   OPS: [['is', 'is'], ['not', 'is not'], ['>', '>'], ['<', '<'], ['>=', '≥'], ['<=', '≤'], ['has', 'has']],
   async refresh(keep) {
     if (!EV_OK) return;
@@ -38,15 +38,7 @@ const Ev = {
     for (const r of mine) R.appendChild(this.card(r));
     this.drawBuiltin(); this.drawBestiary();
   },
-  say(r) { // a rule in words: on die → if self.burning is yes and count fires (game) < 3 → SetBurning to nearby enemies (radius 80)
-    const lim = a => [a.max && `max ${a.max}`, a.once && 'once', a.cooldown && `every ${a.cooldown}s at most`, a.chance != null && a.chance < 1 && `${Math.round(a.chance * 100)}% chance`, a.delay && `after ${a.delay}s`].filter(Boolean).join(', ');
-    const args = a => Object.entries(a.args || {}).map(([k, v]) => `${k} ${v}`).join(', ');
-    const to = a => a.to ? ` → ${a.to.target}${a.to.who ? ' ' + a.to.who.replace('group:', 'every ') : ''}${a.to.args ? ' (' + Object.entries(a.to.args).map(([k, v]) => `${k} ${v}`).join(', ') + ')' : ''}` : '';
-    const op = c => (this.OPS.find(o => o[0] === c.op) || [, c.op])[1];
-    const cond = c => c.op === 'chance' ? `${Math.round(c.value * 100)}% chance` : c.state != null ? `${c.state} ${op(c)} ${c.value}` : c.count != null ? `count ${c.count}${c.on === 'game' ? ' (game)' : ''} ${op(c)} ${c.value}` : `${c.field} ${op(c)} ${c.value}`;
-    return `on ${r.on}` + ((r.if || []).length ? ' → if ' + r.if.map(cond).join(' and ') : '')
-      + ' → ' + (r.do || []).map(a => (a.emit ? `fire “${a.emit}”` : a.fn) + to(a) + ((args(a) || lim(a)) ? ` (${[args(a), lim(a)].filter(Boolean).join('; ')})` : '')).join(', then ');
-  },
+  say(r) { return RuleWords.say(r); },
   sel(opts, val, onch, empty) { const s = document.createElement('select'); if (empty) s.add(new Option(empty, '')); for (const o of opts) { const [v, t] = Array.isArray(o) ? o : [o, o]; s.add(new Option(t, v)); } s.value = val ?? ''; s.onchange = () => { onch(s.value); this.touch(); }; return s; },
   inp(val, onch, ph, w) { const i = document.createElement('input'); i.value = val ?? ''; if (ph) i.placeholder = ph; if (w) i.style.width = w; i.oninput = () => { onch(i.value); this.touch(); }; return i; },
   num(v) { return v === '' || v == null ? undefined : (isNaN(+v) ? v : +v); },
