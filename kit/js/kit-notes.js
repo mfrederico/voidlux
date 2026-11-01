@@ -176,3 +176,4 @@ const Notes = {
 };
 window.addEventListener('DOMContentLoaded', () => Notes.init());
 if (document.readyState !== 'loading') Notes.init();
+window.Notes = Notes; // a const is not on window: the forge's Studio reaches it from outside the frame

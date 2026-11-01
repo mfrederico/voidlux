@@ -9,7 +9,7 @@
   // ---- inspect: the game held still; the overlay catches the pointer ----
   function setInspect(on) {
     let N = null; try { N = W().Notes; } catch (e) {}
-    if (on && !N) { hint('The game has not finished loading yet.'); return; }
+    if (on && !N) { hint(frame.contentDocument && frame.contentDocument.readyState === 'complete' ? 'This game has no inspect support (it does not load the kit\'s notes): choose from the list.' : 'The game has not finished loading yet.'); return; }
     if (on && typeof W().forgePick !== 'function') { hint('This game does not say what is under the pointer yet: choose from the list.'); return; }
     inspecting = on; if (N) N.freeze(on); over.classList.toggle('on', on); $('inspect').classList.toggle('on', on); $('inspect').textContent = on ? 'Resume game' : 'Inspect';
     ring.style.display = tip.style.display = 'none'; hint(on ? 'Paused. Click anything in the game. Esc resumes.' : 'Press Inspect, then click anything in the game.'); if (!on) frame.focus();
