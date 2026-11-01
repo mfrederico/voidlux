@@ -2,7 +2,8 @@
 // hook), the list of things, and the read-only card of the one picked (lib/Inspector.php). views/studio/open.php is the markup.
 (() => {
   const $ = id => document.getElementById(id), esc = Forge.esc, frame = $('game'), over = $('over'), ring = $('ring'), tip = $('tip');
-  let inspecting = false, things = [], current = '', seq = 0;
+  let inspecting = false, things = [], current = '', seq = 0, intoPlay = true; // intoPlay: the next load of the game goes straight to playing
+  const driven = window.top !== window && !new URLSearchParams(location.search).has('play'); // in another page's frame (a browser-drive session) it stays on the title: playing writes the person's own saved run
   const W = () => frame.contentWindow;
   const hint = t => { $('hint').textContent = t; };
 
@@ -22,10 +23,16 @@
     tip.textContent = t.key; Object.assign(tip.style, { display: 'block', left: Math.min(cx + 14, over.clientWidth - 180) + 'px', top: Math.max(cy - 28, 4) + 'px' }); });
   over.addEventListener('click', e => { if (!inspecting) return; const { list } = at(e); if (!list.length) { hint('Nothing there. Menus and title screens have nothing to inspect: press Esc, start playing, then Inspect again.'); return; } if (typeof UX !== 'undefined') UX.act('inspect', list[0].key); show(list[0].key, list[0]); });
   $('inspect').onclick = () => setInspect(!inspecting);
-  $('restart').onclick = () => { setInspect(false); frame.src = `/games/${SLUG}/?r=${Date.now()}`; };
+  const reload = play => { setInspect(false); intoPlay = play; frame.src = `/games/${SLUG}/?r=${Date.now()}`; };
+  $('restart').onclick = () => reload(true); $('titleScreen').onclick = () => reload(false); $('changed').onclick = () => reload(true);
+  // the game's own forgePlay (kit-game.js has the default) carries on from its saved run or starts one, and says which; a saved run comes back at its last checkpoint
+  function play() { let said = null;
+    try { if (typeof W().forgePlay === 'function') said = W().forgePlay(); } catch (e) { console.error(e); hint('The game could not start by itself: ' + e.message); return; }
+    hint(said || 'This game opens on its title screen: start it there.'); frame.focus(); try { W().focus(); } catch (e) {} }
   const keys = e => { if (e.altKey && e.key.toLowerCase() === 'i') { e.preventDefault(); setInspect(!inspecting); } else if (e.key === 'Escape' && inspecting) { e.preventDefault(); setInspect(false); } };
   addEventListener('keydown', keys);
-  frame.addEventListener('load', () => { inspecting = false; over.classList.remove('on'); $('inspect').classList.remove('on'); $('inspect').textContent = 'Inspect'; try { W().addEventListener('keydown', keys, true); } catch (e) {} });
+  const loaded = () => { inspecting = false; over.classList.remove('on'); $('inspect').classList.remove('on'); $('inspect').textContent = 'Inspect'; $('changed').hidden = true; try { W().addEventListener('keydown', keys, true); } catch (e) {} if (intoPlay && !driven) play(); intoPlay = true; };
+  frame.addEventListener('load', loaded); try { if (W().location.href !== 'about:blank' && frame.contentDocument.readyState === 'complete') loaded(); } catch (e) {} // a game quicker than this script
   // a note made in the game (its own Alt+P) is kept as on the game page, never lost
   addEventListener('message', async e => { const m = e.data || {}; if (m.type !== 'forge:note' || !m.note || e.source !== W()) return; try { await Forge.api(`/game/note/${SLUG}`, { note: m.note }); hint('Note saved: it is on the game page, under Notes.'); } catch (err) { alert('note not saved: ' + err.message); } });
 
@@ -63,7 +70,7 @@
   // ---- this page also runs the playtests and screenshots agents ask for, as the game page does ----
   let last = 0; ForgeRunner.init(SLUG, { note: t => { if (t) hint(t); }, done: rep => hint(rep.ok ? 'Playtest passed in this browser.' : 'Playtest in this browser: ' + (rep.status || 'failed') + '. See the game page, under Test.') });
   async function poll() { const att = $('attached');
-    try { const r = await Forge.api(`/game/events/${SLUG}?since=${last}`); last = r.last; ForgeRunner.take(r); att.textContent = '● runs playtests'; Forge.lastRun($('lastRun'), SLUG, r.agent); const bld = $('builder'); bld.hidden = !r.agent.busy; bld.textContent = '⚒ the builder is working'; }
+    try { const r = await Forge.api(`/game/events/${SLUG}?since=${last}`); if (last > 0 && (r.events || []).some(ev => ['checkpoint', 'artdone'].includes(ev.kind))) $('changed').hidden = false; last = r.last; ForgeRunner.take(r); att.textContent = '● runs playtests'; Forge.lastRun($('lastRun'), SLUG, r.agent); const bld = $('builder'); bld.hidden = !r.agent.busy; bld.textContent = '⚒ the builder is working'; }
     catch (e) { att.textContent = '○ not connected: ' + e.message; }
     setTimeout(poll, document.hidden ? 8000 : 5000); }
   if (window.top === window) poll(); else $('attached').textContent = ''; // inside another page's frame (a browser-drive session looking at this page) it is not the runner

@@ -48,6 +48,9 @@ const Game = {
     if (this.params.fps) this.showProf = true;
     Test.init(this);
     this.go(o.start || 'title');
+    // what the Studio calls to open straight into play; it returns what it did, in words, or null when it stayed on the title.
+    // A saved run stays with the game's own title screen, which knows how to continue it: a game with a better answer sets its own.
+    window.forgePlay = () => { if (this.state !== (o.start || 'title') || !this.scenes.play || Save.load()) return null; this.go('play'); return 'Started a new run.'; };
     let last = performance.now();
     const step = dt => { this.time += dt; if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 30); for (const m of this.msgs) m.t -= dt; if (this.msgs.length && this.msgs[0].t <= -1) this.msgs.shift(); if (Input.bot && this.scene.bot) this.scene.bot(dt); this.scene.update(dt); };
     const loop = now => {

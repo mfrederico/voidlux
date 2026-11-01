@@ -56,6 +56,8 @@ the scene's `enter`. Check `Music.has(name)` before relying on a song that may n
 - Collision over many entities: bucket into a grid; test the few in the same cell.
 - Watch `?fps=1`: update and draw ms must stay under 8 each on a phone-class budget.
 
+**Opening in the Studio.** The Studio calls `window.forgePlay()` when it loads the game, so a person lands in play, not on the title. `Game.boot` sets a default: from the start scene to `play`, unless there is a saved run. A game with a saved run to continue, or a differently named scene, assigns its own after boot: it continues or starts, and returns what it did as a sentence (or null to stay on the title).
+
 **Testing.** Every scene has a `bot(dt)`: it sets `Input.bot.axis` and presses keys with `Input.tapKey`, so the soak can
 play from the title through game over and back. `../../studio/bin/soak 60 4` runs a headless 60 game-second soak at 4x and prints
 the report; `ok: true` means no exceptions, no console errors, no failed `Test.assert`. The report also
