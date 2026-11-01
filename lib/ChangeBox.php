@@ -1,7 +1,7 @@
 <?php
 /**
  * ChangeBox — the Studio's one input: a person says what they want different, about the thing picked or the whole game, and
- * sees where that would go and what it would cost before anything runs. Four ways: its numbers (free, at once), a rule (the
+ * sees where that would go and what it would cost before anything runs. Five ways: its words (free, edited on its card, lib/GameWords.php), its numbers (free, at once), a rule (the
  * artist writes rules to read first), a new version of its model, or the builder. The way is suggested by plain word matching:
  * free, instant, and shown with the words it went by, so a person can overrule it. Nothing here calls an agent; do() starts
  * the same jobs the editors start.
@@ -10,6 +10,7 @@ namespace app;
 
 class ChangeBox {
     private const WORDS = [ // what points at each way, in the order they are tried: "faster when hit" is a rule, not a number
+        'words' => '/\b(text|words?|wording|says?|rename\w*|spelling|typo|call it|label|title|heading|description)\b/i',
         'rule' => '/\b(when|whenever|each time|every time|after it|once it|if it|if you|on death|dies|killed|explodes?|drops?|spawns? (a|an|two|three|more)|splits?)\b/i',
         'numbers' => '/\b(faster|slower|speed|quicker|more often|less often|rarer|commoner|appears?|range|weaker to|weak to|resist\w*|immune|attacks? (more|less)|shoots? (more|less|faster|slower)|fire|burn\w*|poison\w*|venom\w*|ice|cold|frost\w*|freez\w*|electric\w*|shock\w*|lightning)\b/i',
         'art' => '/\b(look|looks|looking|colou?rs?|red|blue|green|yellow|orange|purple|pink|black|white|model|shape|wears?|wearing|hat|eyes?|legs?|arms?|wings?|skin|texture|shiny|scarier|cuter|redesign|redraw|draw)\b/i',
@@ -32,6 +33,7 @@ class ChangeBox {
         $art = RunCosts::estimate($slug, 'art')['cost']; $row = $thing['row']; $vocab = Rules::vocab($slug);
         $model = $key !== '' && !$thing['screen'] && is_file(Cast::path($slug)) ? (Cast::read($slug)['items'][$key] ?? null) : null;
         $ways = [
+            'words' => ['title' => 'Change its words', 'does' => 'Edit the words yourself on its card below. They reach the running game when they can, and you can undo them.', 'cost' => 'Free.', 'free' => true, 'go' => 'Edit the words', 'can' => $thing['screen'], 'whyNot' => $key === '' ? 'Pick the words on the screen first, with Inspect.' : "This works on what a screen shows; {$name}'s name in the rules is the builder's."],
             'numbers' => ['title' => 'Change its numbers', 'does' => "Change {$name}'s numbers yourself. They reach the running game when they can, and you can undo them.", 'cost' => 'Free.', 'free' => true, 'go' => 'Save these numbers',
                           'can' => $row !== null, 'whyNot' => $thing['screen'] ? "{$name} is part of a screen: its numbers are in the game's code." : ($key === '' ? 'Pick a thing first; the numbers of the whole game are on the game page, under Config.' : "{$key} has no row in this game's bestiary.")],
             'rule' => ['title' => 'Write it as a rule', 'does' => 'The artist writes rules for ' . $name . ' and you read them first. Nothing changes until you add them.', 'cost' => $art, 'free' => false, 'go' => 'Ask for the rules',
@@ -69,7 +71,7 @@ class ChangeBox {
                 $r = GameStore::askBuilder($slug, $about . $text, $memberId);
                 return ['way' => $way, 'queued' => !empty($r['queued'])];
         }
-        throw new \InvalidArgumentException('The way is numbers, rule, art or builder.');
+        throw new \InvalidArgumentException('The way is words, numbers, rule, art or builder.');
     }
 
     /** {row: the thing's own bestiary row or null, about, screen, label}. A part of a screen (perk:swift, button:x) is named by the game's page, and only ever becomes words for the builder; any other name the game does not have is refused, not guessed at. */

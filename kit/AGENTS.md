@@ -60,6 +60,8 @@ the scene's `enter`. Check `Music.has(name)` before relying on a song that may n
 
 **Picking in the Studio.** Inspect asks `window.forgePick(x, y)` what is under a point of the canvas, nearest first. A thing in the world is `{key, x, y, r}`, with `key` a subject of the game. A part of a screen (a menu's card, a button) is `{key: 'perk:swift', title, about, kind, facts, rect: {x, y, w, h}, x, y, r}`: the key is `word:name`, and `title` makes the Studio show it from what the game says. `Game.boot` picks the current screen by default, so a click on any screen selects something; a game should list its screens' elements too.
 
+**Words in the Studio.** A pick may carry `texts: [{label, value, site}]`, edited on its card. The server replaces the words in the one string literal of `js/*.js` that holds them (`site`, `js/file.js:line`, says which line drew them), and refuses text built from values or written in several places it cannot tell apart. Keep on-screen words as whole literals, not assembled from pieces, and they stay directly editable. `ForgeWords` in kit-notes.js records what a screen draws; `Game.boot` wraps `Draw.text` with it, and a game with its own text function calls `ForgeWords.wrap`.
+
 **Changes reaching the running game.** After a change the Studio calls `window.forgeLive[kind]()` if the game has one, and otherwise asks the person to reload. The kit's events set `forgeLive.rule` (rules read again). A game may add others, such as `numbers`: it takes the change without restarting and returns the names of what still needs a reload, or nothing.
 
 **Testing.** Every scene has a `bot(dt)`: it sets `Input.bot.axis` and presses keys with `Input.tapKey`, so the soak can

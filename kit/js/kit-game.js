@@ -51,7 +51,11 @@ const Game = {
     // what the Studio calls to open straight into play; it returns what it did, in words, or null when it stayed on the title.
     // A saved run stays with the game's own title screen, which knows how to continue it: a game with a better answer sets its own.
     // the Studio's inspect: a game that says nothing about what is under the pointer can still have its screen picked and talked about
-    if (!window.forgePick) window.forgePick = () => [{ key: 'screen:' + this.state, title: 'The ' + this.state + ' screen', kind: 'A screen', x: this.W / 2, y: CFG.H / 2, r: this.W / 2, rect: { x: 0, y: 0, w: this.W, h: CFG.H } }];
+    const words = typeof ForgeWords !== 'undefined' ? ForgeWords : null;
+    if (words) { words.wrap(Draw, () => Draw.ctx); window.forgeCapture = () => words.capture(() => { if (this.scene && this.scene.draw) this.scene.draw(Draw.ctx); }); (window.forgeLive = window.forgeLive || {}).text = (a, b) => { if (!a) return ['the words']; words.say(a, b); return []; }; }
+    if (!window.forgePick) window.forgePick = (x, y) => { const hit = r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h, lines = words ? words.lines().filter(l => hit(l.rect)) : [];
+      return lines.map(l => ({ key: 'text:' + l.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 50), title: '"' + l.value + '"', kind: 'Words on the screen', texts: [{ label: 'Words', value: l.value, site: l.site }], rect: l.rect, x: l.rect.x + l.rect.w / 2, y: l.rect.y + l.rect.h / 2, r: l.rect.w / 2 }))
+        .concat([{ key: 'screen:' + this.state, title: 'The ' + this.state + ' screen', kind: 'A screen', texts: words ? words.lines().map(l => ({ label: 'Words', value: l.value, site: l.site })) : [], x: this.W / 2, y: CFG.H / 2, r: this.W / 2, rect: { x: 0, y: 0, w: this.W, h: CFG.H } }]); };
     window.forgePlay = () => { if (this.state !== (o.start || 'title') || !this.scenes.play || Save.load()) return null; this.go('play'); return 'Started a new run.'; };
     let last = performance.now();
     const step = dt => { this.time += dt; if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 30); for (const m of this.msgs) m.t -= dt; if (this.msgs.length && this.msgs[0].t <= -1) this.msgs.shift(); if (Input.bot && this.scene.bot) this.scene.bot(dt); this.scene.update(dt); };

@@ -6,6 +6,7 @@
  *   GET /studio/open/<slug>    the page      GET /studio/things/<slug>    the list      GET /studio/card/<slug>?key=    a card
  *   POST /studio/ways/<slug> { text, key }    where a change could go and what each way costs; nothing starts (lib/ChangeBox.php)
  *   POST /studio/change/<slug> { way, text, key, values? }    starts it
+ *   POST /studio/words/<slug> { texts }    which of these words can be changed directly      POST /studio/wording/<slug> { old, new, site, key }    changes them (lib/GameWords.php)
  *   GET /studio/timeline/<slug>    everything that changed      POST /studio/undo/<slug> { id }    undoes one entry (lib/Timeline.php)
  */
 namespace app;
@@ -30,6 +31,15 @@ class Studio extends BaseControls\Control {
     public function change($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $b = $this->getJsonInput() ?? [];
         try { Flight::jsonSuccess(ChangeBox::start((string) $g->slug, (string) ($b['way'] ?? ''), (string) ($b['text'] ?? ''), (string) ($b['key'] ?? ''), (array) ($b['values'] ?? []), (int) $this->member->id, (string) ($this->member->username ?: $this->member->email), (string) ($b['label'] ?? ''), (string) ($b['context'] ?? ''))); }
+        catch (\InvalidArgumentException $e) { Flight::jsonError($e->getMessage(), 400); } catch (\RuntimeException $e) { Flight::jsonError($e->getMessage(), 409); }
+    }
+    public function words($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $b = $this->getJsonInput() ?? [];
+        Flight::jsonSuccess(['status' => GameWords::status((string) $g->slug, array_slice((array) ($b['texts'] ?? []), 0, 60))]);
+    }
+    public function wording($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $b = $this->getJsonInput() ?? [];
+        try { Flight::jsonSuccess(GameWords::change((string) $g->slug, (string) ($b['old'] ?? ''), (string) ($b['new'] ?? ''), (string) ($b['site'] ?? ''), (string) ($this->member->username ?: $this->member->email), (string) ($b['key'] ?? ''))); }
         catch (\InvalidArgumentException $e) { Flight::jsonError($e->getMessage(), 400); } catch (\RuntimeException $e) { Flight::jsonError($e->getMessage(), 409); }
     }
     public function timeline($params = []): void {

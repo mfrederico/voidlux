@@ -2,7 +2,7 @@
 // hook), the list of things, and the read-only card of the one picked (lib/Inspector.php). views/studio/open.php is the markup.
 (() => {
   const $ = id => document.getElementById(id), esc = Forge.esc, frame = $('game'), over = $('over'), ring = $('ring'), tip = $('tip');
-  let inspecting = false, things = [], current = '', element = null, seq = 0, intoPlay = true; // intoPlay: the next load of the game goes straight to playing
+  const mine2 = new Set(); let inspecting = false, things = [], current = '', element = null, seq = 0, intoPlay = true; // intoPlay: the next load of the game goes straight to playing
   const driven = window.top !== window && !new URLSearchParams(location.search).has('play'); // in another page's frame (a browser-drive session) it stays on the title: playing writes the person's own saved run
   const W = () => frame.contentWindow;
   const hint = t => { $('hint').textContent = t; };
@@ -12,7 +12,7 @@
     let N = null; try { N = W().Notes; } catch (e) {}
     if (on && !N) { hint(frame.contentDocument && frame.contentDocument.readyState === 'complete' ? 'This game has no inspect support (it does not load the kit\'s notes): choose from the list.' : 'The game has not finished loading yet.'); return; }
     if (on && typeof W().forgePick !== 'function') { hint('This game does not say what is under the pointer yet: choose from the list.'); return; }
-    inspecting = on; if (N) N.freeze(on); over.classList.toggle('on', on); $('inspect').classList.toggle('on', on); $('inspect').textContent = on ? 'Resume game' : 'Inspect';
+    inspecting = on; if (N) N.freeze(on); if (on) try { if (W().forgeCapture) W().forgeCapture(); } catch (e) { console.error(e); } // what the screen says, for picking its words over.classList.toggle('on', on); $('inspect').classList.toggle('on', on); $('inspect').textContent = on ? 'Resume game' : 'Inspect';
     ring.style.display = tip.style.display = 'none'; hint(on ? 'Paused. Click anything in the game. Esc resumes.' : 'Press Inspect, then click anything in the game.'); if (!on) frame.focus();
   }
   const at = e => { const r = over.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top; const N = W().Notes, p = N.logical(cx, cy); return { cx, cy, list: W().forgePick(p.x, p.y) || [] }; };
@@ -49,7 +49,13 @@
   // ---- the card: what is specific to this thing first; what it shares with its group, folded ----
   // a part of a screen (a perk's card, a button): the game itself says what it is, as it has no card on the server
   function showElement(t) { ++seq; current = t.key; element = t; about(); drawList(); const facts = Object.entries(t.facts || {});
-    $('card').innerHTML = `<h2>${esc(t.title)}</h2>${t.kind ? `<div class="small muted">${esc(t.kind)}</div>` : ''}${t.about ? `<p>${esc(t.about)}</p>` : ''}${facts.length ? `<table class="res">${facts.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table>` : ''}<p class="small muted" style="margin-top:10px">Say above what you want different about it. It lives in the game's code, so the builder changes it.</p>`; }
+    $('card').innerHTML = `<h2>${esc(t.title)}</h2>${t.kind ? `<div class="small muted">${esc(t.kind)}</div>` : ''}${t.about ? `<p>${esc(t.about)}</p>` : ''}${facts.length ? `<table class="res">${facts.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table>` : ''}<p class="small muted" style="margin-top:10px">Say above what you want different about it. It lives in the game's code, so the builder changes it.</p><div id="words"></div>`; drawWords(t); }
+  // the words an element shows: each editable where it can be found written once in the game's scripts (lib/GameWords.php), else the reason
+  async function drawWords(t) { const texts = t.texts || [], box = $('words'); if (!box || !texts.length) return; const mine = seq; let st;
+    try { st = (await Forge.api(`/studio/words/${SLUG}`, { texts })).status; } catch (e) { if (mine === seq) box.innerHTML = `<p class="bad small">Could not read the words: ${esc(e.message)}</p>`; return; } if (mine !== seq) return;
+    box.innerHTML = '<h3>Its words</h3>' + texts.map((x, i) => `<div class="word"><label class="small muted" for="w${i}">${esc(x.label)}</label>${st[i].ok ? `<textarea id="w${i}" rows="${x.value.length > 44 ? 3 : 1}" data-i="${i}"${framed ? ' disabled' : ''}>${esc(x.value)}</textarea><button type="button" class="word-s" data-i="${i}" hidden>Save these words</button>` : `<div class="small">${esc(x.value)}</div><div class="small muted">${esc(st[i].why)}</div>`}</div>`).join('');
+    box.querySelectorAll('textarea').forEach(a => { const b = box.querySelector(`.word-s[data-i="${a.dataset.i}"]`); a.oninput = () => { b.hidden = a.value.trim() === texts[+a.dataset.i].value; };
+      b.onclick = async () => { const x = texts[+a.dataset.i], now = a.value.trim(); b.disabled = true; try { const r = await Forge.api(`/studio/wording/${SLUG}`, { old: x.value, new: now, site: x.site || '', key: t.key }); if (r.sha) mine2.add(r.sha); const said = await applyLive('text', x.value, now); x.value = now; b.hidden = true; $('changeWays').innerHTML = `<p class="small">Words saved. ${esc(said)}</p>${r.sha ? '<div class="ch-go"><button type="button" id="wordUndo">Undo</button></div>' : ''}`; if (r.sha) $('wordUndo').onclick = () => undo(r.sha); loadTimeline(); if (typeof UX !== 'undefined') UX.act('words', t.key); } catch (e) { a.insertAdjacentHTML('afterend', `<p class="bad small">${esc(e.message)}</p>`); } b.disabled = false; }; }); }
   async function show(key, live) { const mine = ++seq; current = key; element = null; about(); drawList(); const row = $('things').querySelector('.th.on'); if (row) row.scrollIntoView({ block: 'nearest' }); $('card').innerHTML = `<h2>${esc(key)}</h2><p class="muted">Loading…</p>`;
     try { const { card } = await Forge.api(`/studio/card/${SLUG}?key=${encodeURIComponent(key)}`); if (mine === seq) $('card').innerHTML = render(card, live); }
     catch (e) { if (mine === seq) $('card').innerHTML = `<h2>${esc(key)}</h2><p class="bad">The card could not be read: ${esc(e.message)}</p>`; } }
@@ -73,11 +79,11 @@
 
   // ---- the change box: one sentence about what is picked, the ways it could go with what each costs, then the chosen one followed to its end (lib/ChangeBox.php) ----
   const box = $('changeWays'), framed = window.top !== window; // in another page's frame (a browser-drive session) it can look, not spend or change
-  const mine = new Set(); // this page's own commits: the changes it has applied itself, so the poll does not ask for a reload
+  const mine = mine2; // this page's own commits: the changes it has applied itself, so the poll does not ask for a reload
   // the running game takes the change if it can (its forgeLive hook) and says what still needs a reload; otherwise the button above asks for one
-  async function applyLive(kind) { let f = null, left = null; try { f = W().forgeLive && W().forgeLive[kind]; } catch (e) {}
+  async function applyLive(kind, ...args) { let f = null, left = null; try { f = W().forgeLive && W().forgeLive[kind]; } catch (e) {}
     if (typeof f !== 'function') { $('changed').hidden = false; return 'Reload the game to see it.'; }
-    try { left = await f(); } catch (e) { console.error(e); $('changed').hidden = false; return 'The running game could not take it (' + e.message + '). Reload the game to see it.'; }
+    try { left = await f(...args); } catch (e) { console.error(e); $('changed').hidden = false; return 'The running game could not take it (' + e.message + '). Reload the game to see it.'; }
     if (Array.isArray(left) && left.length) { $('changed').hidden = false; return `In the game now, except ${left.join(', ')}: reload the game for those.`; }
     return 'In the game now: no reload needed. New ones use it.'; }
   const JOB = 'studio-change-' + SLUG; let job = null; try { job = JSON.parse(sessionStorage.getItem(JOB) || 'null'); } catch (e) {} // a rule or a model takes minutes: a reload must not lose what was paid for
@@ -98,7 +104,8 @@
   $('changeForm').onsubmit = async e => { e.preventDefault(); const text = $('changeText').value.trim(); if (!text) { $('changeText').focus(); return; } if (job) { working('The last change is still going: it shows here when it is done.'); return; }
     try { drawWays(await Forge.api(`/studio/ways/${SLUG}`, { text, key: current, ...said() })); } catch (err) { box.innerHTML = `<p class="bad small">${esc(err.message)}</p>`; } };
   $('changeText').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('changeForm').requestSubmit(); } };
-  async function go(r) { const way = box.querySelector('input[name=way]:checked').value, text = $('changeText').value.trim(), key = current, body = { way, text, key, ...said() }; $('changeGo').disabled = true;
+  async function go(r) { if (box.querySelector('input[name=way]:checked').value === 'words') { const a = document.querySelector('#words textarea:not([disabled])'); box.innerHTML = a ? '' : '<p class="small">No words of it can be edited directly: the card says why. The builder can change them.</p>'; if (a) { a.focus(); a.scrollIntoView({ block: 'center' }); } return; }
+    const way = box.querySelector('input[name=way]:checked').value, text = $('changeText').value.trim(), key = current, body = { way, text, key, ...said() }; $('changeGo').disabled = true;
     if (way === 'numbers') { const vals = {}; box.querySelectorAll('#numbers input').forEach(i => { if (i.value !== i.dataset.was) vals[i.name] = i.value === '' ? null : Number(i.value); }); body.values = vals; }
     try { const res = await Forge.api(`/studio/change/${SLUG}`, body); if (typeof UX !== 'undefined') UX.act('change-go', way + (way === r.suggested ? '' : ' over ' + r.suggested)); job = { ...res, text, key }; keepJob(); $('changeText').value = ''; follow(); }
     catch (err) { job = null; $('changeGo').disabled = false; box.insertAdjacentHTML('beforeend', `<p class="bad small">${esc(err.message)}</p>`); } }
