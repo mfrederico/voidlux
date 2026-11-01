@@ -106,6 +106,7 @@ const Events = (() => {
       const r = await get('events.json'); rules = ((r && r.rules) || []).filter(x => !x.off && check(x));
       for (const k of Object.keys(byKey)) delete byKey[k]; loaded = true;
     },
+    has(key) { return !!(loaded && vocab.subjects[key]); }, // a subject of the vocabulary, for an interface that sends events only about the parts it declared
     emit(name, key, ctx, obj) {
       if (!loaded) return; if (depth >= 8) { console.error(`Events: the chain reached ${name} on ${key} 8 deep: a loop, stopped`); return; }
       if (!vocab.events[name]) { console.error(`Events: emit("${name}") is not an event in the vocabulary`); return; }

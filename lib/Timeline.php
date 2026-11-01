@@ -7,6 +7,8 @@
  */
 namespace app;
 
+use \app\Bean;
+
 class Timeline {
     private const COALESCE = 120; // seconds: a slider dragged or a form saved again and again is one change, not twenty
 
@@ -56,6 +58,9 @@ class Timeline {
             if (count($out) >= $max) break;
         }
         $flush(); $out = array_slice($out, 0, $max);
+        // a builder entry points at the notes it was sent: those sent after the builder entry before it and by the end of this one
+        $g = GameStore::row($slug); $sent = $g ? Bean::find('gamenote', "game_id = ? AND state IN ('sent', 'done') AND sent_at IS NOT NULL", [(int) $g->id]) : []; $byAt = []; foreach ($sent as $n) if (($t = strtotime((string) $n->sentAt)) !== false) $byAt[(int) $n->id] = $t;
+        $since = 0; for ($i = count($out) - 1; $i >= 0; $i--) { if ($out[$i]['kind'] !== 'builder') continue; $ids = []; foreach ($byAt as $id => $t) if ($t > $since && $t <= $out[$i]['at']) $ids[] = $id; $out[$i]['notes'] = $ids; $since = $out[$i]['at']; }
         $busy = GameStore::agentState($slug)['busy']; $undone = [];
         foreach ($out as $i => $e) {
             $out[$i]['undone'] = isset($undone[$e['id']]); if ($e['undoes'] !== '' && !$out[$i]['undone']) $undone[$e['undoes']] = true;

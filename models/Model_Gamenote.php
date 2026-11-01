@@ -6,10 +6,10 @@
  * Relations: game, member.
  */
 class Model_Gamenote extends \RedBeanPHP\SimpleModel {
-    public const STATES = ['open', 'sent', 'done'];
+    public const STATES = ['open', 'sent', 'done', 'merged'];
     public function update() {
         $b = $this->bean;
-        if (!in_array((string) $b->state, self::STATES, true)) throw new \InvalidArgumentException('a note is open, sent or done');
+        if (!in_array((string) $b->state, self::STATES, true)) throw new \InvalidArgumentException('a note is open, sent, done or merged');
         if (trim((string) $b->text) === '') throw new \InvalidArgumentException('a note needs words');
     }
     /** The line the builder reads for this note. */

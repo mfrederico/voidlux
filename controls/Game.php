@@ -221,19 +221,29 @@ class Game extends BaseControls\Control {
         $names = [];
         $me = (int) $this->member->id;
         $nameOf = function (int $mid) use (&$names): string { if (!isset($names[$mid])) { $m = Bean::load('member', $mid); $names[$mid] = (string) ($m->username ?: $m->email ?: 'someone'); } return $names[$mid]; };
-        foreach (Bean::find('gamenote', 'game_id = ? ORDER BY id DESC', [(int) $g->id]) as $n) { $mid = (int) $n->memberId;
+        foreach (Bean::find('gamenote', "game_id = ? AND state != 'merged' ORDER BY id DESC", [(int) $g->id]) as $n) { $mid = (int) $n->memberId;
+            $folded = []; foreach (Bean::find('gamenote', "game_id = ? AND merged_ref = ? AND state = 'merged' ORDER BY id ASC", [(int) $g->id, (int) $n->id]) as $f) $folded[] = ['id' => (int) $f->id, 'text' => (string) $f->text, 'by' => $nameOf((int) $f->memberId), 'shot' => (string) $f->shot !== ''];
             $votes = array_values(Bean::find('gamenotevote', 'gamenote_id = ?', [(int) $n->id])); $comments = [];
             foreach (Bean::find('gamenotecomment', 'gamenote_id = ? ORDER BY id ASC', [(int) $n->id]) as $c) $comments[] = ['id' => (int) $c->id, 'by' => $nameOf((int) $c->memberId), 'mine' => (int) $c->memberId === $me, 'text' => (string) $c->text, 'at' => (string) $c->createdAt];
-            $out[] = ['canManage' => $mid === $me || (int) $g->memberId === $me || Flight::hasLevel(LEVELS['ADMIN']), 'votes' => count($votes), 'voted' => (bool) array_filter($votes, fn($v) => (int) $v->memberId === $me), 'voters' => array_map(fn($v) => $nameOf((int) $v->memberId), $votes), 'comments' => $comments, 'byName' => $nameOf($mid), 'id' => (int) $n->id, 'scene' => (string) $n->scene, 'x' => (int) $n->x, 'y' => (int) $n->y, 'what' => json_decode((string) $n->what, true), 'text' => (string) $n->text, 'state' => (string) $n->state, 'shot' => (string) $n->shot !== '', 'createdAt' => (string) $n->createdAt, 'by' => (int) $n->memberId]; }
+            $out[] = ['thing' => (string) $n->thing, 'merged' => $folded, 'canManage' => $mid === $me || (int) $g->memberId === $me || Flight::hasLevel(LEVELS['ADMIN']), 'votes' => count($votes), 'voted' => (bool) array_filter($votes, fn($v) => (int) $v->memberId === $me), 'voters' => array_map(fn($v) => $nameOf((int) $v->memberId), $votes), 'comments' => $comments, 'byName' => $nameOf($mid), 'id' => (int) $n->id, 'scene' => (string) $n->scene, 'x' => (int) $n->x, 'y' => (int) $n->y, 'what' => json_decode((string) $n->what, true), 'text' => (string) $n->text, 'state' => (string) $n->state, 'shot' => (string) $n->shot !== '', 'createdAt' => (string) $n->createdAt, 'by' => (int) $n->memberId]; }
         return $out;
     }
-    public function notes($params = []): void { if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $this->jsonSuccess(['notes' => $this->noteRows($g)]); }
+    /** Consolidate: { into, ids } folds notes into one, which then carries them all to the builder; { split } takes one back out. */
+    public function notemerge($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $b = $this->body();
+        if (!empty($b['split'])) { $c = $this->noteOf($g, (int) $b['split']); if (!$c || (string) $c->state !== 'merged') { $this->jsonError('That note is not merged.', 400); return; } $c->state = 'open'; $c->mergedRef = 0; Bean::store($c); $this->jsonSuccess(['notes' => $this->noteRows($g)], 'Taken back out.'); return; }
+        $into = $this->noteOf($g, (int) ($b['into'] ?? 0)); if (!$into || (string) $into->state !== 'open') { $this->jsonError('Merge into a note that is still open.', 400); return; }
+        foreach (array_map('intval', (array) ($b['ids'] ?? [])) as $id) { if ($id === (int) $into->id) continue; $c = $this->noteOf($g, $id); if (!$c || (string) $c->state !== 'open') { $this->jsonError("Note {$id} is not open, so nothing was merged.", 400); return; } }
+        foreach (array_map('intval', (array) ($b['ids'] ?? [])) as $id) { if ($id === (int) $into->id) continue; $c = $this->noteOf($g, $id); $c->state = 'merged'; $c->mergedRef = (int) $into->id; Bean::store($c); foreach (Bean::find('gamenote', 'game_id = ? AND merged_ref = ?', [(int) $g->id, $id]) as $k) { $k->mergedRef = (int) $into->id; Bean::store($k); } }
+        $this->jsonSuccess(['notes' => $this->noteRows($g)], 'Merged.');
+    }
+    public function notes($params = []): void { if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $this->jsonSuccess(['alike' => GameNotes::groups(array_map(fn($n) => ['id' => (int) $n->id, 'text' => (string) $n->text, 'thing' => (string) $n->thing], array_values(Bean::find('gamenote', "game_id = ? AND state = 'open' ORDER BY id DESC", [(int) $g->id])))), 'notes' => $this->noteRows($g)]); }
     public function note($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
         $b = ($this->body()['note'] ?? []); if (!is_array($b) || trim((string) ($b['text'] ?? '')) === '') { $this->jsonError('a note needs words'); return; }
         $n = Bean::dispense('gamenote');
         $n->gameId = (int) $g->id; $n->memberId = (int) $this->member->id; $n->scene = mb_substr((string) ($b['scene'] ?? ''), 0, 40); $n->x = (int) ($b['x'] ?? 0); $n->y = (int) ($b['y'] ?? 0);
-        $n->what = mb_substr(json_encode($b['what'] ?? null, JSON_UNESCAPED_SLASHES), 0, 4000); $n->text = mb_substr(trim((string) $b['text']), 0, 4000); $n->state = 'open'; $n->createdAt = date('c'); $n->shot = '';
+        $n->what = mb_substr(json_encode($b['what'] ?? null, JSON_UNESCAPED_SLASHES), 0, 4000); $n->text = mb_substr(trim((string) $b['text']), 0, 4000); $n->state = 'open'; $n->createdAt = date('c'); $n->shot = ''; $n->thing = mb_substr((string) ($b['thing'] ?? ''), 0, 80); $n->mergedRef = 0;
         Bean::store($n);
         $shot = (string) ($b['shot'] ?? '');
         if (preg_match('#^data:image/jpeg;base64,([A-Za-z0-9+/=]+)$#', $shot, $m) && strlen($shot) < 400000) {
@@ -242,7 +252,8 @@ class Game extends BaseControls\Control {
         }
         GameStore::emit($g->slug, 'note', ['text' => 'producer\'s note #' . (int) $n->id . ' (' . $n->scene . ' at ' . $n->x . ',' . $n->y . '): ' . mb_substr($n->text, 0, 160)]);
         if (!empty($b['build'])) { $this->sendBatch($g, [(int) $n->id], ''); }
-        $this->jsonSuccess(['id' => (int) $n->id, 'notes' => $this->noteRows($g)], !empty($b['build']) ? 'Sent to the build.' : 'Note saved.');
+        $like = []; foreach (Bean::find('gamenote', "game_id = ? AND state = 'open' AND id != ?", [(int) $g->id, (int) $n->id]) as $o) if (GameNotes::alike((string) $n->text, (string) $o->text, (string) $n->thing, (string) $o->thing)) $like[] = ['id' => (int) $o->id, 'text' => mb_substr((string) $o->text, 0, 120)];
+        $this->jsonSuccess(['id' => (int) $n->id, 'similar' => $like, 'notes' => $this->noteRows($g)], !empty($b['build']) ? 'Sent to the build.' : 'Note saved.');
     }
     private function noteOf(object $g, int $id): ?object { $n = Bean::load('gamenote', $id); return ($n->id && (int) $n->gameId === (int) $g->id) ? $n : null; }
     /** Toggle my upvote on a note. */
@@ -326,6 +337,7 @@ class Game extends BaseControls\Control {
             $votes = Bean::count('gamenotevote', 'gamenote_id = ?', [(int) $row->id]);
             $line = $row->box()->line(++$n) . ($votes ? " [{$votes} vote" . ($votes === 1 ? '' : 's') . ']' : '');
             foreach (Bean::find('gamenotecomment', 'gamenote_id = ? ORDER BY id ASC', [(int) $row->id]) as $c) $line .= "\n   - " . $nameOf((int) $c->memberId) . ': ' . trim((string) $c->text);
+            foreach (Bean::find('gamenote', "game_id = ? AND merged_ref = ? AND state = 'merged' ORDER BY id ASC", [(int) $g->id, (int) $row->id]) as $f) $line .= "\n   - the same request, also noted" . ((string) $f->shot !== '' ? " (screenshot crop: {$f->shot})" : '') . ': ' . trim((string) $f->text);
             $lines[] = $line;
         }
         return "The producers paused the game and pointed at things on the screen. Each note names the scene, the position (logical canvas coordinates) and what the kit found there; a screenshot crop path is relative to this folder and you can look at it with Read. Votes say what matters most; comments under a note refine or argue with it, and the last word there wins. Do what the notes ask (ask nothing; make the best call), node --check, soak, update GAME.md's Log, commit.\n"

@@ -10,8 +10,9 @@ namespace app;
 
 class ChangeBox {
     private const WORDS = [ // what points at each way, in the order they are tried: "faster when hit" is a rule, not a number
+        'note' => '/\b(later|notes?|remember|idea|maybe|someday)\b/i',
         'words' => '/\b(text|words?|wording|says?|rename\w*|spelling|typo|call it|label|title|heading|description)\b/i',
-        'rule' => '/\b(when|whenever|each time|every time|after it|once it|if it|if you|on death|dies|killed|explodes?|drops?|spawns? (a|an|two|three|more)|splits?)\b/i',
+        'rule' => '/\b(when|whenever|each time|every time|after it|once it|if it|if you|on death|dies|clicked|tapped|clicking|tapping|hovered|opens|closes|killed|explodes?|drops?|spawns? (a|an|two|three|more)|splits?)\b/i',
         'numbers' => '/\b(faster|slower|speed|quicker|more often|less often|rarer|commoner|appears?|range|weaker to|weak to|resist\w*|immune|attacks? (more|less)|shoots? (more|less|faster|slower)|fire|burn\w*|poison\w*|venom\w*|ice|cold|frost\w*|freez\w*|electric\w*|shock\w*|lightning)\b/i',
         'art' => '/\b(look|looks|looking|colou?rs?|red|blue|green|yellow|orange|purple|pink|black|white|model|shape|wears?|wearing|hat|eyes?|legs?|arms?|wings?|skin|texture|shiny|scarier|cuter|redesign|redraw|draw)\b/i',
     ];
@@ -32,17 +33,19 @@ class ChangeBox {
         $thing = self::thing($slug, $key, $label, $context); $name = $thing['screen'] ? $thing['label'] : ($key !== '' ? $key : 'the whole game');
         $art = RunCosts::estimate($slug, 'art')['cost']; $row = $thing['row']; $vocab = Rules::vocab($slug);
         $model = $key !== '' && !$thing['screen'] && is_file(Cast::path($slug)) ? (Cast::read($slug)['items'][$key] ?? null) : null;
+        $subject = $thing['screen'] && isset($vocab['subjects'][$key]); // part of a screen that the event rules know: rules about it can be written
         $ways = [
             'words' => ['title' => 'Change its words', 'does' => 'Edit the words yourself on its card below. They reach the running game when they can, and you can undo them.', 'cost' => 'Free.', 'free' => true, 'go' => 'Edit the words', 'can' => $thing['screen'], 'whyNot' => $key === '' ? 'Pick the words on the screen first, with Inspect.' : "This works on what a screen shows; {$name}'s name in the rules is the builder's."],
             'numbers' => ['title' => 'Change its numbers', 'does' => "Change {$name}'s numbers yourself. They reach the running game when they can, and you can undo them.", 'cost' => 'Free.', 'free' => true, 'go' => 'Save these numbers',
                           'can' => $row !== null, 'whyNot' => $thing['screen'] ? "{$name} is part of a screen: its numbers are in the game's code." : ($key === '' ? 'Pick a thing first; the numbers of the whole game are on the game page, under Config.' : "{$key} has no row in this game's bestiary.")],
             'rule' => ['title' => 'Write it as a rule', 'does' => 'The artist writes rules for ' . $name . ' and you read them first. Nothing changes until you add them.', 'cost' => $art, 'free' => false, 'go' => 'Ask for the rules',
-                       'can' => $vocab !== null && !$thing['screen'], 'whyNot' => $thing['screen'] ? 'Rules are about things in play; this is part of a screen.' : 'This game has no events wired in yet.'],
+                       'can' => $vocab !== null && (!$thing['screen'] || $subject), 'whyNot' => $thing['screen'] ? "The game does not send events about {$name} yet; the builder can add that." : 'This game has no events wired in yet.'],
             'art' => ['title' => 'Draw a new version', 'does' => "The artist makes a new version of {$name}'s model. The game keeps the current one until you choose.", 'cost' => $art, 'free' => false, 'go' => 'Ask for a new version',
                       'can' => !empty($model['file']), 'whyNot' => $thing['screen'] ? "The game draws {$name} in code, so the builder changes how it looks." : ($key === '' ? 'Pick a thing first.' : "{$key} has no 3D model to revise; the builder can change how the game draws it.")],
             'builder' => ['title' => 'Ask the builder', 'does' => 'The builder changes the game\'s code' . ($key !== '' ? ", with {$name} as what you mean," : '') . ' and commits it.' . (GameStore::agentState($slug)['busy'] ? ' It is busy now: this goes with its next run.' : ''), 'cost' => RunCosts::estimate($slug, 'chat')['cost'], 'free' => false, 'go' => 'Send it to the builder', 'can' => true, 'whyNot' => ''],
+            'note' => ['title' => 'Save it as a note', 'does' => 'Keeps your words with a screenshot of where you pointed. Nothing runs. Send your notes to the builder together when you are ready.', 'cost' => 'Free.', 'free' => true, 'go' => 'Save this note', 'can' => true, 'whyNot' => ''],
         ];
-        $suggested = 'builder'; $why = $thing['screen'] ? 'This is part of a screen, which lives in the game\'s code.' : 'Nothing you said points at a number, a rule or the look, so this is the way that can do anything.';
+        $suggested = 'builder'; $why = $thing['screen'] && !$subject ? 'This is part of a screen, which lives in the game\'s code.' : 'Nothing you said points at a number, a rule or the look, so this is the way that can do anything.';
         foreach (self::WORDS as $way => $re) if ($ways[$way]['can'] && preg_match($re, $text, $m)) { $suggested = $way; $why = 'Because you said "' . $m[0] . '".'; break; }
         if ($row !== null) $ways['numbers']['fields'] = self::fields($slug, $row, $text);
         return ['suggested' => $suggested, 'why' => $why, 'about' => $key, 'ways' => array_map(fn($id, $w) => ['id' => $id] + $w, array_keys($ways), $ways)];
