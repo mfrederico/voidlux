@@ -55,6 +55,8 @@ The page adds a small window with an iframe on **`/game/shotframe/<slug>?<query>
 with `<base href="/games/<slug>/">` and **`kit/js/kit-shot.js` loaded before any game script**. The shim serves
 `requestAnimationFrame` from a message-channel pump while the tab is hidden. A browser stops animation frames in a
 background tab, and without the shim a game in a hidden page never draws or advances, so the result is blank.
+The shim also gives the frame empty in-memory `localStorage` and `sessionStorage`: it shares the site's origin with the person's
+own games, and a test must neither start from their saved run nor overwrite it. (IndexedDB and cookies are not covered.)
 
 - **Playtest:** the URL has `?soak=<secs>&fast=<k>&seed=7`. The game's soak code (`kit/js/kit-test.js`, or a game's own
   `js/forge-soak.js`) plays with the autopilot and, when done, sets **`window.__SOAK`** to its report

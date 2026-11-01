@@ -4,6 +4,10 @@
 // So while the document is hidden, requestAnimationFrame is served from a message-channel pump (not throttled like timers)
 // at about 60 frames a second; while it is visible, the browser's own is used, and a frame waiting on either moves to the
 // other when the tab is shown or hidden. Never in a published build.
+// The frame is a test, never a player: it gets empty in-memory storage, so a playtest or screenshot of any game can neither read a
+// person's saved run and settings in this browser nor overwrite them (it shares the site's real storage otherwise).
+(() => { const mem = () => { const m = new Map(); return { getItem: k => (m.has(String(k)) ? m.get(String(k)) : null), setItem: (k, v) => { m.set(String(k), String(v)); }, removeItem: k => { m.delete(String(k)); }, clear: () => m.clear(), key: i => [...m.keys()][i] ?? null, get length() { return m.size; } }; };
+  for (const name of ['localStorage', 'sessionStorage']) Object.defineProperty(window, name, { value: mem(), configurable: true }); window.__FORGE_TEST_STORAGE = true; })();
 (() => {
   const native = window.requestAnimationFrame.bind(window), cancelNative = window.cancelAnimationFrame.bind(window), ch = new MessageChannel();
   const queue = new Map(), waiting = new Map(); let next = 1, last = 0, pumping = false; // queue: frames the pump owes (by our id); waiting: our id -> [native id, callback]
