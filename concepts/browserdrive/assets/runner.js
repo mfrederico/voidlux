@@ -163,9 +163,10 @@
           if (ok) return { waited: timeout - (until - Date.now()) }; await sleep(100); }
         throw new Error(`waited ${timeout / 1000} s and ${c.js ? 'the condition never held' : c.text ? `the text "${c.text}" never appeared` : `"${c.target}" was never ${state}`}`); }
       case 'wait': await sleep(Math.min(60000, +c.ms || 0)); return {};
-      case 'evaluate': { const src = String(c.js).trim(), isFn = /^(async\s+)?(function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/.test(src);
-        const fn = new (W().Function)('arg', isFn ? 'return (' + src + ')(arg)' : /\breturn\b/.test(src) ? src : 'return (' + src + ')');
-        return { value: safe(await fn.call(W(), c.arg)) }; }
+      case 'evaluate': { const src = String(c.js).trim(), w = W(); let fn; // an expression, or a function to call with arg, or else the body of a function
+        try { fn = new w.Function('return (' + src + '\n)'); } catch (e) { fn = new w.Function('arg', src); }
+        let v = await fn.call(w, c.arg); if (typeof v === 'function') v = await v.call(w, c.arg);
+        return { value: safe(v) }; }
       case 'text': return { value: ((await find(c.target, 5000, false)).innerText || '').trim() };
       case 'value': return { value: (await find(c.target, 5000, false)).value ?? null };
       case 'attr': return { value: (await find(c.target, 5000, false)).getAttribute(String(c.name)) };
