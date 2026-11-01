@@ -66,7 +66,7 @@
     try { const r = await Forge.api(`/game/events/${SLUG}?since=${last}`); last = r.last; ForgeRunner.take(r); att.textContent = '● runs playtests'; }
     catch (e) { att.textContent = '○ not connected: ' + e.message; }
     setTimeout(poll, document.hidden ? 8000 : 5000); }
-  poll();
+  if (window.top === window) poll(); else $('attached').textContent = ''; // inside another page's frame (a browser-drive session looking at this page) it is not the runner
   addEventListener('beforeunload', e => { if (ForgeRunner.busy()) { e.preventDefault(); e.returnValue = ''; } });
 
   Forge.api(`/studio/things/${SLUG}`).then(r => { things = r.things || []; drawList(); }).catch(e => { $('things').innerHTML = `<p class="bad small" style="padding:8px">The list could not be read: ${esc(e.message)}</p>`; });
