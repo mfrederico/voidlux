@@ -5,6 +5,7 @@ $slug = $game['slug'];
 <meta name="csrf-token" content="<?= h(csrf_token()) ?>">
 <div class="vl-gamebar"><span class="vl-pill" id="statusPill"><?= h($game['status']) ?></span><span id="agentStatus" class="vl-pill">agent idle</span><a class="btn btn-sm btn-primary" href="/studio/open/<?= h($slug) ?>" title="the running game: pause and click anything in it">Open in Studio</a>
   <?php if ($game['publishedUrl']): ?><a class="btn btn-sm btn-outline-primary ms-auto" href="<?= h($game['publishedUrl']) ?>" target="_blank">Live</a><?php endif; ?></div>
+<div id="lastRun" hidden></div>
 <div class="vl-tabs" id="tabs">
   <a href="#play" data-tab="play" class="on">Play</a><a href="#build" data-tab="build">Build</a><a href="#notes" data-tab="notes">Notes <span id="notesTab"></span></a><a href="#test" data-tab="test">Test</a><a href="#media" data-tab="media">Media</a><a href="#ship" data-tab="ship">Ship</a>
   <span class="vl-tab-menu"><button data-tab="advanced" type="button">Advanced ▾</button><span class="vl-tab-menu-list"><a href="#design" data-tab="design">Concept</a><a href="#status" data-tab="status">Status</a><a href="#config" data-tab="config">Config</a><a href="#history" data-tab="history">History</a></span></span>
@@ -46,15 +47,15 @@ $slug = $game['slug'];
   <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="reloadPlay()">Reload</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('fps=1')">Profiler</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('bot=1')">Autopilot</button><button class="btn btn-sm btn-primary" onclick="noteMode()" id="noteBtn" title="pause the game and point at what should change (Alt+P inside the game)">Note mode</button><a class="btn btn-sm btn-outline-secondary" href="/games/<?= h($slug) ?>/" target="_blank" onclick="playTab = window.open(this.href, 'play-<?= h($slug) ?>'); return false;" title="full screen in its own tab; notes made there still reach this page (on a phone: a three-finger tap opens note mode)">Play in a tab</a></div>
   <iframe class="vl-frame" id="playFrame" allow="autoplay; fullscreen"></iframe>
   <div class="vl-notes-strip" id="notesStrip"></div>
-  <form class="vl-compose vl-compose-play" data-chat><textarea placeholder="Tell the builder what to do…"></textarea><div class="btns"><button type="submit" class="btn btn-primary">Send</button></div></form>
+  <form class="vl-compose vl-compose-play" data-chat><textarea placeholder="Tell the builder what to do…"></textarea><div class="btns"><button type="submit" class="btn btn-primary" title="<?= h($costs['chat']) ?>">Send</button></div></form>
 </section>
 
 <section class="vl-pane" id="pane-build">
   <div class="vl-build">
     <div>
       <div class="vl-toolbar">
-        <button class="btn btn-sm btn-primary" onclick="startAgent('pipeline')" id="btnPipeline" title="The whole loop: plan what the Concept still lacks, build every open task, playtest, review against the acceptance criteria, rework what fails, checkpoint along the way.">Build the game</button>
-        <button class="btn btn-sm btn-outline-secondary" onclick="reviewAgain()" title="An independent reviewer (a fresh agent that never saw the build) checks every acceptance criterion in the Concept, with evidence, and reports pass or fail. Builds nothing.">Review</button>
+        <button class="btn btn-sm btn-primary" onclick="askCost('pipeline', 'Build the game', 'Build it')" id="btnPipeline" title="The whole loop: plan what the Concept still lacks, build every open task, playtest, review against the acceptance criteria, rework what fails, checkpoint along the way.">Build the game</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="reviewAgain()" title="An independent reviewer (a fresh agent that never saw the build) checks every acceptance criterion in the Concept, with evidence, and reports pass or fail. Builds nothing. <?= h($costs['review']) ?>">Review</button>
         <button class="btn btn-sm btn-danger" onclick="stopAgent()" title="Stops the agent that is running now. Whatever it had committed stays; a checkpoint marks where it stopped.">Stop</button>
         <span id="streamNote"><?= h($agentNote) ?></span>
       </div>
@@ -62,7 +63,7 @@ $slug = $game['slug'];
       <div class="vl-stream" id="stream"></div>
       <form class="vl-compose" id="chatForm" data-chat>
         <textarea id="chatText" data-ph="Tell the builder what to do: 'make the enemies spawn in rings', 'add a boss every fifth wave', 'the ship feels sluggish, tighten it'. Each message is one agent turn in the game's folder, checkpointed after." placeholder="Tell the builder what to do: 'make the enemies spawn in rings', 'add a boss every fifth wave', 'the ship feels sluggish, tighten it'. Each message is one agent turn in the game's folder, checkpointed after."></textarea>
-        <div class="btns"><button type="submit" class="btn btn-primary" id="chatBtn">Send</button></div>
+        <div class="btns"><button type="submit" class="btn btn-primary" id="chatBtn" title="<?= h($costs['chat']) ?>">Send</button></div>
       </form>
     </div>
   </div>
@@ -77,7 +78,7 @@ $slug = $game['slug'];
     <label>game-seconds <input type="number" id="soakSecs" value="60" min="5" max="1800" style="width:80px"></label>
     <label>speed <input type="number" id="soakFast" value="4" min="1" max="30" style="width:60px" title="game updates per drawn frame: 4 plays four game-seconds in one real second"></label>
     <button class="btn btn-sm btn-primary" onclick="runSoak()" id="soakBtn" title="the bots play for this many game-seconds; the report lands below and on the Build timeline">Run a playtest</button>
-    <button class="btn btn-sm btn-outline-primary" onclick="startAgent('fix')" title="a playtest, and if anything breaks the builder is asked to fix it and test again">Playtest &amp; fix</button>
+    <button class="btn btn-sm btn-outline-primary" onclick="askCost('fix', 'Playtest and fix', 'Start')" title="a playtest, and if anything breaks the builder is asked to fix it and test again">Playtest &amp; fix</button>
   </div>
   <div class="vl-scroll"><table class="vl-table"><thead><tr><th>when</th><th>result</th><th>played</th><th>fps</th><th>errors</th><th>scenes</th><th>score</th><th></th></tr></thead><tbody id="soaks"></tbody></table></div>
   <div id="soakDetail"></div>
@@ -174,7 +175,7 @@ function render(d) {
   $('shipInfo').innerHTML = `<b>last commit</b> ${Forge.esc(G.lastCommit || 'none')}<br><b>published</b> ${G.publishedAt ? Forge.esc(G.publishedAt) + (G.publishedUrl ? ' · <a href="' + Forge.esc(G.publishedUrl) + '" target="_blank">' + Forge.esc(G.publishedUrl) + '</a>' : ' · dist/ only') : 'never'}<br><b>last soak</b> ${G.lastSoak ? (G.lastSoak.ok ? '<span class="ok">ok</span>' : '<span class="bad">failing</span>') : 'none'}`;
 }
 function renderTasks(list) { $('tasks').innerHTML = list.length ? list.map(t => `<li class="${t.done ? 'done' : ''}">${t.done ? '✓' : '○'} ${Forge.esc(t.id)}: ${Forge.esc(t.text)}</li>`).join('') : '<li>no plan yet: run the pipeline</li>'; }
-function renderSession(a) { a = a || {}; G.agent = a; $('session').innerHTML = `<b>${a.busy ? 'running ' + Forge.esc(a.mode) : 'idle'}</b><br>runs ${a.runs || 0} · spent $${(+a.cost || 0).toFixed(2)}<br>session ${a.session ? Forge.esc(String(a.session).slice(0, 8)) : 'none yet'}`; $('agentStatus').textContent = a.busy ? 'agent: ' + a.mode : 'agent idle'; $('agentStatus').className = 'vl-pill' + (a.busy ? ' live' : ''); $('btnPipeline').disabled = !!a.busy; for (const f of document.querySelectorAll('form[data-chat]')) f.querySelector('button[type=submit]').textContent = a.busy ? 'Queue' : 'Send'; $('chatText').placeholder = a.busy ? 'The agent is busy: a message now waits in its inbox and goes with the next run (the next task, fix or rework).' : $('chatText').dataset.ph; }
+function renderSession(a) { a = a || {}; G.agent = a; Forge.lastRun($('lastRun'), slug, a); $('session').innerHTML = `<b>${a.busy ? 'running ' + Forge.esc(a.mode) : 'idle'}</b><br>runs ${a.runs || 0} · spent $${(+a.cost || 0).toFixed(2)}<br>session ${a.session ? Forge.esc(String(a.session).slice(0, 8)) : 'none yet'}`; $('agentStatus').textContent = a.busy ? 'agent: ' + a.mode : 'agent idle'; $('agentStatus').className = 'vl-pill' + (a.busy ? ' live' : ''); $('btnPipeline').disabled = !!a.busy; for (const f of document.querySelectorAll('form[data-chat]')) f.querySelector('button[type=submit]').textContent = a.busy ? 'Queue' : 'Send'; $('chatText').placeholder = a.busy ? 'The agent is busy: a message now waits in its inbox and goes with the next run (the next task, fix or rework).' : $('chatText').dataset.ph; }
 function renderCps(list) { $('cps').innerHTML = (list || []).map(c => `<tr><td>${Forge.esc(c.tag)}</td><td>${Forge.esc(c.at.slice(0, 16))}</td><td>${Forge.esc(c.label)}</td><td><button class="btn btn-sm btn-outline-secondary" onclick="rollback('${Forge.esc(c.tag)}')">roll back</button></td></tr>`).join('') || '<tr><td colspan="4">no checkpoints</td></tr>'; }
 function renderSoaks(list) { $('soaks').innerHTML = (list || []).map(s => `<tr><td>${Forge.esc(s.id.replace(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2}).*$/, '$2/$3 $4:$5'))} <span class="vl-note-meta">${s.runner === 'browser' ? 'in a browser' : s.runner === 'none' ? 'no browser' : 'server'}</span></td><td>${s.ok ? '<b class="ok">ok</b>' : '<b class="bad">' + Forge.esc(s.status || 'fail') + '</b>'}</td><td>${s.seconds || ''} s</td><td>${s.fps || ''}</td><td>${s.errors || 0}</td><td>${Forge.esc(Object.entries(s.scenes || {}).map(([k, v]) => k + ' ' + v + 's').join(', '))}</td><td>${s.score == null ? '' : s.score}</td><td><button class="btn btn-sm btn-outline-secondary" onclick="soakDetail('${Forge.esc(s.id)}')">detail</button></td></tr>`).join('') || '<tr><td colspan="8">no soaks yet</td></tr>'; }
 async function soakDetail(id) { const r = await Forge.api(`/game/soakreport/${slug}?id=${id}`); $('soakDetail').innerHTML = `<pre class="vl-json">${Forge.esc(JSON.stringify(r, null, 1))}</pre><img class="vl-shot" src="/game/soakshot/${slug}?id=${id}" onerror="this.remove()">`; }
@@ -206,12 +207,15 @@ async function poll() {
     const first = lastId === 0; lastId = r.last; renderSession(r.agent); if (first) { const b = $('stream'); b.scrollTop = b.scrollHeight; }
     ForgeRunner.take(r);
     if (refreshDue) { refreshDue = false; render(await Forge.api(`/game/status/${slug}`)); }
-    $('streamNote').textContent = ''; $('attachedPill').className = 'vl-pill live'; $('attachedPill').textContent = '● this browser is attached';
+    const n = $('streamNote'), playtesting = r.agent.busy && ['pipeline', 'review', 'fix', 'soak'].includes(r.agent.mode); // the page runs this run's playtests, whenever it was opened
+    if (playtesting && !ForgeRunner.busy()) n.textContent = KEEP_OPEN; else if (!playtesting && n.textContent === KEEP_OPEN) n.textContent = ''; if (n.textContent.startsWith('polling:')) n.textContent = '';
+    $('attachedPill').className = 'vl-pill live'; $('attachedPill').textContent = '● this browser is attached';
   } catch (e) { $('streamNote').textContent = 'polling: ' + e.message; $('attachedPill').className = 'vl-pill'; $('attachedPill').textContent = '○ not attached (reconnecting)'; }
   pollT = setTimeout(poll, document.hidden ? 8000 : (G.agent && G.agent.busy ? 1500 : 5000));
 }
 // ---- playtests in this browser: the server hands a pending request to whoever polls first; the game runs in a hidden
 // frame here with its bots, and the report (window.__SOAK, same origin) goes back. The server's Chrome is the fallback ----
+const KEEP_OPEN = 'Keep this page open until the run ends: its playtests run in this tab (it can sit behind other tabs).';
 let hereCount = 0; // playtests run by this page (public/forge-runner.js runs them)
 ForgeRunner.init(slug, { note: t => { $('streamNote').textContent = t; }, done: rep => { hereCount++; $('hereCount').textContent = hereCount; $('hereLast').textContent = new Date().toLocaleTimeString() + (rep.ok ? ' · ok' : ' · ' + (rep.status || 'failed')); refreshDue = true; } });
 // Review: if this exact version was reviewed already (no commit since, nothing uncommitted), say so first
@@ -219,15 +223,24 @@ async function reviewAgain() {
   try { const r = await Forge.api(`/game/status/${slug}`); G = r.game; } catch (e) {}
   const L = G.lastReview; if (!L || L.sha !== G.head || G.dirty) return startAgent('review');
   const when = new Date(L.at).toLocaleString(), how = L.pass ? 'it passed every criterion' : `it failed ${L.failures} criteri${L.failures === 1 ? 'on' : 'a'}`;
+  ask('Already reviewed', `<p>This version <code>${Forge.esc(G.head)}</code> has been reviewed (${Forge.esc(when)}): ${how}. Nothing has changed since.</p><p class="vl-muted small">A new review costs a run and should come out the same. Continue with the review anyway?</p>`, 'CONTINUE', 'CANCEL', () => startAgent('review'));
+}
+// a question in front of the page, answered by a button or Escape
+function ask(title, body, yes, no, go) {
   const box = document.createElement('div'); box.className = 'vl-ask';
-  box.innerHTML = `<div class="vl-ask-card"><h3 class="vl-h2 mt-0">Already reviewed</h3><p>This version <code>${Forge.esc(G.head)}</code> has been reviewed (${Forge.esc(when)}): ${how}. Nothing has changed since.</p><p class="vl-muted small">A new review costs a run and should come out the same. Continue with the review anyway?</p><div class="vl-toolbar"><button class="btn btn-sm btn-primary" data-go>CONTINUE</button><button class="btn btn-sm btn-outline-secondary" data-no>CANCEL</button></div></div>`;
-  const close = () => box.remove(); box.querySelector('[data-no]').onclick = close; box.addEventListener('click', e => { if (e.target === box) close(); }); box.querySelector('[data-go]').onclick = () => { close(); startAgent('review'); };
+  box.innerHTML = `<div class="vl-ask-card"><h3 class="vl-h2 mt-0">${Forge.esc(title)}</h3>${body}<div class="vl-toolbar"><button class="btn btn-sm btn-primary" data-go>${Forge.esc(yes)}</button><button class="btn btn-sm btn-outline-secondary" data-no>${Forge.esc(no)}</button></div></div>`;
+  const close = () => box.remove(); box.querySelector('[data-no]').onclick = close; box.addEventListener('click', e => { if (e.target === box) close(); }); box.querySelector('[data-go]').onclick = () => { close(); go(); };
   document.body.appendChild(box); box.querySelector('[data-no]').focus(); document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); } });
 }
 // this page is the browser that runs the playtests: while a playtest runs here, or a run that playtests is going
 // (pipeline, review, fix), leaving the page asks first, since closing it leaves the playtest with no browser
 window.addEventListener('beforeunload', e => { const a = G.agent || {}; if (ForgeRunner.busy() || (a.busy && ['pipeline', 'review', 'fix', 'soak'].includes(a.mode))) { e.preventDefault(); e.returnValue = ''; } });
-async function startAgent(mode, prompt) { try { renderSession(await Forge.api(`/game/agent/${slug}`, { mode, prompt: prompt || '' })); showTab('build'); if (['pipeline', 'review', 'fix', 'soak'].includes(mode)) $('streamNote').textContent = 'Keep this page open until the run ends: its playtests run in this tab (it can sit behind other tabs).'; } catch (e) { alert(e.message); } }
+// a run that costs real money says so before it starts; the figure comes from what runs here have cost (lib/RunCosts.php)
+async function askCost(mode, title, yes) {
+  let e; try { e = await Forge.api(`/game/estimate/${slug}?mode=${mode}`); } catch (err) { e = { what: '', cost: 'Its cost could not be estimated: ' + err.message }; }
+  ask(title, `<p>${Forge.esc(e.what)}</p><p><b>${Forge.esc(e.cost)}</b></p><p class="vl-muted small">You can stop it at any time; what it has committed stays.</p>`, yes, 'Not now', () => startAgent(mode));
+}
+async function startAgent(mode, prompt) { try { renderSession(await Forge.api(`/game/agent/${slug}`, { mode, prompt: prompt || '' })); showTab('build'); if (['pipeline', 'review', 'fix', 'soak'].includes(mode)) $('streamNote').textContent = KEEP_OPEN; } catch (e) { alert(e.message); } }
 async function stopAgent() { try { await Forge.api(`/game/stop/${slug}`, {}); } catch (e) { alert(e.message); } }
 async function gitLoad() { const box = $('gitBox'); let r; try { r = await Forge.api(`/game/gitstatus/${slug}`); } catch (e) { box.textContent = e.message; return; }
   if (r.link) { const L = r.link; box.innerHTML = `<b>linked</b> <a href="https://github.com/${Forge.esc(L.repo)}/tree/${Forge.esc(L.branch || 'main')}" target="_blank">${Forge.esc(L.repo)}</a> on <code>${Forge.esc(L.branch || 'main')}</code> ${L.private ? '(private)' : '(public)'}<br><span class="vl-muted small">its own deploy key; every publish pushes, whoever publishes${L.last_push ? '<br>last push: ' + Forge.esc(L.last_push.slice(0, 16).replace('T', ' ')) + ' · ' + Forge.esc(L.last_push_text || '') : ''}</span><div class="vl-toolbar mt-2"><button class="btn btn-sm btn-outline-primary" onclick="gitPush()">Push now</button>${r.canLink ? '<button class="btn btn-sm btn-outline-danger" onclick="gitUnlink()">Unlink…</button>' : ''}</div>`; return; }

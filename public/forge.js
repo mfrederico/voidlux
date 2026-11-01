@@ -9,6 +9,16 @@ const Forge = {
     if (!r.ok || (j && j.success === false)) throw new Error((j && (j.error || j.message)) || ('HTTP ' + r.status));
     return j && j.data !== undefined ? j.data : j;
   },
+  // the banner for a builder run that failed or needs a look, on every page of the game until its reader dismisses it
+  lastRun(el, slug, a) {
+    const L = a && a.last, key = 'vl-lastrun-' + slug; let seen = ''; try { seen = localStorage.getItem(key) || ''; } catch (e) {}
+    if (!L || a.busy || !['failed', 'attention'].includes(L.state) || seen === L.at) { el.hidden = true; el.innerHTML = ''; el.dataset.at = ''; return; }
+    if (el.dataset.at === L.at) return; // already showing
+    const what = { pipeline: 'build', chat: 'builder run', review: 'review', fix: 'playtest and fix' }[L.mode] || L.mode;
+    el.dataset.at = L.at; el.hidden = false; el.className = 'vl-lastrun ' + L.state;
+    el.innerHTML = `<span><b>The ${Forge.esc(what)} ${L.state === 'failed' ? 'did not finish' : 'finished, but needs a look'}:</b> ${Forge.esc(L.why)}. <span class="vl-lastrun-meta">${Forge.esc(new Date(L.at).toLocaleString())}${L.cost != null ? ' · cost $' + Number(L.cost).toFixed(2) : ''}</span></span> <a href="/game/view/${Forge.esc(slug)}#build">See the run</a> <button type="button" class="btn btn-sm btn-outline-secondary">Dismiss</button>`;
+    el.querySelector('button').onclick = () => { try { localStorage.setItem(key, L.at); } catch (e) {} el.hidden = true; };
+  },
   esc: s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])),
   slugify: s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/^[^a-z]+/, '').slice(0, 40),
   time: t => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),

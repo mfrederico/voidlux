@@ -63,7 +63,7 @@
   // ---- this page also runs the playtests and screenshots agents ask for, as the game page does ----
   let last = 0; ForgeRunner.init(SLUG, { note: t => { if (t) hint(t); }, done: rep => hint(rep.ok ? 'Playtest passed in this browser.' : 'Playtest in this browser: ' + (rep.status || 'failed') + '. See the game page, under Test.') });
   async function poll() { const att = $('attached');
-    try { const r = await Forge.api(`/game/events/${SLUG}?since=${last}`); last = r.last; ForgeRunner.take(r); att.textContent = '● runs playtests'; }
+    try { const r = await Forge.api(`/game/events/${SLUG}?since=${last}`); last = r.last; ForgeRunner.take(r); att.textContent = '● runs playtests'; Forge.lastRun($('lastRun'), SLUG, r.agent); const bld = $('builder'); bld.hidden = !r.agent.busy; bld.textContent = '⚒ the builder is working'; }
     catch (e) { att.textContent = '○ not connected: ' + e.message; }
     setTimeout(poll, document.hidden ? 8000 : 5000); }
   if (window.top === window) poll(); else $('attached').textContent = ''; // inside another page's frame (a browser-drive session looking at this page) it is not the runner

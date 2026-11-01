@@ -39,7 +39,12 @@ class Game extends BaseControls\Control {
         if (!$g = $this->game($params, false)) return;
         $meta = GameStore::meta($g);
         $teams = Bean::getAll('SELECT t.id, t.name FROM team t JOIN teammember tm ON t.id = tm.team_id WHERE tm.member_id = ? AND t.is_active = 1 ORDER BY t.name', [(int) $this->member->id]);
-        $this->render('game/view', ['title' => $meta['title'], 'game' => $meta, 'teams' => $teams, 'checkpoints' => GameStore::checkpoints($meta['slug']), 'soaks' => GameStore::soaks($meta['slug']), 'gameMd' => is_file(GameStore::dir($meta['slug']) . '/GAME.md') ? file_get_contents(GameStore::dir($meta['slug']) . '/GAME.md') : '', 'agentNote' => $this->agentNote()]);
+        $this->render('game/view', ['title' => $meta['title'], 'costs' => ['chat' => RunCosts::estimate($meta['slug'], 'chat')['cost'], 'review' => RunCosts::estimate($meta['slug'], 'review')['cost']], 'game' => $meta, 'teams' => $teams, 'checkpoints' => GameStore::checkpoints($meta['slug']), 'soaks' => GameStore::soaks($meta['slug']), 'gameMd' => is_file(GameStore::dir($meta['slug']) . '/GAME.md') ? file_get_contents(GameStore::dir($meta['slug']) . '/GAME.md') : '', 'agentNote' => $this->agentNote()]);
+    }
+    /** What a run would do and likely cost, asked just before someone starts it. */
+    public function estimate($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
+        try { $this->jsonSuccess(RunCosts::estimate($g->slug, (string) $this->getParam('mode', ''))); } catch (\InvalidArgumentException $e) { $this->jsonError($e->getMessage(), 400); }
     }
     private function agentNote(): string {
         try { [, , $note] = GameAgent::environment(GameStore::root()); return 'agents run on ' . $note; } catch (\Throwable $e) { return $e->getMessage(); }

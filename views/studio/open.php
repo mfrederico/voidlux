@@ -32,14 +32,15 @@ button.on { background: var(--pick); border-color: var(--pick); color: #fff; } a
 .rule { padding: 5px 0; border-top: 1px solid var(--line); font-size: 13px; overflow-wrap: anywhere; } .rule.off { opacity: .5; } .rule .n { color: var(--muted); font-size: 12px; } .bad { color: var(--warn); }
 details { border-top: 1px solid var(--line); padding: 5px 0; } summary { cursor: pointer; } summary .c { color: var(--muted); } .bi { padding: 5px 0 5px 12px; font-size: 13px; overflow-wrap: anywhere; }
 .pill { padding: 0 6px; border: 1px solid var(--line); border-radius: 99px; font-size: 11px; color: var(--muted); white-space: nowrap; } .pill.rule-now { color: var(--ok); border-color: var(--ok); }
+.st-stage .vl-lastrun { position: absolute; left: 8px; right: 8px; top: 8px; z-index: 5; }
 .links { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 12px; font-size: 13px; }
 @media (max-width: 1100px) { .st { grid-template: 48px minmax(240px, 45vh) minmax(0, 1fr) / 190px minmax(0, 1fr); height: auto; min-height: 100%; } .st-list { grid-row: 2 / 4; max-height: 100vh; } .st-card { border-left: 0; border-top: 1px solid var(--line); } .st-hint { display: none; } }
 @media (max-width: 640px) { .st { display: flex; flex-direction: column; } .st-stage { height: 56vw; flex: none; } .st-list { max-height: 34vh; order: 3; border-right: 0; } .st-top { flex: none; height: 48px; } }
 </style></head><body>
 <div class="st">
-  <div class="st-top"><a href="/forge" title="All games">Forge</a><b><?= h($gameTitle) ?></b><button id="inspect" title="Alt+I: pause the game and click anything in it">Inspect</button><button id="restart" title="Load the game again">Restart game</button><span class="st-hint" id="hint">Press Inspect, then click anything in the game.</span><span class="sp"></span><span class="st-hint" id="attached" title="This page runs the playtests and screenshots agents ask for, in a small window">○ connecting</span><a href="/game/view/<?= h($slug) ?>">Game page</a></div>
+  <div class="st-top"><a href="/forge" title="All games">Forge</a><b><?= h($gameTitle) ?></b><button id="inspect" title="Alt+I: pause the game and click anything in it">Inspect</button><button id="restart" title="Load the game again">Restart game</button><span class="st-hint" id="hint">Press Inspect, then click anything in the game.</span><span class="sp"></span><a class="st-hint" id="builder" href="/game/view/<?= h($slug) ?>#build" hidden></a><span class="st-hint" id="attached" title="This page runs the playtests and screenshots agents ask for, in a small window">○ connecting</span><a href="/game/view/<?= h($slug) ?>">Game page</a></div>
   <aside class="st-list" aria-label="Things in this game"><input id="find" type="search" placeholder="Find a thing…" aria-label="Find a thing"><div id="things"></div></aside>
-  <main class="st-stage"><iframe id="game" title="The game" allow="autoplay; fullscreen" src="/games/<?= h($slug) ?>/"></iframe><div id="over"><div id="ring"></div><div id="tip"></div></div></main>
+  <main class="st-stage"><iframe id="game" title="The game" allow="autoplay; fullscreen" src="/games/<?= h($slug) ?>/"></iframe><div id="over"><div id="ring"></div><div id="tip"></div></div><div id="lastRun" hidden></div></main>
   <aside class="st-card" id="card" aria-live="polite"><h2>Nothing picked yet</h2><p class="muted">Press <b>Inspect</b> (Alt+I), then click anything in the game, or choose from the list. Everything about it appears here.</p></aside>
 </div>
 <script>const SLUG = <?= json_encode($slug) ?>;</script>

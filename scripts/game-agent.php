@@ -4,8 +4,8 @@
  * The agent runner for one game, started detached by the web (GameStore::startRunner) and run to the end of its mode:
  *   php scripts/game-agent.php <slug> chat|pipeline|review|fix|soak|art <memberId> [art slot]
  * The prompt (chat, or the producer's note to the planner) is read from games/<slug>/.studio/prompt.txt. Progress goes to
- * .studio/events.jsonl; the lock is .studio/agent.json (busy, pid). When it ends, the owner gets a Communications
- * notice saying how it went.
+ * .studio/events.jsonl; the lock is .studio/agent.json (busy, pid). When it ends, how it came out (GameAgent::outcome) is
+ * kept as `last` in agent.json for the game's pages, and the owner and whoever started it get a Communications notice.
  */
 if (PHP_SAPI !== 'cli') exit(1);
 require __DIR__ . '/../vendor/autoload.php';
@@ -22,7 +22,6 @@ $state = $art ? \app\GameStore::artState($slug, $slot) : \app\GameStore::agentSt
 $state = array_merge($state, ['busy' => true, 'mode' => $mode, 'pid' => getmypid(), 'started' => date('c')]);
 if ($art) \app\GameStore::saveArtState($slug, $state, $slot); else \app\GameStore::saveAgentState($slug, $state);
 $agent = new \app\GameAgent($slug, $memberId, $art ? 'art' : 'build', $slot);
-$outcome = 'finished';
 try {
     switch ($mode) {
         case 'pipeline': $agent->pipeline($prompt); break;
@@ -33,23 +32,26 @@ try {
         default: $agent->chat($prompt);
     }
 } catch (\Throwable $e) {
-    $outcome = 'failed: ' . $e->getMessage();
+    $agent->mark('failed', $e->getMessage());
     \app\GameStore::emit($slug, 'error', ['text' => 'runner: ' . $e->getMessage()]);
 } finally {
+    $outcome = $agent->outcome();
     if ($art) {
         $s = \app\GameStore::artState($slug, $slot);
         if ((int) $s['pid'] === getmypid() || !\app\GameStore::alive((int) $s['pid'])) { $s['busy'] = false; $s['mode'] = ''; $s['pid'] = 0; \app\GameStore::saveArtState($slug, $s, $slot); }
-        \app\GameStore::emit($slug, 'artdone', ['text' => $outcome]);
+        \app\GameStore::emit($slug, 'artdone', ['text' => $outcome['state'] . ($outcome['why'] !== '' ? ': ' . $outcome['why'] : '')]);
         try { foreach (\app\Cast::settle($slug) as $d) \app\GameStore::emit($slug, 'note', ['text' => "3D cast: {$d}"]); } catch (\Throwable $e) { \app\GameStore::emit($slug, 'error', ['text' => '3D cast: ' . $e->getMessage()]); } // a cast list or batch model that just landed
         \app\GameStore::startQueuedArt($slug); // the next sprite job that waited
         try { \app\Cast::strips($slug); } catch (\Throwable $e) { \app\GameStore::emit($slug, 'error', ['text' => '3D thumbnails: ' . $e->getMessage()]); } // the turntable pictures of what this job made
     } else {
         $s = \app\GameStore::agentState($slug);
-        if ((int) $s['pid'] === getmypid() || !\app\GameStore::alive((int) $s['pid'])) { $s['busy'] = false; $s['mode'] = ''; $s['pid'] = 0; \app\GameStore::saveAgentState($slug, $s); } // only my own lock
+        if ((int) $s['pid'] === getmypid() || !\app\GameStore::alive((int) $s['pid'])) { $s['busy'] = false; $s['mode'] = ''; $s['pid'] = 0; if ($mode !== 'soak') $s['last'] = $outcome + ['mode' => $mode, 'at' => date('c'), 'started' => (string) ($s['started'] ?? '')]; \app\GameStore::saveAgentState($slug, $s); } // only my own lock
         \app\GameStore::emit($slug, 'idle', []);
-        if (!$art) { try { if ($ids = \app\Rules::afterBuild($slug, $memberId)) \app\GameStore::emit($slug, 'note', ['text' => 'event rules: the concept is written again now that the builder added what it needed (' . implode(', ', $ids) . ')']); } catch (\Throwable $e) { \app\GameStore::emit($slug, 'error', ['text' => 'event rules: ' . $e->getMessage()]); } }
+        if (!in_array($outcome['state'], ['stopped', 'failed'], true)) { try { if ($ids = \app\Rules::afterBuild($slug, $memberId)) \app\GameStore::emit($slug, 'note', ['text' => 'event rules: the concept is written again now that the builder added what it needed (' . implode(', ', $ids) . ')']); } catch (\Throwable $e) { \app\GameStore::emit($slug, 'error', ['text' => 'event rules: ' . $e->getMessage()]); } }
         if ($mode !== 'soak') \app\GameNotices::finished($slug, $mode, $outcome, $memberId);
-        if (!\app\GameStore::startQueued($slug) && $mode !== 'soak') { // nothing else queued: notes that arrived during this run get a run of their own now
+        if ($outcome['state'] === 'stopped') { // Stop means stop: what was waiting waits for the next run someone starts, it does not start one
+            if ($waiting = \app\GameStore::peekNotes($slug)) \app\GameStore::emit($slug, 'notes', ['text' => count($waiting) . ' note(s) stay queued for the next run you start']);
+        } elseif (!\app\GameStore::startQueued($slug) && $mode !== 'soak') { // nothing else queued: notes that arrived during this run get a run of their own now
             $waiting = \app\GameStore::peekNotes($slug); $fresh = array_filter($waiting, fn($n) => (int) ($n['tries'] ?? 0) < 2);
             if ($fresh) { try { \app\GameStore::startRunner($slug, 'chat', 'The producer sent notes while you were busy; they are listed below, numbered. Handle each one.', 0); } catch (\Throwable $e) { \app\GameStore::emit($slug, 'error', ['text' => 'the queued notes could not start a run: ' . $e->getMessage()]); } }
             elseif ($waiting) \app\GameStore::emit($slug, 'notes', ['text' => count($waiting) . ' note(s) left unanswered after two tries; they stay queued for the next run you start', 'missing' => array_map(fn($n) => mb_substr((string) $n['text'], 0, 120), $waiting), 'answered' => 0, 'total' => count($waiting)]);

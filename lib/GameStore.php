@@ -225,11 +225,18 @@ class GameStore {
         return ['events' => $out, 'last' => $n];
     }
     public static function agentState(string $slug): array {
+        $s = self::agentFile($slug);
+        if ($s['busy'] && $s['pid'] > 0 && !self::alive((int) $s['pid'])) { // a runner that died takes its lock with it, and nobody else will say so
+            $last = ['state' => 'failed', 'why' => 'the run died before finishing (the server restarted or the process was killed)', 'mode' => $s['mode'], 'at' => date('c'), 'started' => (string) ($s['started'] ?? '')];
+            $mode = (string) $s['mode']; $by = (int) ($s['by'] ?? 0); $s['busy'] = false; $s['mode'] = ''; if ($mode !== 'soak') $s['last'] = $last; self::saveAgentState($slug, $s);
+            if ($mode !== 'soak') { self::emit($slug, 'error', ['text' => $last['why']]); GameNotices::finished($slug, $mode, $last, $by); }
+        }
+        return $s;
+    }
+    private static function agentFile(string $slug): array {
         $f = self::dir($slug) . '/.studio/agent.json';
         $s = is_file($f) ? (json_decode((string) file_get_contents($f), true) ?: []) : [];
-        $s += ['busy' => false, 'mode' => '', 'pid' => 0, 'session' => null, 'runs' => 0, 'cost' => 0.0];
-        if ($s['busy'] && $s['pid'] > 0 && !self::alive((int) $s['pid'])) { $s['busy'] = false; $s['mode'] = ''; self::saveAgentState($slug, $s); } // a runner that died takes its lock with it
-        return $s;
+        return $s + ['busy' => false, 'mode' => '', 'pid' => 0, 'session' => null, 'runs' => 0, 'cost' => 0.0];
     }
     public static function saveAgentState(string $slug, array $s): void { self::writeAtomic(self::studioDir($slug) . '/agent.json', json_encode($s, JSON_PRETTY_PRINT)); }
     public static function alive(int $pid): bool { return $pid > 0 && file_exists('/proc/' . $pid); }
@@ -256,7 +263,7 @@ class GameStore {
     public static function scrap(object $g, int $memberId): array {
         $slug = (string) $g->slug; $stamp = date('Ymd-His'); $out = ['slug' => $slug, 'archived' => [], 'site' => null];
         try { self::stopRunner($slug); } catch (\Throwable $e) {}
-        foreach (self::artPids($slug) as $ap) { @posix_kill(-$ap, SIGTERM); @posix_kill($ap, SIGTERM); }
+        foreach (self::artPids($slug) as $ap) { @posix_kill(-$ap, 15); @posix_kill($ap, 15); }
         $d = self::dir($slug); $arch = self::root() . '/games/.scrapped'; if (!is_dir($arch)) mkdir($arch, 0775, true);
         if (is_dir($d)) { $to = "$arch/$slug-$stamp"; if (!rename($d, $to)) throw new \RuntimeException("could not move the game folder to $to"); $out['archived'][] = $to; }
         $root = rtrim((string) self::cfg('publish_root', '/var/www/html/default'), '/'); $label = explode('.', (string) self::cfg('domain', 'voidlux.com'))[0];
@@ -334,12 +341,14 @@ class GameStore {
     }
     public static function stopRunner(string $slug): array {
         $s = self::agentState($slug);
-        $pid = (int) $s['pid'];
+        $pid = (int) $s['pid']; [$wasBusy, $mode, $started, $before] = [$s['busy'], (string) $s['mode'], (string) ($s['started'] ?? ''), $s['last'] ?? null];
         if ($pid > 0 && self::alive($pid)) { // the runner and its claude share a process group (setsid): TERM the group, wait, then KILL what is left
-            exec('kill -TERM -- -' . $pid . ' 2>/dev/null; kill -TERM ' . $pid . ' 2>/dev/null');
+            posix_kill(-$pid, 15); posix_kill($pid, 15); // numbers: the SIG constants come with pcntl, which the web's PHP does not have
             for ($i = 0; $i < 40 && self::alive($pid); $i++) usleep(250000);
-            if (self::alive($pid)) { exec('kill -KILL -- -' . $pid . ' 2>/dev/null; kill -KILL ' . $pid . ' 2>/dev/null'); usleep(300000); }
+            if (self::alive($pid)) { posix_kill(-$pid, 9); posix_kill($pid, 9); usleep(300000); }
         }
+        $s = self::agentFile($slug); // read again: a runner that ended on the TERM has just written how it went
+        if ($wasBusy && $mode !== 'soak' && ($s['last'] ?? null) === $before) $s['last'] = ['state' => 'stopped', 'why' => 'it was stopped', 'mode' => $mode, 'at' => date('c'), 'started' => $started];
         $s['busy'] = false; $s['mode'] = ''; self::saveAgentState($slug, $s);
         self::emit($slug, 'note', ['text' => 'stopped by the producer']);
         return $s;

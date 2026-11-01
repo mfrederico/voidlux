@@ -33,6 +33,7 @@ class GameAgent {
     private array $pendingNotes = []; // the queued notes this run was given, to check its answer against
     private string $lane = 'build'; // 'build': the builder (its session, its inbox, its checkpoints); 'art': a sprite job beside it (fresh session, no inbox, no commits)
     private int $slot = 0; // an art runner's slot in the lane (GameStore::startArt)
+    private array $result = ['state' => 'finished', 'why' => '']; private float $spent = 0.0; // how this run came out and what it cost, for the notice and the game's pages
     public function __construct(string $slug, int $memberId = 0, string $lane = 'build', int $slot = 0) {
         $this->slug = $slug; $this->dir = GameStore::dir($slug); $this->memberId = $memberId; $this->lane = $lane === 'art' ? 'art' : 'build'; $this->slot = $slot;
         $this->state = $this->lane === 'art' ? GameStore::artState($slug, $slot) : GameStore::agentState($slug);
@@ -40,6 +41,19 @@ class GameAgent {
         pcntl_signal(SIGTERM, function () { $this->stop = true; });
     }
     private function emit(string $kind, array $d = []): void { GameStore::emit($this->slug, $kind, $d); }
+    /** Record that something went wrong: the worst state stays, reasons of the same weight add up. */
+    public function mark(string $state, string $why): void {
+        $rank = ['finished' => 0, 'attention' => 1, 'failed' => 2]; $now = $rank[$this->result['state']];
+        if ($rank[$state] > $now) $this->result = ['state' => $state, 'why' => $why]; elseif ($rank[$state] === $now && $now > 0) $this->result['why'] .= '; ' . $why;
+    }
+    /** {state: finished|attention|failed|stopped, why, cost}: a run that reached its end is not thereby one that worked. */
+    public function outcome(): array { return ($this->stop ? ['state' => 'stopped', 'why' => 'it was stopped'] : $this->result) + ['cost' => round($this->spent, 2)]; }
+    private function whyFailed(array $r, string $label, int $rc, string $err): string {
+        $who = $label === '' || in_array($label, ['chat', 'art'], true) ? '' : (preg_match('/^T\d+$/', $label) ? "task {$label}: " : "{$label}: ");
+        if (($r['subtype'] ?? '') === 'error_max_turns') return $who . 'it used all of its ' . (int) $r['turns'] . ' turns before finishing';
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $err)))); $said = trim((string) $r['text']) !== '' ? trim((string) $r['text']) : (string) end($lines);
+        return $who . ($said !== '' ? mb_substr(preg_replace('/\s+/', ' ', $said), 0, 240) : "the agent exited {$rc} and gave no reason");
+    }
     private function save(): void { if ($this->lane === 'art') GameStore::saveArtState($this->slug, $this->state, $this->slot); else GameStore::saveAgentState($this->slug, $this->state); }
     /** A sprite job: one fresh, self-contained run, nothing committed. */
     public function art(string $prompt): array { return $this->run($prompt, false, true, 0, 'art'); }
@@ -70,7 +84,7 @@ class GameAgent {
     /** One claude run, blocking. */
     public function run(string $prompt, bool $resume = true, bool $fresh = false, int $maxTurns = 0, string $label = '', bool $retried = false): array {
         $result = ['ok' => false, 'text' => '', 'cost' => 0.0, 'turns' => 0];
-        try { [$env, $bin, $note] = self::environment(GameStore::root()); } catch (\Throwable $e) { $this->emit('error', ['text' => $e->getMessage()]); return $result; }
+        try { [$env, $bin, $note] = self::environment(GameStore::root()); } catch (\Throwable $e) { $this->emit('error', ['text' => $e->getMessage()]); $this->mark('failed', $e->getMessage()); return $result; }
         $sid = $fresh ? null : ($this->state['session'] ?? null);
         // A long conversation makes every turn expensive (each one re-reads all of it): once the builder's session is over
         // [forge] session_max_tokens (default 150000), the next run starts a fresh session and gets a handoff instead, built
@@ -108,7 +122,7 @@ class GameAgent {
         $desc = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
         $cmd[array_search('-p', $cmd, true) + 1] = $prompt; // the prompt as it now is: the queued notes were added above, after $cmd was built
         $proc = proc_open($cmd, $desc, $pipes, $this->dir, $env);
-        if (!is_resource($proc)) { $this->emit('error', ['text' => 'cannot start the agent process']); return $result; }
+        if (!is_resource($proc)) { $this->emit('error', ['text' => 'cannot start the agent process']); $this->mark('failed', 'the agent process could not start'); foreach ($this->pendingNotes as $n) GameStore::queueNote($this->slug, $n['text'], $n['tries']); $this->pendingNotes = []; return $result; }
         fclose($pipes[0]); stream_set_blocking($pipes[2], false);
         $last = []; $err = ''; $tail = [];
         while (($line = fgets($pipes[1])) !== false) {
@@ -157,6 +171,9 @@ class GameAgent {
             $this->emit('notes', ['answered' => count($ans), 'total' => count($this->pendingNotes), 'missing' => $missing, 'answers' => $ans, 'text' => $missing ? 'not answered: ' . implode(' | ', $missing) : 'every queued note answered']);
             if ($missing) foreach ($this->pendingNotes as $i => $n) if (!isset($ans[$i + 1])) GameStore::queueNote($this->slug, $n['text'], $n['tries'] + 1); // back in the queue, one try spent
             $this->pendingNotes = []; }
+        if ($this->pendingNotes) { foreach ($this->pendingNotes as $n) GameStore::queueNote($this->slug, $n['text'], $n['tries']); $this->emit('note', ['text' => count($this->pendingNotes) . ' producer note(s) went back in the queue: the run was stopped before answering them']); $this->pendingNotes = []; } // stopped: they were not answered, and no try is spent
+        $this->spent += (float) $result['cost'];
+        if (!$result['ok'] && !$this->stop) $this->mark('failed', $this->whyFailed($result, $label, (int) $rc, (string) $err));
         $this->state['runs'] = ($this->state['runs'] ?? 0) + 1; $this->state['cost'] = ($this->state['cost'] ?? 0) + $result['cost']; $this->save();
         if (!$this->stop) { $first = trim((string) $result['text']); $first = mb_substr(preg_replace('/\s+/', ' ', preg_replace('/[*`#]/', '', $first)), 0, 300);
             GameStore::activity($this->slug, $this->lane === 'art' ? 'artist' : 'builder', ($label !== '' && $label !== 'art' ? "{$label}: " : '') . ($result['ok'] ? '' : 'FAILED: ') . ($first !== '' ? $first : '(no answer)')); }
@@ -177,13 +194,14 @@ class GameAgent {
     public function fix(): void {
         $rep = GameStore::runSoak($this->slug, 90, 4);
         if (!empty($rep['ok'])) { $this->emit('stage', ['stage' => 'accepted', 'text' => 'the soak already passes']); return; }
-        if (($rep['status'] ?? '') === 'no-browser') { $this->emit('stage', ['stage' => 'rejected', 'text' => 'nothing to fix yet: no browser is attached to run the playtest. Open the game page and try again.']); return; }
+        if (($rep['status'] ?? '') === 'no-browser') { $this->emit('stage', ['stage' => 'rejected', 'text' => 'nothing to fix yet: no browser is attached to run the playtest. Open the game page and try again.']); $this->mark('attention', 'no page was open to run the playtest, so nothing was checked or fixed'); return; }
         $this->run(str_replace('{report}', mb_substr(json_encode($this->trim($rep), JSON_PRETTY_PRINT), 0, 6000), self::FIX), true, false, 0, 'fix'); $this->checkpoint('fix');
     }
     private function trim(array $rep): array { $o = []; foreach (['status', 'errors', 'checks', 'browserErrors', 'scenes', 'fps', 'slowFrames'] as $k) if (isset($rep[$k])) $o[$k] = $rep[$k]; return $o; }
     public function reviewOnly(): void {
         $v = $this->review(); $this->checkpoint('review'); if ($v !== null) $this->recordReview($v);
         if ($v !== null) $this->emit('stage', ['stage' => !empty($v['pass']) ? 'accepted' : 'rejected', 'text' => 'review: ' . (!empty($v['pass']) ? 'pass' : 'fail'), 'failures' => $v['failures'] ?? []]);
+        if ($v !== null && empty($v['pass'])) { $f = array_values((array) ($v['failures'] ?? [])); $this->mark('attention', 'the reviewer failed ' . count($f) . ' criteria' . ($f ? '; the first: ' . mb_substr((string) $f[0], 0, 160) : '')); }
     }
     /** Which version was reviewed and how it came out: the commit after the review's own checkpoint (its ticks and log line), so "unchanged since" means no commit since. */
     private function recordReview(array $v): void {
@@ -204,7 +222,7 @@ class GameAgent {
             $this->checkpoint('plan');
         }
         $tasks = GameStore::tasks($this->slug);
-        if (!$tasks) { $this->emit('error', ['text' => 'the plan has no tasks: GAME.md needs "- [ ] T1: ..." lines under ## Tasks']); return; }
+        if (!$tasks) { $this->emit('error', ['text' => 'the plan has no tasks: GAME.md needs "- [ ] T1: ..." lines under ## Tasks']); $this->mark('failed', 'the plan has no tasks, so nothing was built'); return; }
         $this->emit('stage', ['stage' => 'build', 'text' => count($tasks) . ' tasks, ' . count(array_filter($tasks, fn($t) => $t['done'])) . ' done', 'tasks' => $tasks]);
         foreach ($tasks as $t) {
             if ($t['done']) continue; if ($this->stop) return;
@@ -219,8 +237,8 @@ class GameAgent {
             $this->emit('stage', ['stage' => 'soak', 'text' => 'headless soak, 90 game-seconds at 4x']);
             $rep = GameStore::runSoak($this->slug, 90, 4);
             if (!empty($rep['ok'])) break;
-            if (($rep['status'] ?? '') === 'no-browser') { $this->emit('stage', ['stage' => 'soak', 'text' => 'no browser attached to playtest in: skipping the playtest gate (open the game page in the forge to run one)']); break; }
-            if ($i === $rounds) { $this->emit('error', ['text' => "the soak still fails after {$rounds} fix rounds"]); break; }
+            if (($rep['status'] ?? '') === 'no-browser') { $this->emit('stage', ['stage' => 'soak', 'text' => 'no browser attached to playtest in: skipping the playtest gate (open the game page in the forge to run one)']); $this->mark('attention', 'no page was open to run the playtest, so it was skipped'); break; }
+            if ($i === $rounds) { $this->emit('error', ['text' => "the soak still fails after {$rounds} fix rounds"]); $this->mark('attention', "the playtest still fails after {$rounds} rounds of fixes"); break; }
             $this->emit('stage', ['stage' => 'fix', 'text' => 'soak failed: asking the agent to fix it (round ' . ($i + 1) . ')']);
             $r = $this->run(str_replace('{report}', mb_substr(json_encode($this->trim($rep), JSON_PRETTY_PRINT), 0, 6000), self::FIX), true, false, 0, 'fix');
             $this->checkpoint('fix round ' . ($i + 1)); if (!$r['ok']) return;
@@ -232,12 +250,12 @@ class GameAgent {
             $this->checkpoint('review round ' . ($i + 1)); $this->recordReview($v);
             if (!empty($v['pass'])) { $this->emit('stage', ['stage' => 'accepted', 'text' => 'the reviewer accepted every criterion']); break; }
             $fails = $v['failures'] ?? []; if (!$fails) $fails = ['the reviewer gave no detail'];
-            if ($i === $rounds) { $this->emit('stage', ['stage' => 'rejected', 'text' => "still failing after {$rounds} rework rounds", 'failures' => $fails]); break; }
+            if ($i === $rounds) { $this->emit('stage', ['stage' => 'rejected', 'text' => "still failing after {$rounds} rework rounds", 'failures' => $fails]); $this->mark('attention', 'the reviewer still fails ' . count($fails) . " criteria after {$rounds} rounds of rework; the first: " . mb_substr((string) $fails[0], 0, 160)); break; }
             $this->emit('stage', ['stage' => 'rework', 'text' => count($fails) . ' criteria failed: reworking', 'failures' => $fails]);
             $r = $this->run(str_replace('{failures}', implode("\n", array_map(fn($f) => '- ' . $f, $fails)), self::REWORK), true, false, 0, 'rework');
             $this->checkpoint('rework round ' . ($i + 1)); if (!$r['ok']) return;
         }
         $this->checkpoint('pipeline done');
-        $this->emit('stage', ['stage' => 'done', 'text' => 'pipeline finished']);
+        $this->emit('stage', ['stage' => 'done', 'text' => $this->result['state'] === 'finished' ? 'pipeline finished' : 'pipeline finished, with a problem: ' . $this->result['why']]);
     }
 }

@@ -182,3 +182,8 @@ a.vl-cover:hover .vl-play-badge, a.vl-cover:focus .vl-play-badge { opacity: 1; t
 /* a question that waits for an answer (Already reviewed: CONTINUE / CANCEL) */
 .vl-ask { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; z-index: 1600; padding: 16px; }
 .vl-ask-card { background: #0a0a0c; border: 1px solid #ff6600; border-radius: 10px; padding: 18px; max-width: 460px; box-shadow: 0 20px 60px rgba(0,0,0,.8); }
+.vl-pill-bad { border-color: #ff4d6d; color: #ff4d6d; }
+.vl-lastrun { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 8px; padding: 8px 12px; border: 1px solid #ffcc00; border-radius: 8px; background: #17140a; color: #eee; font-size: 0.85rem; overflow-wrap: anywhere; }
+.vl-lastrun.failed { border-color: #ff4d6d; background: #1c0c11; }
+.vl-lastrun > span:first-child { flex: 1 1 260px; min-width: 0; } .vl-lastrun-meta { color: #999; font-size: 0.75rem; white-space: nowrap; }
+.vl-lastrun[hidden] { display: none; }
