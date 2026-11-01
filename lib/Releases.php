@@ -32,14 +32,22 @@ class Releases {
         if ($dirty) $warnings[] = 'It includes changes not saved in the game\'s history yet (editor saves or uncommitted work).';
         $soaks = GameStore::soaks($slug); $last = $soaks[0] ?? null;
         if (!$last) $warnings[] = 'It has never been playtested.';
-        else { $at = self::soakTime($slug, (string) ($last['id'] ?? ''));
-            if (empty($last['ok'])) $warnings[] = 'Its last playtest failed' . (!empty($last['status']) && $last['status'] !== 'ok' ? ' (' . $last['status'] . ')' : '') . '.';
-            if ($at > 0 && $commitAt > $at) $warnings[] = 'It changed after its last playtest (' . date('M j H:i', $at) . ').'; }
+        else { if (empty($last['ok'])) $warnings[] = 'Its last playtest failed' . (!empty($last['status']) && $last['status'] !== 'ok' ? ' (' . $last['status'] . ')' : '') . '.';
+            // what a player would get, not when something was committed: builders commit just after their last playtest, and a note in GAME.md changes nothing that ships
+            $f = GameStore::dir($slug) . '/.studio/soaks/' . ($last['id'] ?? '') . '.json'; $seen = is_file($f) ? (string) ((json_decode((string) file_get_contents($f), true) ?: [])['shipped'] ?? '') : '';
+            if ($seen !== '' ? $seen !== self::fingerprint($slug) : ($commitAt > (int) @filemtime($f))) $warnings[] = 'What would go live has changed since its last playtest (' . date('M j H:i', (int) @filemtime($f)) . ').'; }
         $live = self::liveDir($slug);
         return ['live' => $live !== '' && is_file("$live/index.html") ? ['build' => self::buildIn($live) ?: (string) $g->publishedBuild, 'at' => (string) $g->publishedAt, 'url' => (string) $g->publishedUrl] : null,
             'next' => ['build' => $next, 'subject' => trim((string) $subject), 'url' => $live !== '' ? 'https://' . $slug . '.' . GameStore::cfg('domain') . '/' : ''], 'blockers' => $blockers, 'warnings' => $warnings, 'earlier' => self::earlier($slug), 'keep' => self::KEEP];
     }
-    private static function soakTime(string $slug, string $id): int { $f = GameStore::dir($slug) . "/.studio/soaks/$id.json"; return is_file($f) ? (int) filemtime($f) : 0; }
+    /** A hash of the files that go live (index.html, js/, assets/, icons/, the manifest). The forge's playtest tooling is left out. */
+    public static function fingerprint(string $slug): string {
+        $d = GameStore::dir($slug); $parts = [];
+        foreach (['index.html', 'manifest.webmanifest'] as $f) if (is_file("$d/$f")) $parts[$f] = sha1_file("$d/$f");
+        foreach (['js', 'assets', 'icons'] as $sub) { if (!is_dir("$d/$sub")) continue;
+            foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator("$d/$sub", \FilesystemIterator::SKIP_DOTS)) as $x) { $n = substr($x->getPathname(), strlen($d) + 1); if ($x->isFile() && !in_array($n, ['js/forge-soak.js', 'js/soak-store.js'], true)) $parts[$n] = sha1_file($x->getPathname()); } }
+        ksort($parts); return sha1(json_encode($parts));
+    }
     /** Refuses a publish that is not what was reviewed, or that must not go now. */
     public static function guard(object $g, string $expect): void {
         $c = self::check($g); if ($c['blockers']) throw new \RuntimeException($c['blockers'][0]);

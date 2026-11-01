@@ -406,7 +406,7 @@ class GameStore {
         $sd = self::studioDir($slug) . '/soaks'; if (!is_dir($sd)) mkdir($sd, 0775, true);
         if (preg_match('#^data:image/jpeg;base64,([A-Za-z0-9+/=]+)$#', (string) ($rep['shot'] ?? ''), $m)) file_put_contents($sd . '/' . $id . '.jpg', base64_decode($m[1]));
         self::saveGif($sd, $id, $rep);
-        unset($rep['shot'], $rep['gif']); $rep['id'] = $id; $rep['secs'] = (int) $r['secs']; $rep['fast'] = (int) $r['fast']; $rep['runner'] = 'browser'; $rep['status'] = $rep['status'] ?? 'ok';
+        unset($rep['shot'], $rep['gif']); $rep['shipped'] = Releases::fingerprint($slug); $rep['id'] = $id; $rep['secs'] = (int) $r['secs']; $rep['fast'] = (int) $r['fast']; $rep['runner'] = 'browser'; $rep['status'] = $rep['status'] ?? 'ok';
         $rep['ok'] = empty($rep['errors']) && empty($rep['checks']) && ($rep['status'] === 'ok');
         self::writeAtomic($sd . '/' . $id . '.json', json_encode($rep, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         @unlink(self::dir($slug) . '/.studio/soak-request.json');
