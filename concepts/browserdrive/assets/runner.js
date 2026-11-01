@@ -89,7 +89,7 @@
     for (let i = 1; i <= count; i++) {
       showAt(p.x, p.y, true); mev('pointerdown', p, { button, buttons: b }); const el = mev('mousedown', p, { button, buttons: b, detail: i }); if (el.focus) el.focus({ preventScroll: true });
       mev('pointerup', p, { button }); mev('mouseup', p, { button, detail: i }); showAt(p.x, p.y, false);
-      if (button === 0) { const t = D().elementFromPoint(p.x, p.y) || p.el; if (t.click && i === 1 && count === 1) t.click(); else t.dispatchEvent(new (W().MouseEvent)('click', { bubbles: true, cancelable: true, view: W(), clientX: p.x, clientY: p.y, detail: i })); }
+      if (button === 0) { const t = D().elementFromPoint(p.x, p.y) || p.el; t.dispatchEvent(new (W().MouseEvent)('click', { bubbles: true, cancelable: true, composed: true, view: W(), clientX: p.x, clientY: p.y, screenX: p.x, screenY: p.y, detail: i })); } /* with its coordinates: element.click() reports 0, 0 */
       else if (button === 2) mev('contextmenu', p, { button });
     }
     if (count === 2) mev('dblclick', p, { detail: 2 });
@@ -120,6 +120,8 @@
   }
   const safe = v => { try { return v === undefined ? null : JSON.parse(JSON.stringify(v)); } catch (e) { return String(v); } };
 
+  // JavaScript for evaluate and waitFor: an expression, or a function to call with arg, or else the body of a function
+  const script = src => { src = String(src).trim(); const w = W(); let fn; try { fn = new w.Function('return (' + src + '\n)'); } catch (e) { fn = new w.Function('arg', src); } return async arg => { let v = await fn.call(w, arg); if (typeof v === 'function') v = await v.call(w, arg); return v; }; };
   // ---- the commands ----
   async function play(c) {
     switch (c.do) {
@@ -155,18 +157,15 @@
           if (t && t !== D().documentElement) t.scrollBy(+c.dx || 0, +c.dy || 0); else w.scrollBy(+c.dx || 0, +c.dy || 0); }
         return { scrolled: go, scrollY: w.scrollY }; }
       case 'waitFor': { const timeout = Math.min(60000, +c.timeout || 10000), until = Date.now() + timeout, state = c.state || 'visible';
-        const fn = c.js ? new (W().Function)(/\breturn\b/.test(c.js) ? c.js : 'return (' + c.js + ')') : null;
+        const fn = c.js ? script(c.js) : null;
         while (Date.now() < until) { let ok = false;
-          if (fn) { try { ok = !!(await fn.call(W())); } catch (e) { ok = false; } }
+          if (fn) { try { ok = !!(await fn()); } catch (e) { ok = false; } }
           else if (c.text) ok = (D().body.innerText || '').toLowerCase().includes(String(c.text).toLowerCase());
           else { const els = query(c.target); ok = state === 'attached' ? els.length > 0 : state === 'detached' ? els.length === 0 : state === 'hidden' ? !els.some(visible) : els.some(visible); }
           if (ok) return { waited: timeout - (until - Date.now()) }; await sleep(100); }
         throw new Error(`waited ${timeout / 1000} s and ${c.js ? 'the condition never held' : c.text ? `the text "${c.text}" never appeared` : `"${c.target}" was never ${state}`}`); }
       case 'wait': await sleep(Math.min(60000, +c.ms || 0)); return {};
-      case 'evaluate': { const src = String(c.js).trim(), w = W(); let fn; // an expression, or a function to call with arg, or else the body of a function
-        try { fn = new w.Function('return (' + src + '\n)'); } catch (e) { fn = new w.Function('arg', src); }
-        let v = await fn.call(w, c.arg); if (typeof v === 'function') v = await v.call(w, c.arg);
-        return { value: safe(v) }; }
+      case 'evaluate': return { value: safe(await script(String(c.js))(c.arg)) };
       case 'text': return { value: ((await find(c.target, 5000, false)).innerText || '').trim() };
       case 'value': return { value: (await find(c.target, 5000, false)).value ?? null };
       case 'attr': return { value: (await find(c.target, 5000, false)).getAttribute(String(c.name)) };

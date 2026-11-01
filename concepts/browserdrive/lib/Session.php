@@ -160,7 +160,7 @@ class Session {
             Bean::exec('UPDATE drivesession SET seen_at = ? WHERE id = ?', [date('Y-m-d H:i:s'), (int) $mine['id']]);
             return Bean::load('drivesession', (int) $mine['id']);
         }
-        foreach (Bean::find('drivesession', ' status = ? AND opened_by = ? ORDER BY id ', ['open', $runnerId]) as $s) {
+        foreach (Bean::getAll('SELECT id FROM drivesession WHERE status = ? AND opened_by = ? AND ? > 0 ORDER BY id', ['open', $runnerId, $tick]) as $row) { $s = (object) ['id' => (int) $row['id']]; // a new query each time: the query cache could hide a session opened elsewhere for a minute (see wait)
             $n = Bean::exec('UPDATE drivesession SET status = ?, runner = ?, claimed_at = ?, seen_at = ? WHERE id = ? AND status = ?', ['claimed', $runnerId, date('Y-m-d H:i:s'), date('Y-m-d H:i:s'), (int) $s->id, 'open']);
             if ($n === 1) return Bean::load('drivesession', (int) $s->id);
         }

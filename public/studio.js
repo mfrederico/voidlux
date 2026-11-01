@@ -20,7 +20,7 @@
     const t = list[0], c = N.css(t.x, t.y), k = N.canvas.getBoundingClientRect().width / N.canvas.width, s = t.r * k * 2;
     Object.assign(ring.style, { display: 'block', left: c.x - s / 2 + 'px', top: c.y - s / 2 + 'px', width: s + 'px', height: s + 'px' }); over.style.cursor = 'pointer';
     tip.textContent = t.key; Object.assign(tip.style, { display: 'block', left: Math.min(cx + 14, over.clientWidth - 180) + 'px', top: Math.max(cy - 28, 4) + 'px' }); });
-  over.addEventListener('click', e => { if (!inspecting) return; const { list } = at(e); if (!list.length) { hint('Nothing there. Click something, or Esc to resume.'); return; } if (typeof UX !== 'undefined') UX.act('inspect', list[0].key); show(list[0].key, list[0]); });
+  over.addEventListener('click', e => { if (!inspecting) return; const { list } = at(e); if (!list.length) { hint('Nothing there. Menus and title screens have nothing to inspect: press Esc, start playing, then Inspect again.'); return; } if (typeof UX !== 'undefined') UX.act('inspect', list[0].key); show(list[0].key, list[0]); });
   $('inspect').onclick = () => setInspect(!inspecting);
   $('restart').onclick = () => { setInspect(false); frame.src = `/games/${SLUG}/?r=${Date.now()}`; };
   const keys = e => { if (e.altKey && e.key.toLowerCase() === 'i') { e.preventDefault(); setInspect(!inspecting); } else if (e.key === 'Escape' && inspecting) { e.preventDefault(); setInspect(false); } };
@@ -39,7 +39,7 @@
   $('find').onkeydown = e => { if (e.key === 'Enter') { const b = $('things').querySelector('.th'); if (b) b.click(); } };
 
   // ---- the card: what is specific to this thing first; what it shares with its group, folded ----
-  async function show(key, live) { const mine = ++seq; current = key; drawList(); $('card').innerHTML = `<h2>${esc(key)}</h2><p class="muted">Loading…</p>`;
+  async function show(key, live) { const mine = ++seq; current = key; drawList(); const row = $('things').querySelector('.th.on'); if (row) row.scrollIntoView({ block: 'nearest' }); $('card').innerHTML = `<h2>${esc(key)}</h2><p class="muted">Loading…</p>`;
     try { const { card } = await Forge.api(`/studio/card/${SLUG}?key=${encodeURIComponent(key)}`); if (mine === seq) $('card').innerHTML = render(card, live); }
     catch (e) { if (mine === seq) $('card').innerHTML = `<h2>${esc(key)}</h2><p class="bad">The card could not be read: ${esc(e.message)}</p>`; } }
   const ruleRow = r => `<div class="rule${r.off ? ' off' : ''}">${esc(RuleWords.say(r))}${r.off ? ' <span class="pill">off</span>' : ''}${r.note ? `<div class="n">${esc(r.note)}</div>` : ''}${r.broken ? `<div class="bad small">no longer fits the game: ${esc(r.broken)}</div>` : ''}</div>`;
