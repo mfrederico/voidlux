@@ -4,6 +4,8 @@
  * card says what that thing is (its look, its rules, what the game does for it in code, its resistances). It reads and writes
  * the same game folders as the Game page; it is another way in, not another kind of game.
  *   GET /studio/open/<slug>    the page      GET /studio/things/<slug>    the list      GET /studio/card/<slug>?key=    a card
+ *   POST /studio/ways/<slug> { text, key }    where a change could go and what each way costs; nothing starts (lib/ChangeBox.php)
+ *   POST /studio/change/<slug> { way, text, key, values? }    starts it
  */
 namespace app;
 
@@ -19,6 +21,15 @@ class Studio extends BaseControls\Control {
     public function open($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params, false)) return;
         $this->render('studio/open', ['title' => (string) $g->title . ' · Studio', 'slug' => (string) $g->slug, 'gameTitle' => (string) $g->title], false);
+    }
+    public function ways($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $b = $this->getJsonInput() ?? [];
+        try { Flight::jsonSuccess(ChangeBox::ways((string) $g->slug, (string) ($b['text'] ?? ''), (string) ($b['key'] ?? ''))); } catch (\InvalidArgumentException $e) { Flight::jsonError($e->getMessage(), 400); }
+    }
+    public function change($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $b = $this->getJsonInput() ?? [];
+        try { Flight::jsonSuccess(ChangeBox::start((string) $g->slug, (string) ($b['way'] ?? ''), (string) ($b['text'] ?? ''), (string) ($b['key'] ?? ''), (array) ($b['values'] ?? []), (int) $this->member->id, (string) ($this->member->username ?: $this->member->email))); }
+        catch (\InvalidArgumentException $e) { Flight::jsonError($e->getMessage(), 400); } catch (\RuntimeException $e) { Flight::jsonError($e->getMessage(), 409); }
     }
     public function things($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;

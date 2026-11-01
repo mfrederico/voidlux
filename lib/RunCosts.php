@@ -9,14 +9,15 @@ namespace app;
 class RunCosts {
     private const TTL = 86400; private const MIN_RUNS = 3; private const KEEP = 100; // recent runs only: long sessions cost more before the builder's handoff
 
-    /** {what: what the run does, cost: its likely cost in words, usual, high (null without enough history)} for a mode: new|pipeline|fix|review|chat. */
+    /** {what: what the run does, cost: its likely cost in words, usual, high (null without enough history)} for a mode: new|pipeline|fix|review|chat|art. */
     public static function estimate(string $slug, string $mode): array {
         $t = self::table(); $k = $t['kinds'];
         if ($mode === 'new') return self::said('Plans the game, builds every task, playtests it and has it reviewed.', $t['games']);
+        if ($mode === 'art') return self::said('The artist does it beside the builder.', $k['art'] ?? null);
         if ($mode === 'chat') return self::said('The builder does what you ask.', $k['chat'] ?? null);
         if ($mode === 'review') return self::said('An independent reviewer checks every acceptance criterion.', $k['review'] ?? null);
         if ($mode === 'fix') { $e = self::said('Runs a playtest, which is free. If it fails, the builder fixes it and tests again; that part costs money.', $k['task'] ?? null); $e['cost'] = 'If it needs fixing: ' . lcfirst($e['cost']); return $e; }
-        if ($mode !== 'pipeline') throw new \InvalidArgumentException("no estimate for {$mode}: it is new, pipeline, fix, review or chat");
+        if ($mode !== 'pipeline') throw new \InvalidArgumentException("no estimate for {$mode}: it is new, pipeline, fix, review, chat or art");
         $tasks = GameStore::tasks($slug); $open = count(array_filter($tasks, fn($x) => !$x['done']));
         if (!$tasks) return self::said('Plans the game, builds every task, playtests it and has it reviewed.', $t['games']);
         $review = $k['review'] ?? null; $rework = $k['rework'] ?? $k['task'] ?? null;
