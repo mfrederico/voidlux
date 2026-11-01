@@ -1146,8 +1146,9 @@ class GameStore {
         if ($domain !== '') {
             $sname = $slug . '.' . preg_replace('/\.[a-z]+$/', '', $domain); // void-drift.voidlux: capricorn's folder name for void-drift.voidlux.com
             $site = rtrim($root, '/') . '/' . $sname; $pub = $site . '/public';
+            Releases::checkBuild($dist); Releases::keep($g); // a build that does not parse never goes live; what is live now can be put back
             if (!is_dir($pub)) mkdir($pub, 0775, true);
-            exec('rsync -a --delete ' . escapeshellarg($dist . '/') . ' ' . escapeshellarg($pub . '/') . ' 2>&1', $o, $rc);
+            exec('rsync -a --checksum --delete ' . escapeshellarg($dist . '/') . ' ' . escapeshellarg($pub . '/') . ' 2>&1', $o, $rc);
             if ($rc !== 0) throw new \RuntimeException('copying the build to ' . $pub . ' failed: ' . implode(' ', $o));
             $proxy = rtrim($root, '/') . '/../.proxy.' . $sname; if (is_file($proxy)) @unlink($proxy); // an older route through a studio process
             $out['url'] = "https://{$slug}.{$domain}/"; $out['folder'] = $pub;

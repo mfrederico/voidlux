@@ -195,7 +195,20 @@ class Game extends BaseControls\Control {
     }
     public function publish($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
-        try { $this->jsonSuccess(GameStore::publish($g), 'Published.'); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 500); }
+        $who = (string) ($this->member->username ?: $this->member->email);
+        try { Releases::guard($g, (string) ($this->body()['expect'] ?? '')); $r = GameStore::publish($g); GameStore::activity((string) $g->slug, $who, 'published build ' . $r['build']); $this->jsonSuccess($r + ['releases' => Releases::check($g)], 'Published.'); }
+        catch (\InvalidArgumentException $e) { $this->jsonError($e->getMessage(), 400); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 409); }
+    }
+    /** What is live, what would replace it, what is doubtful about it, and the earlier builds. */
+    public function publishcheck($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
+        try { $this->jsonSuccess(Releases::check($g)); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 500); }
+    }
+    /** An earlier build goes live again. */
+    public function publishrestore($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        try { $r = Releases::restore($g, (string) ($this->body()['id'] ?? ''), (string) ($this->member->username ?: $this->member->email)); $this->jsonSuccess($r + ['releases' => Releases::check($g)], 'Put back.'); }
+        catch (\InvalidArgumentException $e) { $this->jsonError($e->getMessage(), 400); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 500); }
     }
     // ---- the producer's notes: made in the game's note mode (kit-notes.js), batched here, sent to the builder ----
     private function noteRows(object $g): array {
