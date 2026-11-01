@@ -69,10 +69,17 @@
 
   // ---- the change box: one sentence about what is picked, the ways it could go with what each costs, then the chosen one followed to its end (lib/ChangeBox.php) ----
   const box = $('changeWays'), framed = window.top !== window; // in another page's frame (a browser-drive session) it can look, not spend or change
+  const mine = new Set(); // this page's own commits: the changes it has applied itself, so the poll does not ask for a reload
+  // the running game takes the change if it can (its forgeLive hook) and says what still needs a reload; otherwise the button above asks for one
+  async function applyLive(kind) { let f = null, left = null; try { f = W().forgeLive && W().forgeLive[kind]; } catch (e) {}
+    if (typeof f !== 'function') { $('changed').hidden = false; return 'Reload the game to see it.'; }
+    try { left = await f(); } catch (e) { console.error(e); $('changed').hidden = false; return 'The running game could not take it (' + e.message + '). Reload the game to see it.'; }
+    if (Array.isArray(left) && left.length) { $('changed').hidden = false; return `In the game now, except ${left.join(', ')}: reload the game for those.`; }
+    return 'In the game now: no reload needed. New ones use it.'; }
   const JOB = 'studio-change-' + SLUG; let job = null; try { job = JSON.parse(sessionStorage.getItem(JOB) || 'null'); } catch (e) {} // a rule or a model takes minutes: a reload must not lose what was paid for
   const keepJob = () => { try { if (job && (job.way === 'rule' || job.way === 'art')) sessionStorage.setItem(JOB, JSON.stringify(job)); else sessionStorage.removeItem(JOB); } catch (e) {} };
   const money = t => `<span class="cost small">${esc(t)}</span>`;
-  function about() { const was = $('changeAbout').dataset.k || ''; $('changeAbout').textContent = current || 'the whole game'; $('changeAbout').dataset.k = current; $('changeClear').hidden = !current; if (was !== current && !job) box.innerHTML = ''; }
+  function about() { if (entries.length || current) drawTimeline(); const was = $('changeAbout').dataset.k || ''; $('changeAbout').textContent = current || 'the whole game'; $('changeAbout').dataset.k = current; $('changeClear').hidden = !current; if (was !== current && !job) box.innerHTML = ''; }
   $('changeClear').onclick = () => { current = ''; about(); drawList(); $('card').innerHTML = '<h2>Nothing picked yet</h2><p class="muted">Press <b>Inspect</b> (Alt+I), then click anything in the game, or choose from the list.</p>'; };
   const field = f => `<label class="num"><span class="${f.meant ? 'meant' : ''}">${esc(f.label)}</span><input type="number" step="any" min="${f.lo}" max="${f.hi}" name="${esc(f.name)}" value="${f.value == null ? '' : esc(f.value)}" data-was="${f.value == null ? '' : esc(f.value)}" placeholder="game's"></label>`;
   function numbers(w) { const fs = w.fields || [], meant = fs.filter(f => f.meant), rest = fs.filter(f => !f.meant);
@@ -94,8 +101,8 @@
   const finish = (html, more) => { job = null; keepJob(); box.innerHTML = html + '<div class="ch-go"><button type="button" id="changeDone">Done</button></div>'; if (more) more(); $('changeDone').onclick = () => { box.innerHTML = ''; }; };
   // what a change came to: the numbers at once, the rest when its job ends; the poll below calls this again while one goes
   async function follow() { const j = job; if (!j) return;
-    if (j.way === 'numbers') { $('changed').hidden = false; const back = Object.keys(j.before).length; const before = j.before, key = j.key;
-      finish(`<p class="small">Saved ${back} number${back === 1 ? '' : 's'} of ${esc(key)}. Reload the game to play with them.</p><div class="ch-go"><button type="button" id="numUndo">Put them back</button></div>`, () => { $('numUndo').onclick = async () => { try { await Forge.api(`/studio/change/${SLUG}`, { way: 'numbers', key, text: '', values: before }); $('changed').hidden = false; box.innerHTML = '<p class="small">Put back. Reload the game to play with them.</p>'; } catch (e) { box.insertAdjacentHTML('beforeend', `<p class="bad small">${esc(e.message)}</p>`); } }; }); return; }
+    if (j.way === 'numbers') { if (j.sha) mine.add(j.sha); const said = await applyLive('numbers'), n = j.names.length; loadTimeline();
+      finish(`<p class="small">Saved ${n} number${n === 1 ? '' : 's'} of ${esc(j.key)}. ${esc(said)}</p>${j.sha ? '<div class="ch-go"><button type="button" id="numUndo">Undo</button></div>' : ''}`, () => { if (j.sha) $('numUndo').onclick = () => undo(j.sha); }); return; }
     if (j.way === 'rule') return followRule(j);
     if (j.way === 'art') return followArt(j);
     working(j.queued ? 'The builder is busy: this goes with its next run. Its answer shows here.' : 'The builder is on it. Its answer shows here, and a button appears above when the game has changed.'); }
@@ -107,20 +114,29 @@
     const can = p.rules && p.rules.length, miss = p.missing || [];
     finish(`<p class="small">${esc(p.explain || '')}</p>${p.error ? `<p class="bad small">${esc(p.error)}</p>` : ''}${can ? `<div class="rules-read">${p.rules.map(ruleRow).join('')}</div>` : ''}${miss.length ? `<p class="small">It needs what the game does not have yet:</p><ul class="small">${miss.map(m => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}<div class="ch-go">${can ? '<button type="button" class="go" id="ruleAdd">Add these rules</button>' : ''}${miss.length ? '<button type="button" id="ruleBuild">Have the builder add what is missing</button>' : ''}<button type="button" id="ruleDrop">Leave them out</button></div>`, () => { $('changeDone').hidden = true;
       const settle = async (b, after) => { try { await Forge.api(`/gameapi/events/${SLUG}`, { ...b, id: p.id }); after(); } catch (e) { box.insertAdjacentHTML('beforeend', `<p class="bad small">${esc(e.message)}</p>`); } };
-      if ($('ruleAdd')) $('ruleAdd').onclick = () => settle({ do: 'add' }, () => { $('changed').hidden = false; box.innerHTML = '<p class="small">Added. Reload the game to play with them.</p>'; if (j.key && j.key === current) show(current); });
+      if ($('ruleAdd')) $('ruleAdd').onclick = () => settle({ do: 'add' }, async () => { const said = await applyLive('rule'); box.innerHTML = `<p class="small">Added. ${esc(said)}</p>`; loadTimeline(); if (j.key && j.key === current) show(current); });
       if ($('ruleBuild')) $('ruleBuild').onclick = () => settle({ do: 'build' }, () => { job = j; keepJob(); follow(); });
       $('ruleDrop').onclick = () => settle({ do: 'dismiss' }, () => { box.innerHTML = ''; }); }); }
   async function followArt(j) { let s; try { s = await Forge.api(`/gameapi/sketch/${SLUG}?id=${encodeURIComponent(j.id)}`); } catch (e) { working('Could not read the job: ' + e.message + '. Trying again.'); return; }
     if (!s.result) { working(j.queued ? 'The artist is busy: this waits its turn.' : `The artist is making a new version of ${j.key}…`); return; }
     if (!s.result.ok) { finish(`<p class="bad small">No new version: ${esc(s.result.error || 'the artist could not make it')}</p>`); return; }
-    finish(`<p class="small">A new version of ${esc(j.key)} is ready. The game still has the old one.</p><div class="ch-go"><button type="button" class="go" id="artUse">Use the new version</button><a href="/editor/sprites/?game=${esc(SLUG)}&item=${encodeURIComponent(j.key)}#3d" target="_blank">See it first</a></div>`, () => { $('artUse').onclick = async () => { try { await Forge.api(`/gameapi/cast/${SLUG}`, { do: 'keepall', keys: [j.key] }); $('changed').hidden = false; box.innerHTML = '<p class="small">Using it. Reload the game to see it.</p>'; if (j.key === current) show(current); } catch (e) { box.insertAdjacentHTML('beforeend', `<p class="bad small">${esc(e.message)}</p>`); } }; }); }
+    finish(`<p class="small">A new version of ${esc(j.key)} is ready. The game still has the old one.</p><div class="ch-go"><button type="button" class="go" id="artUse">Use the new version</button><a href="/editor/sprites/?game=${esc(SLUG)}&item=${encodeURIComponent(j.key)}#3d" target="_blank">See it first</a></div>`, () => { $('artUse').onclick = async () => { try { await Forge.api(`/gameapi/cast/${SLUG}`, { do: 'keepall', keys: [j.key] }); $('changed').hidden = false; box.innerHTML = '<p class="small">Using it. Reload the game to see it.</p>'; loadTimeline(); if (j.key === current) show(current); } catch (e) { box.insertAdjacentHTML('beforeend', `<p class="bad small">${esc(e.message)}</p>`); } }; }); }
 
+  // ---- the timeline: everything that changed, newest first, each with its undo (lib/Timeline.php) ----
+  let entries = []; const ago = t => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
+  function drawTimeline() { const onlyThing = current && $('tlThing').checked, list = entries.filter(e => !onlyThing || e.key === current); $('tlThingRow').hidden = !current;
+    $('tlList').innerHTML = list.length ? list.map(e => `<div class="tl${e.undone ? ' off' : ''}"><div class="tl-t">${esc(e.title)}</div><div class="small muted">${esc(e.who)} · ${esc(ago(e.at))}${e.cost ? ' · $' + e.cost.toFixed(2) : ''}${e.files > 1 ? ' · ' + e.files + ' files' : ''}${e.undone ? ' · undone' : ''}${e.why ? ' · ' + esc(e.why) : ''}</div>${e.canUndo && !framed ? `<button type="button" class="tl-u" data-id="${esc(e.id)}" data-n="${e.kind === 'builder' ? e.files : 0}">Undo</button>` : ''}</div>`).join('') : '<p class="small muted">Nothing here yet.</p>';
+    $('tlList').querySelectorAll('.tl-u').forEach(b => { b.onclick = () => { const n = +b.dataset.n; if (n && !b.dataset.sure) { b.dataset.sure = 1; b.textContent = `Undo all of it: ${n} file${n === 1 ? '' : 's'}?`; setTimeout(() => { delete b.dataset.sure; b.textContent = 'Undo'; }, 5000); return; } undo(b.dataset.id); }; }); }
+  async function loadTimeline() { if (!$('timeline').open) return; try { entries = (await Forge.api(`/studio/timeline/${SLUG}`)).entries; drawTimeline(); } catch (e) { $('tlList').innerHTML = `<p class="bad small">The timeline could not be read: ${esc(e.message)}</p>`; } }
+  async function undo(id) { try { const r = await Forge.api(`/studio/undo/${SLUG}`, { id }); mine.add(r.id); if (typeof UX !== 'undefined') UX.act('undo', r.kind); const said = await applyLive(r.kind); box.innerHTML = `<p class="small">${esc(r.title)}. ${esc(said)}</p>`; $('timeline').open = true; await loadTimeline(); if (current) show(current); }
+    catch (e) { box.innerHTML = `<p class="bad small">${esc(e.message)}</p>`; $('timeline').open = true; } }
+  $('timeline').addEventListener('toggle', loadTimeline); $('tlThing').onchange = drawTimeline;
   setInterval(() => { if (job && (job.way === 'rule' || job.way === 'art')) follow(); }, 4000); follow();
 
   // ---- this page also runs the playtests and screenshots agents ask for, as the game page does ----
   let last = 0; ForgeRunner.init(SLUG, { note: t => { if (t) hint(t); }, done: rep => hint(rep.ok ? 'Playtest passed in this browser.' : 'Playtest in this browser: ' + (rep.status || 'failed') + '. See the game page, under Test.') });
   async function poll() { const att = $('attached');
-    try { const r = await Forge.api(`/game/events/${SLUG}?since=${last}`); if (last > 0 && (r.events || []).some(ev => ['checkpoint', 'artdone'].includes(ev.kind))) $('changed').hidden = false;
+    try { const r = await Forge.api(`/game/events/${SLUG}?since=${last}`); if (last > 0) { const evs = r.events || []; if (evs.some(ev => ['checkpoint', 'artdone'].includes(ev.kind) || (ev.kind === 'timeline' && !mine.has(ev.sha)))) $('changed').hidden = false; if (evs.some(ev => ev.kind === 'checkpoint' || ev.kind === 'timeline' || ev.kind === 'idle')) loadTimeline(); }
       if (job && job.way === 'builder' && last > 0) { const d = (r.events || []).filter(ev => ev.kind === 'done' && ev.label === 'chat').pop(); if (d) finish(`<div class="ans">${Forge.md(d.text || '')}</div>${d.ok ? '' : '<p class="bad small">That run did not finish properly.</p>'}<p class="small muted">It cost $${(+d.cost || 0).toFixed(2)}.</p>`); }
       last = r.last; ForgeRunner.take(r); att.textContent = '● runs playtests'; Forge.lastRun($('lastRun'), SLUG, r.agent); const bld = $('builder'); bld.hidden = !r.agent.busy; bld.textContent = '⚒ the builder is working'; }
     catch (e) { att.textContent = '○ not connected: ' + e.message; }

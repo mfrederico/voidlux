@@ -25,6 +25,7 @@ class Gameapi extends BaseControls\Control {
         if (!GameStore::canOpen($g, (int) $this->member->id, (int) $this->member->level)) { $this->jsonError('That game is not yours to open.', 403); return null; }
         return $g;
     }
+    private function who(): string { return (string) ($this->member->username ?: $this->member->email); }
     private function post(): bool { if (Flight::request()->method !== 'POST') return false; $this->validateCSRF(); return true; }
     /** The editors are plain JSON clients: answer with the bare object they expect, not the {success, data} envelope. */
     private function raw($obj, int $code = 200): void { http_response_code($code); header('Content-Type: application/json'); header('Cache-Control: no-store'); echo json_encode($obj, JSON_UNESCAPED_SLASHES); exit; }
@@ -33,7 +34,7 @@ class Gameapi extends BaseControls\Control {
     public function sfx($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
         try {
-            if ($this->post()) { $this->raw(['ok' => true, 'sounds' => GameStore::saveSfx($g->slug, $this->getJsonInput() ?? [])]); }
+            if ($this->post()) { $n = GameStore::saveSfx($g->slug, $this->getJsonInput() ?? []); Timeline::record($g->slug, 'Sound effects edited', 'sound', $this->who(), ['js/sfx.js'], '', true); $this->raw(['ok' => true, 'sounds' => $n]); }
             $this->raw(GameStore::readSfx($g->slug));
         } catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
     }
@@ -41,14 +42,14 @@ class Gameapi extends BaseControls\Control {
     public function tuning($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
         try {
-            if ($this->post()) { $this->raw(['ok' => true, 'count' => GameStore::saveTuning($g->slug, $this->getJsonInput() ?? [])]); }
+            if ($this->post()) { $n = GameStore::saveTuning($g->slug, $this->getJsonInput() ?? []); Timeline::record($g->slug, 'Game settings edited', 'config', $this->who(), ['js/tuning.js'], '', true); $this->raw(['ok' => true, 'count' => $n]); }
             $this->raw(GameStore::readTuning($g->slug));
         } catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
     }
     public function musicsave($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; if (!$this->post()) { $this->raw(['error' => 'POST'], 405); }
         $b = $this->getJsonInput() ?? [];
-        try { $this->raw(['ok' => true, 'action' => GameStore::saveSong($g->slug, (string) ($b['name'] ?? ''), (string) ($b['snippet'] ?? '')), 'file' => 'js/music-themes.js']); }
+        try { $act = GameStore::saveSong($g->slug, (string) ($b['name'] ?? ''), (string) ($b['snippet'] ?? '')); Timeline::record($g->slug, 'Music edited: ' . (string) ($b['name'] ?? ''), 'music', $this->who(), ['js/music-themes.js'], (string) ($b['name'] ?? ''), true); $this->raw(['ok' => true, 'action' => $act, 'file' => 'js/music-themes.js']); }
         catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
     }
     public function sprites($params = []): void {
@@ -57,13 +58,13 @@ class Gameapi extends BaseControls\Control {
     }
     public function spritesave($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; if (!$this->post()) { $this->raw(['error' => 'POST'], 405); }
-        try { $in = $this->getJsonInput() ?? []; $e = GameStore::saveSprite($g->slug, $in); GameStore::activity($g->slug, (string) ($this->member->username ?: $this->member->email), (($e['kind'] ?? '') === 'model' ? 'used a new 3D model for ' : 'saved the sprite ') . ($in['key'] ?? '?') . (!empty($in['take']['id']) ? ' (from job ' . $in['take']['id'] . ')' : '') . ': assets/' . $e['file']); GameStore::emit($g->slug, 'note', ['text' => 'sprite saved by ' . ($this->member->username ?: $this->member->email) . ': assets/' . $e['file']]); $this->raw(['ok' => true, 'sprite' => $e] + GameStore::readSprites($g->slug)); }
+        try { $in = $this->getJsonInput() ?? []; $e = GameStore::saveSprite($g->slug, $in); Timeline::record($g->slug, 'Kept the look of ' . (string) ($in['key'] ?? ''), 'art', $this->who(), ['assets', 'versions'], (string) ($in['key'] ?? '')); GameStore::activity($g->slug, (string) ($this->member->username ?: $this->member->email), (($e['kind'] ?? '') === 'model' ? 'used a new 3D model for ' : 'saved the sprite ') . ($in['key'] ?? '?') . (!empty($in['take']['id']) ? ' (from job ' . $in['take']['id'] . ')' : '') . ': assets/' . $e['file']); GameStore::emit($g->slug, 'note', ['text' => 'sprite saved by ' . ($this->member->username ?: $this->member->email) . ': assets/' . $e['file']]); $this->raw(['ok' => true, 'sprite' => $e] + GameStore::readSprites($g->slug)); }
         catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
     }
     public function spritedelete($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; if (!$this->post()) { $this->raw(['error' => 'POST'], 405); }
         $b = $this->getJsonInput() ?? [];
-        try { GameStore::deleteSprite($g->slug, (string) ($b['key'] ?? ''), !empty($b['file'])); $this->raw(['ok' => true] + GameStore::readSprites($g->slug)); }
+        try { GameStore::deleteSprite($g->slug, (string) ($b['key'] ?? ''), !empty($b['file'])); Timeline::record($g->slug, 'Removed the sprite ' . (string) ($b['key'] ?? ''), 'art', $this->who(), ['assets'], (string) ($b['key'] ?? '')); $this->raw(['ok' => true] + GameStore::readSprites($g->slug)); }
         catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
     }
     public function sketch($params = []): void {
@@ -112,7 +113,7 @@ class Gameapi extends BaseControls\Control {
     public function bestiary($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $slug = (string) $g->slug;
         try {
-            if ($this->post()) { $n = GameStore::saveBestiary($slug, $this->getJsonInput() ?? []); GameStore::activity($slug, (string) ($this->member->username ?: $this->member->email), "saved the bestiary ({$n} rows of resistances and stats)"); GameStore::emit($slug, 'note', ['text' => 'bestiary saved: js/bestiary.js']); $this->raw(['ok' => true, 'rows' => $n, 'file' => 'js/bestiary.js']); }
+            if ($this->post()) { $n = GameStore::saveBestiary($slug, $this->getJsonInput() ?? []); GameStore::activity($slug, (string) ($this->member->username ?: $this->member->email), "saved the bestiary ({$n} rows of resistances and stats)"); Timeline::record($slug, 'Bestiary edited', 'numbers', $this->who(), ['js/bestiary.js'], '', true); GameStore::emit($slug, 'note', ['text' => 'bestiary saved: js/bestiary.js']); $this->raw(['ok' => true, 'rows' => $n, 'file' => 'js/bestiary.js']); }
             $this->raw(GameStore::readBestiary($slug) ?: (object) []);
         } catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); }
         catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 500); }
@@ -137,6 +138,7 @@ class Gameapi extends BaseControls\Control {
                 }
                 $what = ['save' => 'saved the event rules (' . ($out['saved'] ?? 0) . ' rules)', 'describe' => 'asked for event rules' . (!empty($b['about']) && $b['about'] !== '*' ? ' (about ' . $b['about'] . ')' : '') . ': ' . ($b['text'] ?? ''), 'add' => 'added event rules ' . implode(', ', (array) ($out['added'] ?? [])), 'wire' => 'asked the builder to wire events in' . (!empty($b['extra']) ? ': ' . $b['extra'] : ''), 'ask' => 'asked the builder for a new event action: ' . ($b['what'] ?? ''), 'build' => 'asked the builder to add what an event concept needs, then write its rules', 'catalogue' => 'asked the builder to list what the game does built in', 'convert' => 'asked the builder to make built-in behaviour rules: ' . implode(', ', isset($b['items']) ? (array) $b['items'] : [(string) ($b['item'] ?? '')])][(string) ($b['do'] ?? '')] ?? '';
                 if ($what !== '') GameStore::activity($slug, (string) ($this->member->username ?: $this->member->email), $what);
+                if (in_array($b['do'] ?? '', ['save', 'add'], true)) Timeline::record($slug, $what, 'rule', $this->who(), ['assets/events.json'], '', ($b['do'] ?? '') === 'save');
                 $this->raw($out + Rules::status($slug));
             }
             $this->raw(Rules::status($slug));
@@ -163,6 +165,7 @@ class Gameapi extends BaseControls\Control {
                 }
                 $what = ['list' => 'asked the artist to list the 3D cast', 'make' => 'started model jobs for: ' . implode(', ', (array) ($out['started'] ?? [])), 'wire' => 'asked the builder to wire the 3D cast in', 'revise' => 'asked for a revision of ' . ($b['key'] ?? '') . ': ' . ($b['note'] ?? ''), 'edit' => (!empty($b['drop']) ? 'dropped ' : 'edited ') . ($b['key'] ?? '') . ' in the 3D cast', 'request' => 'asked for a change to the 3D models: ' . ($b['text'] ?? ''), 'go' => 'started revisions of: ' . implode(', ', (array) ($out['started'] ?? [])), 'keepall' => 'used the revisions of: ' . implode(', ', (array) ($out['kept'] ?? [])), 'use' => 'put an earlier version of ' . ($b['key'] ?? '') . ' back in use'][(string) ($b['do'] ?? '')] ?? '';
                 if ($what !== '') GameStore::activity($slug, (string) ($this->member->username ?: $this->member->email), $what);
+                if (in_array($b['do'] ?? '', ['use', 'keepall', 'edit'], true)) { $keys = array_values((array) ($out['kept'] ?? [$b['key'] ?? ''])); Timeline::record($slug, $what !== '' ? $what : '3D cast edited', 'art', $this->who(), ['assets', 'versions'], count($keys) === 1 ? (string) $keys[0] : '', ($b['do'] ?? '') === 'edit'); }
                 $this->raw($out + Cast::status($slug));
             }
             $this->raw(Cast::status($slug));

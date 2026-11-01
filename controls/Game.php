@@ -64,7 +64,7 @@ class Game extends BaseControls\Control {
     public function doc($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
         $p = GameStore::dir($g->slug) . '/GAME.md';
-        if (Flight::request()->method === 'POST') { $this->validateCSRF(); GameStore::writeAtomic($p, (string) ($this->body()['text'] ?? '')); $this->jsonSuccess(['ok' => true], 'Saved GAME.md.'); return; }
+        if (Flight::request()->method === 'POST') { $this->validateCSRF(); GameStore::writeAtomic($p, (string) ($this->body()['text'] ?? '')); Timeline::record($g->slug, 'Concept edited', 'concept', (string) ($this->member->username ?: $this->member->email), ['GAME.md'], '', true); $this->jsonSuccess(['ok' => true], 'Saved GAME.md.'); return; }
         $text = is_file($p) ? (string) file_get_contents($p) : '';
         $this->jsonSuccess(['text' => $text, 'html' => self::md($text)]);
     }

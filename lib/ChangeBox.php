@@ -32,7 +32,7 @@ class ChangeBox {
         $art = RunCosts::estimate($slug, 'art')['cost']; $row = $thing['row']; $vocab = Rules::vocab($slug);
         $model = $key !== '' && is_file(Cast::path($slug)) ? (Cast::read($slug)['items'][$key] ?? null) : null;
         $ways = [
-            'numbers' => ['title' => 'Change its numbers', 'does' => "Change {$name}'s numbers yourself. It takes effect when the game reloads.", 'cost' => 'Free.', 'free' => true, 'go' => 'Save these numbers',
+            'numbers' => ['title' => 'Change its numbers', 'does' => "Change {$name}'s numbers yourself. They reach the running game when they can, and you can undo them.", 'cost' => 'Free.', 'free' => true, 'go' => 'Save these numbers',
                           'can' => $row !== null, 'whyNot' => $key === '' ? 'Pick a thing first; the numbers of the whole game are on the game page, under Config.' : "{$key} has no row in this game's bestiary."],
             'rule' => ['title' => 'Write it as a rule', 'does' => 'The artist writes rules for ' . $name . ' and you read them first. Nothing changes until you add them.', 'cost' => $art, 'free' => false, 'go' => 'Ask for the rules',
                        'can' => $vocab !== null, 'whyNot' => 'This game has no events wired in yet.'],
@@ -52,9 +52,10 @@ class ChangeBox {
         switch ($way) {
             case 'numbers':
                 if ($thing['row'] === null) throw new \InvalidArgumentException('That has no numbers to change.');
-                $before = self::saveNumbers($slug, $thing['row'], $values);
-                GameStore::activity($slug, $who, "changed the numbers of {$key} in the Studio" . ($text !== '' ? ": {$text}" : ''));
-                return ['way' => $way, 'before' => $before];
+                self::saveNumbers($slug, $thing['row'], $values);
+                $said = implode(', ', array_map(fn($f, $v) => $f . ' ' . ($v === null ? "the game's own" : $v), array_keys($values), $values));
+                GameStore::activity($slug, $who, "changed the numbers of {$key} in the Studio ({$said})" . ($text !== '' ? ": {$text}" : ''));
+                return ['way' => $way, 'names' => array_keys($values), 'sha' => Timeline::record($slug, "{$key}: {$said}", 'numbers', $who, ['js/bestiary.js'], $key)];
             case 'rule':
                 $r = Rules::describe($slug, $text, $memberId, '', '', $key);
                 GameStore::activity($slug, $who, 'asked for event rules' . ($key !== '' ? " (about {$key})" : '') . ": {$text}");
@@ -85,19 +86,18 @@ class ChangeBox {
         foreach (self::FIELDS as $f => [$label, $re]) { [$lo, $hi] = GameStore::BESTIARY_STATS[$f]; $out[] = ['name' => $f, 'label' => $label, 'value' => $B['stats'][$row][$f] ?? null, 'lo' => $lo, 'hi' => $hi, 'meant' => (bool) preg_match($re, $text)]; }
         return $out;
     }
-    /** Writes the given numbers into one row and returns what they were, so the page can put them back. Empty clears a value. */
-    private static function saveNumbers(string $slug, string $row, array $values): array {
+    /** Writes the given numbers into one row. Empty clears a value. */
+    private static function saveNumbers(string $slug, string $row, array $values): void {
         if (!$values) throw new \InvalidArgumentException('No number was changed.');
         $B = GameStore::readBestiary($slug); if (!$B) throw new \RuntimeException("{$slug} has no bestiary to save into");
-        $B['resist'] = (array) ($B['resist'] ?? []); $B['stats'] = (array) ($B['stats'] ?? []); $before = [];
+        $B['resist'] = (array) ($B['resist'] ?? []); $B['stats'] = (array) ($B['stats'] ?? []);
         foreach ($values as $f => $v) {
             $isEl = isset(self::ELEMENTS[$f]); if (!$isEl && !isset(self::FIELDS[$f])) throw new \InvalidArgumentException("There is no number called {$f}.");
             if ($v !== null && !is_int($v) && !is_float($v)) throw new \InvalidArgumentException("{$f}: a number, or empty for the game's own.");
-            $sec = $isEl ? 'resist' : 'stats'; $before[$f] = $B[$sec][$row][$f] ?? null;
+            $sec = $isEl ? 'resist' : 'stats';
             if ($isEl) $B['resist'][$row] = (array) ($B['resist'][$row] ?? []);
             $B[$sec][$row][$f] = $v;
         }
         GameStore::saveBestiary($slug, $B); GameStore::emit($slug, 'note', ['text' => "bestiary saved from the Studio: {$row}"]);
-        return $before;
     }
 }

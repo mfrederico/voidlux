@@ -96,6 +96,7 @@ const Events = (() => {
     clock: () => (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000, rng: Math.random, trace,
     action(name, fn) { impl[name] = fn; }, state(name, fn) { readers[name] = fn; }, target(name, fn) { finders[name] = fn; },
     async load(base = 'assets/') {
+      (window.forgeLive = window.forgeLive || {}).rule = () => Events.load(base); // the Studio: rules changed, read them again without restarting
       const get = async f => { const r = await fetch(base + f, { cache: 'no-cache' }); if (r.status === 404) return null; if (!r.ok) throw new Error(`${base}${f} answered ${r.status}`); return r.json(); };
       const v = await get('events-vocab.json'); if (!v) { console.error(`Events: ${base}events-vocab.json is missing: the game has not declared its events`); return; }
       vocab = { events: v.events || {}, actions: v.actions || {}, subjects: v.subjects || {}, state: v.state || {}, targets: v.targets || {} };
