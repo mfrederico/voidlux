@@ -2,7 +2,7 @@
 // hook), the list of things, and the read-only card of the one picked (lib/Inspector.php). views/studio/open.php is the markup.
 (() => {
   const $ = id => document.getElementById(id), esc = Forge.esc, frame = $('game'), over = $('over'), ring = $('ring'), tip = $('tip');
-  let inspecting = false, things = [], current = '', seq = 0, intoPlay = true; // intoPlay: the next load of the game goes straight to playing
+  let inspecting = false, things = [], current = '', element = null, seq = 0, intoPlay = true; // intoPlay: the next load of the game goes straight to playing
   const driven = window.top !== window && !new URLSearchParams(location.search).has('play'); // in another page's frame (a browser-drive session) it stays on the title: playing writes the person's own saved run
   const W = () => frame.contentWindow;
   const hint = t => { $('hint').textContent = t; };
@@ -18,10 +18,11 @@
   const at = e => { const r = over.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top; const N = W().Notes, p = N.logical(cx, cy); return { cx, cy, list: W().forgePick(p.x, p.y) || [] }; };
   over.addEventListener('pointermove', e => { if (!inspecting) return; const { cx, cy, list } = at(e), N = W().Notes;
     if (!list.length) { ring.style.display = tip.style.display = 'none'; over.style.cursor = 'crosshair'; return; }
-    const t = list[0], c = N.css(t.x, t.y), k = N.canvas.getBoundingClientRect().width / N.canvas.width, s = t.r * k * 2;
-    Object.assign(ring.style, { display: 'block', left: c.x - s / 2 + 'px', top: c.y - s / 2 + 'px', width: s + 'px', height: s + 'px' }); over.style.cursor = 'pointer';
-    tip.textContent = t.key; Object.assign(tip.style, { display: 'block', left: Math.min(cx + 14, over.clientWidth - 180) + 'px', top: Math.max(cy - 28, 4) + 'px' }); });
-  over.addEventListener('click', e => { if (!inspecting) return; const { list } = at(e); if (!list.length) { hint('Nothing there. Menus and title screens have nothing to inspect: press Esc, start playing, then Inspect again.'); return; } if (typeof UX !== 'undefined') UX.act('inspect', list[0].key); show(list[0].key, list[0]); });
+    const t = list[0], k = N.canvas.getBoundingClientRect().width / N.canvas.width;
+    if (t.rect) { const a = N.css(t.rect.x, t.rect.y), b = N.css(t.rect.x + t.rect.w, t.rect.y + t.rect.h); Object.assign(ring.style, { display: 'block', borderRadius: '8px', left: a.x + 'px', top: a.y + 'px', width: b.x - a.x + 'px', height: b.y - a.y + 'px' }); }
+    else { const c = N.css(t.x, t.y), s = t.r * k * 2; Object.assign(ring.style, { display: 'block', borderRadius: '50%', left: c.x - s / 2 + 'px', top: c.y - s / 2 + 'px', width: s + 'px', height: s + 'px' }); } over.style.cursor = 'pointer';
+    tip.textContent = t.title || t.key; Object.assign(tip.style, { display: 'block', left: Math.min(cx + 14, over.clientWidth - 180) + 'px', top: Math.max(cy - 28, 4) + 'px' }); });
+  over.addEventListener('click', e => { if (!inspecting) return; const { list } = at(e); if (!list.length) { hint('Nothing there: click a monster, a thing on the ground or part of the screen.'); return; } if (typeof UX !== 'undefined') UX.act('inspect', list[0].key); if (list[0].title) showElement(list[0]); else show(list[0].key, list[0]); });
   $('inspect').onclick = () => setInspect(!inspecting);
   const reload = play => { setInspect(false); intoPlay = play; frame.src = `/games/${SLUG}/?r=${Date.now()}`; };
   $('restart').onclick = () => reload(true); $('titleScreen').onclick = () => reload(false); $('changed').onclick = () => reload(true);
@@ -46,7 +47,10 @@
   $('find').onkeydown = e => { if (e.key === 'Enter') { const b = $('things').querySelector('.th'); if (b) b.click(); } };
 
   // ---- the card: what is specific to this thing first; what it shares with its group, folded ----
-  async function show(key, live) { const mine = ++seq; current = key; about(); drawList(); const row = $('things').querySelector('.th.on'); if (row) row.scrollIntoView({ block: 'nearest' }); $('card').innerHTML = `<h2>${esc(key)}</h2><p class="muted">Loading…</p>`;
+  // a part of a screen (a perk's card, a button): the game itself says what it is, as it has no card on the server
+  function showElement(t) { ++seq; current = t.key; element = t; about(); drawList(); const facts = Object.entries(t.facts || {});
+    $('card').innerHTML = `<h2>${esc(t.title)}</h2>${t.kind ? `<div class="small muted">${esc(t.kind)}</div>` : ''}${t.about ? `<p>${esc(t.about)}</p>` : ''}${facts.length ? `<table class="res">${facts.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table>` : ''}<p class="small muted" style="margin-top:10px">Say above what you want different about it. It lives in the game's code, so the builder changes it.</p>`; }
+  async function show(key, live) { const mine = ++seq; current = key; element = null; about(); drawList(); const row = $('things').querySelector('.th.on'); if (row) row.scrollIntoView({ block: 'nearest' }); $('card').innerHTML = `<h2>${esc(key)}</h2><p class="muted">Loading…</p>`;
     try { const { card } = await Forge.api(`/studio/card/${SLUG}?key=${encodeURIComponent(key)}`); if (mine === seq) $('card').innerHTML = render(card, live); }
     catch (e) { if (mine === seq) $('card').innerHTML = `<h2>${esc(key)}</h2><p class="bad">The card could not be read: ${esc(e.message)}</p>`; } }
   const ruleRow = r => `<div class="rule${r.off ? ' off' : ''}">${esc(RuleWords.say(r))}${r.off ? ' <span class="pill">off</span>' : ''}${r.note ? `<div class="n">${esc(r.note)}</div>` : ''}${r.broken ? `<div class="bad small">no longer fits the game: ${esc(r.broken)}</div>` : ''}</div>`;
@@ -79,8 +83,8 @@
   const JOB = 'studio-change-' + SLUG; let job = null; try { job = JSON.parse(sessionStorage.getItem(JOB) || 'null'); } catch (e) {} // a rule or a model takes minutes: a reload must not lose what was paid for
   const keepJob = () => { try { if (job && (job.way === 'rule' || job.way === 'art')) sessionStorage.setItem(JOB, JSON.stringify(job)); else sessionStorage.removeItem(JOB); } catch (e) {} };
   const money = t => `<span class="cost small">${esc(t)}</span>`;
-  function about() { if (entries.length || current) drawTimeline(); const was = $('changeAbout').dataset.k || ''; $('changeAbout').textContent = current || 'the whole game'; $('changeAbout').dataset.k = current; $('changeClear').hidden = !current; if (was !== current && !job) box.innerHTML = ''; }
-  $('changeClear').onclick = () => { current = ''; about(); drawList(); $('card').innerHTML = '<h2>Nothing picked yet</h2><p class="muted">Press <b>Inspect</b> (Alt+I), then click anything in the game, or choose from the list.</p>'; };
+  function about() { if (entries.length || current) drawTimeline(); const was = $('changeAbout').dataset.k || ''; $('changeAbout').textContent = element ? element.title : current || 'the whole game'; $('changeAbout').dataset.k = current; $('changeClear').hidden = !current; if (was !== current && !job) box.innerHTML = ''; }
+  $('changeClear').onclick = () => { current = ''; element = null; about(); drawList(); $('card').innerHTML = '<h2>Nothing picked yet</h2><p class="muted">Press <b>Inspect</b> (Alt+I), then click anything in the game, or choose from the list.</p>'; };
   const field = f => `<label class="num"><span class="${f.meant ? 'meant' : ''}">${esc(f.label)}</span><input type="number" step="any" min="${f.lo}" max="${f.hi}" name="${esc(f.name)}" value="${f.value == null ? '' : esc(f.value)}" data-was="${f.value == null ? '' : esc(f.value)}" placeholder="game's"></label>`;
   function numbers(w) { const fs = w.fields || [], meant = fs.filter(f => f.meant), rest = fs.filter(f => !f.meant);
     return `<div id="numbers" hidden>${meant.map(field).join('')}${meant.length ? fold('The other numbers', rest.length, rest.map(field).join('')) : rest.map(field).join('')}<div class="small muted">Empty means the game's own value.</div></div>`; }
@@ -90,10 +94,11 @@
     const sync = () => { const w = r.ways.find(x => x.id === box.querySelector('input[name=way]:checked').value), n = $('numbers'); if (n) n.hidden = w.id !== 'numbers'; $('changeGo').textContent = w.go; $('changeGo').disabled = framed; };
     box.querySelectorAll('input[name=way]').forEach(i => { i.onchange = sync; }); sync();
     $('changeBack').onclick = () => { box.innerHTML = ''; }; $('changeGo').onclick = () => go(r); if (typeof UX !== 'undefined') UX.act('change-ways', r.suggested); }
+  const said = () => element ? { label: element.title, context: `${element.kind || ''}: ${element.about || ''}` } : {};
   $('changeForm').onsubmit = async e => { e.preventDefault(); const text = $('changeText').value.trim(); if (!text) { $('changeText').focus(); return; } if (job) { working('The last change is still going: it shows here when it is done.'); return; }
-    try { drawWays(await Forge.api(`/studio/ways/${SLUG}`, { text, key: current })); } catch (err) { box.innerHTML = `<p class="bad small">${esc(err.message)}</p>`; } };
+    try { drawWays(await Forge.api(`/studio/ways/${SLUG}`, { text, key: current, ...said() })); } catch (err) { box.innerHTML = `<p class="bad small">${esc(err.message)}</p>`; } };
   $('changeText').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('changeForm').requestSubmit(); } };
-  async function go(r) { const way = box.querySelector('input[name=way]:checked').value, text = $('changeText').value.trim(), key = current, body = { way, text, key }; $('changeGo').disabled = true;
+  async function go(r) { const way = box.querySelector('input[name=way]:checked').value, text = $('changeText').value.trim(), key = current, body = { way, text, key, ...said() }; $('changeGo').disabled = true;
     if (way === 'numbers') { const vals = {}; box.querySelectorAll('#numbers input').forEach(i => { if (i.value !== i.dataset.was) vals[i.name] = i.value === '' ? null : Number(i.value); }); body.values = vals; }
     try { const res = await Forge.api(`/studio/change/${SLUG}`, body); if (typeof UX !== 'undefined') UX.act('change-go', way + (way === r.suggested ? '' : ' over ' + r.suggested)); job = { ...res, text, key }; keepJob(); $('changeText').value = ''; follow(); }
     catch (err) { job = null; $('changeGo').disabled = false; box.insertAdjacentHTML('beforeend', `<p class="bad small">${esc(err.message)}</p>`); } }
@@ -128,7 +133,7 @@
     $('tlList').innerHTML = list.length ? list.map(e => `<div class="tl${e.undone ? ' off' : ''}"><div class="tl-t">${esc(e.title)}</div><div class="small muted">${esc(e.who)} · ${esc(ago(e.at))}${e.cost ? ' · $' + e.cost.toFixed(2) : ''}${e.files > 1 ? ' · ' + e.files + ' files' : ''}${e.undone ? ' · undone' : ''}${e.why ? ' · ' + esc(e.why) : ''}</div>${e.canUndo && !framed ? `<button type="button" class="tl-u" data-id="${esc(e.id)}" data-n="${e.kind === 'builder' ? e.files : 0}">Undo</button>` : ''}</div>`).join('') : '<p class="small muted">Nothing here yet.</p>';
     $('tlList').querySelectorAll('.tl-u').forEach(b => { b.onclick = () => { const n = +b.dataset.n; if (n && !b.dataset.sure) { b.dataset.sure = 1; b.textContent = `Undo all of it: ${n} file${n === 1 ? '' : 's'}?`; setTimeout(() => { delete b.dataset.sure; b.textContent = 'Undo'; }, 5000); return; } undo(b.dataset.id); }; }); }
   async function loadTimeline() { if (!$('timeline').open) return; try { entries = (await Forge.api(`/studio/timeline/${SLUG}`)).entries; drawTimeline(); } catch (e) { $('tlList').innerHTML = `<p class="bad small">The timeline could not be read: ${esc(e.message)}</p>`; } }
-  async function undo(id) { try { const r = await Forge.api(`/studio/undo/${SLUG}`, { id }); mine.add(r.id); if (typeof UX !== 'undefined') UX.act('undo', r.kind); const said = await applyLive(r.kind); box.innerHTML = `<p class="small">${esc(r.title)}. ${esc(said)}</p>`; $('timeline').open = true; await loadTimeline(); if (current) show(current); }
+  async function undo(id) { try { const r = await Forge.api(`/studio/undo/${SLUG}`, { id }); mine.add(r.id); if (typeof UX !== 'undefined') UX.act('undo', r.kind); const said = await applyLive(r.kind); box.innerHTML = `<p class="small">${esc(r.title)}. ${esc(said)}</p>`; $('timeline').open = true; await loadTimeline(); if (current && !element) show(current); }
     catch (e) { box.innerHTML = `<p class="bad small">${esc(e.message)}</p>`; $('timeline').open = true; } }
   $('timeline').addEventListener('toggle', loadTimeline); $('tlThing').onchange = drawTimeline;
   setInterval(() => { if (job && (job.way === 'rule' || job.way === 'art')) follow(); }, 4000); follow();

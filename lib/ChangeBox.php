@@ -26,28 +26,28 @@ class ChangeBox {
     private const ELEMENTS = ['fire' => '/\b(fire|burn\w*)\b/i', 'poison' => '/\b(poison\w*|venom\w*)\b/i', 'ice' => '/\b(ice|cold|frost\w*|freez\w*)\b/i', 'electric' => '/\b(electric\w*|shock\w*|lightning)\b/i'];
 
     /** The ways for this request: {suggested, why, ways: [{id, title, does, cost, free, can, whyNot, go, fields?}]}. */
-    public static function ways(string $slug, string $text, string $key): array {
+    public static function ways(string $slug, string $text, string $key, string $label = '', string $context = ''): array {
         $text = trim($text); if ($text === '') throw new \InvalidArgumentException('Say what you want different.');
-        $thing = self::thing($slug, $key); $name = $key !== '' ? $key : 'the whole game';
+        $thing = self::thing($slug, $key, $label, $context); $name = $thing['screen'] ? $thing['label'] : ($key !== '' ? $key : 'the whole game');
         $art = RunCosts::estimate($slug, 'art')['cost']; $row = $thing['row']; $vocab = Rules::vocab($slug);
-        $model = $key !== '' && is_file(Cast::path($slug)) ? (Cast::read($slug)['items'][$key] ?? null) : null;
+        $model = $key !== '' && !$thing['screen'] && is_file(Cast::path($slug)) ? (Cast::read($slug)['items'][$key] ?? null) : null;
         $ways = [
             'numbers' => ['title' => 'Change its numbers', 'does' => "Change {$name}'s numbers yourself. They reach the running game when they can, and you can undo them.", 'cost' => 'Free.', 'free' => true, 'go' => 'Save these numbers',
-                          'can' => $row !== null, 'whyNot' => $key === '' ? 'Pick a thing first; the numbers of the whole game are on the game page, under Config.' : "{$key} has no row in this game's bestiary."],
+                          'can' => $row !== null, 'whyNot' => $thing['screen'] ? "{$name} is part of a screen: its numbers are in the game's code." : ($key === '' ? 'Pick a thing first; the numbers of the whole game are on the game page, under Config.' : "{$key} has no row in this game's bestiary.")],
             'rule' => ['title' => 'Write it as a rule', 'does' => 'The artist writes rules for ' . $name . ' and you read them first. Nothing changes until you add them.', 'cost' => $art, 'free' => false, 'go' => 'Ask for the rules',
-                       'can' => $vocab !== null, 'whyNot' => 'This game has no events wired in yet.'],
+                       'can' => $vocab !== null && !$thing['screen'], 'whyNot' => $thing['screen'] ? 'Rules are about things in play; this is part of a screen.' : 'This game has no events wired in yet.'],
             'art' => ['title' => 'Draw a new version', 'does' => "The artist makes a new version of {$name}'s model. The game keeps the current one until you choose.", 'cost' => $art, 'free' => false, 'go' => 'Ask for a new version',
-                      'can' => !empty($model['file']), 'whyNot' => $key === '' ? 'Pick a thing first.' : "{$key} has no 3D model to revise; the builder can change how the game draws it."],
-            'builder' => ['title' => 'Ask the builder', 'does' => 'The builder changes the game\'s code' . ($key !== '' ? ", with {$key} as what you mean," : '') . ' and commits it.' . (GameStore::agentState($slug)['busy'] ? ' It is busy now: this goes with its next run.' : ''), 'cost' => RunCosts::estimate($slug, 'chat')['cost'], 'free' => false, 'go' => 'Send it to the builder', 'can' => true, 'whyNot' => ''],
+                      'can' => !empty($model['file']), 'whyNot' => $thing['screen'] ? "The game draws {$name} in code, so the builder changes how it looks." : ($key === '' ? 'Pick a thing first.' : "{$key} has no 3D model to revise; the builder can change how the game draws it.")],
+            'builder' => ['title' => 'Ask the builder', 'does' => 'The builder changes the game\'s code' . ($key !== '' ? ", with {$name} as what you mean," : '') . ' and commits it.' . (GameStore::agentState($slug)['busy'] ? ' It is busy now: this goes with its next run.' : ''), 'cost' => RunCosts::estimate($slug, 'chat')['cost'], 'free' => false, 'go' => 'Send it to the builder', 'can' => true, 'whyNot' => ''],
         ];
-        $suggested = 'builder'; $why = 'Nothing you said points at a number, a rule or the look, so this is the way that can do anything.';
+        $suggested = 'builder'; $why = $thing['screen'] ? 'This is part of a screen, which lives in the game\'s code.' : 'Nothing you said points at a number, a rule or the look, so this is the way that can do anything.';
         foreach (self::WORDS as $way => $re) if ($ways[$way]['can'] && preg_match($re, $text, $m)) { $suggested = $way; $why = 'Because you said "' . $m[0] . '".'; break; }
         if ($row !== null) $ways['numbers']['fields'] = self::fields($slug, $row, $text);
         return ['suggested' => $suggested, 'why' => $why, 'about' => $key, 'ways' => array_map(fn($id, $w) => ['id' => $id] + $w, array_keys($ways), $ways)];
     }
     /** Starts the change. Returns what the page follows: {way, id?, queued?, before?}. A refusal throws with the reason. */
-    public static function start(string $slug, string $way, string $text, string $key, array $values, int $memberId, string $who): array {
-        $text = trim(mb_substr($text, 0, 1200)); $thing = self::thing($slug, $key);
+    public static function start(string $slug, string $way, string $text, string $key, array $values, int $memberId, string $who, string $label = '', string $context = ''): array {
+        $text = trim(mb_substr($text, 0, 1200)); $thing = self::thing($slug, $key, $label, $context);
         if ($way !== 'numbers' && $text === '') throw new \InvalidArgumentException('Say what you want different.');
         switch ($way) {
             case 'numbers':
@@ -65,19 +65,20 @@ class ChangeBox {
                 GameStore::activity($slug, $who, "asked for a revision of {$key}: {$text}");
                 return ['way' => $way, 'id' => (string) ($r['id'] ?? ''), 'key' => $key, 'queued' => !empty($r['queued'])];
             case 'builder':
-                $about = $key !== '' ? "About \"{$key}\"" . ($thing['about'] !== '' ? " ({$thing['about']})" : '') . ", picked in the Studio: " : '';
+                $about = $key !== '' ? 'About "' . ($thing['screen'] ? "{$thing['label']}\", {$key}" : "{$key}\"") . ($thing['about'] !== '' ? " ({$thing['about']})" : '') . ', picked in the Studio' . ($thing['screen'] ? ' on one of the game\'s screens' : '') . ': ' : '';
                 $r = GameStore::askBuilder($slug, $about . $text, $memberId);
                 return ['way' => $way, 'queued' => !empty($r['queued'])];
         }
         throw new \InvalidArgumentException('The way is numbers, rule, art or builder.');
     }
 
-    /** {row: the thing's own bestiary row or null, about}. A name the game does not have is refused, not guessed at. */
-    private static function thing(string $slug, string $key): array {
-        if ($key === '') return ['row' => null, 'about' => ''];
+    /** {row: the thing's own bestiary row or null, about, screen, label}. A part of a screen (perk:swift, button:x) is named by the game's page, and only ever becomes words for the builder; any other name the game does not have is refused, not guessed at. */
+    private static function thing(string $slug, string $key, string $label = '', string $context = ''): array {
+        if ($key === '') return ['row' => null, 'about' => '', 'screen' => false, 'label' => ''];
+        if (preg_match('/^[a-z]+:[A-Za-z0-9_-]{1,60}$/', $key)) { $one = fn($s, $n) => mb_substr(trim((string) preg_replace('/\s+/', ' ', $s)), 0, $n); return ['row' => null, 'about' => $one($context, 600), 'screen' => true, 'label' => $one($label, 80) ?: $key]; }
         $card = Inspector::card($slug, $key); $s = Rules::vocab($slug)['subjects'][$key] ?? [];
         $own = array_values(array_filter((array) ($s['bestiary'] ?? []), fn($r) => !str_starts_with((string) $r, 'family-')));
-        return ['row' => $own[0] ?? null, 'about' => (string) $card['about']];
+        return ['row' => $own[0] ?? null, 'about' => (string) $card['about'], 'screen' => false, 'label' => $key];
     }
     /** The row's numbers: those the words point at first (marked), an empty value is the game's own. */
     private static function fields(string $slug, string $row, string $text): array {

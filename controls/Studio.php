@@ -25,11 +25,11 @@ class Studio extends BaseControls\Control {
     }
     public function ways($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $b = $this->getJsonInput() ?? [];
-        try { Flight::jsonSuccess(ChangeBox::ways((string) $g->slug, (string) ($b['text'] ?? ''), (string) ($b['key'] ?? ''))); } catch (\InvalidArgumentException $e) { Flight::jsonError($e->getMessage(), 400); }
+        try { Flight::jsonSuccess(ChangeBox::ways((string) $g->slug, (string) ($b['text'] ?? ''), (string) ($b['key'] ?? ''), (string) ($b['label'] ?? ''), (string) ($b['context'] ?? ''))); } catch (\InvalidArgumentException $e) { Flight::jsonError($e->getMessage(), 400); }
     }
     public function change($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $b = $this->getJsonInput() ?? [];
-        try { Flight::jsonSuccess(ChangeBox::start((string) $g->slug, (string) ($b['way'] ?? ''), (string) ($b['text'] ?? ''), (string) ($b['key'] ?? ''), (array) ($b['values'] ?? []), (int) $this->member->id, (string) ($this->member->username ?: $this->member->email))); }
+        try { Flight::jsonSuccess(ChangeBox::start((string) $g->slug, (string) ($b['way'] ?? ''), (string) ($b['text'] ?? ''), (string) ($b['key'] ?? ''), (array) ($b['values'] ?? []), (int) $this->member->id, (string) ($this->member->username ?: $this->member->email), (string) ($b['label'] ?? ''), (string) ($b['context'] ?? ''))); }
         catch (\InvalidArgumentException $e) { Flight::jsonError($e->getMessage(), 400); } catch (\RuntimeException $e) { Flight::jsonError($e->getMessage(), 409); }
     }
     public function timeline($params = []): void {

@@ -58,6 +58,8 @@ the scene's `enter`. Check `Music.has(name)` before relying on a song that may n
 
 **Opening in the Studio.** The Studio calls `window.forgePlay()` when it loads the game, so a person lands in play, not on the title. `Game.boot` sets a default: from the start scene to `play`, unless there is a saved run. A game with a saved run to continue, or a differently named scene, assigns its own after boot: it continues or starts, and returns what it did as a sentence (or null to stay on the title).
 
+**Picking in the Studio.** Inspect asks `window.forgePick(x, y)` what is under a point of the canvas, nearest first. A thing in the world is `{key, x, y, r}`, with `key` a subject of the game. A part of a screen (a menu's card, a button) is `{key: 'perk:swift', title, about, kind, facts, rect: {x, y, w, h}, x, y, r}`: the key is `word:name`, and `title` makes the Studio show it from what the game says. `Game.boot` picks the current screen by default, so a click on any screen selects something; a game should list its screens' elements too.
+
 **Changes reaching the running game.** After a change the Studio calls `window.forgeLive[kind]()` if the game has one, and otherwise asks the person to reload. The kit's events set `forgeLive.rule` (rules read again). A game may add others, such as `numbers`: it takes the change without restarting and returns the names of what still needs a reload, or nothing.
 
 **Testing.** Every scene has a `bot(dt)`: it sets `Input.bot.axis` and presses keys with `Input.tapKey`, so the soak can

@@ -50,6 +50,8 @@ const Game = {
     this.go(o.start || 'title');
     // what the Studio calls to open straight into play; it returns what it did, in words, or null when it stayed on the title.
     // A saved run stays with the game's own title screen, which knows how to continue it: a game with a better answer sets its own.
+    // the Studio's inspect: a game that says nothing about what is under the pointer can still have its screen picked and talked about
+    if (!window.forgePick) window.forgePick = () => [{ key: 'screen:' + this.state, title: 'The ' + this.state + ' screen', kind: 'A screen', x: this.W / 2, y: CFG.H / 2, r: this.W / 2, rect: { x: 0, y: 0, w: this.W, h: CFG.H } }];
     window.forgePlay = () => { if (this.state !== (o.start || 'title') || !this.scenes.play || Save.load()) return null; this.go('play'); return 'Started a new run.'; };
     let last = performance.now();
     const step = dt => { this.time += dt; if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 30); for (const m of this.msgs) m.t -= dt; if (this.msgs.length && this.msgs[0].t <= -1) this.msgs.shift(); if (Input.bot && this.scene.bot) this.scene.bot(dt); this.scene.update(dt); };
