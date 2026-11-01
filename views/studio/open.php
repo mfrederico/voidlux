@@ -3,6 +3,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="csrf-token" content="<?= h(csrf_token()) ?>">
 <title><?= h($title) ?></title>
+<link rel="stylesheet" href="/forge.css"><!-- the playtest window's look -->
 <style>
 :root { --bg: #100c1c; --panel: #191329; --line: #30264a; --ink: #eee9f8; --muted: #a59bb8; --accent: #ffb547; --pick: #ff3d9a; --ok: #9bf06a; --warn: #ff9d6c; }
 * { box-sizing: border-box; }
@@ -36,11 +37,11 @@ details { border-top: 1px solid var(--line); padding: 5px 0; } summary { cursor:
 @media (max-width: 640px) { .st { display: flex; flex-direction: column; } .st-stage { height: 56vw; flex: none; } .st-list { max-height: 34vh; order: 3; border-right: 0; } .st-top { flex: none; height: 48px; } }
 </style></head><body>
 <div class="st">
-  <div class="st-top"><a href="/forge" title="All games">Forge</a><b><?= h($gameTitle) ?></b><button id="inspect" title="Alt+I: pause the game and click anything in it">Inspect</button><button id="restart" title="Load the game again">Restart game</button><span class="st-hint" id="hint">Press Inspect, then click anything in the game.</span><span class="sp"></span><a href="/game/view/<?= h($slug) ?>">Game page</a></div>
+  <div class="st-top"><a href="/forge" title="All games">Forge</a><b><?= h($gameTitle) ?></b><button id="inspect" title="Alt+I: pause the game and click anything in it">Inspect</button><button id="restart" title="Load the game again">Restart game</button><span class="st-hint" id="hint">Press Inspect, then click anything in the game.</span><span class="sp"></span><span class="st-hint" id="attached" title="This page runs the playtests and screenshots agents ask for, in a small window">○ connecting</span><a href="/game/view/<?= h($slug) ?>">Game page</a></div>
   <aside class="st-list" aria-label="Things in this game"><input id="find" type="search" placeholder="Find a thing…" aria-label="Find a thing"><div id="things"></div></aside>
   <main class="st-stage"><iframe id="game" title="The game" allow="autoplay; fullscreen" src="/games/<?= h($slug) ?>/"></iframe><div id="over"><div id="ring"></div><div id="tip"></div></div></main>
   <aside class="st-card" id="card" aria-live="polite"><h2>Nothing picked yet</h2><p class="muted">Press <b>Inspect</b> (Alt+I), then click anything in the game, or choose from the list. Everything about it appears here.</p></aside>
 </div>
 <script>const SLUG = <?= json_encode($slug) ?>;</script>
-<script src="/kit/editor/ux.js"></script><script src="/forge.js"></script><script src="/kit/editor/sprites/rule-words.js"></script><script src="/studio.js"></script>
+<script src="/kit/editor/ux.js"></script><script src="/forge.js"></script><script src="/forge-runner.js"></script><script src="/kit/editor/sprites/rule-words.js"></script><script src="/studio.js"></script>
 </body></html>

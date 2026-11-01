@@ -60,5 +60,14 @@
     const O = c.open; h += `<div class="links"><a href="${esc(O.rules)}" target="_blank">Edit rules</a>${O.model ? `<a href="${esc(O.model)}" target="_blank">Model and revisions</a>` : ''}${O.bestiary ? `<a href="${esc(O.bestiary)}" target="_blank">Bestiary</a>` : ''}</div>`;
     return h; }
 
+  // ---- this page also runs the playtests and screenshots agents ask for, as the game page does ----
+  let last = 0; ForgeRunner.init(SLUG, { note: t => { if (t) hint(t); }, done: rep => hint(rep.ok ? 'Playtest passed in this browser.' : 'Playtest in this browser: ' + (rep.status || 'failed') + '. See the game page, under Test.') });
+  async function poll() { const att = $('attached');
+    try { const r = await Forge.api(`/game/events/${SLUG}?since=${last}`); last = r.last; ForgeRunner.take(r); att.textContent = '● runs playtests'; }
+    catch (e) { att.textContent = '○ not connected: ' + e.message; }
+    setTimeout(poll, document.hidden ? 8000 : 5000); }
+  poll();
+  addEventListener('beforeunload', e => { if (ForgeRunner.busy()) { e.preventDefault(); e.returnValue = ''; } });
+
   Forge.api(`/studio/things/${SLUG}`).then(r => { things = r.things || []; drawList(); }).catch(e => { $('things').innerHTML = `<p class="bad small" style="padding:8px">The list could not be read: ${esc(e.message)}</p>`; });
 })();

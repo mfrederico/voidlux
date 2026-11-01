@@ -136,6 +136,7 @@ $slug = $game['slug'];
 </section>
 
 <script src="/forge.js"></script>
+<script src="/forge-runner.js"></script>
 <script>
 const slug = <?= json_encode($slug) ?>, $ = id => document.getElementById(id);
 let G = <?= json_encode($game, JSON_UNESCAPED_SLASHES) ?>, lastId = 0, loaded = {}, pollT = null;
@@ -203,8 +204,7 @@ async function poll() {
     const r = await Forge.api(`/game/events/${slug}?since=${lastId}`);
     for (const ev of r.events) { addEvent(ev); if (['idle', 'checkpoint', 'soak', 'done'].includes(ev.kind)) refreshDue = true; }
     const first = lastId === 0; lastId = r.last; renderSession(r.agent); if (first) { const b = $('stream'); b.scrollTop = b.scrollHeight; }
-    if (r.soakRequest && !soakRunning) runBrowserSoak(r.soakRequest);
-    if (r.shotRequest && !shotRunning) runBrowserShot(r.shotRequest);
+    ForgeRunner.take(r);
     if (refreshDue) { refreshDue = false; render(await Forge.api(`/game/status/${slug}`)); }
     $('streamNote').textContent = ''; $('attachedPill').className = 'vl-pill live'; $('attachedPill').textContent = '● this browser is attached';
   } catch (e) { $('streamNote').textContent = 'polling: ' + e.message; $('attachedPill').className = 'vl-pill'; $('attachedPill').textContent = '○ not attached (reconnecting)'; }
@@ -212,46 +212,8 @@ async function poll() {
 }
 // ---- playtests in this browser: the server hands a pending request to whoever polls first; the game runs in a hidden
 // frame here with its bots, and the report (window.__SOAK, same origin) goes back. The server's Chrome is the fallback ----
-let soakRunning = false, hereCount = 0, shotRunning = false;
-// a screenshot the builder asked for: the game in a small frame with the asked query, given its seconds, its canvas captured
-async function runBrowserShot(req) {
-  shotRunning = true; let win = null;
-  try {
-    const c = await Forge.api(`/game/shotclaim/${slug}`, { id: req.id }); if (!c.claimed) return;
-    win = document.createElement('div'); win.className = 'vl-soak-win'; win.innerHTML = `<div class="vl-soak-title"><span>📷 screenshot for the builder · ${req.secs} s${req.query ? ' · ?' + Forge.esc(req.query) : ''}</span><button type="button">–</button></div>`; win.querySelector('button').onclick = () => win.classList.toggle('min');
-    const f = document.createElement('iframe'); f.className = 'vl-soak-frame'; const q = (req.query || '').replace(/^\?/, ''); f.src = `/game/shotframe/${slug}?${q}${q ? '&' : ''}seed=7&r=${Date.now()}`; /* the game with kit-shot.js first: it draws even while this tab is hidden */ win.appendChild(f); document.body.appendChild(win);
-    const errs = []; f.addEventListener('load', () => { try { f.contentWindow.addEventListener('error', e => errs.push(String(e.message))); } catch (e) {} });
-    await new Promise(r => setTimeout(r, Math.max(1, Math.min(120, +req.secs || 3)) * 1000));
-    let png = '', w = 0, h = 0; try { const cv = f.contentWindow.document.querySelector('canvas'); w = cv.width; h = cv.height; png = cv.toDataURL('image/png'); } catch (e) { errs.push('could not read the canvas: ' + e.message); }
-    if (!png) { const cv = document.createElement('canvas'); cv.width = 320; cv.height = 180; const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, 320, 180); g.fillStyle = '#f66'; g.font = '14px monospace'; g.fillText('no canvas to capture', 20, 90); png = cv.toDataURL('image/png'); }
-    await Forge.api(`/game/shotdone/${slug}`, { id: req.id, png, w, h, errors: errs });
-    win.querySelector('.vl-soak-title span').textContent = '📷 sent to the builder'; win.classList.add('ok');
-  } catch (e) { $('streamNote').textContent = 'shot: ' + e.message; } finally { shotRunning = false; if (win) setTimeout(() => win.remove(), 2500); }
-}
-async function runBrowserSoak(req) {
-  soakRunning = true;
-  try {
-    const c = await Forge.api(`/game/soakclaim/${slug}`, { id: req.id }); if (!c.claimed) return;
-    $('streamNote').textContent = `playtest ${req.id} running in this browser (${req.secs} s at ${req.fast}x)…`;
-    const win = document.createElement('div'); win.className = 'vl-soak-win'; win.innerHTML = `<div class="vl-soak-title"><span>▶ playtest · ${req.secs} game-seconds at ${req.fast}x · the bots are playing</span><button type="button" title="hide the window (the playtest keeps running)">–</button></div>`;
-    win.querySelector('button').onclick = () => win.classList.toggle('min');
-    const f = document.createElement('iframe'); f.className = 'vl-soak-frame'; f.src = `/game/shotframe/${slug}?soak=${req.secs}&fast=${req.fast}&seed=7&r=${Date.now()}`; /* with kit-shot.js first: the game draws even while this tab is hidden, whatever the game's own pumps do */ win.appendChild(f); document.body.appendChild(win);
-    const budget = Date.now() + (req.secs / Math.max(1, req.fast)) * 1000 * 2.5 + 20000; let rep = null, errs = [], hiddenTicks = 0, ticks = 0;
-    // the frame's own window exists only once it has loaded: listen for its errors then (a listener set before load is lost)
-    f.addEventListener('load', () => { try { const w = f.contentWindow; w.addEventListener('error', e => errs.push(String(e.message || e.error) + (e.filename ? ' @' + e.filename.replace(/^.*\//, '') + ':' + e.lineno : ''))); w.addEventListener('unhandledrejection', e => errs.push('unhandled: ' + String(e.reason && e.reason.message || e.reason))); } catch (e) {} });
-    while (Date.now() < budget) { await new Promise(r => setTimeout(r, 500)); ticks++; if (document.hidden) hiddenTicks++; try { if (f.contentWindow && f.contentWindow.__SOAK) { rep = f.contentWindow.__SOAK; break; } } catch (e) { break; } }
-    if (!rep) { // say why, from what the frame shows: errors, how far the game got, whether this tab was in the background
-      let prog = null, game = 'unknown'; try { const w = f.contentWindow; prog = w.__SOAK_PROGRESS || (w.Test ? { t: +(w.Test.t || 0).toFixed(1), scenes: w.Test.scenes || {} } : null); game = (w.G || w.Game) ? 'loaded' : 'did not load (no game object)'; } catch (e) {}
-      const bg = ticks ? Math.round(hiddenTicks / ticks * 100) : 0, why = errs.length ? 'the game raised errors: ' + errs.slice(0, 3).join(' | ') : game.startsWith('did not') ? 'the game ' + game : (!prog || !prog.t) ? (bg > 50 ? `the game never advanced: this forge tab was in the background ${bg}% of the time, and a background tab gets no animation frames` : 'the game loaded but never advanced (no game time passed)') : `the game reached ${prog.t} of ${req.secs} game-seconds before the time ran out` + (bg > 50 ? ` (this tab was in the background ${bg}% of the time)` : '');
-      rep = { status: errs.length ? 'error' : (bg > 50 && (!prog || !prog.t) ? 'hidden-tab' : 'timeout'), errors: [{ text: 'the playtest did not finish in this browser: ' + why }].concat(errs.slice(0, 8).map(t => ({ text: t }))), scenes: (prog && prog.scenes) || {}, seconds: prog ? prog.t : 0, background: bg }; }
-    win.querySelector('.vl-soak-title span').textContent = rep.ok ? '✓ playtest ok · ' + (rep.fps || '?') + ' fps · score ' + (rep.score ?? '') : '✗ playtest ' + (rep.status || 'failed') + ' · ' + ((rep.errors || []).length) + ' error(s)';
-    win.classList.add(rep.ok ? 'ok' : 'bad'); setTimeout(() => win.remove(), 4000);
-    await Forge.api(`/game/soakdone/${slug}`, { id: req.id, report: rep });
-    hereCount++; $('hereCount').textContent = hereCount; $('hereLast').textContent = new Date().toLocaleTimeString() + (rep.ok ? ' · ok' : ' · ' + (rep.status || 'failed'));
-    $('streamNote').textContent = ''; refreshDue = true;
-  } catch (e) { $('streamNote').textContent = 'playtest here failed: ' + e.message; }
-  finally { soakRunning = false; }
-}
+let hereCount = 0; // playtests run by this page (public/forge-runner.js runs them)
+ForgeRunner.init(slug, { note: t => { $('streamNote').textContent = t; }, done: rep => { hereCount++; $('hereCount').textContent = hereCount; $('hereLast').textContent = new Date().toLocaleTimeString() + (rep.ok ? ' · ok' : ' · ' + (rep.status || 'failed')); refreshDue = true; } });
 // Review: if this exact version was reviewed already (no commit since, nothing uncommitted), say so first
 async function reviewAgain() {
   try { const r = await Forge.api(`/game/status/${slug}`); G = r.game; } catch (e) {}
@@ -264,7 +226,7 @@ async function reviewAgain() {
 }
 // this page is the browser that runs the playtests: while a playtest runs here, or a run that playtests is going
 // (pipeline, review, fix), leaving the page asks first, since closing it leaves the playtest with no browser
-window.addEventListener('beforeunload', e => { const a = G.agent || {}; if (soakRunning || (a.busy && ['pipeline', 'review', 'fix', 'soak'].includes(a.mode))) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', e => { const a = G.agent || {}; if (ForgeRunner.busy() || (a.busy && ['pipeline', 'review', 'fix', 'soak'].includes(a.mode))) { e.preventDefault(); e.returnValue = ''; } });
 async function startAgent(mode, prompt) { try { renderSession(await Forge.api(`/game/agent/${slug}`, { mode, prompt: prompt || '' })); showTab('build'); if (['pipeline', 'review', 'fix', 'soak'].includes(mode)) $('streamNote').textContent = 'Keep this page open until the run ends: its playtests run in this tab (it can sit behind other tabs).'; } catch (e) { alert(e.message); } }
 async function stopAgent() { try { await Forge.api(`/game/stop/${slug}`, {}); } catch (e) { alert(e.message); } }
 async function gitLoad() { const box = $('gitBox'); let r; try { r = await Forge.api(`/game/gitstatus/${slug}`); } catch (e) { box.textContent = e.message; return; }
