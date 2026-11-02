@@ -30,7 +30,7 @@
   function play() { let said = null;
     try { if (typeof W().forgePlay === 'function') said = W().forgePlay(); } catch (e) { console.error(e); hint('The game could not start by itself: ' + e.message); return; }
     hint(said || 'This game opens on its title screen: start it there.'); frame.focus(); try { W().focus(); } catch (e) {} }
-  const keys = e => { if (e.altKey && e.key.toLowerCase() === 'i') { e.preventDefault(); setInspect(!inspecting); } else if (e.altKey && e.code === 'KeyN') { e.preventDefault(); setInspect(false); try { W().Notes.toggle(); W().focus(); } catch (x) { hint('This game has no note mode.'); } } else if (e.key === 'Escape' && inspecting) { e.preventDefault(); setInspect(false); } };
+  const keys = e => { if (e.altKey && e.key.toLowerCase() === 'i') { e.preventDefault(); setInspect(!inspecting); } else if (e.altKey && e.code === 'KeyL') { e.preventDefault(); $('listFold').click(); } else if (e.altKey && e.code === 'KeyN') { e.preventDefault(); setInspect(false); try { W().Notes.toggle(); W().focus(); } catch (x) { hint('This game has no note mode.'); } } else if (e.key === 'Escape' && inspecting) { e.preventDefault(); setInspect(false); } };
   addEventListener('keydown', keys);
   const loaded = () => { inspecting = false; over.classList.remove('on'); $('inspect').classList.remove('on'); $('inspect').textContent = 'Inspect'; $('changed').hidden = true; try { W().addEventListener('keydown', keys, true); } catch (e) {} if (intoPlay && !driven) play(); intoPlay = true; loadNotes(); if (!things.length) { try { if (W().forgeThings) { things = W().forgeThings(); drawList(); } } catch (e) { console.error(e); } } }; // a game with no list on the server can give its own
   frame.addEventListener('load', loaded); try { if (W().location.href !== 'about:blank' && frame.contentDocument.readyState === 'complete') loaded(); } catch (e) {} // a game quicker than this script
@@ -50,6 +50,10 @@
     else { if (N) N.freeze(false); applyLive('rule').then(said => hint('Back in the game. ' + said)); frame.focus(); } }
   $('tabGame').onclick = () => setRules(false); $('tabRules').onclick = () => setRules(true, current && !element ? current : current && things.some(t => t.key === current) ? current : '');
   $('card').addEventListener('click', e => { const a = e.target.closest('a[data-rules]'); if (a) { e.preventDefault(); setRules(true, a.dataset.rules); } });
+
+  // ---- the list folds away for more game, and stays that way in this browser ----
+  const LISTOFF = 'studio-list-off'; function foldList(off) { document.querySelector('.st').classList.toggle('nolist', off); $('listFold').setAttribute('aria-pressed', off); $('listFold').title = (off ? 'Show the list' : 'Fold the list away for more game') + ' (Alt+L)'; try { localStorage.setItem(LISTOFF, off ? '1' : ''); } catch (e) {} }
+  $('listFold').onclick = () => foldList(!document.querySelector('.st').classList.contains('nolist')); try { if (localStorage.getItem(LISTOFF) === '1') foldList(true); } catch (e) {}
 
   // ---- the list ----
   // folded by kind, the game's things first and then its interface; a search opens what it finds, a small game opens everything

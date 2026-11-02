@@ -209,6 +209,12 @@ class Game extends BaseControls\Control {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
         try { $this->jsonSuccess(Releases::check($g)); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 500); }
     }
+    /** Takes the game offline (Releases::unpublish). */
+    public function unpublish($params = []): void {
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        try { $r = Releases::unpublish($g, (string) ($this->member->username ?: $this->member->email)); $this->jsonSuccess($r + ['releases' => Releases::check($g)], 'Taken offline.'); }
+        catch (\InvalidArgumentException $e) { $this->jsonError($e->getMessage(), 400); } catch (\Throwable $e) { $this->jsonError($e->getMessage(), 500); }
+    }
     /** An earlier build goes live again. */
     public function publishrestore($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;

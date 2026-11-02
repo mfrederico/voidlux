@@ -9,6 +9,7 @@ namespace app;
 
 class Releases {
     public const KEEP = 5;
+    private const OFFLINE = '.unpublished'; // in the live folder: what is there is the "not available" page
     private const ID = '/^[0-9]{8}-[0-9]{6}-[A-Za-z0-9-]{1,40}$/D';
 
     private static function dir(string $slug): string { return GameStore::root() . '/data/releases/' . $slug; }
@@ -37,7 +38,7 @@ class Releases {
             $f = GameStore::dir($slug) . '/.studio/soaks/' . ($last['id'] ?? '') . '.json'; $seen = is_file($f) ? (string) ((json_decode((string) file_get_contents($f), true) ?: [])['shipped'] ?? '') : '';
             if ($seen !== '' ? $seen !== self::fingerprint($slug) : ($commitAt > (int) @filemtime($f))) $warnings[] = 'What would go live has changed since its last playtest (' . date('M j H:i', (int) @filemtime($f)) . ').'; }
         $live = self::liveDir($slug);
-        return ['live' => $live !== '' && is_file("$live/index.html") ? ['build' => self::buildIn($live) ?: (string) $g->publishedBuild, 'at' => (string) $g->publishedAt, 'url' => (string) $g->publishedUrl] : null,
+        return ['live' => $live !== '' && is_file("$live/index.html") && !is_file("$live/" . self::OFFLINE) ? ['build' => self::buildIn($live) ?: (string) $g->publishedBuild, 'at' => (string) $g->publishedAt, 'url' => (string) $g->publishedUrl] : null,
             'next' => ['build' => $next, 'subject' => trim((string) $subject), 'url' => $live !== '' ? 'https://' . $slug . '.' . GameStore::cfg('domain') . '/' : ''], 'blockers' => $blockers, 'warnings' => $warnings, 'earlier' => self::earlier($slug), 'keep' => self::KEEP];
     }
     /** A hash of the files that go live (index.html, js/, assets/, icons/, the manifest). The forge's playtest tooling is left out. */
@@ -63,7 +64,7 @@ class Releases {
     }
     /** The live site as it is, kept before it is replaced. Nothing live yet: nothing to keep. */
     public static function keep(object $g, string $by = '', string $spare = ''): ?string {
-        $slug = (string) $g->slug; $live = self::liveDir($slug); if ($live === '' || !is_file("$live/index.html")) return null;
+        $slug = (string) $g->slug; $live = self::liveDir($slug); if ($live === '' || !is_file("$live/index.html") || is_file("$live/" . self::OFFLINE)) return null; // (the "not available" page is not a build)
         $dir = self::dir($slug); if (!is_dir($dir)) mkdir($dir, 0775, true);
         $build = self::buildIn($live) ?: 'unknown'; $id = date('Ymd-His') . '-' . preg_replace('/[^A-Za-z0-9-]/', '', $build);
         $prev = self::ids($slug)[0] ?? null; $link = $prev ? ' --link-dest=' . escapeshellarg("$dir/$prev") : '';
@@ -76,6 +77,19 @@ class Releases {
     /** @return string[] kept builds, newest first */
     private static function ids(string $slug): array { $d = self::dir($slug); $out = []; foreach (is_dir($d) ? scandir($d, SCANDIR_SORT_DESCENDING) : [] as $f) if (preg_match(self::ID, $f) && is_dir("$d/$f")) $out[] = $f; return $out; }
     public static function earlier(string $slug): array { $d = self::dir($slug); return array_map(fn($id) => (json_decode((string) @file_get_contents("$d/$id.json"), true) ?: []) + ['id' => $id, 'build' => '', 'liveAt' => '', 'until' => ''], self::ids($slug)); }
+    /** Takes the game offline: its address shows a plain page, it leaves the main site's list, and the build is kept to put back. The game's source is not touched. Publishing again brings it all back, including its place on the main site if it is marked public. */
+    public static function unpublish(object $g, string $by): array {
+        $slug = (string) $g->slug; $live = self::liveDir($slug); if ($live === '' || !is_file("$live/index.html") || is_file("$live/" . self::OFFLINE)) throw new \InvalidArgumentException('It is not live, so there is nothing to take down.');
+        $kept = self::keep($g, $by); if (!$kept) throw new \RuntimeException('The live build could not be kept, so nothing was taken down.');
+        $tmp = GameStore::studioDir($slug) . '/offline'; if (!is_dir($tmp)) mkdir($tmp, 0775, true);
+        file_put_contents("$tmp/index.html", '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Not available</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#100c1c;color:#eee9f8;font:16px/1.5 system-ui,sans-serif;text-align:center;padding:24px}a{color:#ffb547}</style></head><body><main><h1>This game is not available right now</h1><p><a href="https://' . htmlspecialchars((string) GameStore::cfg('domain')) . '/">See the other games</a></p></main></body></html>' . "\n");
+        file_put_contents("$tmp/" . self::OFFLINE, date('c') . ' ' . $by . "\n");
+        exec('rsync -a --delete ' . escapeshellarg($tmp . '/') . ' ' . escapeshellarg($live . '/') . ' 2>&1', $o, $rc); exec('rm -rf ' . escapeshellarg($tmp));
+        if ($rc !== 0) throw new \RuntimeException('Taking it down failed: ' . mb_substr(implode(' ', $o), 0, 300));
+        $g->publishedAt = null; $g->publishedUrl = ''; $g->publishedBuild = ''; if ((string) $g->status === 'published') $g->status = 'building'; Bean::store($g);
+        GameStore::emit($slug, 'note', ['text' => "{$by} took the game offline; build {$kept} is kept"]); GameStore::activity($slug, $by, 'took the game offline');
+        return ['kept' => $kept];
+    }
     /** A kept build goes live again; what was live is kept. The game's source and history are not touched. */
     public static function restore(object $g, string $id, string $by): array {
         $slug = (string) $g->slug; if (!preg_match(self::ID, $id) || !is_dir(self::dir($slug) . "/$id")) throw new \InvalidArgumentException('No such earlier build.');
@@ -84,7 +98,7 @@ class Releases {
         self::keep($g, $by, $id); // ($id itself is spared if it is the oldest)
         exec('rsync -a --checksum --delete ' . escapeshellarg($src . '/') . ' ' . escapeshellarg($live . '/') . ' 2>&1', $o, $rc);
         if ($rc !== 0) throw new \RuntimeException('Putting the build back failed: ' . mb_substr(implode(' ', $o), 0, 300));
-        $build = self::buildIn($live); $g->publishedAt = date('c'); $g->publishedBuild = $build; Bean::store($g);
+        $build = self::buildIn($live); $g->publishedAt = date('c'); $g->publishedBuild = $build; $g->publishedUrl = 'https://' . $slug . '.' . GameStore::cfg('domain') . '/'; if ((string) $g->status !== 'published') $g->status = 'published'; Bean::store($g);
         GameStore::emit($slug, 'note', ['text' => "{$by} put build {$build} back live"]); GameStore::activity($slug, $by, "put the earlier build {$build} back live (the game's source is unchanged)");
         return ['build' => $build, 'url' => (string) $g->publishedUrl];
     }
