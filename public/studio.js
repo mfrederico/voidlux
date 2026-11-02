@@ -12,7 +12,7 @@
     let N = null; try { N = W().Notes; } catch (e) {}
     if (on && !N) { hint(frame.contentDocument && frame.contentDocument.readyState === 'complete' ? 'This game has no inspect support (it does not load the kit\'s notes): choose from the list.' : 'The game has not finished loading yet.'); return; }
     if (on && typeof W().forgePick !== 'function') { hint('This game does not say what is under the pointer yet: choose from the list.'); return; }
-    inspecting = on; if (N) N.freeze(on); if (on) try { if (W().forgeCapture) W().forgeCapture(); } catch (e) { console.error(e); } // what the screen says, for picking its words over.classList.toggle('on', on); $('inspect').classList.toggle('on', on); $('inspect').textContent = on ? 'Resume game' : 'Inspect';
+    inspecting = on; if (N) N.freeze(on); if (on) try { if (W().forgeCapture) W().forgeCapture(); } catch (e) { console.error(e); } /* what the screen says, for picking its words */ over.classList.toggle('on', on); $('inspect').classList.toggle('on', on); $('inspect').textContent = on ? 'Resume game' : 'Inspect';
     ring.style.display = tip.style.display = 'none'; hint(on ? 'Paused. Click anything in the game. Esc resumes.' : 'Press Inspect, then click anything in the game.'); if (!on) frame.focus();
   }
   const at = e => { const r = over.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top; const N = W().Notes, p = N.logical(cx, cy); return { cx, cy, list: W().forgePick(p.x, p.y) || [] }; };
