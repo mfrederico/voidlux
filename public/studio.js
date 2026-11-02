@@ -47,7 +47,7 @@
   function setRules(on, who) { const page = document.querySelector('.st'); if (on === rulesOn && !(on && who)) return; rulesOn = on; setInspect(false); page.classList.toggle('rules', on); $('tabGame').classList.toggle('on', !on); $('tabRules').classList.toggle('on', on); $('tabRules').setAttribute('aria-pressed', on); $('tabGame').setAttribute('aria-pressed', !on);
     let N = null; try { N = W().Notes; } catch (e) {}
     if (on) { if (N) N.freeze(true); if (!rulesFrame || who) { const src = `/editor/sprites/?game=${encodeURIComponent(SLUG)}${who ? '&who=' + encodeURIComponent(who) : ''}#events`; if (!rulesFrame) { rulesFrame = document.createElement('iframe'); rulesFrame.id = 'rulesFrame'; rulesFrame.title = 'The rules editor'; $('game').parentNode.appendChild(rulesFrame); } rulesFrame.src = src; } if (typeof UX !== 'undefined') UX.act('rules-tab', who || 'all'); }
-    else { if (N) N.freeze(false); applyLive('rule').then(said => hint('Back in the game. ' + said)); frame.focus(); } }
+    else { fitGame(); if (N) N.freeze(false); applyLive('rule').then(said => hint('Back in the game. ' + said)); frame.focus(); } }
   $('tabGame').onclick = () => setRules(false); $('tabRules').onclick = () => setRules(true, current && !element ? current : current && things.some(t => t.key === current) ? current : '');
   $('card').addEventListener('click', e => { const a = e.target.closest('a[data-rules]'); if (a) { e.preventDefault(); setRules(true, a.dataset.rules); } });
 
