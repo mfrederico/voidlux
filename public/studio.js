@@ -109,7 +109,7 @@
     box.querySelectorAll('input[name=way]').forEach(i => { i.onchange = sync; }); sync();
     $('changeBack').onclick = () => { box.innerHTML = ''; }; $('changeGo').onclick = () => go(r); if (typeof UX !== 'undefined') UX.act('change-ways', r.suggested); }
   const said = () => element ? { label: element.title, context: `${element.kind || ''}: ${element.about || ''}` } : current ? { label: nameOf(current), context: (things.find(t => t.key === current) || {}).about || '' } : {};
-  $('changeForm').onsubmit = async e => { e.preventDefault(); const text = $('changeText').value.trim(); if (!text) { $('changeText').focus(); return; } if (job) { working('The last change is still going: it shows here when it is done.'); return; }
+  $('changeForm').onsubmit = async e => { e.preventDefault(); const text = $('changeText').value.trim(); if (!text) { $('changeText').focus(); return; } if (job) { plain('The last change is still going: it shows here when it is done.'); return; }
     try { drawWays(await Forge.api(`/studio/ways/${SLUG}`, { text, key: current, ...said() })); } catch (err) { box.innerHTML = `<p class="bad small">${esc(err.message)}</p>`; } };
   $('changeText').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('changeForm').requestSubmit(); } };
   async function go(r) { if (box.querySelector('input[name=way]:checked').value === 'note') return saveNote();
@@ -118,7 +118,7 @@
     if (way === 'numbers') { const vals = {}; box.querySelectorAll('#numbers input').forEach(i => { if (i.value !== i.dataset.was) vals[i.name] = i.value === '' ? null : Number(i.value); }); body.values = vals; }
     try { const res = await Forge.api(`/studio/change/${SLUG}`, body); if (typeof UX !== 'undefined') UX.act('change-go', way + (way === r.suggested ? '' : ' over ' + r.suggested)); job = { ...res, text, key }; keepJob(); $('changeText').value = ''; follow(); }
     catch (err) { job = null; $('changeGo').disabled = false; box.insertAdjacentHTML('beforeend', `<p class="bad small">${esc(err.message)}</p>`); } }
-  const working = t => { box.innerHTML = `<p class="small">${esc(t)}</p>`; };
+  const plain = t => { box.innerHTML = `<p class="small">${esc(t)}</p>`; }, working = t => { box.innerHTML = `<p><span class="busy-badge" role="status">${esc(t)}</span></p>`; }; // something is at work: it should look it
   const finish = (html, more) => { job = null; keepJob(); box.innerHTML = html + '<div class="ch-go"><button type="button" id="changeDone">Done</button></div>'; if (more) more(); $('changeDone').onclick = () => { box.innerHTML = ''; }; };
   // what a change came to: the numbers at once, the rest when its job ends; the poll below calls this again while one goes
   async function follow() { const j = job; if (!j) return;
@@ -127,7 +127,7 @@
     if (j.way === 'rule') return followRule(j);
     if (j.way === 'art') return followArt(j);
     working(j.queued ? 'The builder is busy: this goes with its next run. Its answer shows here.' : 'The builder is on it. Its answer shows here, and a button appears above when the game has changed.'); }
-  async function followRule(j) { let p; try { p = (await Forge.api(`/gameapi/events/${SLUG}`)).proposals.find(x => x.id === j.id); } catch (e) { working('Could not read the rules: ' + e.message + '. Trying again.'); return; }
+  async function followRule(j) { let p; try { p = (await Forge.api(`/gameapi/events/${SLUG}`)).proposals.find(x => x.id === j.id); } catch (e) { plain('Could not read the rules: ' + e.message + '. Trying again.'); return; }
     if (!p) { finish('<p class="bad small">That request is gone: it may have been dealt with on the Events tab.</p>'); return; }
     if (p.state === 'reading' || p.state === 'building') { working(p.state === 'building' ? 'The builder is adding what the rules need; then they are written again.' : (j.queued ? 'The artist is busy: this waits its turn.' : 'The artist is writing the rules…')); return; }
     if (p.state === 'failed') { finish(`<p class="bad small">No rules came of it: ${esc(p.error || 'the artist could not write them')}</p>`); return; }
@@ -138,7 +138,7 @@
       if ($('ruleAdd')) $('ruleAdd').onclick = () => settle({ do: 'add' }, async () => { const said = await applyLive('rule'); box.innerHTML = `<p class="small">Added. ${esc(said)}</p>`; loadTimeline(); if (j.key && j.key === current) show(current); });
       if ($('ruleBuild')) $('ruleBuild').onclick = () => settle({ do: 'build' }, () => { job = j; keepJob(); follow(); });
       $('ruleDrop').onclick = () => settle({ do: 'dismiss' }, () => { box.innerHTML = ''; }); }); }
-  async function followArt(j) { let s; try { s = await Forge.api(`/gameapi/sketch/${SLUG}?id=${encodeURIComponent(j.id)}`); } catch (e) { working('Could not read the job: ' + e.message + '. Trying again.'); return; }
+  async function followArt(j) { let s; try { s = await Forge.api(`/gameapi/sketch/${SLUG}?id=${encodeURIComponent(j.id)}`); } catch (e) { plain('Could not read the job: ' + e.message + '. Trying again.'); return; }
     if (!s.result) { working(j.queued ? 'The artist is busy: this waits its turn.' : `The artist is making a new version of ${j.key}…`); return; }
     if (!s.result.ok) { finish(`<p class="bad small">No new version: ${esc(s.result.error || 'the artist could not make it')}</p>`); return; }
     finish(`<p class="small">A new version of ${esc(j.key)} is ready. The game still has the old one.</p><div class="ch-go"><button type="button" class="go" id="artUse">Use the new version</button><a href="/editor/sprites/?game=${esc(SLUG)}&item=${encodeURIComponent(j.key)}#3d" target="_blank">See it first</a></div>`, () => { $('artUse').onclick = async () => { try { await Forge.api(`/gameapi/cast/${SLUG}`, { do: 'keepall', keys: [j.key] }); $('changed').hidden = false; box.innerHTML = '<p class="small">Using it. Reload the game to see it.</p>'; loadTimeline(); if (j.key === current) show(current); } catch (e) { box.insertAdjacentHTML('beforeend', `<p class="bad small">${esc(e.message)}</p>`); } }; }); }
