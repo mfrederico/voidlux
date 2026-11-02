@@ -110,7 +110,7 @@ class GameAgent {
         foreach (['kit', 'studio', 'centipede', 'templates'] as $extra) if (is_dir(GameStore::root() . '/' . $extra)) array_push($cmd, '--add-dir', GameStore::root() . '/' . $extra); // the shared engine, the soak tools and the reference game are readable beyond the game's folder
         $model = (string) GameStore::cfg('model', ''); if ($model !== '') array_push($cmd, '--model', $model);
         if ($resume && $sid) array_push($cmd, '--resume', $sid);
-        $notes = $this->lane !== 'art' ? GameStore::takeNotes($this->slug) : [];
+        $notes = $this->lane !== 'art' && $label !== 'review' ? GameStore::takeNotes($this->slug) : []; // a reviewer builds nothing: a note given to it would be answered and gone
         if ($notes) { // numbered, and each must be answered: the run's reply ends with a NOTES line, checked after the run
             $prompt .= "\n\nNotes from the producer that arrived while you were busy. Each needs an answer: do it now if it fits this run, or say it is planned for later, or decline it and say why.\n" . implode("\n", array_map(fn($n, $i) => ($i + 1) . '. ' . $n['text'], $notes, array_keys($notes)))
                      . "\nEnd your reply with one line exactly like: NOTES: 1 built; 2 planned (when); 3 declined (why) — one entry for every number above.";
