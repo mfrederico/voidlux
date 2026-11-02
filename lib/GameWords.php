@@ -33,7 +33,8 @@ class GameWords {
     /** The one place: the line that drew it, else the only literal that is exactly these words, else the only one holding them. */
     private static function locate(array $lits, string $text, string $site): array {
         if (mb_strlen($text) < 2 || !preg_match('/\p{L}/u', $text)) throw new \InvalidArgumentException('Too short to find safely.');
-        $hits = []; foreach ($lits as $l) { $needle = self::encode($text, $l['quote']); $from = 0; $n = 0; while (($p = strpos($l['raw'], $needle, $from)) !== false) { $whole = strlen($needle) === strlen($l['raw']); if (!($whole && $l['logic'])) $hits[] = ['file' => $l['file'], 'line' => $l['line'] + substr_count($l['raw'], "\n", 0, $p), 'at' => $l['at'] + $p, 'quote' => $l['quote'], 'whole' => $whole]; $from = $p + strlen($needle); } }
+        $hits = []; $named = false; foreach ($lits as $l) { $needle = self::encode($text, $l['quote']); $from = 0; $n = 0; while (($p = strpos($l['raw'], $needle, $from)) !== false) { $whole = strlen($needle) === strlen($l['raw']); if ($whole && $l['logic']) $named = true; else $hits[] = ['file' => $l['file'], 'line' => $l['line'] + substr_count($l['raw'], "\n", 0, $p), 'at' => $l['at'] + $p, 'quote' => $l['quote'], 'whole' => $whole]; $from = $p + strlen($needle); } }
+        if (!$hits && $named) throw new \InvalidArgumentException('The game\'s code uses these words as a name, so changing them here could break it. The builder can change them.');
         if (!$hits) throw new \InvalidArgumentException('The game puts these words together as it runs, so they are not written anywhere as they stand. The builder can change them.');
         if ($site !== '' && preg_match('#^(js/[A-Za-z0-9_.-]+):(\d+)$#', $site, $s)) { $here = array_values(array_filter($hits, fn($h) => $h['file'] === $s[1] && $h['line'] === (int) $s[2])); if (count($here) === 1) return $here[0]; }
         if (count($hits) === 1) return $hits[0];
@@ -49,7 +50,8 @@ class GameWords {
         $d = GameStore::dir($slug); $out = [];
         foreach (glob("$d/js/*.js") ?: [] as $f) { if (in_array(basename($f), self::NOT_TEXT, true)) continue; $src = (string) file_get_contents($f); $rel = 'js/' . basename($f);
             foreach (self::scan($src) as [$at, $raw, $q]) { if ($raw === '') continue; $before = rtrim(substr($src, max(0, $at - 12), min($at, 12) - 1)); $after = ltrim(substr($src, $at + strlen($raw) + 1, 12));
-                $logic = $after !== '' && ($after[0] === ':' || str_starts_with($after, '===') || str_starts_with($after, '!==') || $after[0] === ']') && $q !== '`' || preg_match('/(===|!==|\bcase|\[)$/', $before);
+                $key = $after !== '' && $after[0] === ':' && ($before === '' || in_array(substr($before, -1), ['{', ','], true)); // { 'name': … } is a name; c ? 'words' : 'more' is words
+                $logic = $after !== '' && ($key || str_starts_with($after, '===') || str_starts_with($after, '!==') || $after[0] === ']') && $q !== '`' || preg_match('/(===|!==|\bcase|\[)$/', $before);
                 $out[] = ['file' => $rel, 'at' => $at, 'line' => substr_count($src, "\n", 0, $at) + 1, 'raw' => $raw, 'quote' => $q, 'logic' => (bool) $logic]; } }
         return $out;
     }
