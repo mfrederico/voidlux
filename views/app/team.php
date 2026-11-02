@@ -39,7 +39,7 @@ $__base = rtrim((string) \Flight::get('app.baseurl'), '/');
         <?php if (!$__tg): ?><p class="text-secondary mb-0">No game is shared with this team yet. On a game's Ship tab, set its team.</p>
         <?php else: ?><div class="vl-grid">
             <?php foreach ($__tg as $__g): $__m = \app\GameStore::meta($__g); ?>
-            <a class="vl-card" href="/game/view/<?= h($__m['slug']) ?>"><div class="vl-card-title"><?= h($__m['title']) ?></div><div class="vl-meta"><?= h($__m['status']) ?> · <?= h($__m['lastCommit']) ?></div></a>
+            <a class="vl-card" href="/studio/open/<?= h($__m['slug']) ?>"><div class="vl-card-title"><?= h($__m['title']) ?></div><div class="vl-meta"><?= h($__m['status']) ?> · <?= h($__m['lastCommit']) ?></div></a>
             <?php endforeach; ?>
         </div><?php endif; ?>
     </div>

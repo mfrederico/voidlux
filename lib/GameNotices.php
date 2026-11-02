@@ -18,7 +18,7 @@ class GameNotices {
         $what = ['pipeline' => 'build', 'chat' => 'builder run', 'review' => 'review', 'fix' => 'playtest and fix'][$mode] ?? $mode;
         $how = ['finished' => 'finished', 'attention' => 'needs a look', 'failed' => 'failed', 'stopped' => 'stopped'][$outcome['state']];
         $meta = GameStore::meta($g); $soak = $meta['lastSoak'];
-        $url = GameStore::baseUrl() . '/game/view/' . $slug;
+        $url = GameStore::baseUrl() . '/game/view/' . $slug . '#build';
         $html = '<p><b>' . htmlspecialchars($g->title) . '</b>: the ' . htmlspecialchars($what) . ' ' . $how . ($outcome['why'] !== '' ? ': ' . htmlspecialchars($outcome['why']) : '') . '.'
               . (isset($outcome['cost']) ? ' It cost $' . number_format((float) $outcome['cost'], 2) . '.' : '') . '</p>'
               . '<p>Tasks ' . $meta['tasks']['done'] . '/' . $meta['tasks']['total'] . ' · checkpoints ' . $meta['checkpoints']

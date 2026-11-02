@@ -7,7 +7,7 @@ $slug = $game['slug'];
   <?php if ($game['publishedUrl']): ?><a class="btn btn-sm btn-outline-primary ms-auto" href="<?= h($game['publishedUrl']) ?>" target="_blank">Live</a><?php endif; ?></div>
 <div id="lastRun" hidden></div>
 <div class="vl-tabs" id="tabs">
-  <a href="#play" data-tab="play" class="on">Play</a><a href="#build" data-tab="build">Build</a><a href="#notes" data-tab="notes">Notes <span id="notesTab"></span></a><a href="#test" data-tab="test">Test</a><a href="#media" data-tab="media">Media</a><a href="#ship" data-tab="ship">Ship</a>
+  <a href="/studio/open/<?= h($slug) ?>">Play</a><a href="#build" data-tab="build" class="on">Build</a><a href="#notes" data-tab="notes">Notes <span id="notesTab"></span></a><a href="#test" data-tab="test">Test</a><a href="#media" data-tab="media">Media</a><a href="#ship" data-tab="ship">Ship</a>
   <span class="vl-tab-menu"><button data-tab="advanced" type="button">Advanced ▾</button><span class="vl-tab-menu-list"><a href="#design" data-tab="design">Concept</a><a href="#status" data-tab="status">Status</a><a href="#config" data-tab="config">Config</a><a href="#history" data-tab="history">History</a></span></span>
 </div>
 
@@ -85,7 +85,7 @@ $slug = $game['slug'];
 </section>
 
 <section class="vl-pane" id="pane-notes">
-  <div class="vl-toolbar"><span>Producer's notes: everything anyone pointed at in note mode (Play → Note mode, or Alt+N in the game). Check the ones to hand to the builder in one batch.</span></div>
+  <div class="vl-toolbar"><span>Producer's notes: everything anyone pointed at in note mode (Alt+N or ✎ in the game). Check the ones to hand to the builder in one batch.</span></div>
   <details class="vl-card mb-3 vl-newnote"><summary class="vl-h2 mt-0" style="cursor:pointer">✎ New note <span class="vl-meta">(no need to run the game)</span></summary>
     <form id="newNoteForm" class="vl-form mt-2" enctype="multipart/form-data">
       <label>The note <textarea name="text" rows="3" placeholder="What should change, be added or be checked? A picture helps: a sketch, a reference, a screenshot." required maxlength="4000"></textarea></label>
@@ -312,7 +312,7 @@ function renderNotes() {
         <div class="vl-comments">${(n.comments || []).map(c => `<div class="vl-comment"><b>${Forge.esc(c.by)}</b> ${Forge.esc(c.text)}${c.mine ? ` <a href="#" onclick="noteComment(${n.id}, null, ${c.id}); return false;" title="delete">✕</a>` : ''}</div>`).join('')}
           <form class="vl-comment-form" onsubmit="noteComment(${n.id}, this.text.value); this.text.value = ''; return false;"><input name="text" placeholder="add a comment: refine it, argue with it…" maxlength="4000"><button class="btn btn-sm btn-outline-secondary" type="submit">Comment</button></form></div>
         <div class="vl-note-actions">${n.state !== 'done' ? `<button class="btn btn-sm btn-outline-secondary" onclick="noteState(${n.id}, 'done')" title="move it to the scrapyard">Scrap</button>` : ''}${n.state !== 'open' ? `<button class="btn btn-sm btn-outline-secondary" onclick="noteState(${n.id}, 'open')" title="back to awaiting verdict">Back to verdict</button>` : ''}${n.state === 'done' ? `<button class="btn btn-sm btn-outline-secondary" onclick="noteState(${n.id}, 'delete')" title="gone for good">Delete</button>` : ''}</div></div></div>`).join('')
-    : `<div class="vl-kv">${filt === 'open' ? 'Nothing awaiting a verdict. In Play, press Note mode (or Alt+N in the game), click a thing, say what should change.' : filt === 'sent' ? 'Nothing has gone to the builder yet.' : 'The scrapyard is empty.'}</div>`;
+    : `<div class="vl-kv">${filt === 'open' ? 'Nothing awaiting a verdict. In the game, press Alt+N or ✎, click a thing, say what should change.' : filt === 'sent' ? 'Nothing has gone to the builder yet.' : 'The scrapyard is empty.'}</div>`;
   notesButtons();
   const open = NOTES.filter(n => n.state === 'open'), rest = NOTES.filter(n => n.state !== 'open').slice(0, 6);
   $('notesStrip').innerHTML = open.length ? open.slice(0, 8).map(n => `<span class="vl-chip" title="${Forge.esc(n.text)}">${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="">` : ''}${Forge.esc(n.text.slice(0, 40))}</span>`).join('') + ` <a href="#notes" onclick="showTab('notes')">${open.length} awaiting verdict → Notes</a>` : '';
@@ -336,6 +336,7 @@ function lightbox(id, src) { const n = NOTES.find(x => x.id === id), L = $('ligh
 async function loadNotes() { try { NOTES = (await Forge.api(`/game/notes/${slug}`)).notes; renderNotes(); } catch (e) {} }
 loadNotes();
 render({ game: G, checkpoints: <?= json_encode($checkpoints) ?>, soaks: <?= json_encode($soaks) ?> });
-showTab(location.hash.slice(1) || 'play'); poll();
-window.addEventListener('hashchange', () => showTab(location.hash.slice(1) || 'play')); // a link to #config or #build switches the tab without a reload
+// Play is the Studio now: this page keeps building, testing and shipping, until those move there too
+if (!location.hash || location.hash === '#play') location.replace('/studio/open/<?= h($slug) ?>'); else { showTab(location.hash.slice(1)); poll(); }
+window.addEventListener('hashchange', () => { if (location.hash === '#play') location.replace('/studio/open/<?= h($slug) ?>'); else showTab(location.hash.slice(1) || 'build'); }); // a link to #config or #build switches the tab without a reload
 </script>

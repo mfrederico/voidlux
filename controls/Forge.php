@@ -95,7 +95,7 @@ class Forge extends BaseControls\Control {
                 } catch (\Throwable $e) { $problems['slug'] = $e->getMessage(); }
             }
             if (!$problems) { // the game exists from here on: a run that will not start is said on its page, not as a problem with the form
-                if (!$form['pipeline']) { $this->flash('success', 'Created. Nothing has been spent: build it when you are ready.'); Flight::redirect('/game/view/' . $g->slug); return; }
+                if (!$form['pipeline']) { $this->flash('success', 'Created. Nothing has been spent: build it when you are ready.'); Flight::redirect('/studio/open/' . $g->slug); return; }
                 try { GameStore::startRunner($g->slug, 'pipeline', '', (int) $this->member->id); $this->flash('success', 'Created. The planner is reading the brief.'); }
                 catch (\Throwable $e) { $this->logger->error('The first build did not start', ['game' => $g->slug, 'error' => $e->getMessage()]); $this->flash('error', 'The game was created, but its build did not start: ' . $e->getMessage()); }
                 Flight::redirect('/game/view/' . $g->slug . '#build'); return;
