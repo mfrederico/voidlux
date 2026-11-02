@@ -52,8 +52,16 @@
   $('card').addEventListener('click', e => { const a = e.target.closest('a[data-rules]'); if (a) { e.preventDefault(); setRules(true, a.dataset.rules); } });
 
   // ---- the list folds away for more game, and stays that way in this browser ----
-  const LISTOFF = 'studio-list-off'; function foldList(off) { document.querySelector('.st').classList.toggle('nolist', off); $('listFold').setAttribute('aria-pressed', off); $('listFold').title = (off ? 'Show the list' : 'Fold the list away for more game') + ' (Alt+L)'; try { localStorage.setItem(LISTOFF, off ? '1' : ''); } catch (e) {} }
-  $('listFold').onclick = () => foldList(!document.querySelector('.st').classList.contains('nolist')); try { if (localStorage.getItem(LISTOFF) === '1') foldList(true); } catch (e) {}
+  // On a screen narrower than the three columns need, the game comes first: the list starts folded until someone says otherwise
+  const LISTOFF = 'studio-list-off', phone = () => matchMedia('(max-width: 640px)').matches, pickWays = () => phone() ? 'or choose from the list below' : document.querySelector('.st').classList.contains('nolist') ? 'or press ☰ to choose from a list' : 'or choose from the list';
+  function foldList(off, remember = true) { document.querySelector('.st').classList.toggle('nolist', off); $('listFold').setAttribute('aria-pressed', off); $('listFold').title = (off ? 'Show the list' : 'Fold the list away for more game') + ' (Alt+L)'; if ($('pickWays')) $('pickWays').textContent = pickWays(); if (remember) try { localStorage.setItem(LISTOFF, off ? '1' : '0'); } catch (e) {} fitGame(); }
+  // the game's frame just changed size: say so now, rather than wait for the browser to get round to it (a background tab may not)
+  function fitGame() { const tell = () => { try { W().dispatchEvent(new Event('resize')); } catch (e) {} }; tell(); setTimeout(tell, 60); }
+  // the keyboard goes back to the game: Space must jump, not press this button again
+  $('listFold').onclick = () => { foldList(!document.querySelector('.st').classList.contains('nolist')); if (!inspecting) { try { frame.focus(); W().focus(); } catch (e) {} } };
+  { let saved = null; try { saved = localStorage.getItem(LISTOFF); } catch (e) {} if (saved === '1') foldList(true, false); else if (saved === null && matchMedia('(max-width: 1100px)').matches) foldList(true, false); else foldList(false, false); }
+  // More closes when you are done with it
+  addEventListener('pointerdown', e => { const m = document.querySelector('.st-more'); if (m.open && !m.contains(e.target)) m.open = false; }); addEventListener('keydown', e => { const m = document.querySelector('.st-more'); if (e.key === 'Escape' && m.open) m.open = false; });
 
   // ---- the list ----
   // folded by kind, the game's things first and then its interface; a search opens what it finds, a small game opens everything
@@ -117,7 +125,7 @@
   const money = t => `<span class="cost small">${esc(t)}</span>`;
   function about() { if (entries.length || current) drawTimeline(); const was = $('changeAbout').dataset.k || ''; $('changeAbout').textContent = element ? element.title : current ? nameOf(current) : 'the whole game'; $('changeAbout').dataset.k = current; $('changeClear').hidden = !current; if (was !== current && !job) box.innerHTML = ''; }
   $('builder').onclick = e => { e.preventDefault(); showPane('builder'); };
-  $('changeClear').onclick = () => { current = ''; element = null; about(); drawList(); $('card').innerHTML = '<h2>Nothing picked yet</h2><p class="muted">Press <b>Inspect</b> (Alt+I), then click anything in the game, or choose from the list.</p>'; };
+  $('changeClear').onclick = () => { current = ''; element = null; about(); drawList(); $('card').innerHTML = `<h2>Nothing picked yet</h2><p class="muted">Press <b>Inspect</b> (Alt+I), then click anything in the game, <span id="pickWays">${esc(pickWays())}</span>.</p>`; };
   const field = f => `<label class="num"><span class="${f.meant ? 'meant' : ''}">${esc(f.label)}</span><input type="number" step="any" min="${f.lo}" max="${f.hi}" name="${esc(f.name)}" value="${f.value == null ? '' : esc(f.value)}" data-was="${f.value == null ? '' : esc(f.value)}" placeholder="game's"></label>`;
   function numbers(w) { const fs = w.fields || [], meant = fs.filter(f => f.meant), rest = fs.filter(f => !f.meant);
     return `<div id="numbers" hidden>${meant.map(field).join('')}${meant.length ? fold('The other numbers', rest.length, rest.map(field).join('')) : rest.map(field).join('')}<div class="small muted">Empty means the game's own value.</div></div>`; }
