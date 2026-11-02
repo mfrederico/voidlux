@@ -21,7 +21,7 @@
     const t = list[0], k = N.canvas.getBoundingClientRect().width / N.canvas.width;
     if (t.rect) { const a = N.css(t.rect.x, t.rect.y), b = N.css(t.rect.x + t.rect.w, t.rect.y + t.rect.h); Object.assign(ring.style, { display: 'block', borderRadius: '8px', left: a.x + 'px', top: a.y + 'px', width: b.x - a.x + 'px', height: b.y - a.y + 'px' }); }
     else { const c = N.css(t.x, t.y), s = t.r * k * 2; Object.assign(ring.style, { display: 'block', borderRadius: '50%', left: c.x - s / 2 + 'px', top: c.y - s / 2 + 'px', width: s + 'px', height: s + 'px' }); } over.style.cursor = 'pointer';
-    tip.textContent = t.title || t.key; Object.assign(tip.style, { display: 'block', left: Math.min(cx + 14, over.clientWidth - 180) + 'px', top: Math.max(cy - 28, 4) + 'px' }); });
+    tip.textContent = t.title || nameOf(t.key); Object.assign(tip.style, { display: 'block', left: Math.min(cx + 14, over.clientWidth - 180) + 'px', top: Math.max(cy - 28, 4) + 'px' }); });
   over.addEventListener('click', e => { if (!inspecting) return; const { list } = at(e); if (!list.length) { hint('Nothing there: click a monster, a thing on the ground or part of the screen.'); return; } lastPick = list[0]; if (typeof UX !== 'undefined') UX.act('inspect', list[0].key); if (list[0].title) showElement(list[0]); else show(list[0].key, list[0]); });
   $('inspect').onclick = () => setInspect(!inspecting);
   const reload = (play, q = '') => { setInspect(false); intoPlay = play; frame.src = `/games/${SLUG}/?${q}r=${Date.now()}`; document.querySelector('.st-more').open = false; };
@@ -39,7 +39,7 @@
 
   // ---- the list ----
   // folded by kind, the game's things first and then its interface; a search opens what it finds, a small game opens everything
-  const WORDS = { player: 'The player', enemy: 'Enemies', boss: 'Bosses', friend: 'Friends', critter: 'Critters', thing: 'Things', town: 'The town', pickup: 'Pickups', prop: 'Things in the world', terrain: 'Terrain', shot: 'Shots', screen: 'Screens', button: 'Buttons and bars', perk: 'Perks', bullet: 'Bullets', other: 'Other' }, ORDER = ['player', 'friend', 'critter', 'enemy', 'boss', 'thing', 'town', 'pickup', 'prop', 'terrain', 'shot', 'screen', 'button', 'perk', 'bullet'];
+  const WORDS = { player: 'The player', enemy: 'Enemies', boss: 'Bosses', friend: 'Friends', critter: 'Critters', tile: 'Places', thing: 'Things', town: 'The town', pickup: 'Pickups', prop: 'Things in the world', terrain: 'Terrain', shot: 'Shots', screen: 'Screens', button: 'Buttons and bars', perk: 'Perks', bullet: 'Bullets', other: 'Other' }, ORDER = ['player', 'friend', 'critter', 'enemy', 'boss', 'thing', 'town', 'pickup', 'prop', 'terrain', 'shot', 'screen', 'button', 'perk', 'bullet'];
   const OPEN = 'studio-open-' + SLUG; let opened = new Set(); try { opened = new Set(JSON.parse(localStorage.getItem(OPEN) || '[]')); } catch (e) {}
   const rank = g => { const i = ORDER.indexOf(g); return i < 0 ? ORDER.length : i; }, nameOf = k => { const t = things.find(x => x.key === k); return t ? t.name : k; };
   function drawList() { const q = $('find').value.trim().toLowerCase(), box = $('things'); box.innerHTML = ''; let n = 0, ui = false; const groups = new Map();
@@ -68,8 +68,8 @@
     catch (e) { if (mine === seq) $('card').innerHTML = `<h2>${esc(nameOf(key))}</h2><p class="bad">The card could not be read: ${esc(e.message)}</p>`; } }
   const ruleRow = r => `<div class="rule${r.off ? ' off' : ''}">${esc(RuleWords.say(r))}${r.off ? ' <span class="pill">off</span>' : ''}${r.note ? `<div class="n">${esc(r.note)}</div>` : ''}${r.broken ? `<div class="bad small">no longer fits the game: ${esc(r.broken)}</div>` : ''}</div>`;
   const fold = (title, n, inner) => n ? `<details><summary>${esc(title)} <span class="c">${n}</span></summary>${inner}</details>` : '';
-  function render(c, live) { const L = c.look; let h = `<h2>${esc(c.name)}</h2>`, said = c.about; if (said.toLowerCase().startsWith(c.name.toLowerCase())) said = said.slice(c.name.length).replace(/^[:,]\s*/, ''); if (said) h += `<div class="muted">${esc(said)}</div>`; if (c.groups.length) h += `<div class="small muted">${c.groups.map(esc).join(' · ')}</div>`;
-    if (live && (live.hp != null || (live.status && live.status.length))) h += `<div class="now"><b>The one you clicked:</b> ${live.hp != null ? `health ${live.hp}${live.maxhp != null ? ' / ' + live.maxhp : ''}` : ''}${live.status && live.status.length ? ' · ' + live.status.map(esc).join(', ') : ''}</div>`;
+  function render(c, live) { const L = c.look; let h = `<h2>${esc(c.name)}</h2>`, said = c.about; if (said.toLowerCase().startsWith(c.name.toLowerCase())) said = said.slice(c.name.length).replace(/^[:,.]\s*/, ''); if (said) h += `<div class="muted">${esc(said)}</div>`; if (c.groups.length) h += `<div class="small muted">${c.groups.map(esc).join(' · ')}</div>`;
+    const status = live && live.status ? [].concat(live.status).filter(Boolean) : []; if (live && (live.hp != null || status.length)) h += `<div class="now"><b>The one you clicked:</b> ${live.hp != null ? `health ${live.hp}${live.maxhp != null ? ' / ' + live.maxhp : ''}` : ''}${status.length ? ' · ' + status.map(esc).join(', ') : ''}</div>`;
     if (c.ui) { h += '<div id="words"></div><h3>Its own rules</h3>' + (c.rules.own.length ? c.rules.own.map(ruleRow).join('') : '<div class="muted small">None yet. Say above what should happen when it is clicked or appears.</div>') + fold(`Rules from its group`, c.rules.group.length, c.rules.group.map(ruleRow).join('')) + fold('Rules for everything', c.rules.all.length, c.rules.all.map(ruleRow).join('')); return h; }
     h += '<h3>Look</h3>';
     if (!L) h += '<div class="muted small">It has no model or sprite of its own: the game draws it in code.</div>';
