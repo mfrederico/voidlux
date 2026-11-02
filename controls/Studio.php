@@ -7,6 +7,7 @@
  *   POST /studio/ways/<slug> { text, key }    where a change could go and what each way costs; nothing starts (lib/ChangeBox.php)
  *   POST /studio/change/<slug> { way, text, key, values? }    starts it
  *   POST /studio/words/<slug> { texts }    which of these words can be changed directly      POST /studio/wording/<slug> { old, new, site, key }    changes them (lib/GameWords.php)
+ *   GET /studio/work/<slug>    what is running and what waits on a person, and what this game still needs to work here
  *   GET /studio/timeline/<slug>    everything that changed      POST /studio/undo/<slug> { id }    undoes one entry (lib/Timeline.php)
  */
 namespace app;
@@ -40,6 +41,20 @@ class Studio extends BaseControls\Control {
     public function wording($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $b = $this->getJsonInput() ?? [];
         try { Flight::jsonSuccess(GameWords::change((string) $g->slug, (string) ($b['old'] ?? ''), (string) ($b['new'] ?? ''), (string) ($b['site'] ?? ''), (string) ($this->member->username ?: $this->member->email), (string) ($b['key'] ?? ''))); }
+        catch (\InvalidArgumentException $e) { Flight::jsonError($e->getMessage(), 400); } catch (\RuntimeException $e) { Flight::jsonError($e->getMessage(), 409); }
+    }
+    public function work($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $slug = (string) $g->slug;
+        $d = GameStore::dir($slug); $art = GameStore::artState($slug); $q = GameStore::studioDir($slug) . '/art-queue.jsonl'; $queued = is_file($q) ? count(array_filter(array_map('trim', file($q)))) : 0;
+        $props = array_values(array_filter(Rules::proposals($slug), fn($p) => in_array($p['state'], ['reading', 'proposed', 'building', 'failed'], true)));
+        $revisions = []; if (is_file(Cast::path($slug))) foreach (Cast::waitingRevisions($slug) as $k => $w) $revisions[] = ['key' => $k, 'file' => $w['file']];
+        $brief = (string) $g->brief; $v = Rules::vocab($slug); $tasks = GameStore::tasks($slug);
+        Flight::jsonSuccess(['artists' => (int) ($art['working'] ?? ($art['busy'] ? 1 : 0)), 'queued' => $queued, 'proposals' => $props, 'revisions' => $revisions,
+            'setup' => ['brief' => trim($brief) !== '' && $brief !== 'A small game on the VoidLux kit.', 'planned' => count($tasks) > 0 || (bool) GameStore::soaks($slug), /* a game that has been played has been built, task list or not */ 'subjects' => $v ? count((array) $v['subjects']) : 0]]);
+    }
+    public function setup($params = []): void { // the first run's one paid step that is not building: teach the game to answer the Studio
+        if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        try { $r = Rules::wire((string) $g->slug, (int) $this->member->id, "Give every subject a short \"name\" a person would use, and begin its \"about\" with it (\"Subject names\" in ../../kit/AGENTS.md). So the Studio can work with this game (\"Opening in the Studio\", \"Picking in the Studio\", \"Words in the Studio\" and \"Rules about the interface\" in ../../kit/AGENTS.md; games/lonelycat/js/forge-pick.js is an example): add js/forge-pick.js, after main.js in index.html, with window.forgePick answering { key: <subject key>, x, y, r } at a point of the canvas through this game's own drawing transform, window.forgeScenes with a few useful places to jump to, and ForgeWords.wrap for any text function of its own. Declare the title, pause and game over scenes as subjects screen:<scene>, group ui, with screen-open and screen-close in the vocabulary (Game.go sends them)."); Flight::jsonSuccess(['queued' => !empty($r['queued'])]); }
         catch (\InvalidArgumentException $e) { Flight::jsonError($e->getMessage(), 400); } catch (\RuntimeException $e) { Flight::jsonError($e->getMessage(), 409); }
     }
     public function timeline($params = []): void {

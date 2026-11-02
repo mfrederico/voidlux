@@ -61,6 +61,8 @@ const Game = {
           const facts = {}; for (const k of Object.keys(d.fields || {}).slice(0, 8)) if (['string', 'number', 'boolean'].includes(typeof d.fields[k])) facts[k] = typeof d.fields[k] === 'number' ? Math.round(d.fields[k] * 100) / 100 : d.fields[k];
           return [{ key: 'thing:' + kind.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').slice(0, 50), title: nice.charAt(0).toUpperCase() + nice.slice(1), kind: 'In the game (' + base + ')', about: '', facts, x: at.x, y: at.y, r: Math.max(16, d.r || 16) }]; })())
         .concat([{ key: 'screen:' + this.state, title: 'The ' + this.state + ' screen', kind: 'A screen', texts: words ? words.lines().map(l => ({ label: 'Words', value: l.value, site: l.site })) : [], x: this.W / 2, y: CFG.H / 2, r: this.W / 2, rect: { x: 0, y: 0, w: this.W, h: CFG.H } }]); };
+    // the Studio's Jump to: each scene by default; a game can set richer ones (a boss, a night) after boot. They run on a test copy with an empty save
+    window.forgeScenes = Object.keys(this.scenes).filter(n => !/_resume$/.test(n)).map(n => ({ id: n, label: n.charAt(0).toUpperCase() + n.slice(1).replace(/[-_]+/g, ' '), go: () => this.go(n) }));
     window.forgePlay = () => { if (this.state !== (o.start || 'title') || !this.scenes.play || Save.load()) return null; this.go('play'); return 'Started a new run.'; };
     let last = performance.now();
     const step = dt => { this.time += dt; if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 30); for (const m of this.msgs) m.t -= dt; if (this.msgs.length && this.msgs[0].t <= -1) this.msgs.shift(); if (Input.bot && this.scene.bot) this.scene.bot(dt); this.scene.update(dt); };
