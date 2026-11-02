@@ -1,4 +1,4 @@
-// VoidLux kit: the producer's notes. Alt+P (or the forge's Note button) pauses the game and lets you point at anything on
+// VoidLux kit: the producer's notes. Alt+N (or the forge's Note button) pauses the game and lets you point at anything on
 // the screen: hover highlights the nearest thing the game knows about, a click opens a small dialog anchored to it, and
 // the note (what you clicked, where, in which scene, a screenshot crop, your words) goes to the forge, which keeps them
 // until you send a batch to the builder. Self-contained DOM: works for games on the kit (Game/Draw/Input) and for games
@@ -15,7 +15,7 @@ const Notes = {
   init() {
     this.canvas = document.getElementById('game'); if (!this.canvas) return;
     this.slug = (location.pathname.match(/\/games\/([a-z0-9-]+)\//) || [])[1] || (typeof Game !== 'undefined' ? Game.id : 'game');
-    window.addEventListener('keydown', e => { if (e.altKey && e.code === 'KeyP') { e.preventDefault(); this.toggle(); } else if (e.code === 'Escape' && this.open) { e.preventDefault(); this.close(); } }, true);
+    window.addEventListener('keydown', e => { if (e.altKey && e.code === 'KeyN') { e.preventDefault(); e.stopImmediatePropagation(); this.toggle(); } /* first, and only: a game's own N (a centipede's title starts a new run with it, forgetting the saved one) must never see this */ else if (e.code === 'Escape' && this.open) { e.preventDefault(); this.close(); } }, true);
     window.addEventListener('message', e => { const m = e.data || {}; if (m.type === 'forge:notes') { if (m.on) this.start(); else this.close(); } else if (m.type === 'forge:notes-list') { this.known = Array.isArray(m.notes) ? m.notes : []; if (this.open) this.pins(); } });
     this.canvas.addEventListener('touchstart', e => { if (e.touches.length === 3) { e.preventDefault(); this.toggle(); } else if (this.open && this.picking && e.touches.length === 1) { e.preventDefault(); const t = e.touches[0]; this._tp = { x: t.clientX, y: t.clientY }; } }, { passive: false });
     // on touch there is no hover: the first tap shows the ring on what it would pick (with its name), a second tap near it confirms
@@ -26,9 +26,9 @@ const Notes = {
       this._armed = at; this.hover = what; this.ring(at, !!what); this.confirmAt(at, what, p);
     }, { passive: false });
     this.style(); this.flushQueue();
-    // the on-screen way in, for touch and for anyone who does not know Alt+P: only when the forge is around (the Play tab's
+    // the on-screen way in, for touch and for anyone who does not know Alt+N: only when the forge is around (the Play tab's
     // frame, or the tab it opened), never in a game opened on its own and never in a published build (publish drops this file)
-    if (this.forge() || new URLSearchParams(location.search).get('notes') === '1') { const b = this.btn = document.createElement('button'); b.className = 'vl-notes-btn'; b.type = 'button'; b.innerHTML = '✎'; b.title = 'Save a note: pause and point at something (Alt+P). Drag it out of your way.'; b.setAttribute('aria-label', 'Save a note'); document.body.appendChild(b); this.placeBtn(b); }
+    if (this.forge() || new URLSearchParams(location.search).get('notes') === '1') { const b = this.btn = document.createElement('button'); b.className = 'vl-notes-btn'; b.type = 'button'; b.innerHTML = '✎'; b.title = 'Save a note: pause and point at something (Alt+N). Drag it out of your way.'; b.setAttribute('aria-label', 'Save a note'); document.body.appendChild(b); this.placeBtn(b); }
   },
   // the note button: a small mark that fades while you play, wakes under a finger, and stays where you drag it (on this device). A tap opens a note; a drag only moves it
   placeBtn(b) { const KEY = 'voidlux.notes.btn'; let pos = null; try { pos = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) {} const put = (x, y) => { const w = b.offsetWidth || 34, h = b.offsetHeight || 34; b.style.left = Math.max(0, Math.min(innerWidth - w, x * innerWidth - w / 2)) + 'px'; b.style.top = Math.max(0, Math.min(innerHeight - h, y * innerHeight - h / 2)) + 'px'; }; pos = pos && pos.x != null ? pos : { x: 0.97, y: 0.28 }; put(pos.x, pos.y); addEventListener('resize', () => put(pos.x, pos.y));
@@ -140,10 +140,11 @@ const Notes = {
   send(build, text) {
     if (!text) { const ta = this.dlg && this.dlg.querySelector('textarea'); if (ta) { ta.placeholder = 'Say something about it first.'; ta.focus(); } return; }
     const note = Object.assign({ slug: this.slug, text, build }, this.picked);
+    try { const t = window.forgePick && window.forgePick(this.picked.x, this.picked.y)[0]; if (t) note.thing = t.key; } catch (e) { console.error(e); } // what it points at, so notes about one thing can be found together
     let delivered = false;
     try { const f = this.forge(); if (f) { f.postMessage({ type: 'forge:note', note }, '*'); delivered = true; } } catch (e) {}
     if (!delivered) { try { const q = JSON.parse(localStorage.getItem(this.KEY) || '[]'); q.push(note); localStorage.setItem(this.KEY, JSON.stringify(q.slice(-50))); } catch (e) {} }
-    this.toast(delivered ? (build ? 'sent to the build' : 'note saved') : 'note queued: open the game from the forge to deliver it');
+    this.toast(delivered ? (build ? 'sent to the build' : `note saved · ${this.known.filter(n => n.state === 'open').length + 1} waiting to send`) : 'note queued: open the game from the forge to deliver it');
     this.dlg.remove(); this.dlg = null; this.picking = true; this.picked = null; this.wireOff();
   },
   // the confirm button beside an aimed ring on touch screens

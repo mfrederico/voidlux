@@ -44,7 +44,7 @@ $slug = $game['slug'];
 </section>
 
 <section class="vl-pane on" id="pane-play">
-  <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="reloadPlay()">Reload</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('fps=1')">Profiler</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('bot=1')">Autopilot</button><button class="btn btn-sm btn-primary" onclick="noteMode()" id="noteBtn" title="pause the game and point at what should change (Alt+P inside the game)">Note mode</button><a class="btn btn-sm btn-outline-secondary" href="/games/<?= h($slug) ?>/" target="_blank" onclick="playTab = window.open(this.href, 'play-<?= h($slug) ?>'); return false;" title="full screen in its own tab; notes made there still reach this page (on a phone: a three-finger tap opens note mode)">Play in a tab</a></div>
+  <div class="vl-toolbar"><button class="btn btn-sm btn-outline-secondary" onclick="reloadPlay()">Reload</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('fps=1')">Profiler</button><button class="btn btn-sm btn-outline-secondary" onclick="playWith('bot=1')">Autopilot</button><button class="btn btn-sm btn-primary" onclick="noteMode()" id="noteBtn" title="pause the game and point at what should change (Alt+N inside the game)">Note mode</button><a class="btn btn-sm btn-outline-secondary" href="/games/<?= h($slug) ?>/" target="_blank" onclick="playTab = window.open(this.href, 'play-<?= h($slug) ?>'); return false;" title="full screen in its own tab; notes made there still reach this page (on a phone: a three-finger tap opens note mode)">Play in a tab</a></div>
   <iframe class="vl-frame" id="playFrame" allow="autoplay; fullscreen"></iframe>
   <div class="vl-notes-strip" id="notesStrip"></div>
   <form class="vl-compose vl-compose-play" data-chat><textarea placeholder="Tell the builder what to do…"></textarea><div class="btns"><button type="submit" class="btn btn-primary" title="<?= h($costs['chat']) ?>">Send</button></div></form>
@@ -85,7 +85,7 @@ $slug = $game['slug'];
 </section>
 
 <section class="vl-pane" id="pane-notes">
-  <div class="vl-toolbar"><span>Producer's notes: everything anyone pointed at in note mode (Play → Note mode, or Alt+P in the game). Check the ones to hand to the builder in one batch.</span></div>
+  <div class="vl-toolbar"><span>Producer's notes: everything anyone pointed at in note mode (Play → Note mode, or Alt+N in the game). Check the ones to hand to the builder in one batch.</span></div>
   <details class="vl-card mb-3 vl-newnote"><summary class="vl-h2 mt-0" style="cursor:pointer">✎ New note <span class="vl-meta">(no need to run the game)</span></summary>
     <form id="newNoteForm" class="vl-form mt-2" enctype="multipart/form-data">
       <label>The note <textarea name="text" rows="3" placeholder="What should change, be added or be checked? A picture helps: a sketch, a reference, a screenshot." required maxlength="4000"></textarea></label>
@@ -288,6 +288,7 @@ const FOLDER = { open: 'awaiting verdict', sent: '✓ sent to build', done: 'scr
 document.getElementById('notesFolders').onclick = e => { const b = e.target.closest('button'); if (b) { notesFolder = b.dataset.folder; renderNotes(); } };
 let playTab = null;
 function gameWindows() { const w = []; try { if (playTab && !playTab.closed) w.push(playTab); } catch (e) { playTab = null; } const f = $('playFrame'); if (f.contentWindow) w.push(f.contentWindow); return w; }
+addEventListener('keydown', e => { if (e.altKey && e.code === 'KeyN' && e.target !== document.getElementById('playFrame')) { e.preventDefault(); noteMode(); } });
 function noteMode() { const ws = gameWindows(); if (!ws.length) return; ws[0].postMessage({ type: 'forge:notes', on: true }, '*'); try { ws[0].focus(); } catch (e) {} }
 window.addEventListener('message', async e => {
   const m = e.data || {};
@@ -311,7 +312,7 @@ function renderNotes() {
         <div class="vl-comments">${(n.comments || []).map(c => `<div class="vl-comment"><b>${Forge.esc(c.by)}</b> ${Forge.esc(c.text)}${c.mine ? ` <a href="#" onclick="noteComment(${n.id}, null, ${c.id}); return false;" title="delete">✕</a>` : ''}</div>`).join('')}
           <form class="vl-comment-form" onsubmit="noteComment(${n.id}, this.text.value); this.text.value = ''; return false;"><input name="text" placeholder="add a comment: refine it, argue with it…" maxlength="4000"><button class="btn btn-sm btn-outline-secondary" type="submit">Comment</button></form></div>
         <div class="vl-note-actions">${n.state !== 'done' ? `<button class="btn btn-sm btn-outline-secondary" onclick="noteState(${n.id}, 'done')" title="move it to the scrapyard">Scrap</button>` : ''}${n.state !== 'open' ? `<button class="btn btn-sm btn-outline-secondary" onclick="noteState(${n.id}, 'open')" title="back to awaiting verdict">Back to verdict</button>` : ''}${n.state === 'done' ? `<button class="btn btn-sm btn-outline-secondary" onclick="noteState(${n.id}, 'delete')" title="gone for good">Delete</button>` : ''}</div></div></div>`).join('')
-    : `<div class="vl-kv">${filt === 'open' ? 'Nothing awaiting a verdict. In Play, press Note mode (or Alt+P in the game), click a thing, say what should change.' : filt === 'sent' ? 'Nothing has gone to the builder yet.' : 'The scrapyard is empty.'}</div>`;
+    : `<div class="vl-kv">${filt === 'open' ? 'Nothing awaiting a verdict. In Play, press Note mode (or Alt+N in the game), click a thing, say what should change.' : filt === 'sent' ? 'Nothing has gone to the builder yet.' : 'The scrapyard is empty.'}</div>`;
   notesButtons();
   const open = NOTES.filter(n => n.state === 'open'), rest = NOTES.filter(n => n.state !== 'open').slice(0, 6);
   $('notesStrip').innerHTML = open.length ? open.slice(0, 8).map(n => `<span class="vl-chip" title="${Forge.esc(n.text)}">${n.shot ? `<img src="/game/noteshot/${slug}?id=${n.id}" alt="">` : ''}${Forge.esc(n.text.slice(0, 40))}</span>`).join('') + ` <a href="#notes" onclick="showTab('notes')">${open.length} awaiting verdict → Notes</a>` : '';

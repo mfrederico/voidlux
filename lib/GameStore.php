@@ -166,7 +166,7 @@ class GameStore {
             'memberId' => (int) $g->memberId, 'teamId' => (int) $g->teamId, 'createdAt' => (string) $g->createdAt, 'publishedAt' => (string) $g->publishedAt, 'publishedUrl' => (string) $g->publishedUrl,
             'lastSoak' => $soaks[0] ?? null, 'head' => trim(self::git($d, ['rev-parse', '--short', 'HEAD'])[1]), 'dirty' => trim(self::git($d, ['status', '--porcelain', '--untracked-files=no'])[1]) !== '', 'lastReview' => self::agentState($slug)['lastReview'] ?? null, 'checkpoints' => count(self::checkpoints($slug)), 'lastCommit' => mb_substr(trim($log), 0, 140),
             'tasks' => ['done' => count(array_filter($tasks, fn($t) => $t['done'])), 'total' => count($tasks)], 'taskList' => $tasks,
-            'agent' => self::agentState($slug), 'playUrl' => '/games/' . $slug . '/', 'cover' => self::cover($slug), 'gif' => self::gif($slug),
+            'agent' => self::agentState($slug), 'openNotes' => Bean::count('gamenote', "game_id = ? AND state = 'open'", [(int) $g->id]), 'playUrl' => '/games/' . $slug . '/', 'cover' => self::cover($slug), 'gif' => self::gif($slug),
         ];
     }
     public static function tasks(string $slug): array {

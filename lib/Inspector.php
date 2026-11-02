@@ -15,11 +15,11 @@ class Inspector {
         $keys = $v ? array_keys($v['subjects']) : ($cast ? array_keys($cast) : array_keys($sprites));
         $out = [];
         foreach ($keys as $k) { $s = $v['subjects'][$k] ?? []; $c = $cast[$k] ?? [];
-            $out[] = ['key' => $k, 'name' => self::name($k, (string) ($s['about'] ?? $c['what'] ?? '')), 'ui' => in_array('ui', (array) ($s['groups'] ?? []), true), 'about' => (string) ($s['about'] ?? $c['what'] ?? ''), 'group' => (string) (($s['groups'] ?? [])[0] ?? $c['group'] ?? 'other'), 'thumb' => self::thumb($slug, $k, $c), 'rules' => (int) ($own[$k] ?? 0)]; }
+            $out[] = ['key' => $k, 'name' => (string) ($s['name'] ?? '') ?: self::name($k, (string) ($s['about'] ?? $c['what'] ?? '')), 'ui' => in_array('ui', (array) ($s['groups'] ?? []), true), 'about' => (string) ($s['about'] ?? $c['what'] ?? ''), 'group' => (string) (($s['groups'] ?? [])[0] ?? $c['group'] ?? 'other'), 'thumb' => self::thumb($slug, $k, $c), 'rules' => (int) ($own[$k] ?? 0)]; }
         usort($out, fn($a, $b) => [$a['group'], $a['key']] <=> [$b['group'], $b['key']]);
         return $out;
     }
-    /** What a person calls it: the first clause of what the game says about it when that is short, else the key in words. */
+    /** What a person calls it, when the vocabulary gives no name: the first clause of what the game says about it when that is short, else the key in words. */
     private static function name(string $key, string $about): string {
         $first = trim((string) preg_split('/[:,]\s/', $about, 2)[0]);
         if ($first !== '' && mb_strlen($first) <= 32) return mb_strtoupper(mb_substr($first, 0, 1)) . mb_substr($first, 1);
@@ -42,7 +42,7 @@ class Inspector {
         $built = []; $forAll = 0; $cat = Rules::builtin($slug);
         foreach ((array) ($cat['systems'] ?? []) as $s) foreach ((array) ($s['items'] ?? []) as $it) { $w = (string) ($it['who'] ?? '');
             if ($w === '*') { $forAll++; continue; } if ($w === $key || (str_starts_with($w, 'group:') && in_array(substr($w, 6), $groups, true))) $built[(string) ($s['name'] ?? $s['id'] ?? '')][] = $it; }
-        return ['key' => $key, 'name' => self::name($key, (string) ($subject['about'] ?? $item['what'] ?? '')), 'ui' => in_array('ui', $groups, true), 'about' => (string) ($subject['about'] ?? $item['what'] ?? ''), 'groups' => array_values(array_diff($groups, ['ui'])), 'look' => self::look($slug, $key, $item, $sprite), 'rules' => $rules, 'built' => $built, 'builtForAll' => $forAll, 'listed' => (bool) $cat,
+        return ['key' => $key, 'name' => (string) ($subject['name'] ?? '') ?: self::name($key, (string) ($subject['about'] ?? $item['what'] ?? '')), 'ui' => in_array('ui', $groups, true), 'about' => (string) ($subject['about'] ?? $item['what'] ?? ''), 'groups' => array_values(array_diff($groups, ['ui'])), 'look' => self::look($slug, $key, $item, $sprite), 'rules' => $rules, 'built' => $built, 'builtForAll' => $forAll, 'listed' => (bool) $cat,
             'bestiary' => self::resistances($slug, (array) ($subject['bestiary'] ?? [])), 'wired' => $v !== null,
             'open' => ['rules' => "/editor/sprites/?game={$slug}&who=" . rawurlencode($key) . '#events', 'model' => $item ? "/editor/sprites/?game={$slug}&item=" . rawurlencode($key) . '#3d' : null, 'bestiary' => !empty($subject['bestiary']) ? "/game/gameeditor/{$slug}?e=bestiary&game={$slug}" : null]];
     }

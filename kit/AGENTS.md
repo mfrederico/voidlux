@@ -16,7 +16,7 @@ every game in mind and never for one game's convenience.
 | kit-draw.js | `Draw` | `Draw.text` (outlined), `Draw.ink`, `circle`, `ring`, `roundRect`, `glow`, `bar`, `button`; the sprite atlas: `Draw.sprite(key, radius, paint)` draws once, `Draw.stamp(S, x, y, angle)` stamps every frame; pictures from files: `Draw.load(key, 'assets/x.png')` once, `Draw.pic(key, x, y, w, h, angle)` every frame |
 | kit-input.js | `Input`, `TOUCH` | `Input.down(code)`, `Input.once(code)`, `Input.axis()` (WASD / arrows / joystick / gamepad), `Input.mouse`, `Input.taps`, `Input.tapped(rect)`; `TOUCH.buttons` is the phone's button cluster (data: edit it at boot) |
 | kit-game.js | `Game`, `Settings`, `Save` | the loop, scenes, canvas fit, camera, messages, shake, profiler; settings and one saved run per game in localStorage |
-| kit-notes.js | `Notes` | the producer's note mode: Alt+P pauses, a click picks the nearest thing with an x and y in the game's state and opens a note dialog; notes reach the forge. A game can answer better with `Game.describe = (x, y) => [{ label, fields }]` |
+| kit-notes.js | `Notes` | the producer's note mode: Alt+N pauses, a click picks the nearest thing with an x and y in the game's state and opens a note dialog; notes reach the forge. A game can answer better with `Game.describe = (x, y) => [{ label, fields }]` |
 | kit-test.js | `Test` | `?soak=N&fast=K` plays the game with the scenes' bots and reports errors, fps and scenes visited; `Test.assert(cond, what)` |
 
 ## The shape of a game
@@ -61,6 +61,8 @@ the scene's `enter`. Check `Music.has(name)` before relying on a song that may n
 **Picking in the Studio.** Inspect asks `window.forgePick(x, y)` what is under a point of the canvas, nearest first. A thing in the world is `{key, x, y, r}`, with `key` a subject of the game. A part of a screen (a menu's card, a button) is `{key: 'perk:swift', title, about, kind, facts, rect: {x, y, w, h}, x, y, r}`: the key is `word:name`, and `title` makes the Studio show it from what the game says. `Game.boot` picks the current screen by default, so a click on any screen selects something; a game should list its screens' elements too.
 
 **Rules about the interface.** Events are not only for things in play. A game can declare its screens, buttons and cards as subjects (`screen:perk`, `button:perk-leave`, `perk:swift`, group `ui`) and send `screen-open`, `screen-close`, `appear`, `click`, `hover`, `hover-end` and `bought`; centipede-3d's `js/ui-events.js` is the example, its hit test being the rectangles the screens record. A UI drawn flat on the canvas has no 3D object to raycast, so three.js pointer libraries do not apply to it. Only send a key `Events.has(key)` knows.
+
+**Subject names.** A subject may carry `name`, what the Studio calls it (`"name": "Thorn hedge"`). Without one it uses the first clause of `about`, so start `about` with the name.
 
 **Words in the Studio.** A pick may carry `texts: [{label, value, site}]`, edited on its card. The server replaces the words in the one string literal of `js/*.js` that holds them (`site`, `js/file.js:line`, says which line drew them), and refuses text built from values or written in several places it cannot tell apart. Keep on-screen words as whole literals, not assembled from pieces, and they stay directly editable. `ForgeWords` in kit-notes.js records what a screen draws; `Game.boot` wraps `Draw.text` with it, and a game with its own text function calls `ForgeWords.wrap`.
 
