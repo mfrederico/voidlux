@@ -53,7 +53,7 @@ const Game = {
     // A saved run stays with the game's own title screen, which knows how to continue it: a game with a better answer sets its own.
     // the Studio's inspect: a game that says nothing about what is under the pointer can still have its screen picked and talked about
     const words = typeof ForgeWords !== 'undefined' ? ForgeWords : null;
-    if (words) { words.wrap(Draw, () => Draw.ctx); window.forgeCapture = () => words.capture(() => { if (this.scene && this.scene.draw) this.scene.draw(Draw.ctx); }); (window.forgeLive = window.forgeLive || {}).text = (a, b) => { if (!a) return ['the words']; words.say(a, b); return []; }; }
+    if (words) { words.wrap(Draw, () => Draw.ctx); words.wrap(Draw, () => Draw.ctx, 'ink'); window.forgeCapture = () => words.capture(() => { if (this.scene && this.scene.draw) this.scene.draw(Draw.ctx); }); (window.forgeLive = window.forgeLive || {}).text = (a, b) => { if (!a) return ['the words']; words.say(a, b); return []; }; }
     if (!window.forgePick) window.forgePick = (x, y) => { const hit = r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h, lines = words ? words.lines().filter(l => hit(l.rect)) : [];
       return lines.map(l => ({ key: 'text:' + l.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 50), title: '"' + l.value + '"', kind: 'Words on the screen', texts: [{ label: 'Words', value: l.value, site: l.site }], rect: l.rect, x: l.rect.x + l.rect.w / 2, y: l.rect.y + l.rect.h / 2, r: l.rect.w / 2 }))
         // a thing in the game's own state, found without the game saying anything: named from its kind, read as it stands

@@ -191,11 +191,11 @@ window.Notes = Notes; // a const is not on window: the forge's Studio reaches it
 const ForgeWords = (() => { let cap = null, seen = [], live = [];
   const site = () => { for (const l of String(new Error().stack).split('\n').slice(2)) { if (/kit-notes\.js/.test(l)) continue; const m = /\/(js\/[A-Za-z0-9_.-]+\.js)[^:\s]*:(\d+):\d+/.exec(l); if (m) return m[1] + ':' + m[2]; } return ''; };
   return {
-    wrap(owner, ctxOf) { const orig = owner.text; owner.text = function (s, x, y, size, color, align) { if (live.length && typeof s === 'string') for (const [a, b] of live) if (s.includes(a)) s = s.split(a).join(b);
+    wrap(owner, ctxOf, fn = 'text') { const orig = owner[fn]; if (typeof orig !== 'function') throw new Error('ForgeWords.wrap: there is no ' + fn + ' to watch'); owner[fn] = function (s, x, y, size, color, align) { if (live.length && typeof s === 'string') for (const [a, b] of live) if (s.includes(a)) s = s.split(a).join(b);
         const r = orig.apply(this, [s].concat([].slice.call(arguments, 1)));
         if (cap && typeof s === 'string' && /\p{L}/u.test(s)) { const c = ctxOf(), w = c.measureText(s).width, t = c.getTransform(), k = t.a || 1, px = t.a * x + t.c * y + t.e, py = t.b * x + t.d * y + t.f, sz = (size || 16) * k, left = align === 'center' ? px - w * k / 2 : align === 'right' ? px - w * k : px; cap.push({ value: s, site: site(), rect: { x: left, y: py - sz / 2, w: w * k, h: sz } }); }
         return r; }; },
-    capture(draw) { cap = []; try { draw(); } finally { seen = cap; cap = null; } return seen.length; },
+    capture(draw) { cap = []; try { draw(); } finally { const one = new Set(); seen = cap.filter(l => { const k = l.value + '|' + Math.round(l.rect.x) + '|' + Math.round(l.rect.y); if (one.has(k)) return false; one.add(k); return true; }); cap = null; } return seen.length; }, // one drawing helper may call another: one line of words
     lines() { return seen; },
     /** New words now: shown wherever drawn text holds the old ones, and in the tables given, which the game reads as it draws. */
     say(old, now, tables) { live = live.filter(x => x[0] !== old); live.push([old, now]); const walk = o => { for (const k of Object.keys(o)) { if (typeof o[k] === 'string') { if (o[k].includes(old)) o[k] = o[k].split(old).join(now); } else if (o[k] && typeof o[k] === 'object' && !Array.isArray(o[k])) walk(o[k]); else if (Array.isArray(o[k])) walk(o[k]); } }; for (const t of tables || []) walk(t); },
