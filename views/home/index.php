@@ -5,6 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VoidLux — games forged in the void</title>
 <meta name="description" content="VoidLux: arcade games summoned from the void. Play what the void has made, or summon a game of your own.">
+<link rel="canonical" href="https://voidlux.com/">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#060608">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="VoidLux">
+<meta property="og:title" content="VoidLux — games forged in the void">
+<meta property="og:description" content="Write a brief. The forge plans it, builds it, plays it, reviews it, and ships it to its own URL.">
+<meta property="og:url" content="https://voidlux.com/">
+<meta property="og:image" content="https://voidlux.com/og-voidlux.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The VoidLux VL monogram with the words: games forged in the void">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="VoidLux — games forged in the void">
+<meta name="twitter:description" content="Write a brief. The forge plans it, builds it, plays it, reviews it, and ships it to its own URL.">
+<meta name="twitter:image" content="https://voidlux.com/og-voidlux.png">
 <style>
 /* The front door: a hero with two doors (summon, play) and the shelf of public games, in the void's black and ember. */
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -12,7 +30,8 @@ body { background: #060608; color: #e8e8e8; font-family: 'Courier New', monospac
 a { color: inherit; }
 .header { background: linear-gradient(135deg, #0d0015, #060008); border-bottom: 1px solid rgba(204,102,0,0.3); padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 50; backdrop-filter: blur(10px); }
 .header h1 { font-size: 1.3rem; letter-spacing: 3px; text-transform: uppercase; }
-.header h1 a { text-decoration: none; background: linear-gradient(90deg, #ff6600, #ffcc00, #ff6600); background-size: 200% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: shimmer 3s linear infinite; }
+.header h1 a { text-decoration: none; display: inline-flex; align-items: center; gap: 10px; background: linear-gradient(90deg, #ff6600, #ffcc00, #ff6600); background-size: 200% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: shimmer 3s linear infinite; }
+.header h1 .mark { width: 34px; height: 34px; display: block; filter: drop-shadow(0 0 6px rgba(204,102,0,0.35)); }
 @keyframes shimmer { to { background-position: 200% center; } }
 .nav { display: flex; gap: 24px; align-items: center; }
 .nav a { color: #b0b0b0; text-decoration: none; font-size: 0.75rem; letter-spacing: 2px; text-transform: uppercase; transition: color 0.3s; }
@@ -67,7 +86,7 @@ a { color: inherit; }
 <body>
 
 <div class="header">
-    <h1><a href="/">VoidLux</a></h1>
+    <h1><a href="/"><img class="mark" src="/vl-mark.svg" alt="" width="34" height="34">VoidLux</a></h1>
     <div class="nav">
         <a href="#play">Play</a>
         <?php if (!empty($loggedIn)): ?><a href="/forge">The forge</a><?php else: ?><a href="/auth/login">Sign in</a><?php endif; ?>

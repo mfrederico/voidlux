@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="ember" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffc400"/>
+      <stop offset="0.55" stop-color="#ff7a00"/>
+      <stop offset="1" stop-color="#e04e00"/>
+    </linearGradient>
+    <path id="V" d="M40 80H180V114H148L236 372L324 114H292V80H432V114H400L262 460H210L72 114H40Z"/>
+    <path id="Ls" d="M260 200H390V234H260Z"/>
+    <path id="L" d="M260 200H390V234H360V436H416V404H446V470H290V234H260Z"/>
+  </defs>
+  <g id="mark" transform="translate(16 -6)">
+    <!-- L, under -->
+    <use href="#L" fill="none" stroke="#f3e6c8" stroke-width="40" stroke-linejoin="miter" stroke-miterlimit="6"/>
+    <use href="#L" fill="none" stroke="#060608" stroke-width="22" stroke-linejoin="miter" stroke-miterlimit="6"/>
+    <use href="#L" fill="url(#ember)"/>
+    <!-- V, over -->
+    <use href="#V" fill="none" stroke="#f3e6c8" stroke-width="40" stroke-linejoin="miter" stroke-miterlimit="6"/>
+    <use href="#V" fill="none" stroke="#060608" stroke-width="22" stroke-linejoin="miter" stroke-miterlimit="6"/>
+    <use href="#V" fill="url(#ember)"/>
+    <!-- L top serif weaves back over the V arm -->
+    <use href="#Ls" fill="none" stroke="#f3e6c8" stroke-width="40" stroke-linejoin="miter" stroke-miterlimit="6"/>
+    <use href="#Ls" fill="none" stroke="#060608" stroke-width="22" stroke-linejoin="miter" stroke-miterlimit="6"/>
+    <use href="#Ls" fill="url(#ember)"/>
+  </g>
+</svg>
