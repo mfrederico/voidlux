@@ -10,12 +10,12 @@
             "enabled_at": "2026-11-01T21:07:19+00:00"
         },
         "consent": {
-            "version": "1.4.2",
+            "version": "1.4.3",
             "enabled": true,
             "source": "control-plane catalog",
-            "installed_at": "2026-10-31T16:27:58+00:00",
-            "hash": "sha256:6f030aaba370bda3f29cae7cbd50774f6708182c9dc04c8450b539b6663854bd",
-            "enabled_at": "2026-10-31T16:27:58+00:00"
+            "installed_at": "2026-11-03T16:19:31+00:00",
+            "hash": "sha256:f41d94b1bfaf4e9a26186e798290d24e6713d96fa821c315f64454b0941394bf",
+            "enabled_at": "2026-11-03T16:19:31+00:00"
         },
         "googleanalytics": {
             "version": "1.2.1",

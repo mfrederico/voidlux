@@ -34,6 +34,7 @@ class Banner {
 #tcConsent p{margin:0 0 .75rem}
 #tcConsent a{color:inherit;text-decoration:underline}
 #tcConsent .tc-btns{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}
+#tcConsent [hidden]{display:none!important}
 #tcConsent button{padding:.55rem .4rem;border-radius:.5rem;border:1px solid currentColor;background:transparent;color:inherit;font:inherit;font-weight:600;cursor:pointer}
 #tcConsent button:hover{background:rgba(127,127,127,.15)}
 #tcConsent .tc-pick{margin-bottom:.75rem}
