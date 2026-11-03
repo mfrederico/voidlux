@@ -13,16 +13,16 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="VoidLux">
 <meta property="og:title" content="VoidLux — games forged in the void">
-<meta property="og:description" content="Write a brief. The forge plans it, builds it, plays it, reviews it, and ships it to its own URL.">
+<meta property="og:description" content="Write a brief and VoidLux forges the game: an AI planner designs it, Claude Code builds it, a headless soak plays it, an independent reviewer judges it, and it ships to its own URL.">
 <meta property="og:url" content="https://voidlux.com/">
-<meta property="og:image" content="https://voidlux.com/og-voidlux.png">
+<meta property="og:image" content="https://voidlux.com/og-voidlux.png?v=2">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="The VoidLux VL monogram with the words: games forged in the void">
+<meta property="og:image:alt" content="The VoidLux VL monogram with the words: Write a brief. Ship a game.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="VoidLux — games forged in the void">
-<meta name="twitter:description" content="Write a brief. The forge plans it, builds it, plays it, reviews it, and ships it to its own URL.">
-<meta name="twitter:image" content="https://voidlux.com/og-voidlux.png">
+<meta name="twitter:description" content="Write a brief and VoidLux forges the game: an AI planner designs it, Claude Code builds it, a headless soak plays it, an independent reviewer judges it, and it ships to its own URL.">
+<meta name="twitter:image" content="https://voidlux.com/og-voidlux.png?v=2">
 <style>
 /* The front door: a hero with two doors (summon, play) and the shelf of public games, in the void's black and ember. */
 * { margin: 0; padding: 0; box-sizing: border-box; }
