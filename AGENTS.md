@@ -696,7 +696,7 @@ after 5 minutes and says so. That is not a fault in the page; say in your reply 
   ritual after every change, and never start a browser of your own instead.
 - Do not edit this plugin's files; it is installed from the catalog.
 
-## Concept: consent (1.4.2)
+## Concept: consent (1.4.3)
 
 Cookie consent the browser enforces. Classes `app\concepts\consent\{Guard, Policy, Inventory, Known, Groups, Choice, Banner, Settings}`;
 controller `Consent` (`/consent` for admins, `/consent/cookies` public). The plugin adds its own menu entry, footer link and banner.

@@ -1,6 +1,6 @@
 {
   "name": "consent",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "kind": "capability",
   "icon": "cookie",
   "title": "Cookie consent",
