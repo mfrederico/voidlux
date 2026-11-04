@@ -14,9 +14,9 @@ class Timeline {
 
     /** Commits what a page just changed, only those paths (the builder may be mid-run). The commit's id, or null when nothing changed. */
     public static function record(string $slug, string $title, string $kind, string $who, array $paths, string $key = '', bool $coalesce = false): ?string {
-        $d = GameStore::dir($slug); $paths = array_values(array_filter($paths, fn($p) => file_exists("$d/$p") || GameStore::git($d, ['ls-files', '--error-unmatch', '--', $p])[0] === 0));
+        $d = GameStore::dir($slug); // only paths git has something to say about: a folder the game ignores (versions/) is not an error, and not a change
+        $paths = array_values(array_filter($paths, fn($p) => (file_exists("$d/$p") || GameStore::git($d, ['ls-files', '--error-unmatch', '--', $p])[0] === 0) && trim(GameStore::git($d, ['status', '--porcelain', '--', $p])[1]) !== ''));
         if (!$paths) return null;
-        if (trim(GameStore::git($d, array_merge(['status', '--porcelain', '--'], $paths))[1]) === '') return null;
         $msg = ['-m', mb_substr($title, 0, 200), '-m', "Studio-Kind: {$kind}\nStudio-Who: " . preg_replace('/\s+/', ' ', $who) . ($key !== '' ? "\nStudio-Key: {$key}" : '')];
         for ($try = 0; $try < 6; $try++) { // a builder's commit holds git's lock for a moment
             GameStore::git($d, array_merge(['add', '--'], $paths));

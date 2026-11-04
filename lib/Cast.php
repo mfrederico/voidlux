@@ -299,7 +299,7 @@ class Cast {
     public static function waitingRevisions(string $slug): array {
         $c = self::read($slug); $out = [];
         foreach (GameStore::listSketches($slug)['jobs'] as $j) { // newest first
-            if (($j['kind'] ?? '') !== 'remodel' || isset($out[$j['key']]) || empty($j['result']['ok']) || empty($j['result']['files'][0])) continue;
+            if (($j['kind'] ?? '') !== 'remodel' || array_key_exists($j['key'], $out) || empty($j['result']['ok']) || empty($j['result']['files'][0])) continue;
             if (($c['items'][$j['key']]['kept'] ?? '') === $j['id']) { $out[$j['key']] = null; continue; } // the newest is kept already
             $out[$j['key']] = ['id' => $j['id'], 'file' => (string) $j['result']['files'][0]];
         }

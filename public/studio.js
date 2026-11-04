@@ -242,7 +242,7 @@
     if (next === 0) go.innerHTML = `<a href="/game/view/${esc(SLUG)}#design">Write it in the Concept</a><div class="small muted">The builder plans from it.</div>`;
     else if (next === 1) go.innerHTML = '<div class="small muted">The button is just below: it says what it costs first.</div>';
     else { go.innerHTML = `<button type="button" id="setupRun">Teach the Studio…</button>`; $('setupRun').onclick = () => { go.innerHTML = `<p class="small" style="margin:0 0 4px">The builder wires events into the game and tells the Studio what is where. Nothing changes in how it plays.</p><p class="cost small" style="margin:0 0 6px">Lonely Cat's cost $3.73, at about 1400 lines. A bigger game can cost more.</p><div class="ch-go" style="margin:0"><button type="button" class="go" id="setupYes"${framed ? ' disabled' : ''}>Start</button><button type="button" id="setupNo">Not now</button></div>`; $('setupNo').onclick = () => drawSetup(S); $('setupYes').onclick = async () => { $('setupYes').disabled = true; try { await Forge.api(`/studio/setup/${SLUG}`, {}); go.innerHTML = '<span class="busy-badge" role="status">The builder is on it</span>'; } catch (x) { go.innerHTML = `<p class="bad small">${esc(x.message)}</p>`; } }; }; } }
-  loadWork();
+  loadWork(); addEventListener('focus', () => { loadWork(); loadTimeline(); }); // something done in another tab (the 3D page, the Events tab) shows when you come back
 
   // ---- the Builder tab: what it is doing now, a Stop, what is planned, and what it said, from the game's own events ----
   const WORD = { plan: 'Planning', build: 'Building', task: 'Building', soak: 'Playtesting', fix: 'Fixing what the playtest found', review: 'Reviewing', rework: 'Reworking what the review found' }; let blog = [], busyWord = '';
