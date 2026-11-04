@@ -96,6 +96,7 @@ const Events = (() => {
     clock: () => (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000, rng: Math.random, trace,
     action(name, fn) { impl[name] = fn; }, state(name, fn) { readers[name] = fn; }, target(name, fn) { finders[name] = fn; },
     async load(base = 'assets/') {
+      soundActions();
       (window.forgeLive = window.forgeLive || {}).rule = () => Events.load(base); // the Studio: rules changed, read them again without restarting
       const get = async f => { const r = await fetch(base + f, { cache: 'no-cache' }); if (r.status === 404) return null; if (!r.ok) throw new Error(`${base}${f} answered ${r.status}`); return r.json(); };
       const v = await get('events-vocab.json'); if (!v) { console.error(`Events: ${base}events-vocab.json is missing: the game has not declared its events`); return; }
@@ -121,5 +122,19 @@ const Events = (() => {
     rules() { return rules.slice(); }, vocab() { return vocab; }, builtins() { return BUILTIN; },
   };
   if (typeof window !== 'undefined') window.__EVENTS = E;
+  // Sound and music a rule can play, the same in every game that has the kit's SFX and Music (a game's own action of the same name wins).
+  // Cheap to call from any event: a sound repeated within 0.1 s is skipped, so "on every hit" in a crowd cannot turn into a roar.
+  function soundActions() { if (typeof SFX === 'undefined') return; const last = {}, own = n => !!impl[n];
+    if (!own('PlaySound')) impl.PlaySound = (ctx, a) => { const k = String(a.sound || ''), now = E.clock(); if (!k || now - (last[k] || -1) < 0.1) return; last[k] = now; SFX.play(k); };
+    if (typeof Music === 'undefined') return; const theme = n => { if (!Music.THEMES || !Music.THEMES[n]) { console.error(`Events: there is no music theme "${n}" (themes: ${Object.keys(Music.THEMES || {}).join(', ')})`); return false; } return true; };
+    if (!own('PlayMusic')) impl.PlayMusic = (ctx, a) => { if (theme(a.theme)) Music.start(a.theme); };
+    if (!own('Fanfare')) impl.Fanfare = (ctx, a) => { if (!theme(a.theme)) return; if (Music.playFanfare) Music.playFanfare([a.theme]); else Music.fanfare(a.theme); };
+    if (!own('StopMusic')) impl.StopMusic = () => Music.stop();
+    if (!own('MusicMood')) impl.MusicMood = (ctx, a) => Music.setMood(+a.semitones || 0, a.fever === 'yes' || a.fever === true);
+    // a moment of silence that leaves the player's own sound setting alone: the master volume dips and comes back as it was
+    // its own gain after the master, so nothing that sets the player's volume can undo it, and the volume itself is never touched
+    if (!own('Quiet')) impl.Quiet = (ctx, a) => { const m = SFX.master, c = SFX.ctx; if (!m || !c) return; let q = SFX.quietGain; if (!q || q.context !== c) { q = c.createGain(); m.disconnect(); m.connect(q); q.connect(c.destination); SFX.quietGain = q; }
+      const secs = Math.max(0.1, +a.seconds || 2), t = c.currentTime, g = q.gain; g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, t + 0.08); g.setValueAtTime(0, t + secs); g.linearRampToValueAtTime(1, t + secs + 0.2); };
+  }
   return E;
 })();
