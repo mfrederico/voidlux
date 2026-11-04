@@ -1164,7 +1164,7 @@ class GameStore {
         }
         // a game linked to GitHub (GameGit) is pushed with its own deploy key, by whoever publishes; a game with only an origin
         // remote (an older setup) is pushed with the server's key. A failure is said, not fatal
-        [, $remote] = self::git($d, ['remote', 'get-url', 'origin']); $remote = trim($remote);
+        [$rrc, $remote] = self::git($d, ['remote', 'get-url', 'origin']); $remote = $rrc === 0 ? trim($remote) : ''; // no origin: nothing to push to, which is not an error
         if (GameGit::link($slug) && (string) self::cfg('publish_push', '1') === '1') { try { $p = GameGit::push($slug); $out['pushed'] = $p['text']; } catch (\Throwable $e) { $out['pushed'] = 'push failed: ' . $e->getMessage(); self::emit($slug, 'error', ['text' => 'publish: ' . $out['pushed']]); } }
         elseif ($remote !== '' && !str_contains($remote, 'fatal') && (string) self::cfg('publish_push', '1') === '1') { [, $br] = self::git($d, ['rev-parse', '--abbrev-ref', 'HEAD']); $br = trim($br) ?: 'main';
             [$prc, $po] = self::git($d, ['push', '-q', 'origin', $br]); $out['pushed'] = $prc === 0 ? "pushed {$br} to {$remote}" : 'push failed: ' . mb_substr(trim($po), -300);
