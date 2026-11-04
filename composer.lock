@@ -369,6 +369,51 @@
             "time": "2026-04-30T15:47:40+00:00"
         },
         {
+            "name": "lbuchs/webauthn",
+            "version": "v2.2.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/lbuchs/WebAuthn.git",
+                "reference": "20adb4a240c3997bd8cac7dc4dde38ab0bea0ed1"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/lbuchs/WebAuthn/zipball/20adb4a240c3997bd8cac7dc4dde38ab0bea0ed1",
+                "reference": "20adb4a240c3997bd8cac7dc4dde38ab0bea0ed1",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=8.0.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "lbuchs\\WebAuthn\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Lukas Buchs",
+                    "role": "Developer"
+                }
+            ],
+            "description": "A simple PHP WebAuthn (FIDO2) server library",
+            "homepage": "https://github.com/lbuchs/webauthn",
+            "keywords": [
+                "Authentication",
+                "webauthn"
+            ],
+            "support": {
+                "issues": "https://github.com/lbuchs/WebAuthn/issues",
+                "source": "https://github.com/lbuchs/WebAuthn/tree/v2.2.0"
+            },
+            "time": "2024-07-04T07:17:40+00:00"
+        },
+        {
             "name": "mailgun/mailgun-php",
             "version": "v4.5.3",
             "source": {
@@ -2114,17 +2159,18 @@
         },
         {
             "name": "tiknix/runtime",
-            "version": "v2.0.0-alpha.268",
+            "version": "v2.0.0-alpha.270",
             "source": {
                 "type": "git",
                 "url": "/var/www/html/default/tiknix-runtime",
-                "reference": "149ab8315d62fadf4cd1f7b7458ee40aa94f6cde"
+                "reference": "43066ff6379be01013a04de6bc994224465dc049"
             },
             "require": {
                 "bacon/bacon-qr-code": "^3.0",
                 "fastmcphp/fastmcphp": "^0.1",
                 "flightphp/core": "^3.19.3",
                 "gabordemooij/redbean": "^5.7",
+                "lbuchs/webauthn": "^2.2",
                 "mailgun/mailgun-php": "^4.0",
                 "monolog/monolog": "^3.5",
                 "nyholm/psr7": "^1.5",
@@ -2156,7 +2202,7 @@
                 "MIT"
             ],
             "description": "The tiknix runtime: what every tiknix app runs on — routing, the Bean ORM wrapper, members and auth, the admin, connections and connectors, pipelines, the MCP server, plugins (concepts), and the agent runner. An app requires it and overrides a file by putting its own at the same path (see Paths, Overrides).",
-            "time": "2026-11-04T01:16:21+00:00"
+            "time": "2026-11-04T02:17:41+00:00"
         },
         {
             "name": "translatify/translatify",
