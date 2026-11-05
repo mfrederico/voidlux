@@ -28,15 +28,17 @@ button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--a
 .top h1 { font-size: 20px; margin: 0; }
 .top .status { color: var(--muted); font-size: 13px; margin-left: auto; }
 .main { display: grid; grid-template-columns: 250px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
-.side { grid-row: 1 / span 2; border-right: 1px solid var(--line); overflow: auto; padding: 12px; display: grid; gap: 16px; align-content: start; }
+.side { grid-row: 1 / span 2; border-right: 1px solid var(--line); overflow-y: auto; overflow-x: hidden; padding: 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; min-width: 0; }
+.side section { min-width: 0; } /* everything in the panel fits its width: nothing runs on under the stage */
 .side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; }
-.list { display: grid; gap: 4px; }
-.list button { text-align: left; display: flex; justify-content: space-between; gap: 8px; }
+.list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.list button { text-align: left; display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
+.list button small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .list button small { color: var(--muted); }
 .list button.on small { color: inherit; }
 .part { padding-left: calc(11px + var(--depth, 0) * 12px) !important; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; } .chips button { min-height: 28px; padding: 2px 8px; font-size: 13px; }
-.add { display: flex; gap: 6px; } .add input { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; }
+.add { display: flex; gap: 6px; min-width: 0; } .add input { flex: 1 1 0; width: 0; min-width: 0; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; }
 .opts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
 .opts input[type=number] { width: 64px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 7px; background: transparent; }
 .stage { position: relative; background: var(--stage); min-height: 260px; }
