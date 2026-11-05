@@ -86,22 +86,28 @@ const Cast = {
   },
   detail(k, it) {
     const d = document.createElement('div'); d.className = 'cdetail'; const mine = this.jobs.filter(j => j.kind === 'remodel' && j.key === k), revs = mine.slice(0, 3); const fj = mine.find(j => j.id === this.focus); if (fj && !revs.includes(fj)) revs.push(fj);
-    d.innerHTML = `<div class="cview"></div><div class="cform">
-      <label>What it is <input data-f="what" value="${esc(it.what || '')}"></label>
-      <label>For the modeller <textarea data-f="note" rows="3">${esc(it.note || '')}</textarea></label>
-      <div class="row"><label>Size, world units <input data-f="size" type="number" step="any" min="0.01" value="${+it.size || 1}" style="width:90px"></label><button data-a="save">Save</button></div>
-      <div class="muted small">Replaces: <span class="mono">${esc(it.replaces || '?')}</span>${it.moves ? ` · the game animates: ${esc(it.moves)}` : ''}${it.file ? ` · <span class="mono">assets/${esc(it.file)}</span>${it.recipe ? ', with its recipe' : ', no recipe kept (a revision remakes it)'}` : ''}</div>
-      ${it.file ? `<label>Change one thing <textarea data-f="rev" rows="2" placeholder="e.g. bigger eyes, antennae curled forward"></textarea></label><div class="row"><button class="primary" data-a="revise">Revise &gt;&gt;</button></div>` : ''}
+    /* the model turning on the left with what to do next beside it; what it is, the modeller's note and its size fold away;
+       revisions and earlier versions run as tiles across the whole card under both */
+    d.innerHTML = `<div class="cside"><div class="cview"></div></div><div class="cform">
+      <div><b class="mono">${esc(k)}</b> <span class="muted small">${esc(it.what || '')}</span></div>
+      ${it.file ? `<label>Change one thing <textarea data-f="rev" rows="2" placeholder="e.g. bigger eyes, antennae curled forward"></textarea></label><div class="row"><button class="primary" data-a="revise">Revise &gt;&gt;</button>${/\.glb$/.test(it.file) ? `<a class="btnlink" href="/editor/pose/?game=${encodeURIComponent(GAME)}&key=${encodeURIComponent(k)}" title="turn its limbs in 3D: key poses for each motion">Pose it</a>` : ''}</div>` : ''}
+      <div class="row"><button data-a="make">${it.file ? 'Make it again from scratch' : 'Make it'}</button><button data-a="drop" title="out of the cast; a kept model file stays in assets/">Drop from the cast</button></div>
+      <details class="cmore"><summary>What it is, the modeller's note, its size</summary><div class="cform">
+        <label>What it is <input data-f="what" value="${esc(it.what || '')}"></label>
+        <label>For the modeller <textarea data-f="note" rows="3">${esc(it.note || '')}</textarea></label>
+        <div class="row"><label>Size, world units <input data-f="size" type="number" step="any" min="0.01" value="${+it.size || 1}" style="width:90px"></label><button data-a="save">Save</button></div>
+        <div class="muted small">Replaces: <span class="mono">${esc(it.replaces || '?')}</span>${it.moves ? ` · the game animates: ${esc(it.moves)}` : ''}${it.file ? ` · <span class="mono">assets/${esc(it.file)}</span>${it.recipe ? ', with its recipe' : ', no recipe kept (a revision remakes it)'}` : ''}</div>
+      </div></details></div>
       <div class="crevs"></div>
-      <div class="cvers"></div>
-      <div class="row"><button data-a="make">${it.file ? 'Make it again from scratch' : 'Make it'}</button><button data-a="drop" title="out of the cast; a kept model file stays in assets/">Drop from the cast</button></div></div>`;
+      <div class="cvers"></div>`;
     const v = d.querySelector('.cview'), ff = fj && fj.result && fj.result.ok && (fj.result.files || [])[0];
-    if (ff) { this.view(v, fj.base + ff); const cap = document.createElement('div'); cap.className = 'muted small'; cap.textContent = `showing the revision “${(fj.note || '').slice(0, 80)}”`; v.after(cap); }
+    if (ff) { this.view(v, fj.base + ff); const cap = document.createElement('div'); cap.className = 'muted small'; cap.textContent = `showing the revision “${(fj.note || '').slice(0, 80)}”`; d.querySelector('.cside').appendChild(cap); }
     else if (it.file) this.view(v, ASSET(it.file) + '?v=' + (it.v || '')); else v.innerHTML = `<div class="muted small">No model yet: the game draws its stand-in.${it.state === 'making' ? ' The artist is making one.' : ''}</div>`;
     const R = d.querySelector('.crevs');
+    if (revs.length) R.innerHTML = '<div class="chd small"><b>Revisions</b></div>';
     for (const j of revs) {
       const r = document.createElement('div'); r.className = 'crev' + (j.id === this.focus ? ' on' : ''); const ok = j.result && j.result.ok && (j.result.files || [])[0], kept = it.kept === j.id;
-      r.innerHTML = `<div class="small"><b>Revision:</b> ${esc(j.note || '')}<div class="muted">${!j.result ? 'the artist is on it…' : !j.result.ok ? 'failed: ' + esc(j.result.error || '') : kept ? '<b>in use</b>: this is the model the game has now' : esc(j.result.note || '')}</div></div>`;
+      r.innerHTML = `<div class="small ctext"><div class="clamp" title="${esc(j.note || '')}">${esc(j.note || '')}</div><div class="muted clamp" title="${esc((j.result && (j.result.note || j.result.error)) || '')}">${!j.result ? 'the artist is on it…' : !j.result.ok ? 'failed: ' + esc(j.result.error || '') : kept ? '<b>in use</b>: this is the model the game has now' : esc(j.result.note || '')}</div></div>`;
       if (ok && !kept) { const im = document.createElement('img'); glbThumb(im, j.base + ok, 96); im.title = 'see it turning'; im.style.cursor = 'pointer'; im.onclick = () => this.view(v, j.base + ok); r.prepend(im);
         const b = document.createElement('div'); b.className = 'row'; b.innerHTML = '<button class="primary' + (j.id === this.focus ? ' pulse' : '') + '" title="this revision replaces the model in the game; the one in use now is kept under Earlier versions">Use this model</button><button>Discard</button>'; const [kb, db] = b.querySelectorAll('button');
         kb.onclick = async () => { kb.disabled = db.disabled = true; kb.textContent = 'Switching…'; this.focus = j.id;
@@ -110,9 +116,9 @@ const Cast = {
       R.appendChild(r);
     }
     const H = it.history || [], VB = d.querySelector('.cvers');
-    if (H.length) { VB.innerHTML = `<div class="small"><b>Earlier versions</b> <span class="muted">the models ${esc(k)} used before; any can be put back</span></div>`;
+    if (H.length) { VB.innerHTML = `<div class="chd small"><b>Earlier versions</b> <span class="muted">the models ${esc(k)} used before; any can be put back</span></div>`;
       for (const e of H) { const r = document.createElement('div'); r.className = 'crev'; const when = new Date((e.until || 0) * 1000);
-        r.innerHTML = `<img alt="" title="see it turning" style="cursor:pointer"><div class="small">${esc(e.note || 'an earlier model')}<div class="muted">in use until ${when.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div></div><div class="row"><button>Use this model</button></div>`;
+        r.innerHTML = `<img alt="" title="see it turning" style="cursor:pointer"><div class="small ctext"><div class="clamp" title="${esc(e.note || '')}">${esc(e.note || 'an earlier model')}</div><div class="muted">in use until ${when.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div></div><div class="row"><button>Use this model</button></div>`;
         const im = r.querySelector('img'), url = `/games/${GAME}/thumbs/${k}-${e.v}.webp`; showStrip(im, url); im.onclick = () => this.view(v, `/games/${GAME}/versions/${k}/${e.v}.glb`);
         const ub = r.querySelector('button'); ub.onclick = async () => { ub.disabled = true; ub.textContent = 'Switching…'; await this.act({ do: 'use', key: k, v: e.v }, `${k}: the earlier version is back in use; the one it replaced is now under Earlier versions`); };
         VB.appendChild(r); } }
