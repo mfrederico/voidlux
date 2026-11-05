@@ -558,6 +558,34 @@ class GameStore {
         $h = self::cleanHints($b); $dir = self::dir($slug) . '/assets'; if (!is_dir($dir)) mkdir($dir, 0775, true);
         self::writeAtomic("$dir/$key.rig-hints.json", json_encode($h, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"); self::git(self::dir($slug), ['add', "assets/$key.rig-hints.json"]); return $h;
     }
+    /** A 3D model's key poses (the pose editor, kit/editor/pose): assets/<key>.poses.json, which kit/js/kit-poses.js plays.
+     *  { motions: { run: { loop, seconds, keys: [ { t: 0..1, rot: { part: [x, y, z] } } ] } } } — each rot an offset from the part's rest, in radians.
+     *  No file is a model nobody has posed yet: an empty set of motions. */
+    public static function readPoses(string $slug, string $key): array {
+        if (!preg_match(self::SPRITE_KEY, $key)) throw new \InvalidArgumentException('not a sprite key');
+        $f = self::dir($slug) . "/assets/$key.poses.json"; if (!is_file($f)) return ['motions' => (object) []];
+        $p = json_decode((string) file_get_contents($f), true); if (!is_array($p)) throw new \RuntimeException("assets/$key.poses.json is not JSON; fix or remove it");
+        if (empty($p['motions'])) $p['motions'] = (object) []; return $p;
+    }
+    public static function savePoses(string $slug, string $key, array $b): array {
+        if (!preg_match(self::SPRITE_KEY, $key)) throw new \InvalidArgumentException('not a sprite key');
+        $p = self::cleanPoses($b); $dir = self::dir($slug) . '/assets'; if (!is_dir($dir)) mkdir($dir, 0775, true);
+        self::writeAtomic("$dir/$key.poses.json", json_encode($p, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION) . "\n"); self::git(self::dir($slug), ['add', "assets/$key.poses.json"]); return $p;
+    }
+    public static function cleanPoses(array $b): array {
+        $out = []; $part = '/^[A-Za-z][A-Za-z0-9_.-]{0,40}$/D';
+        foreach (array_slice((array) ($b['motions'] ?? []), 0, 24, true) as $name => $m) {
+            if (!preg_match(self::SPRITE_KEY, (string) $name)) throw new \InvalidArgumentException("\"{$name}\" is not a motion name: lower case letters, digits, - and _");
+            if (!is_array($m)) continue; $keys = [];
+            foreach (array_slice((array) ($m['keys'] ?? []), 0, 32) as $k) { if (!is_array($k)) continue; $rot = [];
+                foreach ((array) ($k['rot'] ?? []) as $n => $r) { if (!preg_match($part, (string) $n) || !is_array($r) || count($r) !== 3) throw new \InvalidArgumentException("a key of {$name} turns \"{$n}\" by something that is not [x, y, z]");
+                    $rot[(string) $n] = array_map(fn($v) => round(max(-7.0, min(7.0, (float) $v)), 4), array_values($r)); }
+                $keys[] = ['t' => round(max(0.0, min(1.0, (float) ($k['t'] ?? 0))), 4), 'rot' => $rot ?: (object) []]; }
+            usort($keys, fn($a, $c) => $a['t'] <=> $c['t']);
+            $out[(string) $name] = ['loop' => !empty($m['loop']), 'seconds' => round(max(0.05, min(30.0, (float) ($m['seconds'] ?? 1))), 3), 'keys' => $keys];
+        }
+        return ['motions' => $out ?: (object) []];
+    }
     public static function cleanHints(array $b): array {
         $plan = in_array($b['plan'] ?? '', ['biped', 'quadruped', 'winged', 'serpent', 'other'], true) ? (string) $b['plan'] : 'biped'; $joints = [];
         foreach (array_slice((array) ($b['joints'] ?? []), 0, 60) as $j) { if (!is_array($j)) continue; $n = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($j['name'] ?? '')); if ($n === '') continue;

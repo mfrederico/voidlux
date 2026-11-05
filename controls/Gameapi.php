@@ -82,6 +82,14 @@ class Gameapi extends BaseControls\Control {
             $this->raw(GameStore::readHints($g->slug, (string) $this->getParam('key', '')));
         } catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); } catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 500); }
     }
+    public function poses($params = []): void { // a 3D model's key poses: GET ?key=, POST { key, motions }
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
+        try {
+            if ($this->post()) { $b = $this->getJsonInput() ?? []; $k = (string) ($b['key'] ?? ''); $p = GameStore::savePoses($g->slug, $k, $b);
+                Timeline::record($g->slug, 'Posed ' . $k . (!empty($b['what']) ? ': ' . mb_substr((string) $b['what'], 0, 80) : ''), 'art', $this->who(), ["assets/$k.poses.json"], $k, true); $this->raw(['ok' => true] + $p); }
+            $this->raw(GameStore::readPoses($g->slug, (string) $this->getParam('key', '')));
+        } catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); } catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 500); }
+    }
     /** POST /gameapi/ux/<slug>: the editors' ergonomics events (kit/editor/ux.js), appended to .studio/ux.jsonl for the retrospective.
      *  No CSRF token (sent by sendBeacon as a page closes); sign-in and access to the game are required, and only known fields are kept. */
     public function ux($params = []): void {

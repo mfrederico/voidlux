@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poses · VoidLux Studio</title>
+<style>
+/* Layout: the 3D figure fills the stage; the motions and the parts sit beside it (under it on a phone); the strip of key poses
+   runs under the stage. Click a limb, drag the rings to turn it: that is a key pose at the strip's playhead. */
+:root {
+  --bg: #f5f2fa; --surface: #ffffff; --ink: #1d1530; --muted: #6b6080; --line: #e2dbee; --accent: #9a6400; --focus: #7a3cff;
+  --on-bg: #ffdcae; --on-fg: #7a3b00; --stage: #ece6f5; --key: #7a3cff; --danger: #b3261e;
+  --body: system-ui, -apple-system, "Segoe UI", sans-serif; --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #120a1e; --surface: #1b1428; --ink: #f1ecfa; --muted: #a59bb8; --line: #2e2440; --accent: #ffd166; --focus: #b48cff;
+  --on-bg: #5a3a12; --on-fg: #ffd9a8; --stage: #0d0716; --key: #b48cff; --danger: #ff8a80; color-scheme: dark;
+} }
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 14px; line-height: 1.45; display: grid; grid-template-rows: auto 1fr; }
+button, input, select { font: inherit; color: inherit; }
+button { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 11px; cursor: pointer; min-height: 34px; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+@media (prefers-color-scheme: dark) { button.primary { color: #1b1428; } }
+button:disabled { opacity: .45; cursor: default; }
+button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.top { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.top h1 { font-size: 20px; margin: 0; }
+.top .status { color: var(--muted); font-size: 13px; margin-left: auto; }
+.main { display: grid; grid-template-columns: 250px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
+.side { grid-row: 1 / span 2; border-right: 1px solid var(--line); overflow: auto; padding: 12px; display: grid; gap: 16px; align-content: start; }
+.side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; }
+.list { display: grid; gap: 4px; }
+.list button { text-align: left; display: flex; justify-content: space-between; gap: 8px; }
+.list button small { color: var(--muted); }
+.list button.on small { color: inherit; }
+.part { padding-left: calc(11px + var(--depth, 0) * 12px) !important; }
+.add { display: flex; gap: 6px; } .add input { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; }
+.opts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+.opts input[type=number] { width: 64px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 7px; background: transparent; }
+.stage { position: relative; background: var(--stage); min-height: 260px; }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.hint { position: absolute; left: 12px; bottom: 10px; right: 12px; color: var(--muted); font-size: 12.5px; pointer-events: none; }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--muted); }
+.empty div { max-width: 46ch; } .empty b { color: var(--ink); display: block; font-size: 16px; margin-bottom: 4px; }
+.strip { border-top: 1px solid var(--line); padding: 10px 16px 12px; display: grid; gap: 8px; }
+.track { position: relative; height: 34px; }
+.track input[type=range] { position: absolute; inset: 0; width: 100%; margin: 0; }
+.keys { position: absolute; left: 8px; right: 8px; top: 0; height: 12px; pointer-events: none; }
+.keys i { position: absolute; top: 0; width: 12px; height: 12px; margin-left: -6px; transform: rotate(45deg); background: var(--key); border-radius: 2px; }
+.keys i.here { outline: 2px solid var(--accent); }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.row .sep { flex: 1; }
+.at { font-family: var(--mono); font-size: 12.5px; color: var(--muted); min-width: 9ch; }
+.danger { color: var(--danger); }
+@media (max-width: 760px) {
+  body { grid-template-rows: auto auto; }
+  .main { grid-template-columns: 1fr; grid-template-rows: 56vh auto auto; }
+  .side { grid-row: 3; border-right: 0; border-top: 1px solid var(--line); }
+  .stage { grid-row: 1; } .strip { grid-row: 2; }
+}
+</style>
+</head><body>
+<header class="top">
+  <h1>Poses</h1>
+  <label>Model <select id="modelSel" aria-label="Which 3D model"></select></label>
+  <span class="status" id="status" role="status">Loading…</span>
+  <button id="saveBtn" class="primary" disabled title="Save the poses into the game (Ctrl+S)">Save poses</button>
+</header>
+<div class="main">
+  <aside class="side">
+    <section>
+      <h2>Motions</h2>
+      <div class="list" id="motions"></div>
+      <div class="add" style="margin-top:6px"><input id="newMotion" placeholder="a new motion, e.g. run" aria-label="Name a new motion" pattern="[a-z][a-z0-9_\-]{0,40}"><button id="addMotion">Add</button></div>
+      <div class="opts" id="motionOpts" style="margin-top:8px">
+        <label><input type="checkbox" id="loop"> loops</label>
+        <label>lasts <input type="number" id="seconds" min="0.05" max="30" step="0.05"> s</label>
+        <button id="delMotion" class="danger" title="Remove this motion and its key poses">Remove</button>
+      </div>
+    </section>
+    <section>
+      <h2>Parts</h2>
+      <div class="list" id="parts"></div>
+      <div class="row" style="margin-top:6px"><button id="resetPart" disabled title="Put this part back as it stands at rest, in this key pose">Rest this part</button></div>
+    </section>
+  </aside>
+  <div class="stage" id="stage">
+    <div class="empty" id="empty" hidden></div>
+    <div class="hint" id="hint">Click a limb, then drag a ring to turn it. Drag the background to look around, scroll to zoom.</div>
+  </div>
+  <div class="strip">
+    <div class="track"><div class="keys" id="keys"></div><input type="range" id="scrub" min="0" max="1" step="0.01" value="0" aria-label="Where in the motion"></div>
+    <div class="row">
+      <button id="playBtn" title="Play the motion (Space)">▶ Play</button>
+      <span class="at" id="at">0.00</span>
+      <button id="prevKey" title="The key pose before (,)">◀ key</button><button id="nextKey" title="The key pose after (.)">key ▶</button>
+      <span class="sep"></span>
+      <button id="addKey" title="Make a key pose here from what the figure shows now">Add a key pose here</button>
+      <button id="copyKey" title="Copy the pose shown">Copy</button><button id="pasteKey" title="Paste the copied pose here" disabled>Paste</button>
+      <button id="mirrorKey" title="Swap left and right: the pose shown, mirrored, here (for the other half of a stride)">Mirror L↔R</button>
+      <button id="delKey" class="danger" disabled title="Remove the key pose here">Remove key</button>
+    </div>
+  </div>
+</div>
+<script src="/kit/editor/ux.js"></script><!-- what a person meets here, for the forge's hourly retrospective -->
+<script src="/kit/js/kit-poses.js"></script>
+<script type="importmap">{ "imports": { "three": "/assets/three-0.160.0/three.module.min.js", "three/addons/": "/assets/three-0.160.0/addons/" } }</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+/* the forge's API for this game: /gameapi/<verb>/<slug>, writes with X-CSRF-TOKEN */
+const Q = new URLSearchParams(location.search), GAME = Q.get('game') || '', API = '/gameapi'; let CSRF = '';
+const apiUrl = (verb, q) => `${API}/${verb}/${encodeURIComponent(GAME)}${q ? '?' + new URLSearchParams(q) : ''}`;
+const apiHeaders = () => ({ 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest' });
+const $ = id => document.getElementById(id), esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const status = (t, err) => { $('status').textContent = t; $('status').style.color = err ? 'var(--danger)' : ''; };
+document.title = `Poses · ${GAME} · VoidLux Studio`;
+Poses.init(THREE);
+
+/* the stage */
+const stage = $('stage'), renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); renderer.setPixelRatio(Math.min(2, devicePixelRatio)); stage.prepend(renderer.domElement);
+const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(35, 1, 0.01, 100); camera.position.set(1.2, 1.4, 3.6);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x554466, 1.6)); const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(2, 4, 3); scene.add(sun);
+const grid = new THREE.GridHelper(4, 16, 0x9a88b8, 0xc8bcdc); grid.material.transparent = true; grid.material.opacity = 0.5; scene.add(grid);
+const facing = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0.005, 0), 0.9, 0xd08a00, 0.12, 0.07); scene.add(facing); // which way the figure faces in the game
+const orbit = new OrbitControls(camera, renderer.domElement); orbit.target.set(0, 0.9, 0); orbit.enableDamping = true; orbit.update();
+const gizmo = new TransformControls(camera, renderer.domElement); gizmo.setMode('rotate'); gizmo.setSpace('local'); gizmo.setSize(0.8); scene.add(gizmo);
+gizmo.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; if (e.value) { snapshot(); dragging = true; } else { dragging = false; commitPart('turned ' + sel); } });
+gizmo.addEventListener('objectChange', () => { if (dragging) writePart(sel); });
+function fit() { const w = stage.clientWidth, h = stage.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix(); }
+new ResizeObserver(fit).observe(stage);
+
+/* the state: the model, its parts, the poses (the shape of assets/<key>.poses.json) */
+const S = { key: '', model: null, parts: {}, order: [], data: { motions: {} }, motion: '', t: 0, playing: false, dirty: false, copied: null, undo: [], redo: [] };
+let sel = '', dragging = false, outline = null;
+const motion = () => S.data.motions[S.motion];
+const keyAt = (t = S.t) => { const m = motion(); return m ? m.keys.find(k => Math.abs(k.t - t) < 0.005) : null; };
+const r4 = v => Math.round(v * 1e4) / 1e4;
+
+function snapshot() { S.undo.push(JSON.stringify(S.data)); if (S.undo.length > 80) S.undo.shift(); S.redo.length = 0; }
+function undo() { if (!S.undo.length) return; S.redo.push(JSON.stringify(S.data)); S.data = JSON.parse(S.undo.pop()); Poses.set(S.key, S.data); if (!motion()) S.motion = Object.keys(S.data.motions)[0] || ''; touched(); show(); if (typeof UX !== 'undefined') UX.undo && UX.undo(); }
+function redo() { if (!S.redo.length) return; S.undo.push(JSON.stringify(S.data)); S.data = JSON.parse(S.redo.pop()); Poses.set(S.key, S.data); touched(); show(); }
+function touched() { S.dirty = true; $('saveBtn').disabled = false; status('Not saved yet'); }
+
+/* the pose the figure shows now, as offsets from rest, for every part a key names or the figure has turned */
+function currentRot() { const out = {}, q = new THREE.Quaternion(), e = new THREE.Euler();
+  for (const n of S.order) { const p = S.parts[n]; q.copy(p.rest).invert().multiply(p.node.quaternion); if (Math.abs(q.w) > 0.99999) continue; e.setFromQuaternion(q, 'XYZ'); out[n] = [r4(e.x), r4(e.y), r4(e.z)]; }
+  return out; }
+function ensureKey() { // the key pose at the playhead, made from what the figure shows when there is none
+  const m = motion(); if (!m) return null; let k = keyAt(); if (k) return k;
+  k = { t: r4(S.t), rot: currentRot() }; m.keys.push(k); m.keys.sort((a, b) => a.t - b.t); return k; }
+function writePart(n) { const k = ensureKey(); if (!k || !S.parts[n]) return; const p = S.parts[n], q = p.rest.clone().invert().multiply(p.node.quaternion), e = new THREE.Euler().setFromQuaternion(q, 'XYZ');
+  if (Math.abs(q.w) > 0.99999) delete k.rot[n]; else k.rot[n] = [r4(e.x), r4(e.y), r4(e.z)]; }
+function commitPart(what) { touched(); drawKeys(); lastWhat = what; }
+let lastWhat = '';
+
+/* showing: the motion at the playhead, the parts list, the strip */
+function pose() { if (!S.model || dragging) return; if (S.motion && Poses.has(S.key, S.motion)) Poses.apply(S.model, S.key, [[S.motion, S.t, 1]]); else for (const n of S.order) S.parts[n].node.quaternion.copy(S.parts[n].rest); }
+function show() { drawMotions(); drawParts(); drawKeys(); pose(); }
+function drawMotions() {
+  const names = Object.keys(S.data.motions);
+  $('motions').innerHTML = names.length ? names.map(n => { const m = S.data.motions[n]; return `<button data-m="${esc(n)}" class="${n === S.motion ? 'on' : ''}">${esc(n)} <small>${m.keys.length} key${m.keys.length === 1 ? '' : 's'}${m.loop ? ' · loops' : ''}</small></button>`; }).join('')
+    : '<p style="margin:0;color:var(--muted);font-size:13px">No motions yet. Name one below (run, idle, sword…) to start posing it.</p>';
+  $('motions').querySelectorAll('[data-m]').forEach(b => b.onclick = () => { S.motion = b.dataset.m; S.t = 0; $('scrub').value = 0; stop(); show(); });
+  const m = motion(); $('motionOpts').style.display = m ? '' : 'none'; if (m) { $('loop').checked = !!m.loop; $('seconds').value = m.seconds || 1; }
+  for (const id of ['addKey', 'copyKey', 'mirrorKey', 'playBtn', 'prevKey', 'nextKey']) $(id).disabled = !m || !S.model; $('pasteKey').disabled = !m || !S.copied;
+}
+function drawParts() {
+  $('parts').innerHTML = S.order.map(n => { const k = keyAt(), turned = k && k.rot[n]; return `<button class="part ${n === sel ? 'on' : ''}" data-p="${esc(n)}" style="--depth:${S.parts[n].depth}">${esc(n)} <small>${turned ? 'turned' : ''}</small></button>`; }).join('')
+    || '<p style="margin:0;color:var(--muted);font-size:13px">This model has no named parts to turn.</p>';
+  $('parts').querySelectorAll('[data-p]').forEach(b => b.onclick = () => pick(b.dataset.p));
+  $('resetPart').disabled = !sel || !motion();
+}
+function drawKeys() { const m = motion(); $('keys').innerHTML = m ? m.keys.map(k => `<i style="left:${k.t * 100}%" class="${Math.abs(k.t - S.t) < 0.005 ? 'here' : ''}"></i>`).join('') : '';
+  $('at').textContent = S.t.toFixed(2) + (keyAt() ? ' key' : ''); $('delKey').disabled = !keyAt(); drawMotions(); }
+function pick(n) { sel = n && S.parts[n] ? n : ''; if (sel) gizmo.attach(S.parts[sel].node); else gizmo.detach();
+  if (outline) { outline.parent && outline.parent.remove(outline); outline = null; }
+  if (sel) { outline = new THREE.BoxHelper(S.parts[sel].node, 0xd08a00); scene.add(outline); }
+  drawParts(); }
+
+/* picking on the stage: a click (not a drag) on the figure picks the part it hit */
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(); let down = null;
+renderer.domElement.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener('pointerup', e => { if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5 || gizmo.dragging || !S.model) return; down = null;
+  const r = renderer.domElement.getBoundingClientRect(); ptr.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); ray.setFromCamera(ptr, camera);
+  const hit = ray.intersectObject(S.model, true)[0]; if (!hit) { pick(''); return; }
+  let o = hit.object; while (o && !(o.name && S.parts[o.name])) o = o.parent; pick(o ? o.name : ''); });
+
+/* the strip: scrub, play, keys */
+$('scrub').oninput = () => { S.t = +$('scrub').value; stop(); drawKeys(); drawParts(); pose(); };
+let playFrom = 0; function stop() { S.playing = false; $('playBtn').textContent = '▶ Play'; }
+$('playBtn').onclick = () => { if (S.playing) return stop(); S.playing = true; playFrom = performance.now() - S.t * (motion().seconds || 1) * 1000; $('playBtn').textContent = '❚❚ Pause'; };
+const jumpKey = dir => { const m = motion(); if (!m || !m.keys.length) return; const ks = m.keys.map(k => k.t); const t = dir > 0 ? ks.find(x => x > S.t + 0.004) ?? ks[0] : [...ks].reverse().find(x => x < S.t - 0.004) ?? ks[ks.length - 1]; S.t = t; $('scrub').value = t; stop(); drawKeys(); drawParts(); pose(); };
+$('prevKey').onclick = () => jumpKey(-1); $('nextKey').onclick = () => jumpKey(1);
+$('addKey').onclick = () => { if (keyAt()) { status('There is a key pose here already: turn a part to change it.'); return; } snapshot(); ensureKey(); commitPart('a key pose at ' + S.t.toFixed(2)); drawParts(); };
+$('delKey').onclick = () => { const m = motion(), k = keyAt(); if (!k) return; snapshot(); m.keys.splice(m.keys.indexOf(k), 1); commitPart('removed a key pose'); pose(); drawParts(); };
+$('copyKey').onclick = () => { S.copied = currentRot(); $('pasteKey').disabled = false; status('Copied the pose at ' + S.t.toFixed(2)); };
+$('pasteKey').onclick = () => { if (!S.copied) return; snapshot(); const k = ensureKey(); k.rot = JSON.parse(JSON.stringify(S.copied)); commitPart('pasted a pose'); pose(); drawParts(); };
+/* mirror: left and right swap (thighL <-> thighR), and each turn is reflected through the figure's middle (the x-y plane: it faces +x) */
+const twin = n => n.replace(/(L|R|Left|Right|_l|_r|\.L|\.R)$/, s => ({ L: 'R', R: 'L', Left: 'Right', Right: 'Left', _l: '_r', _r: '_l', '.L': '.R', '.R': '.L' }[s]));
+$('mirrorKey').onclick = () => { const cur = currentRot(), out = {}, q = new THREE.Quaternion(), e = new THREE.Euler();
+  for (const [n, r] of Object.entries(cur)) { const to = S.parts[twin(n)] ? twin(n) : n; q.setFromEuler(e.set(r[0], r[1], r[2], 'XYZ')); q.set(-q.x, -q.y, q.z, q.w); e.setFromQuaternion(q, 'XYZ'); out[to] = [r4(e.x), r4(e.y), r4(e.z)]; }
+  snapshot(); const k = ensureKey(); k.rot = out; commitPart('mirrored a pose'); pose(); drawParts(); };
+$('resetPart').onclick = () => { if (!sel) return; snapshot(); const k = ensureKey(); delete k.rot[sel]; commitPart('rested ' + sel); pose(); drawParts(); };
+
+/* motions */
+$('addMotion').onclick = () => { const n = $('newMotion').value.trim().toLowerCase(); if (!/^[a-z][a-z0-9_-]{0,40}$/.test(n)) { status('A motion name is lower case letters, digits, - and _ (e.g. run)', true); return; }
+  if (S.data.motions[n]) { S.motion = n; show(); return; } snapshot(); S.data.motions[n] = { loop: /run|walk|idle|swim|fly|sneak/.test(n), seconds: /run/.test(n) ? 0.6 : 1, keys: [] }; S.motion = n; S.t = 0; $('scrub').value = 0; $('newMotion').value = ''; touched(); show(); };
+$('newMotion').onkeydown = e => { if (e.key === 'Enter') $('addMotion').click(); };
+$('loop').onchange = () => { snapshot(); motion().loop = $('loop').checked; touched(); drawMotions(); pose(); };
+$('seconds').onchange = () => { snapshot(); motion().seconds = Math.max(0.05, Math.min(30, +$('seconds').value || 1)); touched(); };
+$('delMotion').onclick = () => { const m = motion(); if (!m) return; if (m.keys.length && !$('delMotion').dataset.sure) { $('delMotion').dataset.sure = 1; $('delMotion').textContent = `Remove ${S.motion} and its ${m.keys.length} key${m.keys.length === 1 ? '' : 's'}?`; setTimeout(() => { delete $('delMotion').dataset.sure; $('delMotion').textContent = 'Remove'; }, 4000); return; }
+  delete $('delMotion').dataset.sure; $('delMotion').textContent = 'Remove'; snapshot(); delete S.data.motions[S.motion]; S.motion = Object.keys(S.data.motions)[0] || ''; touched(); show(); };
+
+/* saving */
+async function save() { if (!S.dirty) return; $('saveBtn').disabled = true; status('Saving…');
+  try { if (!CSRF) await token(); const r = await fetch(apiUrl('poses'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: S.key, motions: S.data.motions, what: lastWhat }) }); const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'the forge answered ' + r.status); S.dirty = false; status('Saved. The game plays these once its builder has wired them in.'); if (typeof UX !== 'undefined') UX.act('save', S.key);
+    try { parent.postMessage({ forgeSaved: 'poses', key: S.key }, location.origin); } catch (e) {} }
+  catch (e) { status('Not saved: ' + e.message, true); $('saveBtn').disabled = false; } }
+$('saveBtn').onclick = save;
+async function token() { const r = await fetch(apiUrl('token'), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); if (!r.ok) throw new Error('sign in again: the forge answered ' + r.status); CSRF = (await r.json()).token || ''; }
+
+addEventListener('keydown', e => { if (e.target.matches('input, select, textarea')) return;
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); }
+  else if (e.key === ' ' && motion()) { e.preventDefault(); $('playBtn').click(); }
+  else if (e.key === ',') jumpKey(-1); else if (e.key === '.') jumpKey(1);
+  else if (e.key === 'Escape') pick(''); });
+addEventListener('beforeunload', e => { if (S.dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+/* loading: the game's 3D cast, then the chosen model and its poses */
+function noModel(title, text) { $('empty').hidden = false; $('empty').innerHTML = `<div><b>${esc(title)}</b>${esc(text)}</div>`; $('hint').hidden = true; }
+async function loadModel(key) {
+  if (S.dirty && !confirmLeave()) { $('modelSel').value = S.key; return; }
+  S.key = key; S.dirty = false; S.undo.length = S.redo.length = 0; $('saveBtn').disabled = true; pick(''); if (S.model) scene.remove(S.model); S.model = null; S.parts = {}; S.order = []; $('empty').hidden = true; $('hint').hidden = false;
+  const it = cast[key]; status('Loading ' + key + '…');
+  try {
+    /* ?take=<job>/<file>.glb: the artist's new version of this model, looked at before it is kept (the game still has the old one) */
+    const take = key === Q.get('key') && /^[0-9a-f-]{6,40}\/[a-z0-9_.-]{1,60}\.glb$/.test(Q.get('take') || '') ? Q.get('take') : '';
+    const url = take ? `/games/${encodeURIComponent(GAME)}/sketches/${take}` : `/games/${encodeURIComponent(GAME)}/assets/${encodeURIComponent(it.file)}?v=${encodeURIComponent(it.v || Date.now())}`;
+    const [g, poses] = await Promise.all([new GLTFLoader().loadAsync(url),
+      fetch(apiUrl('poses', { key }), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error || 'poses answered ' + r.status); return j; })]);
+    const root = g.scene, box = new THREE.Box3().setFromObject(root), dim = box.getSize(new THREE.Vector3()), s = 1.8 / (Math.max(dim.x, dim.y, dim.z) || 1), c = box.getCenter(new THREE.Vector3());
+    const holder = new THREE.Group(); holder.add(root); root.scale.multiplyScalar(s); root.position.set(-c.x * s, -box.min.y * s, -c.z * s); scene.add(holder); S.model = holder;
+    /* the parts: every named node below the scene, in tree order; a mesh that only carries its parent's look (torso > torso_mesh) is not one */
+    const walk = (o, d) => { for (const ch of o.children) { const geomOnly = ch.isMesh && !ch.children.length && ch.parent !== root && ch.parent.name && ch.name.startsWith(ch.parent.name);
+      if (ch.name && !geomOnly) { S.parts[ch.name] = { node: ch, rest: ch.quaternion.clone(), depth: d }; S.order.push(ch.name); walk(ch, d + 1); } else walk(ch, d); } };
+    walk(root, 0); holder.userData.poseParts = S.parts;
+    S.data = { motions: Array.isArray(poses.motions) ? {} : poses.motions || {} }; for (const m of Object.values(S.data.motions)) m.keys = m.keys || [];
+    Poses.set(key, S.data); S.motion = Object.keys(S.data.motions)[0] || ''; S.t = 0; $('scrub').value = 0;
+    status((take ? 'The artist\'s new version (not in the game yet) · ' : '') + (S.order.length > 1 ? `${S.order.length} parts` : '')); show();
+    if (S.order.length < 2) noModel(`${key} is one solid piece`, 'There are no limbs to turn: it was made as a single mesh. Ask the artist for a new version as separate named parts (torso, head, upperArmL, thighL …) and it can be posed here.');
+  } catch (e) { status('Did not load: ' + e.message, true); noModel(`${key} did not load`, e.message); }
+}
+function confirmLeave() { return window.confirm('Leave without saving these poses?'); } // ui: a native leave guard, only with unsaved poses
+
+let cast = {};
+(async () => {
+  if (!GAME) { noModel('No game named', 'Open this from the Studio, or add ?game=<the game> to the address.'); status(''); return; }
+  try { const r = await fetch(`/games/${encodeURIComponent(GAME)}/assets/models.json`, { cache: 'no-store' }); if (r.status === 404) { noModel('No 3D models yet', 'This game has no 3D cast to pose.'); status(''); return; }
+    if (!r.ok) throw new Error('models.json answered ' + r.status); cast = (await r.json()).items || {}; }
+  catch (e) { status('Did not load: ' + e.message, true); return; }
+  const keys = Object.keys(cast).filter(k => cast[k].file); if (!keys.length) { noModel('No 3D models yet', 'This game has no 3D cast to pose.'); status(''); return; }
+  $('modelSel').innerHTML = keys.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join(''); const want = Q.get('key'); $('modelSel').value = keys.includes(want) ? want : keys[0];
+  $('modelSel').onchange = () => loadModel($('modelSel').value); token().catch(e => status(e.message, true)); loadModel($('modelSel').value);
+})();
+
+/* the loop: play, then draw */
+renderer.setAnimationLoop(now => { if (S.playing && motion()) { const sec = motion().seconds || 1; let t = (now - playFrom) / 1000 / sec; if (t > 1) { if (motion().loop) { t %= 1; } else { t = 1; stop(); } } S.t = t; $('scrub').value = t; $('at').textContent = t.toFixed(2); pose(); }
+  if (outline) outline.update(); orbit.update(); renderer.render(scene, camera); });
+</script>
+</body></html>
