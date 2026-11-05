@@ -54,9 +54,10 @@ button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--a
 .at { font-family: var(--mono); font-size: 12.5px; color: var(--muted); min-width: 9ch; }
 .danger { color: var(--danger); }
 @media (max-width: 760px) {
+  html, body { height: auto; } /* the page scrolls: the stage, then the strip, then the motions and parts at their full height */
   body { grid-template-rows: auto auto; }
-  .main { grid-template-columns: 1fr; grid-template-rows: 56vh auto auto; }
-  .side { grid-row: 3; border-right: 0; border-top: 1px solid var(--line); }
+  .main { grid-template-columns: minmax(0, 1fr); grid-template-rows: min(56vh, 420px) auto auto; }
+  .side { grid-row: 3; border-right: 0; border-top: 1px solid var(--line); overflow: visible; }
   .stage { grid-row: 1; } .strip { grid-row: 2; }
 }
 </style>
