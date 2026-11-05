@@ -56,7 +56,7 @@ class Studio extends BaseControls\Control {
     }
     public function setup($params = []): void { // the first run's one paid step that is not building: teach the game to answer the Studio
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return;
-        try { $r = Rules::wire((string) $g->slug, (int) $this->member->id, "Give every subject a short \"name\" a person would use, and begin its \"about\" with it (\"Subject names\" in ../../kit/AGENTS.md). So the Studio can work with this game (\"Opening in the Studio\", \"Picking in the Studio\", \"Words in the Studio\" and \"Rules about the interface\" in ../../kit/AGENTS.md; games/lonelycat/js/forge-pick.js is an example): add js/forge-pick.js, after main.js in index.html, with window.forgePick answering { key: <subject key>, x, y, r } at a point of the canvas through this game's own drawing transform, window.forgeScenes with a few useful places to jump to, and ForgeWords.wrap for any text function of its own. Declare the title, pause and game over scenes as subjects screen:<scene>, group ui, with screen-open and screen-close in the vocabulary (Game.go sends them)."); Flight::jsonSuccess(['queued' => !empty($r['queued'])]); }
+        try { $r = Rules::wire((string) $g->slug, (int) $this->member->id, "Give every subject a short \"name\" a person would use, and begin its \"about\" with it (\"Subject names\" in ../../kit/AGENTS.md); give every event the game adds a short \"say\" (\"Event phrases\"). So the Studio can work with this game (\"Opening in the Studio\", \"Picking in the Studio\", \"Words in the Studio\" and \"Rules about the interface\" in ../../kit/AGENTS.md; games/lonelycat/js/forge-pick.js is an example): add js/forge-pick.js, after main.js in index.html, with window.forgePick answering { key: <subject key>, x, y, r } at a point of the canvas through this game's own drawing transform, window.forgeScenes with a few useful places to jump to, and ForgeWords.wrap for any text function of its own. Declare the title, pause and game over scenes as subjects screen:<scene>, group ui, with screen-open and screen-close in the vocabulary (Game.go sends them)."); Flight::jsonSuccess(['queued' => !empty($r['queued'])]); }
         catch (\InvalidArgumentException $e) { Flight::jsonError($e->getMessage(), 400); } catch (\RuntimeException $e) { Flight::jsonError($e->getMessage(), 409); }
     }
     public function timeline($params = []): void {
@@ -70,7 +70,7 @@ class Studio extends BaseControls\Control {
     }
     public function things($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
-        try { Flight::jsonSuccess(['things' => Inspector::things((string) $g->slug)]); } catch (\RuntimeException $e) { Flight::jsonError($e->getMessage(), 500); }
+        try { $v = Rules::vocab((string) $g->slug); Flight::jsonSuccess(['things' => Inspector::things((string) $g->slug), 'events' => (object) array_filter(array_map(fn($e) => is_array($e) ? (string) ($e['say'] ?? '') : '', (array) ($v['events'] ?? [])))]); } catch (\RuntimeException $e) { Flight::jsonError($e->getMessage(), 500); }
     }
     public function card($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;

@@ -3,6 +3,12 @@
 const RuleWords = {
   /* a person's words for the game's names: AwardPoints → award points, screen-open → screen open; a thing by its own name when the game gives one */
   names: {},
+  /* what happened, as it reads after "When": the game's own (its events' "say" in assets/events-vocab.json), else the kit's for the events it
+     defines itself, else the event's name in words */
+  events: {},
+  KIT: { spawn: 'it appears', hit: 'it is hit', die: 'it dies', touch: 'it is touched', pickup: 'it is picked up', 'screen-open': 'a screen opens', 'screen-close': 'a screen closes',
+    appear: 'it shows on screen', click: 'it is clicked or tapped', hover: 'the mouse comes over it', 'hover-end': 'the mouse leaves it', bought: 'it is bought' },
+  when(k) { return this.events[k] || this.KIT[k] || this.nice(k); },
   nice(k) { k = String(k ?? ''); if (this.names[k]) return this.names[k]; if (k.startsWith('group:')) return 'every ' + this.nice(k.slice(6)); return k.replace(/[_-]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/:/g, ' ').trim().toLowerCase(); },
   OPS: { is: 'is', not: 'is not', '>': 'is more than', '<': 'is less than', '>=': 'is at least', '<=': 'is at most', has: 'has' },
   say(r) {
@@ -12,7 +18,7 @@ const RuleWords = {
     const to = a => a.to ? ` on ${n(a.to.target)}${a.to.who ? ' (' + n(a.to.who) + ')' : ''}${a.to.args ? ' (' + Object.entries(a.to.args).map(([k, v]) => `${n(k)} ${v}`).join(', ') + ')' : ''}` : '';
     const op = c => this.OPS[c.op] || c.op;
     const cond = c => c.op === 'chance' ? `${Math.round(c.value * 100)}% of the time` : c.state != null ? `${n(c.state)} ${op(c)} ${c.value}` : c.count != null ? `the count “${c.count}”${c.on === 'game' ? ' (whole game)' : ''} ${op(c)} ${c.value}` : `${n(c.field)} ${op(c)} ${c.value}`;
-    const act = a => (a.emit ? `start “${n(a.emit)}”` : a.fn === 'Count' ? 'count up' : a.fn === 'SetCount' ? 'set a count' : n(a.fn)) + to(a) + ((args(a) || lim(a)) ? ` (${[args(a), lim(a)].filter(Boolean).join('; ')})` : '');
-    return `When ${n(r.on)}` + ((r.if || []).length ? ', if ' + r.if.map(cond).join(' and ') : '') + ': ' + ((r.do || []).map(act).join(', then ') || 'nothing yet');
+    const act = a => (a.emit ? `start “${this.when(a.emit)}”` : a.fn === 'Count' ? 'count up' : a.fn === 'SetCount' ? 'set a count' : n(a.fn)) + to(a) + ((args(a) || lim(a)) ? ` (${[args(a), lim(a)].filter(Boolean).join('; ')})` : '');
+    return `When ${this.when(r.on)}` + ((r.if || []).length ? ', if ' + r.if.map(cond).join(' and ') : '') + ': ' + ((r.do || []).map(act).join(', then ') || 'nothing yet');
   },
 };

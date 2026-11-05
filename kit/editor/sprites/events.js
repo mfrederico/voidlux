@@ -17,6 +17,7 @@ const Ev = {
   groups() { const g = new Set(); for (const s of Object.values(this.V().subjects)) for (const x of s.groups || []) g.add(x); return [...g].sort(); },
   touch() { this.dirty = true; el('evSave').disabled = false; el('evSave').textContent = 'Save rules *'; },
   draw() { const SJ = this.V().subjects || {}; RuleWords.names = Object.fromEntries(Object.entries(SJ).filter(([, x]) => x && x.name).map(([k, x]) => [k, x.name])); // things by their own names in the rule sentences
+    RuleWords.events = Object.fromEntries(Object.entries(this.V().events || {}).filter(([, e]) => e && e.say).map(([k, e]) => [k, e.say])); // what each event reads as, after When
     const S = this.S, V = this.V(), nS = Object.keys(V.subjects).length, nE = Object.keys(V.events).length, nA = Object.keys(V.actions).length;
     el('evSub').textContent = !S.vocab ? 'The game declares no events yet. Wire events in first: the builder lists what can happen (hit, die, touch…), what the game can do about it (set burning, freeze, a burst…) and the things it happens to; then you write the rules here.'
       : `${this.rules.length} rule${this.rules.length === 1 ? '' : 's'} · the game has ${nE} events, ${nA} actions, ${nS} kinds of thing` + (S.wired ? '' : ' · the game does not load the rules yet (wire it in)') + (this.rules.some(r => r.broken) ? ' · some rules no longer fit the game (marked below)' : '');
@@ -59,7 +60,7 @@ const Ev = {
     head.append(off, del); d.appendChild(head); if (r.broken) { const b = document.createElement('div'); b.className = 'small evbroken'; b.textContent = 'This rule no longer fits the game: ' + r.broken; d.appendChild(b); }
     const redraw = () => { this.touch(); this.draw(); };
     // on
-    const on = document.createElement('div'); on.className = 'evrow'; on.append(this.span('When', 'evk'), this.sel(Object.keys(V.events).sort(), r.on, v => { r.on = v; r.if = (r.if || []).filter(c => c.field == null); redraw(); }));
+    const on = document.createElement('div'); on.className = 'evrow'; on.append(this.span('When', 'evk'), this.sel(Object.keys(V.events).sort().map(k => [k, RuleWords.when(k)]), r.on, v => { r.on = v; r.if = (r.if || []).filter(c => c.field == null); redraw(); }));
     const ab = V.events[r.on]; if (ab && ab.about) on.append(this.span(ab.about, 'muted small')); d.appendChild(on);
     // if: a field of the event, the game's state, a counter, or chance
     const fields = (V.events[r.on] || {}).fields || {}, states = V.state || {}; r.if = r.if || [];
@@ -77,7 +78,7 @@ const Ev = {
     // do: an action (the game's, or a built-in counter), or fire an event; on the thing itself or on what a target finds
     r.do = r.do || []; const targets = V.targets || {};
     r.do.forEach((a, i) => { const row = document.createElement('div'); row.className = 'evrow evdo'; row.append(this.span(i ? 'then' : 'Do', 'evk'));
-      if (a.emit !== undefined) row.append(this.span('start'), this.sel(Object.keys(V.events).sort(), a.emit, v => { a.emit = v; redraw(); }));
+      if (a.emit !== undefined) row.append(this.span('start'), this.sel(Object.keys(V.events).sort().map(k => [k, RuleWords.when(k)]), a.emit, v => { a.emit = v; redraw(); }));
       else { const def = V.actions[a.fn] || this.BUILTIN[a.fn] || {};
         row.append(this.sel([...Object.keys(V.actions).sort(), ['Count', 'count up (a count)'], ['SetCount', 'set a count']], a.fn, v => { a.fn = v; a.args = {}; redraw(); }, 'what to do…'));
         for (const [p, pd] of Object.entries(def.params || {})) row.append(this.param(a, 'args', p, pd, p === 'name' ? '90px' : '64px'));
