@@ -290,6 +290,17 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
   </div>
 </div>
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }</script>
+<dialog id="upDlg" aria-labelledby="upTitle"><form method="dialog" class="updlg">
+  <h3 id="upTitle">Upgrade to 3D</h3>
+  <div class="uprow"><img id="upPic" alt="the sprite, as the artist will see it"><p id="upWhere" class="small"></p></div>
+  <label>What it is <input id="upWhat" maxlength="200"></label>
+  <div class="row"><label>Kind <select id="upGroup"><option value="player">the player</option><option value="enemy">an enemy</option><option value="boss">a boss</option><option value="npc">a character</option><option value="prop">a prop</option><option value="pickup">a pickup</option><option value="terrain">terrain</option><option value="other">other</option></select></label>
+    <label>Size in the world <input id="upSize" type="number" step="any" min="0.01" style="width:90px"></label></div>
+  <label class="chk"><input type="checkbox" id="upLimbs"> Split into limbs, so it can be posed</label>
+  <p id="upJoints" class="muted small"></p>
+  <p id="upCost" class="small"></p>
+  <div class="row"><button value="cancel">Cancel</button><button id="upGo" class="primary" value="go">Ask the artist</button></div>
+</form></dialog>
 <script src="/kit/editor/ux.js"></script><!-- what a person meets here, for the forge's hourly retrospective -->
 <script src="/kit/js/kit-util.js"></script>
 <script src="/kit/js/kit-draw.js"></script>
@@ -873,17 +884,6 @@ window.addEventListener('resize', () => { if (doc && mode === 'pix') { fitZoom()
   setInterval(check, 20000); check();
 })();
 </script>
-<dialog id="upDlg" aria-labelledby="upTitle"><form method="dialog" class="updlg">
-  <h3 id="upTitle">Upgrade to 3D</h3>
-  <div class="uprow"><img id="upPic" alt="the sprite, as the artist will see it"><p id="upWhere" class="small"></p></div>
-  <label>What it is <input id="upWhat" maxlength="200"></label>
-  <div class="row"><label>Kind <select id="upGroup"><option value="player">the player</option><option value="enemy">an enemy</option><option value="boss">a boss</option><option value="npc">a character</option><option value="prop">a prop</option><option value="pickup">a pickup</option><option value="terrain">terrain</option><option value="other">other</option></select></label>
-    <label>Size in the world <input id="upSize" type="number" step="any" min="0.01" style="width:90px"></label></div>
-  <label class="chk"><input type="checkbox" id="upLimbs"> Split into limbs, so it can be posed</label>
-  <p id="upJoints" class="muted small"></p>
-  <p id="upCost" class="small"></p>
-  <div class="row"><button value="cancel">Cancel</button><button id="upGo" class="primary" value="go">Ask the artist</button></div>
-</form></dialog>
 <script src="/kit/editor/sprites/move.js"></script>
 <script src="/kit/editor/sprites/models.js"></script>
 <script src="/kit/editor/sprites/rule-words.js"></script>
