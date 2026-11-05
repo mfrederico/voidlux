@@ -56,7 +56,7 @@ const Move = {
     el('skinFile').onchange = async () => { const f = el('skinFile').files[0]; el('skinFile').value = ''; if (!f) return; let k; try { k = await this.skinKey(); } catch (e) { el('rigMsg').textContent = e.message; return; } const s = M.sprites[k];
       try { const text = await f.text(); if (!/<svg[\s>]/i.test(text)) throw new Error('that file is not an SVG'); if (!confirm(`Replace the drawing ${k} with ${f.name}?`)) return;
         const r = await fetch(apiUrl('spritesave'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: k, svg: text, w: s ? s.w : 64, h: s ? s.h : 64, smooth: true, source: 'inkscape' }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
-        M = { sprites: j.sprites, files: j.files }; drawList(); el('rigMsg').textContent = `${k} updated from ${f.name}: now press Re-skin GO!`; }
+        M = { sprites: j.sprites, files: j.files }; drawList(); el('rigMsg').textContent = `${k} updated from ${f.name}: now press Re-skin it`; }
       catch (e) { el('rigMsg').textContent = 'not uploaded: ' + e.message; } }; el('mUndo').onclick = () => this.undo(); el('mRedo').onclick = () => this.redo();
     document.addEventListener('keydown', e => { if (el('tab-move').classList.contains('hidden') || e.target.matches('input, textarea, select')) return; const k = e.key.toLowerCase(); if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? this.redo() : this.undo(); return; } if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); this.redo(); return; }
       if (this.kind !== 'rig' || !this.M()) return; const M = this.M(), n = Rig.frames(M);
