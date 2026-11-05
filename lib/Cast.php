@@ -44,6 +44,7 @@ class Cast {
         $it['file'] = $file; $it['size'] = $size; $it['v'] = substr((string) sha1_file(GameStore::dir($slug) . "/assets/$file"), 0, 10); $it['recipe'] = $recipe;
         if ($job !== '') $it['kept'] = $job; unset($it['error']);
         $c['items'][$key] = $it; self::write($slug, $c);
+        if (!empty($it['fromSprite'])) { try { Upgrade::linkSubject($slug, (string) $it['fromSprite'], $key); } catch (\Throwable $e) { error_log("ERROR upgrade link {$slug}/{$key}: " . $e->getMessage()); } } // an upgraded sprite's subject is drawn by this model now
         try { self::strip($slug, GameStore::dir($slug) . "/assets/$file", "$key-{$it['v']}"); } catch (\Throwable $e) { error_log("ERROR strip {$slug}/{$key}: " . $e->getMessage()); }
     }
 
@@ -301,7 +302,8 @@ class Cast {
         foreach (GameStore::listSketches($slug)['jobs'] as $j) { // newest first
             if (($j['kind'] ?? '') !== 'remodel' || array_key_exists($j['key'], $out) || empty($j['result']['ok']) || empty($j['result']['files'][0])) continue;
             if (($c['items'][$j['key']]['kept'] ?? '') === $j['id']) { $out[$j['key']] = null; continue; } // the newest is kept already
-            $out[$j['key']] = ['id' => $j['id'], 'file' => (string) $j['result']['files'][0]];
+            $parts = (array) ($c['items'][$j['key']]['parts'] ?? []); // an upgrade's take, checked against the parts it was asked for
+            $out[$j['key']] = ['id' => $j['id'], 'file' => (string) $j['result']['files'][0], 'problems' => $parts ? Upgrade::check(GameStore::sketchDir($slug, $j['id']) . '/' . basename((string) $j['result']['files'][0]), $parts) : []];
         }
         return array_filter($out);
     }

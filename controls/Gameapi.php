@@ -98,6 +98,15 @@ class Gameapi extends BaseControls\Control {
             $this->raw(['ok' => true, 'queued' => !empty($r['queued']), 'busy' => !empty($r['busy'])]); }
         catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); } catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 409); }
     }
+    /** GET /gameapi/upgrade/<slug>?asset=<sprite>: what upgrading that 2D sprite to a jointed 3D model would do (where it lands, size, cost).
+     *  POST { asset, what, group, size, limbs, png, joints, view }: starts the art job (Upgrade::start). */
+    public function upgrade($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return;
+        try {
+            if ($this->post()) { $b = $this->getJsonInput() ?? []; $r = Upgrade::start($g->slug, (string) ($b['asset'] ?? ''), $b, (int) $this->member->id); GameStore::activity($g->slug, (string) ($this->member->username ?: $this->member->email), 'asked the artist to upgrade ' . ($b['asset'] ?? '') . ' to 3D'); $this->raw(['ok' => true] + $r); }
+            $this->raw(Upgrade::plan($g->slug, (string) $this->getParam('asset', '')));
+        } catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); } catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 409); }
+    }
     /** POST /gameapi/ux/<slug>: the editors' ergonomics events (kit/editor/ux.js), appended to .studio/ux.jsonl for the retrospective.
      *  No CSRF token (sent by sendBeacon as a page closes); sign-in and access to the game are required, and only known fields are kept. */
     public function ux($params = []): void {

@@ -49,7 +49,7 @@ class Studio extends BaseControls\Control {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $slug = (string) $g->slug;
         $d = GameStore::dir($slug); $art = GameStore::artState($slug); $q = GameStore::studioDir($slug) . '/art-queue.jsonl'; $queued = is_file($q) ? count(array_filter(array_map('trim', file($q)))) : 0;
         $props = array_values(array_filter(Rules::proposals($slug), fn($p) => in_array($p['state'], ['reading', 'proposed', 'building', 'failed'], true)));
-        $revisions = []; if (is_file(Cast::path($slug))) foreach (Cast::waitingRevisions($slug) as $k => $w) $revisions[] = ['key' => $k, 'file' => $w['file'], 'id' => $w['id']];
+        $revisions = []; if (is_file(Cast::path($slug))) foreach (Cast::waitingRevisions($slug) as $k => $w) $revisions[] = ['key' => $k, 'file' => $w['file'], 'id' => $w['id'], 'problems' => $w['problems'] ?? []];
         $brief = (string) $g->brief; $v = Rules::vocab($slug); $tasks = GameStore::tasks($slug);
         Flight::jsonSuccess(['artists' => (int) ($art['working'] ?? ($art['busy'] ? 1 : 0)), 'queued' => $queued, 'proposals' => $props, 'revisions' => $revisions,
             'setup' => ['brief' => trim($brief) !== '' && $brief !== 'A small game on the VoidLux kit.', 'planned' => count($tasks) > 0 || (bool) GameStore::soaks($slug), /* a game that has been played has been built, task list or not */ 'subjects' => $v ? count((array) $v['subjects']) : 0]]);

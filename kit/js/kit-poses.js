@@ -15,6 +15,15 @@
 //   Poses.sample(data, motion, f)              { part: Quaternion offset } — what the editor shows between keys
 //   Poses.seconds('ninja', 'sword')            the motion's length as the editor set it
 //
+// From a 2D rig (kit-rig.js, a side view facing right): which bone is which part, where its joints stand, and its motions as key poses.
+//   Poses.bonesOf(rig)                         { torso: 'spine', thighL: 'kneeL', … }: a bone named for the joint it ends at (kneeL: the thigh)
+//                                              or for the segment it is (thighL); neck and shoulder bones fold into what they carry
+//   Poses.rigJoints(Rig, rig)                  [{ part, at: [forward, up] }]: each part's joint at rest, as fractions of the figure's height
+//   Poses.rigMotions(Rig, rig, { axes, height, names })   { name: { loop, seconds, keys } }: each motion sampled (8 keys a loop, 7 a one-off),
+//                                              every bone's turn relative to its part's parent, as a turn about the model's side axis (axes: which way
+//                                              the root part's x, y, z point, as the pose editor measures them); the hips' rise and fall as lift
+//                                              (height: the model's height in its lift units). Feet the 2D rig held by IK may slide between keys.
+//
 // A file that does not parse is an error in the console naming it, and the model stays at rest.
 const Poses = (() => {
   let T = null, base = 'assets/'; const data = {}, wait = {}, eu = () => new T.Euler(), qa = () => new T.Quaternion();
@@ -43,7 +52,40 @@ const Poses = (() => {
     for (const n in P) { let up = P[n].node.parent, top = true; for (; up && up !== model; up = up.parent) if (up.name && P[up.name]) { top = false; break; } P[n].top = top; } // a root part: the lift moves it
     return (model.userData.poseParts = P);
   }
+  const FROM_2D = { torso: ['spine', 'torso', 'chest', 'body'], head: ['head'], upperArmL: ['elbowL', 'uarmL', 'upperArmL', 'armL'], lowerArmL: ['handL', 'farmL', 'lowerArmL', 'forearmL'],
+    upperArmR: ['elbowR', 'uarmR', 'upperArmR', 'armR'], lowerArmR: ['handR', 'farmR', 'lowerArmR', 'forearmR'], thighL: ['kneeL', 'thighL', 'legL'], shinL: ['footL', 'shinL'],
+    thighR: ['kneeR', 'thighR', 'legR'], shinR: ['footR', 'shinR'] };
+  const PARENT = { torso: '', head: 'torso', upperArmL: 'torso', lowerArmL: 'upperArmL', upperArmR: 'torso', lowerArmR: 'upperArmR', thighL: 'torso', shinL: 'thighL', thighR: 'torso', shinR: 'thighR' };
+  const wrap = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }, r4 = v => Math.round(v * 1e4) / 1e4;
+  function bonesOf(rig) { const out = {}; for (const [p, c] of Object.entries(FROM_2D)) { const b = c.find(n => rig.bones[n]); if (b) out[p] = b; } return out; }
+  /* The 3D model's rest seen from its side, as page angles (x forward, y down): torso and head up, arms and legs hanging. Each turn is measured
+     against it, not against the 2D rig's own rest (a rig may rest in a wide stance: the ninja's does). */
+  const UP = -Math.PI / 2, DOWN = Math.PI / 2, REST3D = { torso: UP, head: UP, upperArmL: DOWN, lowerArmL: DOWN, upperArmR: DOWN, lowerArmR: DOWN, thighL: DOWN, shinL: DOWN, thighR: DOWN, shinR: DOWN };
+  function rigFrame(Rig, rig) { // the rest pose; the figure's standing height (the head's top to the feet with straight legs) and its leg length
+    const W = Rig.bones(rig, '', 0), root = rig.order[0], B = bonesOf(rig); let top = Infinity; for (const w of Object.values(W)) top = Math.min(top, w.y, w.ty);
+    const leg = Math.max(...['L', 'R'].map(x => (B['thigh' + x] ? W[B['thigh' + x]].len : 0) + (B['shin' + x] ? W[B['shin' + x]].len : 0)), 1e-6);
+    const ground = W[root].y + leg; return { W, root, B, top, ground, leg, h: Math.max(1e-6, ground - top) }; }
+  function rigJoints(Rig, rig) { // where each part turns, standing straight: legs below the hips, forearms below the shoulders, the rest as the rig rests
+    const F = rigFrame(Rig, rig), B = F.B, x0 = F.W[F.root].x, at = (x, y) => [r4((x - x0) / F.h), r4((F.ground - y) / F.h)], out = [];
+    for (const part of Object.keys(B)) { const w = F.W[B[part]];
+      if (part === 'torso' || part === 'thighL' || part === 'thighR') out.push({ part, at: at(x0, F.W[F.root].y) });
+      else if (part === 'shinL' || part === 'shinR') out.push({ part, at: at(x0, F.W[F.root].y + (B['thigh' + part.slice(-1)] ? F.W[B['thigh' + part.slice(-1)]].len : 0)) });
+      else if (part === 'lowerArmL' || part === 'lowerArmR') { const ua = B['upperArm' + part.slice(-1)], sh = ua ? F.W[ua] : w; out.push({ part, at: at(sh.x, sh.y + (ua ? F.W[ua].len : 0)) }); } // an elbow below its shoulder: the model rests with its arms down
+      else out.push({ part, at: at(w.x, w.y) }); }
+    return out; }
+  function rigMotions(Rig, rig, o) {
+    const F = rigFrame(Rig, rig), B = F.B, ax = o.axes || {}, side = ['x', 'y', 'z'].find(k => ax[k] === 'right' || ax[k] === 'left'); if (!side) throw new Error('the model\'s side axis is not known');
+    const sign = ax[side] === 'right' ? 1 : -1, idx = 'xyz'.indexOf(side), rest = Object.assign({}, REST3D, o.rest || {}), out = {};
+    const rel = (A, part) => { const pp = PARENT[part]; return pp && A[pp] !== undefined ? A[part] - A[pp] : A[part]; };
+    for (const name of o.names || Object.keys(rig.motions || {})) { const M = rig.motions[name]; if (!M) continue; const loop = M.loop !== false, n = loop ? 8 : 7, keys = [];
+      for (let i = 0; i < n; i++) { const t = loop ? i / n : i / (n - 1), W = Rig.bones(rig, name, t), A = {}, rot = {};
+        for (const part of Object.keys(B)) A[part] = W[B[part]].angle;
+        for (const part of Object.keys(B)) { const d = wrap(rel(A, part) - rel(rest, part)); if (Math.abs(d) < 0.01) continue; const v = [0, 0, 0]; v[idx] = r4(-d * sign); rot[part] = v; } // a turn on the page (y down) is the opposite turn about the figure's right
+        const k = { t: r4(t), rot }, lift = -(W[F.root].y - F.W[F.root].y) / F.h * (o.height || 1); if (Math.abs(lift) > 1e-4) k.lift = r4(lift); keys.push(k); }
+      out[name] = { loop, seconds: Math.max(0.05, M.secs || 1), keys }; }
+    return out; }
   return {
+    FROM_2D, PARENT, bonesOf, rigJoints, rigMotions,
     init(THREE, from) { T = THREE; if (from) base = from; },
     load(key) {
       if (wait[key]) return wait[key];

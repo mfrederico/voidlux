@@ -48,6 +48,8 @@ label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted)
 .evrules { display: grid; gap: 10px; margin-top: 8px; } .evrule { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); } .evrule.off { opacity: .55; } .evrule.broken { border-color: var(--set); } .evbroken { color: var(--set); }
 .evhead { justify-content: space-between; } .evrow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; } .evk { min-width: 36px; font-weight: 600; color: var(--accent); } .evdo { align-items: flex-start; } .evlim { gap: 8px; width: 100%; padding-left: 42px; } .evadd { padding-left: 42px; } .evadd button { font-size: 12px; }
 button.pulse { animation: usepulse 1.2s ease-in-out 6; } @keyframes usepulse { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 35%, transparent); } } @media (prefers-reduced-motion: reduce) { button.pulse { animation: none; outline: 3px solid var(--accent); } }
+#upDlg { border: 1px solid var(--line); border-radius: 14px; padding: 0; max-width: min(520px, calc(100vw - 32px)); background: var(--surface, #fff); color: inherit; } #upDlg::backdrop { background: rgba(10, 6, 20, .45); }
+.updlg { display: grid; gap: 10px; padding: 16px; } .updlg h3 { margin: 0; } .updlg label { display: grid; gap: 3px; } .updlg label.chk { display: flex; gap: 6px; align-items: center; } .uprow { display: flex; gap: 12px; align-items: flex-start; } #upPic { width: 96px; height: 96px; object-fit: contain; flex: none; border: 1px solid var(--line); border-radius: 8px; background: repeating-conic-gradient(#0001 0 25%, #0000 0 50%) 0 0 / 12px 12px; }
 #toast { position: fixed; left: 50%; bottom: 20px; transform: translate(-50%, 30px); max-width: min(560px, calc(100vw - 32px)); padding: 10px 16px; border-radius: 10px; background: var(--ink); color: var(--bg); font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 50; } #toast.on { opacity: 1; transform: translate(-50%, 0); } #toast.err { background: var(--set); color: #fff; }
 .castgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; } .castgrp { grid-column: 1 / -1; margin: 10px 0 0; text-transform: capitalize; }
 .ccard { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: center; text-align: left; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; font: inherit; cursor: pointer; } .ccard.on { border-color: var(--accent); }
@@ -202,7 +204,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
     </section>
     <section class="tab hidden" id="tab-draw">
     <section class="panel" id="editor">
-      <div class="head"><div><h2 id="title">no sprite</h2><div class="meta" id="meta"></div></div><div class="row"><button id="useBtn">Use in game</button><button id="animCurBtn" title="rig this sprite into a run, idle, jump… as a new code sprite">⟳ Animate…</button><button id="vecBtn" title="the artist redraws this picture as SVG, under a new key">Make it vector…</button><button id="modelBtn" title="the artist models this in 3D with mojulo, as a glTF model, under a new key">3D model of it…</button><button id="dupBtn" title="a copy of this sprite under a new key">Duplicate…</button><button id="dlBtn">Download</button><button class="danger" id="delBtn">Delete</button><button class="primary" id="saveBtn">Save</button></div></div>
+      <div class="head"><div><h2 id="title">no sprite</h2><div class="meta" id="meta"></div></div><div class="row"><button id="useBtn">Use in game</button><button id="animCurBtn" title="rig this sprite into a run, idle, jump… as a new code sprite">⟳ Animate…</button><button id="vecBtn" title="the artist redraws this picture as SVG, under a new key">Make it vector…</button><button id="modelBtn" title="the artist models this in 3D with mojulo, as a glTF model, under a new key">3D model of it…</button><button id="upgradeBtn" title="the artist models this as a jointed 3D model that replaces it in the game; a 2D rig's joints and motions come with it">Upgrade to 3D…</button><button id="dupBtn" title="a copy of this sprite under a new key">Duplicate…</button><button id="dlBtn">Download</button><button class="danger" id="delBtn">Delete</button><button class="primary" id="saveBtn">Save</button></div></div>
       <div id="empty" class="muted">Pick a sprite on the left, make a new one, or ask the builder for one.</div>
       <div id="modelMode" class="hidden"><div id="modelStage"></div><div class="muted small" id="modelNote"></div></div>
       <div id="pix" class="hidden" style="display: grid; gap: 12px;">
@@ -292,6 +294,7 @@ select, input, textarea { max-width: 100%; } .row > label { min-width: 0; max-wi
 <script src="/kit/js/kit-util.js"></script>
 <script src="/kit/js/kit-draw.js"></script>
 <script src="/kit/js/kit-rig.js"></script>
+<script src="/kit/js/kit-poses.js"></script><!-- the 2D rig to 3D parts mapping, for Upgrade to 3D -->
 <script>
 const el = id => document.getElementById(id);
 const LEDE = { make: "Draw a rough sketch, say what it is, press >>: the artist draws two takes. Keep one and it is in the game as Draw.pic('key', x, y, size).", draw: 'Edit a kept sprite: its pixels frame by frame, its SVG source, or its drawing code, with a live preview.', events: 'How things react: on an event, if conditions hold, do actions. Rules per sprite, per group or for everything, using only what the game can do.', '3d': 'Everything the game draws in 3D, each with its model: list them, make the missing ones in one go, wire them into the game once, then revise any one of them.', move: 'Give a kept sprite motion. Today: the artist animates it as code frames. Next: a skeleton rig with keyframes and inverse kinematics.' };
@@ -610,6 +613,29 @@ el('vecBtn').onclick = async () => { // the artist redraws a kept picture as SVG
     SK = j; remember(); showOut(null); el('aiKey').value = key; showTab('make'); el('aiStatus').textContent = (j.queued ? 'another sprite job is running: the vector is next. ' : 'the artist is tracing it. ') + 'Two SVG takes appear on the right; Keep as SVG puts one in the game under ' + key + '.'; clearInterval(skT); skT = setInterval(pollSketch, 4000); el('outbox').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   catch (e) { say('not sent: ' + e.message, 'err'); }
 };
+/* Upgrade to 3D: the sprite drawn for the artist, a 2D rig's joints standing straight, and where the model lands (Upgrade::plan) */
+let UP = null;
+async function openUpgrade() {
+  if (!cur || !entry) { say('save the sprite first', 'err'); return; }
+  let plan; try { const r = await fetch(apiUrl('upgrade') + '?asset=' + encodeURIComponent(cur), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); plan = await r.json(); if (!r.ok) throw new Error(plan.error || r.status); }
+  catch (e) { say('it cannot be upgraded: ' + e.message, 'err'); return; }
+  let canvas, joints = [];
+  try {
+    if (entry.kind === 'code' || entry.kind === 'rig' || /\.js$/i.test(entry.file)) { const text = await (await fetch(ASSET(entry.file) + '?t=' + Date.now(), { cache: 'no-store' })).text(); const out = renderCode(text, 384, 0, { motion: 'idle' }); canvas = out.canvas; if (out.def.rig) joints = Poses.rigJoints(Rig, out.def.rig); }
+    else { const im = await loadImage(ASSET(entry.file) + '?t=' + Date.now()), fw = entry.frames > 1 ? entry.w : im.naturalWidth, fh = im.naturalHeight, k = Math.min(360 / fw, 360 / fh); canvas = document.createElement('canvas'); canvas.width = canvas.height = 384; const g = canvas.getContext('2d'); g.imageSmoothingEnabled = !entry.pixel; g.drawImage(im, 0, 0, fw, fh, (384 - fw * k) / 2, (384 - fh * k) / 2, fw * k, fh * k); }
+  } catch (e) { say('could not draw ' + cur + ' for the artist: ' + e.message, 'err'); return; }
+  UP = { plan, png: canvas.toDataURL('image/png'), joints };
+  el('upTitle').textContent = `Upgrade ${cur} to 3D`; el('upPic').src = UP.png; el('upWhat').value = plan.what || ''; el('upGroup').value = plan.group; el('upSize').value = plan.size; el('upLimbs').checked = !!plan.limbs;
+  el('upWhere').textContent = !plan.three ? 'This game does not draw in 3D yet, so a 3D model would not show in it.' : plan.existing ? `A new version of the 3D model ${plan.key}, which the game draws now. It waits in the Studio's Work to be looked at (Pose it first) before the game uses it.` : `A new 3D model, ${plan.key}, in the game's 3D cast. Once it is made, the 3D tab's Wire into the game puts it where the game draws ${cur}.`;
+  const drawJ = () => { el('upJoints').textContent = !el('upLimbs').checked ? 'One solid piece: nothing to pose.' : joints.length ? `Its joints come from the 2D rig (${joints.length} parts: torso, head, arms, legs), and so do its motions: the pose editor brings them across.` : 'Torso, head, upper and lower arms, thighs and shins, each turning at its joint.'; };
+  el('upLimbs').onchange = drawJ; drawJ(); el('upCost').textContent = plan.cost; el('upGo').disabled = !plan.three; el('upDlg').showModal();
+}
+el('upgradeBtn').onclick = openUpgrade;
+el('upGo').onclick = async e => { e.preventDefault(); if (!UP) return; const what = el('upWhat').value.trim(); if (!what) { el('upWhat').focus(); return; }
+  el('upGo').disabled = true; el('upGo').textContent = 'Sending…';
+  try { if (!CSRF) await apiToken(); const r = await fetch(apiUrl('upgrade'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ asset: cur, what, group: el('upGroup').value, size: +el('upSize').value || UP.plan.size, limbs: el('upLimbs').checked, png: UP.png, joints: el('upLimbs').checked ? UP.joints : [], view: 'side' }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+    el('upDlg').close(); const t = j.existing ? `The artist is making ${j.target} from ${cur}: it waits in the Studio's Work when done.` : `The artist is making ${j.target} from ${cur}: it joins the 3D tab when done.`; say(t, 'ok'); toast(t, 'ok'); artBusy(`the artist is upgrading ${cur} to 3D…`); if (typeof UX !== 'undefined') UX.act('upgrade', cur); loadJobs(); }
+  catch (err) { say('not sent: ' + err.message, 'err'); } finally { el('upGo').disabled = false; el('upGo').textContent = 'Ask the artist'; } };
 el('modelBtn').onclick = async () => { // a 3D model of a kept sprite, through mojulo; the sprite is the reference
   if (!cur || !entry) { say('save the sprite first', 'err'); return; } const key = prompt(`The artist models ${cur} in 3D with mojulo. Keep the model as (a new key):`, cur.replace(/-(drawing|vector|rig)$/, '') + '-3d'); if (!key) return; if (!KEY_RE.test(key)) { say('a key is lowercase letters, digits, - and _, starting with a letter', 'err'); return; }
   const size = +(prompt('How big, in world units across its largest side? (about the size of the thing it replaces in the game)', '1') || 1); const note = prompt('What is it, and anything the artist should know? (blank is fine)', '') || '';
@@ -828,7 +854,7 @@ el('aiAnimBtn').onclick = () => { if (!cur || !entry) { say('save the sprite fir
 // ---- boot ----
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 window.addEventListener('resize', () => { if (doc && mode === 'pix') { fitZoom(); render(); } });
-(async () => { drawSwatches(); show('none'); showTab(location.hash.slice(1) || 'make'); recall(); await apiToken(); await load(); await loadJobs(); if (el('jobs').children.length) el('jobsBox').open = true;
+(async () => { drawSwatches(); show('none'); showTab(location.hash.slice(1) || 'make'); recall(); await apiToken(); await load(); { const up = new URLSearchParams(location.search).get('upgrade'); if (up && M.sprites[up]) { await open(up); openUpgrade(); } } await loadJobs(); if (el('jobs').children.length) el('jobsBox').open = true;
   try { const s = JSON.parse(localStorage.getItem(STORE) || 'null'); if (s && s.cur && M.sprites[s.cur]) { const tab = location.hash.slice(1) || 'make'; await open(s.cur); showTab(tab); } } catch (e) {} // the sprite that was open comes back after a reload, on the same tab
 })();
 // ---- a newer version of this page: noticed every 20 s by the files' Last-Modified; reloaded by hand, or by itself after a
@@ -847,6 +873,17 @@ window.addEventListener('resize', () => { if (doc && mode === 'pix') { fitZoom()
   setInterval(check, 20000); check();
 })();
 </script>
+<dialog id="upDlg" aria-labelledby="upTitle"><form method="dialog" class="updlg">
+  <h3 id="upTitle">Upgrade to 3D</h3>
+  <div class="uprow"><img id="upPic" alt="the sprite, as the artist will see it"><p id="upWhere" class="small"></p></div>
+  <label>What it is <input id="upWhat" maxlength="200"></label>
+  <div class="row"><label>Kind <select id="upGroup"><option value="player">the player</option><option value="enemy">an enemy</option><option value="boss">a boss</option><option value="npc">a character</option><option value="prop">a prop</option><option value="pickup">a pickup</option><option value="terrain">terrain</option><option value="other">other</option></select></label>
+    <label>Size in the world <input id="upSize" type="number" step="any" min="0.01" style="width:90px"></label></div>
+  <label class="chk"><input type="checkbox" id="upLimbs"> Split into limbs, so it can be posed</label>
+  <p id="upJoints" class="muted small"></p>
+  <p id="upCost" class="small"></p>
+  <div class="row"><button value="cancel">Cancel</button><button id="upGo" class="primary" value="go">Ask the artist</button></div>
+</form></dialog>
 <script src="/kit/editor/sprites/move.js"></script>
 <script src="/kit/editor/sprites/models.js"></script>
 <script src="/kit/editor/sprites/rule-words.js"></script>

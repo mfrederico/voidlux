@@ -39,6 +39,7 @@ button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--a
 .part { padding-left: calc(11px + var(--depth, 0) * 12px) !important; }
 .busy-badge { display: inline-block; justify-self: start; padding: 5px 13px; border-radius: 99px; font-size: 13px; font-weight: 600; color: #17120a; background: linear-gradient(90deg, #ffb547, #ff3d9a, #c58aff, #7de0ff, #9bf06a, #ffb547); background-size: 500% 100%; animation: busy-cycle 5s linear infinite; } /* the Studio's "someone is working" badge */
 .busy-badge[hidden] { display: none; } @keyframes busy-cycle { from { background-position: 0 0; } to { background-position: 125% 0; } } @media (prefers-reduced-motion: reduce) { .busy-badge { animation: none; background: var(--accent); } }
+#rigBox summary { cursor: pointer; font-size: 13px; color: var(--muted); } #rigBox[open] { display: grid; gap: 6px; } #rigBox label { display: grid; gap: 3px; font-size: 13px; } #rigBox label.chk, #rigMotions label { display: flex; gap: 5px; align-items: center; } #rigMotions label { font-size: 13px; border: 1px solid var(--line); border-radius: 99px; padding: 2px 8px; }
 .ask { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; } .ask summary { cursor: pointer; font-size: 13px; color: var(--muted); } .ask[open] { display: grid; gap: 6px; } .ask textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; resize: vertical; } .cost { font-size: 12.5px; color: var(--muted); }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; } .chips button { min-height: 28px; padding: 2px 8px; font-size: 13px; }
 .add { display: flex; gap: 6px; min-width: 0; } .add input { flex: 1 1 0; width: 0; min-width: 0; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; }
@@ -96,6 +97,15 @@ button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--a
         <span class="busy-badge" id="askBusy" hidden role="status"></span>
       </details>
     </section>
+    <section id="rigSec" hidden>
+      <details id="rigBox"><summary>Bring motions from a 2D rig</summary>
+        <label>2D rig <select id="rigSel" aria-label="Which 2D rig"></select></label>
+        <div class="chips" id="rigMotions"></div>
+        <label class="chk"><input type="checkbox" id="rigReplace"> Replace motions already posed</label>
+        <button id="rigGo">Bring them across</button>
+        <div class="cost">Free: each motion sampled from the 2D rig as key poses you can change here. Feet held by the 2D rig may slide between keys: Ground every key helps.</div>
+      </details>
+    </section>
     <section>
       <h2>Parts</h2>
       <div class="list" id="parts"></div>
@@ -130,6 +140,7 @@ button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--a
   </div>
 </div>
 <script src="/kit/editor/ux.js"></script><!-- what a person meets here, for the forge's hourly retrospective -->
+<script>window.TAU = window.TAU || Math.PI * 2;</script><script src="/kit/js/kit-rig.js"></script><!-- 2D rigs, to bring their motions across -->
 <script src="/kit/js/kit-poses.js"></script>
 <script type="importmap">{ "imports": { "three": "/assets/three-0.160.0/three.module.min.js", "three/addons/": "/assets/three-0.160.0/addons/" } }</script>
 <script type="module">
@@ -303,6 +314,34 @@ function takeFresh() { if (!fresh) return; if (S.dirty) { stashed = JSON.parse(J
 $('takeBtn').onclick = takeFresh;
 $('draftBtn').onclick = () => { if (!stashed) return; snapshot(); S.data = stashed; stashed = null; Poses.set(S.key, S.data); if (!motion()) S.motion = Object.keys(S.data.motions)[0] || ''; $('draftBtn').hidden = true; touched(); show(); status('Your unsaved draft is back. Ctrl+Z goes back to the saved poses.'); };
 
+/* bringing a 2D rig's motions across (kit-poses rigMotions): each motion sampled as key poses about this model's side axis */
+let rigList = [], rigsLoaded = {};
+async function setupRigs() {
+  const own = S.order.filter(n => S.parts[n].node.isMesh || S.parts[n].node.children.some(ch => ch.isMesh && !S.parts[ch.name])).length;
+  $('rigSec').hidden = true; if (own < 2 || !S.axes || !Object.values(S.axes).some(v => v === 'right' || v === 'left')) return;
+  if (!rigList.length) { try { const r = await fetch(apiUrl('sprites'), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); rigList = Object.entries(j.sprites || {}).filter(([, v]) => v.kind === 'rig').map(([k, v]) => ({ key: k, file: v.file })); } catch (e) { status('The 2D rigs could not be listed: ' + e.message, true); return; } }
+  if (!rigList.length) return;
+  const from = (cast[S.key] || {}).fromSprite, pick = rigList.find(r => r.key === from) || rigList.find(r => r.key.startsWith(S.key)) || rigList[0];
+  $('rigSel').innerHTML = rigList.map(r => `<option value="${esc(r.key)}">${esc(r.key)}${r.key === from ? ' (it was made from this)' : ''}</option>`).join(''); $('rigSel').value = pick.key; $('rigSec').hidden = false;
+  $('rigBox').open = !!from && rigList.some(r => r.key === from) && !Object.values(S.data.motions).some(m => m.keys.length); // a model made from a 2D rig, with nothing posed yet: offered at once
+  await drawRigMotions(); }
+async function rigOf(key) { if (rigsLoaded[key]) return rigsLoaded[key]; const it = rigList.find(r => r.key === key); if (!it) throw new Error('no 2D rig ' + key);
+  const text = await (await fetch(`/games/${encodeURIComponent(GAME)}/assets/${encodeURIComponent(it.file)}?t=${Date.now()}`, { cache: 'no-store' })).text(); let def = null;
+  new Function('Draw', 'Rig', 'TAU', 'U', text)({}, { define: (k, r) => { def = Rig.define('pose-editor:' + key, r); } }, TAU, {}); // its own copy: the rig's file only describes it
+  if (!def) throw new Error(it.file + ' does not call Rig.define'); return (rigsLoaded[key] = def); }
+async function drawRigMotions() { let rig; try { rig = await rigOf($('rigSel').value); } catch (e) { $('rigMotions').textContent = e.message; return; }
+  const n = Object.keys(Poses.bonesOf(rig)).length; if (n < 4) { $('rigMotions').textContent = `Only ${n} of its bones match this model's parts.`; $('rigGo').disabled = true; return; } $('rigGo').disabled = false;
+  $('rigMotions').innerHTML = Object.keys(rig.motions || {}).map(m => { const posed = S.data.motions[m] && S.data.motions[m].keys.length; return `<label><input type="checkbox" value="${esc(m)}"${posed ? '' : ' checked'}> ${esc(m)}${posed ? ' (posed)' : ''}</label>`; }).join('') || 'It has no motions.'; }
+$('rigSel').onchange = drawRigMotions;
+$('rigGo').onclick = async () => { let rig; try { rig = await rigOf($('rigSel').value); } catch (e) { status(e.message, true); return; }
+  const names = [...$('rigMotions').querySelectorAll('input:checked')].map(i => i.value), replace = $('rigReplace').checked; if (!names.length) { status('Tick the motions to bring across.', true); return; }
+  let got; try { got = Poses.rigMotions(Rig, rig, { axes: S.axes, height: 1.8 / S.unit, names }); } catch (e) { status('They could not come across: ' + e.message, true); return; }
+  snapshot(); const brought = [], kept = [];
+  for (const [m, v] of Object.entries(got)) { if (S.data.motions[m] && S.data.motions[m].keys.length && !replace) { kept.push(m); continue; } S.data.motions[m] = v; brought.push(m); }
+  if (!brought.length) { S.undo.pop(); status(`Nothing brought: ${kept.join(', ')} ${kept.length > 1 ? 'are' : 'is'} posed already (tick Replace to bring ${kept.length > 1 ? 'them' : 'it'} anyway).`, true); return; }
+  S.motion = brought[0]; S.t = 0; $('scrub').value = 0; commitPart('brought ' + brought.join(', ') + ' from ' + $('rigSel').value); show(); drawRigMotions();
+  status(`Brought ${brought.join(', ')} across from ${$('rigSel').value}${kept.length ? ` (kept your ${kept.join(', ')})` : ''}. Press Play to see them, Ground every key if one floats, then Save poses.`); if (typeof UX !== 'undefined') UX.act('rigmotions', brought.length); };
+
 /* saving */
 async function save() { if (!S.dirty) return; saveState(true); $('saveBtn').textContent = 'Saving…'; status('Saving…');
   try { if (!CSRF) await token(); const r = await fetch(apiUrl('poses'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: S.key, motions: S.data.motions, what: lastWhat }) }); const j = await r.json();
@@ -365,6 +404,7 @@ async function loadModel(key) {
     Poses.set(key, S.data); S.motion = Object.keys(S.data.motions)[0] || ''; S.t = 0; $('scrub').value = 0;
     if (S.dirty) { show(); status('Your unsaved poses are back. Save them, or Ctrl+Z to drop them.'); } else if (stashed) { show(); status('These are the saved poses, changed since your unsaved draft.'); } else status((take ? 'The artist\'s new version (not in the game yet) · ' : '') + (S.order.length > 1 ? `${S.order.length} parts` : '')); show();
     try { if (parent !== window) parent.postMessage({ type: 'forge:pose-model', key }, location.origin); } catch (e) {} // the Studio's card follows the model shown here
+    setupRigs();
     const own = S.order.filter(n => S.parts[n].node.isMesh || S.parts[n].node.children.some(ch => ch.isMesh && !S.parts[ch.name])).length; // parts with a shape of their own: one is a solid piece
     if (own < 2) noModel(`${key} is one solid piece`, 'There are no limbs to turn: it was made as a single mesh. Ask the artist for a new version as separate named parts (torso, head, upperArmL, thighL …) and it can be posed here.');
   } catch (e) { status('Did not load: ' + e.message, true); noModel(`${key} did not load`, e.message); }

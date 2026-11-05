@@ -35,6 +35,11 @@ class Inspector {
         if (!isset($cast[$m])) throw new \RuntimeException("assets/events-vocab.json: {$key} is drawn by the model \"{$m}\", which is not in the 3D cast (assets/models.json)");
         return $m;
     }
+    /** A thing drawn by a 2D sprite in a game that draws in 3D can be upgraded to a jointed 3D model (Upgrade): the sprite's key, else null */
+    private static function upgradeOpen(string $slug, ?array $item, ?array $sprite, string $spriteKey): ?string {
+        if (!$sprite || ($sprite['kind'] ?? '') === 'model' || ($item && !empty($item['file']))) return null;
+        return Cast::threeRevision($slug) !== '' ? $spriteKey : null;
+    }
     /** How the pose editor opens for a 3D model: its key, and its waiting new version when there is one (posed before it is kept); null for anything not 3D */
     private static function poseOpen(string $slug, string $key, ?array $sprite): ?array {
         $w = is_file(Cast::path($slug)) ? (Cast::waitingRevisions($slug)[$key] ?? null) : null; $take = $w && str_ends_with((string) $w['file'], '.glb') ? $w['id'] . '/' . $w['file'] : '';
@@ -57,7 +62,7 @@ class Inspector {
             if ($w === '*') { $forAll++; continue; } if ($w === $key || (str_starts_with($w, 'group:') && in_array(substr($w, 6), $groups, true))) $built[(string) ($s['name'] ?? $s['id'] ?? '')][] = $it; }
         return ['key' => $key, 'name' => (string) ($subject['name'] ?? '') ?: self::name($key, (string) ($subject['about'] ?? $item['what'] ?? '')), 'ui' => in_array('ui', $groups, true), 'about' => (string) ($subject['about'] ?? $item['what'] ?? ''), 'groups' => array_values(array_diff($groups, ['ui'])), 'look' => self::look($slug, $mk, $item, $sprite), 'rules' => $rules, 'built' => $built, 'builtForAll' => $forAll, 'listed' => (bool) $cat,
             'bestiary' => self::resistances($slug, (array) ($subject['bestiary'] ?? [])), 'wired' => $v !== null,
-            'open' => ['rules' => "/editor/sprites/?game={$slug}&who=" . rawurlencode($key) . '#events', 'model' => $item ? "/editor/sprites/?game={$slug}&item=" . rawurlencode($mk) . '#3d' : null, 'bestiary' => !empty($subject['bestiary']) ? "/game/gameeditor/{$slug}?e=bestiary&game={$slug}" : null, 'pose' => self::poseOpen($slug, $mk, $sprite)]];
+            'open' => ['rules' => "/editor/sprites/?game={$slug}&who=" . rawurlencode($key) . '#events', 'model' => $item ? "/editor/sprites/?game={$slug}&item=" . rawurlencode($mk) . '#3d' : null, 'bestiary' => !empty($subject['bestiary']) ? "/game/gameeditor/{$slug}?e=bestiary&game={$slug}" : null, 'pose' => self::poseOpen($slug, $mk, $sprite), 'upgrade' => self::upgradeOpen($slug, $item, $sprite, isset($sprites[$mk]) ? $mk : $key)]];
     }
     private static function look(string $slug, string $key, ?array $item, ?array $sprite): ?array {
         if ($item) { $has = !empty($item['file']); return ['kind' => 'model', 'kept' => $has, 'strip' => self::thumb($slug, $key, $item), 'size' => $item['size'] ?? null, 'note' => (string) ($item['note'] ?? ''), 'colours' => array_values((array) ($item['colours'] ?? [])), 'moves' => (string) ($item['moves'] ?? ''), 'replaces' => (string) ($item['replaces'] ?? ''), 'recipe' => !empty($item['recipe']), 'versions' => count((array) ($item['history'] ?? []))]; }
