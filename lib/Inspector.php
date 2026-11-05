@@ -15,7 +15,7 @@ class Inspector {
         $keys = $v ? array_keys($v['subjects']) : ($cast ? array_keys($cast) : array_keys($sprites));
         $out = [];
         foreach ($keys as $k) { $s = $v['subjects'][$k] ?? []; $mk = self::modelKey($k, $s, $cast); $c = $cast[$mk] ?? [];
-            $out[] = ['key' => $k, 'name' => (string) ($s['name'] ?? '') ?: self::name($k, (string) ($s['about'] ?? $c['what'] ?? '')), 'ui' => in_array('ui', (array) ($s['groups'] ?? []), true), 'about' => (string) ($s['about'] ?? $c['what'] ?? ''), 'group' => (string) (($s['groups'] ?? [])[0] ?? $c['group'] ?? 'other'), 'thumb' => self::thumb($slug, $mk, $c), 'rules' => (int) ($own[$k] ?? 0)]; }
+            $out[] = ['key' => $k, 'name' => (string) ($s['name'] ?? '') ?: self::name($k, (string) ($s['about'] ?? $c['what'] ?? '')), 'ui' => in_array('ui', (array) ($s['groups'] ?? []), true), 'about' => (string) ($s['about'] ?? $c['what'] ?? ''), 'group' => (string) (($s['groups'] ?? [])[0] ?? $c['group'] ?? 'other'), 'thumb' => self::thumb($slug, $mk, $c), 'model' => $c ? $mk : '', 'rules' => (int) ($own[$k] ?? 0)]; }
         usort($out, fn($a, $b) => [$a['group'], $a['key']] <=> [$b['group'], $b['key']]);
         return $out;
     }
