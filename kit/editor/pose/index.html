@@ -160,7 +160,9 @@ const r4 = v => Math.round(v * 1e4) / 1e4;
 function snapshot() { S.undo.push(JSON.stringify(S.data)); if (S.undo.length > 80) S.undo.shift(); S.redo.length = 0; }
 function undo() { if (!S.undo.length) return; S.redo.push(JSON.stringify(S.data)); S.data = JSON.parse(S.undo.pop()); Poses.set(S.key, S.data); if (!motion()) S.motion = Object.keys(S.data.motions)[0] || ''; touched(); show(); if (typeof UX !== 'undefined') UX.undo && UX.undo(); }
 function redo() { if (!S.redo.length) return; S.undo.push(JSON.stringify(S.data)); S.data = JSON.parse(S.redo.pop()); Poses.set(S.key, S.data); touched(); show(); }
-function touched() { S.dirty = true; $('saveBtn').disabled = false; status('Not saved yet'); keepDraft(); }
+/* the save button says where the poses stand: Save poses while something is not saved, Saved (greyed) when the file has everything */
+function saveState(off) { const b = $('saveBtn'); b.disabled = off; b.textContent = off && S.key ? 'Saved' : 'Save poses'; b.title = off ? 'Everything here is saved in the game' : 'Save the poses into the game (Ctrl+S)'; }
+function touched() { S.dirty = true; saveState(false); status('Not saved yet'); keepDraft(); }
 
 /* the pose the figure shows now, as offsets from rest, for every part a key names or the figure has turned */
 function currentRot() { const out = {}, q = new THREE.Quaternion(), e = new THREE.Euler();
@@ -257,17 +259,17 @@ function watch(key, name) { const was = JSON.stringify(S.base ? JSON.parse(S.bas
       if (!S.dirty) takeFresh(); else { $('takeBtn').hidden = false; status(`The builder posed ${name}. Load its poses: your unsaved changes stay as a draft.`); } } catch (e) {} }, 15000); }
 let fresh = null;
 function takeFresh() { if (!fresh) return; if (S.dirty) { stashed = JSON.parse(JSON.stringify(S.data)); $('draftBtn').hidden = false; }
-  S.data = { motions: Array.isArray(fresh.motions) ? {} : fresh.motions || {} }; for (const m of Object.values(S.data.motions)) m.keys = m.keys || []; S.base = JSON.stringify(S.data.motions); S.dirty = false; $('saveBtn').disabled = true; keepDraft();
+  S.data = { motions: Array.isArray(fresh.motions) ? {} : fresh.motions || {} }; for (const m of Object.values(S.data.motions)) m.keys = m.keys || []; S.base = JSON.stringify(S.data.motions); S.dirty = false; saveState(true); keepDraft();
   Poses.set(S.key, S.data); if (!motion()) S.motion = Object.keys(S.data.motions)[0] || ''; $('takeBtn').hidden = true; fresh = null; show(); status(`The builder's poses are in. Press Play to see ${S.motion}, then adjust any key.`); }
 $('takeBtn').onclick = takeFresh;
 $('draftBtn').onclick = () => { if (!stashed) return; snapshot(); S.data = stashed; stashed = null; Poses.set(S.key, S.data); if (!motion()) S.motion = Object.keys(S.data.motions)[0] || ''; $('draftBtn').hidden = true; touched(); show(); status('Your unsaved draft is back. Ctrl+Z goes back to the saved poses.'); };
 
 /* saving */
-async function save() { if (!S.dirty) return; $('saveBtn').disabled = true; status('Saving…');
+async function save() { if (!S.dirty) return; saveState(true); $('saveBtn').textContent = 'Saving…'; status('Saving…');
   try { if (!CSRF) await token(); const r = await fetch(apiUrl('poses'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: S.key, motions: S.data.motions, what: lastWhat }) }); const j = await r.json();
     if (!r.ok) throw new Error(j.error || 'the forge answered ' + r.status); S.dirty = false; S.base = JSON.stringify(S.data.motions); keepDraft(); status('Saved. The game plays these once its builder has wired them in.'); if (typeof UX !== 'undefined') UX.act('save', S.key);
     try { parent.postMessage({ forgeSaved: 'poses', key: S.key }, location.origin); } catch (e) {} }
-  catch (e) { status('Not saved: ' + e.message, true); $('saveBtn').disabled = false; } }
+  catch (e) { status('Not saved: ' + e.message, true); saveState(false); } }
 $('saveBtn').onclick = save;
 async function token() { const r = await fetch(apiUrl('token'), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); if (!r.ok) throw new Error('sign in again: the forge answered ' + r.status); CSRF = (await r.json()).token || ''; }
 
@@ -287,7 +289,7 @@ addEventListener('pagehide', keepDraft);
 function noModel(title, text) { $('empty').hidden = false; $('empty').innerHTML = `<div><b>${esc(title)}</b>${esc(text)}</div>`; $('hint').hidden = true; }
 async function loadModel(key) {
   keepDraft();
-  S.key = key; S.dirty = false; S.undo.length = S.redo.length = 0; $('saveBtn').disabled = true; pick(''); if (S.model) scene.remove(S.model); S.model = null; S.parts = {}; S.order = []; $('empty').hidden = true; $('hint').hidden = false;
+  S.key = key; S.dirty = false; S.undo.length = S.redo.length = 0; saveState(true); pick(''); if (S.model) scene.remove(S.model); S.model = null; S.parts = {}; S.order = []; $('empty').hidden = true; $('hint').hidden = false;
   const it = cast[key]; status('Loading ' + key + '…');
   try {
     /* ?take=<job>/<file>.glb: the artist's new version of this model, looked at before it is kept (the game still has the old one) */
@@ -307,7 +309,7 @@ async function loadModel(key) {
     let draft = null; try { draft = JSON.parse(localStorage.getItem(draftKey()) || 'null'); } catch (e) {}
     if (draft && draft.motions && !draft.data) draft = { base: null, data: draft }; // a draft from before drafts kept their base: offered, never laid over the saved poses
     if (draft && draft.data && draft.data.motions && JSON.stringify(draft.data.motions) !== S.base) {
-      if (draft.base === S.base) { S.undo.push(JSON.stringify(S.data)); S.data = draft.data; S.dirty = true; $('saveBtn').disabled = false; }
+      if (draft.base === S.base) { S.undo.push(JSON.stringify(S.data)); S.data = draft.data; S.dirty = true; saveState(false); }
       else { stashed = draft.data; $('draftBtn').hidden = false; } } // the saved poses changed since (the builder posed something): they open, the draft waits for a press
     Poses.set(key, S.data); S.motion = Object.keys(S.data.motions)[0] || ''; S.t = 0; $('scrub').value = 0;
     if (S.dirty) { show(); status('Your unsaved poses are back. Save them, or Ctrl+Z to drop them.'); } else if (stashed) { show(); status('These are the saved poses, changed since your unsaved draft.'); } else status((take ? 'The artist\'s new version (not in the game yet) · ' : '') + (S.order.length > 1 ? `${S.order.length} parts` : '')); show();
