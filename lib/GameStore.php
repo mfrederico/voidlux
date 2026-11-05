@@ -602,7 +602,7 @@ class GameStore {
             foreach (array_slice((array) ($m['keys'] ?? []), 0, 32) as $k) { if (!is_array($k)) continue; $rot = [];
                 foreach ((array) ($k['rot'] ?? []) as $n => $r) { if (!preg_match($part, (string) $n) || !is_array($r) || count($r) !== 3) throw new \InvalidArgumentException("a key of {$name} turns \"{$n}\" by something that is not [x, y, z]");
                     $rot[(string) $n] = array_map(fn($v) => round(max(-7.0, min(7.0, (float) $v)), 4), array_values($r)); }
-                $keys[] = ['t' => round(max(0.0, min(1.0, (float) ($k['t'] ?? 0))), 4), 'rot' => $rot ?: (object) []]; }
+                $one = ['t' => round(max(0.0, min(1.0, (float) ($k['t'] ?? 0))), 4), 'rot' => $rot ?: (object) []]; if (!empty($k['lift'])) $one['lift'] = round(max(-1000.0, min(1000.0, (float) $k['lift'])), 3); $keys[] = $one; } // lift: the whole figure up or down, in the model's units
             usort($keys, fn($a, $c) => $a['t'] <=> $c['t']);
             $out[(string) $name] = ['loop' => !empty($m['loop']), 'seconds' => round(max(0.05, min(30.0, (float) ($m['seconds'] ?? 1))), 3), 'keys' => $keys];
         }

@@ -115,6 +115,13 @@ button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--a
       <button id="mirrorKey" title="Swap left and right: the pose shown, mirrored, here (for the other half of a stride)">Mirror L↔R</button>
       <button id="delKey" class="danger" disabled title="Remove the key pose here">Remove key</button>
     </div>
+    <div class="row">
+      <button id="undoBtn" disabled title="Undo (Ctrl+Z)">↶ Undo</button><button id="redoBtn" disabled title="Redo (Ctrl+Y, Ctrl+Shift+Z or Ctrl+R)">↷ Redo</button>
+      <span class="sep"></span>
+      <span class="at" id="liftAt" title="How far the whole figure is raised in this pose">height 0</span>
+      <button id="liftDown" title="Lower the whole figure a little in this pose">▼</button><button id="liftUp" title="Raise the whole figure a little in this pose">▲</button>
+      <button id="ground" title="Lower or raise the whole figure so its lowest point stands on the ground, in this pose">Feet on the ground</button>
+    </div>
   </div>
 </div>
 <script src="/kit/editor/ux.js"></script><!-- what a person meets here, for the forge's hourly retrospective -->
@@ -162,23 +169,30 @@ function undo() { if (!S.undo.length) return; S.redo.push(JSON.stringify(S.data)
 function redo() { if (!S.redo.length) return; S.undo.push(JSON.stringify(S.data)); S.data = JSON.parse(S.redo.pop()); Poses.set(S.key, S.data); touched(); show(); }
 /* the save button says where the poses stand: Save poses while something is not saved, Saved (greyed) when the file has everything */
 function saveState(off) { const b = $('saveBtn'); b.disabled = off; b.textContent = off && S.key ? 'Saved' : 'Save poses'; b.title = off ? 'Everything here is saved in the game' : 'Save the poses into the game (Ctrl+S)'; }
-function touched() { S.dirty = true; saveState(false); status('Not saved yet'); keepDraft(); }
+$('undoBtn').onclick = () => undo(); $('redoBtn').onclick = () => redo();
+function touched() { S.dirty = true; saveState(false); status('Not saved yet'); keepDraft(); drawLift(); }
 
 /* the pose the figure shows now, as offsets from rest, for every part a key names or the figure has turned */
 function currentRot() { const out = {}, q = new THREE.Quaternion(), e = new THREE.Euler();
   for (const n of S.order) { const p = S.parts[n]; q.copy(p.rest).invert().multiply(p.node.quaternion); if (Math.abs(q.w) > 0.99999) continue; e.setFromQuaternion(q, 'XYZ'); out[n] = [r4(e.x), r4(e.y), r4(e.z)]; }
   return out; }
+/* the whole figure's height in the pose shown: the root part above or below where it stands at rest, in the model's own units */
+function currentLift() { const top = S.order.find(n => S.parts[n].top); return top ? S.parts[top].node.position.y - S.parts[top].restY : 0; }
+function setLift(v, what) { if (!motion()) { status('Pick or add a motion first: the height belongs to a key pose in it.', true); return; } snapshot(); const k = ensureKey(); v = r4(v); if (Math.abs(v) < 1e-4) delete k.lift; else k.lift = v; commitPart(what); pose(); drawParts(); }
+$('liftUp').onclick = () => setLift(currentLift() + 0.01 * 1.8 / S.unit, 'raised the figure');
+$('liftDown').onclick = () => setLift(currentLift() - 0.01 * 1.8 / S.unit, 'lowered the figure');
+$('ground').onclick = () => { if (!S.model) return; S.model.updateMatrixWorld(true); const low = new THREE.Box3().setFromObject(S.root, true).min.y; setLift(currentLift() - low / S.unit, 'put the feet on the ground'); };
 function ensureKey() { // the key pose at the playhead, made from what the figure shows when there is none; a turn with no motion chosen starts one
   if (!motion()) { const n = S.data.motions.idle ? 'pose' + (Object.keys(S.data.motions).length + 1) : 'idle'; S.data.motions[n] = { loop: true, seconds: 1, keys: [] }; S.motion = n; S.t = 0; $('scrub').value = 0; started = n; }
   const m = motion(); let k = keyAt(); if (k) return k;
-  k = { t: r4(S.t), rot: currentRot() }; m.keys.push(k); m.keys.sort((a, b) => a.t - b.t); return k; }
+  k = { t: r4(S.t), rot: currentRot() }; const lf = currentLift(); if (lf) k.lift = r4(lf); m.keys.push(k); m.keys.sort((a, b) => a.t - b.t); return k; }
 function writePart(n) { const k = ensureKey(); if (!k || !S.parts[n]) return; const p = S.parts[n], q = p.rest.clone().invert().multiply(p.node.quaternion), e = new THREE.Euler().setFromQuaternion(q, 'XYZ');
   if (Math.abs(q.w) > 0.99999) delete k.rot[n]; else k.rot[n] = [r4(e.x), r4(e.y), r4(e.z)]; }
 function commitPart(what) { touched(); drawKeys(); draw(); lastWhat = what; if (started) { status(`Started the motion "${started}" for that turn: rename it by adding the one you meant, or keep posing it.`); started = ''; } }
 let lastWhat = '', started = '';
 
 /* showing: the motion at the playhead, the parts list, the strip */
-function pose() { if (!S.model || dragging) return; if (S.motion && Poses.has(S.key, S.motion)) Poses.apply(S.model, S.key, [[S.motion, S.t, 1]]); else for (const n of S.order) S.parts[n].node.quaternion.copy(S.parts[n].rest); draw(); }
+function pose() { if (!S.model || dragging) return; if (S.motion && Poses.has(S.key, S.motion)) Poses.apply(S.model, S.key, [[S.motion, S.t, 1]]); else for (const n of S.order) { const P = S.parts[n]; P.node.quaternion.copy(P.rest); if (P.top) P.node.position.y = P.restY; } drawLift(); draw(); }
 function show() { drawMotions(); drawParts(); drawKeys(); pose(); fit(); draw(); }
 function drawMotions() {
   const names = Object.keys(S.data.motions);
@@ -197,7 +211,8 @@ function drawParts() {
   $('resetPart').disabled = !sel || !motion();
 }
 function drawKeys() { const m = motion(); $('keys').innerHTML = m ? m.keys.map(k => `<i style="left:${k.t * 100}%" class="${Math.abs(k.t - S.t) < 0.005 ? 'here' : ''}"></i>`).join('') : '';
-  $('at').textContent = S.t.toFixed(2) + (keyAt() ? ' key' : ''); $('delKey').disabled = !keyAt(); drawMotions(); }
+  $('at').textContent = S.t.toFixed(2) + (keyAt() ? ' key' : ''); $('delKey').disabled = !keyAt(); drawMotions(); drawLift(); }
+function drawLift() { const v = S.model ? currentLift() * S.unit / 1.8 * 100 : 0; $('liftAt').textContent = 'height ' + (Math.abs(v) < 0.5 ? '0' : (v > 0 ? '+' : '') + Math.round(v) + '%'); for (const id of ['liftUp', 'liftDown', 'ground']) $(id).disabled = !S.model || S.order.length < 2; $('undoBtn').disabled = !S.undo.length; $('redoBtn').disabled = !S.redo.length; }
 function pick(n) { sel = n && S.parts[n] ? n : ''; if (sel) gizmo.attach(S.parts[sel].node); else gizmo.detach();
   if (outline) { outline.parent && outline.parent.remove(outline); outline = null; }
   if (sel) { outline = new THREE.BoxHelper(S.parts[sel].node, 0xd08a00); scene.add(outline); }
@@ -219,13 +234,13 @@ const jumpKey = dir => { const m = motion(); if (!m || !m.keys.length) return; c
 $('prevKey').onclick = () => jumpKey(-1); $('nextKey').onclick = () => jumpKey(1);
 $('addKey').onclick = () => { if (keyAt()) { status('There is a key pose here already: turn a part to change it.'); return; } snapshot(); ensureKey(); commitPart('a key pose at ' + S.t.toFixed(2)); drawParts(); };
 $('delKey').onclick = () => { const m = motion(), k = keyAt(); if (!k) return; snapshot(); m.keys.splice(m.keys.indexOf(k), 1); commitPart('removed a key pose'); pose(); drawParts(); };
-$('copyKey').onclick = () => { S.copied = currentRot(); $('pasteKey').disabled = false; status('Copied the pose at ' + S.t.toFixed(2)); };
-$('pasteKey').onclick = () => { if (!S.copied) return; snapshot(); const k = ensureKey(); k.rot = JSON.parse(JSON.stringify(S.copied)); commitPart('pasted a pose'); pose(); drawParts(); };
+$('copyKey').onclick = () => { S.copied = currentRot(); S.copiedLift = r4(currentLift()); $('pasteKey').disabled = false; status('Copied the pose at ' + S.t.toFixed(2)); };
+$('pasteKey').onclick = () => { if (!S.copied) return; snapshot(); const k = ensureKey(); k.rot = JSON.parse(JSON.stringify(S.copied)); if (S.copiedLift) k.lift = S.copiedLift; else delete k.lift; commitPart('pasted a pose'); pose(); drawParts(); };
 /* mirror: left and right swap (thighL <-> thighR), and each turn is reflected through the figure's middle (the x-y plane: it faces +x) */
 const twin = n => n.replace(/(L|R|Left|Right|_l|_r|\.L|\.R)$/, s => ({ L: 'R', R: 'L', Left: 'Right', Right: 'Left', _l: '_r', _r: '_l', '.L': '.R', '.R': '.L' }[s]));
 $('mirrorKey').onclick = () => { const cur = currentRot(), out = {}, q = new THREE.Quaternion(), e = new THREE.Euler();
   for (const [n, r] of Object.entries(cur)) { const to = S.parts[twin(n)] ? twin(n) : n; q.setFromEuler(e.set(r[0], r[1], r[2], 'XYZ')); q.set(-q.x, -q.y, q.z, q.w); e.setFromQuaternion(q, 'XYZ'); out[to] = [r4(e.x), r4(e.y), r4(e.z)]; }
-  snapshot(); const k = ensureKey(); k.rot = out; commitPart('mirrored a pose'); pose(); drawParts(); };
+  const lf = r4(currentLift()); snapshot(); const k = ensureKey(); k.rot = out; if (lf) k.lift = lf; else delete k.lift; commitPart('mirrored a pose'); pose(); drawParts(); };
 $('resetPart').onclick = () => { if (!sel) return; snapshot(); const k = ensureKey(); delete k.rot[sel]; commitPart('rested ' + sel); pose(); drawParts(); };
 
 /* motions */
@@ -273,7 +288,9 @@ async function save() { if (!S.dirty) return; saveState(true); $('saveBtn').text
 $('saveBtn').onclick = save;
 async function token() { const r = await fetch(apiUrl('token'), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); if (!r.ok) throw new Error('sign in again: the forge answered ' + r.status); CSRF = (await r.json()).token || ''; }
 
-addEventListener('keydown', e => { if (e.target.matches('input, select, textarea')) return;
+renderer.domElement.tabIndex = 0; renderer.domElement.style.outline = 'none'; renderer.domElement.addEventListener('pointerdown', () => renderer.domElement.focus()); // keys reach the editor after a click on the stage
+addEventListener('keydown', e => { if (e.target.matches('textarea, input[type=text], input:not([type]), input[type=number]')) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r' && !e.shiftKey) { e.preventDefault(); redo(); return; } // redo, as asked: the page keeps unsaved poses as a draft anyway
   if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); }
@@ -298,10 +315,10 @@ async function loadModel(key) {
     const [g, poses] = await Promise.all([new GLTFLoader().loadAsync(url),
       fetch(apiUrl('poses', { key }), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error || 'poses answered ' + r.status); return j; })]);
     const root = g.scene, box = new THREE.Box3().setFromObject(root), dim = box.getSize(new THREE.Vector3()), s = 1.8 / (Math.max(dim.x, dim.y, dim.z) || 1), c = box.getCenter(new THREE.Vector3());
-    const holder = new THREE.Group(); holder.add(root); root.scale.multiplyScalar(s); root.position.set(-c.x * s, -box.min.y * s, -c.z * s); scene.add(holder); S.model = holder;
+    const holder = new THREE.Group(); holder.add(root); root.scale.multiplyScalar(s); S.unit = s; S.root = root; // the editor's units per model unit: a lift is kept in the model's own root.position.set(-c.x * s, -box.min.y * s, -c.z * s); scene.add(holder); S.model = holder;
     /* the parts: every named node below the scene, in tree order; a mesh that only carries its parent's look (torso > torso_mesh) is not one */
     const walk = (o, d) => { for (const ch of o.children) { const geomOnly = ch.isMesh && !ch.children.length && ch.parent !== root && ch.parent.name && ch.name.startsWith(ch.parent.name);
-      if (ch.name && !geomOnly) { S.parts[ch.name] = { node: ch, rest: ch.quaternion.clone(), depth: d }; S.order.push(ch.name); walk(ch, d + 1); } else walk(ch, d); } };
+      if (ch.name && !geomOnly) { S.parts[ch.name] = { node: ch, rest: ch.quaternion.clone(), restY: ch.position.y, top: d === 0, depth: d }; S.order.push(ch.name); walk(ch, d + 1); } else walk(ch, d); } };
     walk(root, 0); holder.userData.poseParts = S.parts; holder.updateMatrixWorld(true);
     for (const n of S.order) { const p = S.parts[n]; p.at = p.node.getWorldPosition(new THREE.Vector3()).toArray().map(v => Math.round(v * 100) / 100); let up = p.node.parent; while (up && !(up.name && S.parts[up.name])) up = up.parent; p.parent = up ? up.name : ''; }
     S.data = { motions: Array.isArray(poses.motions) ? {} : poses.motions || {} }; for (const m of Object.values(S.data.motions)) m.keys = m.keys || [];
