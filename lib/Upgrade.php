@@ -87,6 +87,12 @@ class Upgrade {
         return $out;
     }
 
+    /** The node names in a binary glTF file ([] when it cannot be read). */
+    public static function partsIn(string $glb): array {
+        if (!is_file($glb)) return []; $h = (string) file_get_contents($glb, false, null, 0, 20); if (strlen($h) < 20 || substr($h, 0, 4) !== 'glTF') return [];
+        $n = unpack('V', substr($h, 12, 4))[1]; $j = json_decode((string) file_get_contents($glb, false, null, 20, $n), true);
+        return is_array($j) ? array_values(array_filter(array_map(fn($x) => (string) ($x['name'] ?? ''), (array) ($j['nodes'] ?? [])))) : [];
+    }
     /** Links the subject drawn by the sprite to the model, so the Studio shows the 3D one (the subject's "model" in assets/events-vocab.json).
      *  Written in place, one subject per line as the builder writes the file. A subject that already names a model keeps it. */
     public static function linkSubject(string $slug, string $sprite, string $key): bool {

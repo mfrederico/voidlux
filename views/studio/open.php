@@ -25,6 +25,14 @@ button.on { background: var(--pick); border-color: var(--pick); color: #fff; } a
 #over { position: absolute; inset: 0; display: none; cursor: crosshair; } #over.on { display: block; box-shadow: inset 0 0 0 3px var(--pick); }
 #ring { position: absolute; display: none; border: 2px solid var(--pick); border-radius: 50%; box-shadow: 0 0 0 4px rgba(255,61,154,.25); pointer-events: none; } #tip { position: absolute; display: none; padding: 2px 8px; border-radius: 6px; background: rgba(16,12,28,.92); color: #fff; font-size: 13px; pointer-events: none; white-space: nowrap; }
 .st-card { min-height: 0; overflow-y: auto; padding: 14px; border-left: 1px solid var(--line); background: var(--panel); }
+/* the path from a drawing to a moving 3D thing in the game, on a thing's card */
+.path { margin: 10px 0 12px; display: grid; gap: 8px; } .path ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.path li { display: grid; justify-items: center; gap: 2px; padding: 6px 2px; border-radius: 10px; border: 1px solid var(--line); font-size: 12.5px; text-align: center; color: var(--muted); }
+.path li i { font-style: normal; font-weight: 700; font-size: 15px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--line); color: var(--ink); }
+.path li.s-done i { background: #2e9e5b; color: #fff; } .path li.s-done { color: var(--ink); }
+.path li.s-next, .path li.s-ready, .path li.s-stuck { border-color: var(--accent); color: var(--ink); font-weight: 600; } .path li.s-next i, .path li.s-ready i { background: var(--accent); color: #17120a; } .path li.s-stuck i { background: #d9534f; color: #fff; }
+.path li.s-busy i { background: linear-gradient(90deg, #ffb547, #ff3d9a, #c58aff, #7de0ff); color: #17120a; } .path li.s-skip { opacity: .6; }
+.path-next { display: grid; gap: 6px; padding: 10px; border-radius: 12px; background: var(--bg); border: 1px dashed var(--line); font-size: 14px; } .path-next b { display: block; } .path-next button { justify-self: start; min-height: 40px; } .path-next.done { border-style: solid; } .path-next .linkish { border: 0; background: none; padding: 4px 0; min-height: 32px; color: var(--accent); text-decoration: underline; cursor: pointer; }
 /* while an editor is open the panel can fold to an edge, so the editor gets the width (on a tablet it folds by itself) */
 #cardFold { display: none; float: right; min-width: 36px; min-height: 36px; margin: -6px -6px 4px 6px; border-radius: 10px; font-weight: 700; } .st.editing #cardFold { display: inline-grid; place-items: center; }
 @media (min-width: 641px) { .st.editing.cardoff { grid-template-columns: 0 minmax(0, 1fr) 46px !important; } .st.editing.cardoff .st-card { padding: 8px 4px; overflow: hidden; } .st.editing.cardoff .st-card > :not(#cardFold) { display: none !important; } .st.editing.cardoff #cardFold { float: none; margin: 0; width: 36px; } }

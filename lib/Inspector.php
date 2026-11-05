@@ -16,6 +16,11 @@ class Inspector {
         $out = [];
         foreach ($keys as $k) { $s = $v['subjects'][$k] ?? []; $mk = self::modelKey($k, $s, $cast); $c = $cast[$mk] ?? [];
             $out[] = ['key' => $k, 'name' => (string) ($s['name'] ?? '') ?: self::name($k, (string) ($s['about'] ?? $c['what'] ?? '')), 'ui' => in_array('ui', (array) ($s['groups'] ?? []), true), 'about' => (string) ($s['about'] ?? $c['what'] ?? ''), 'group' => (string) (($s['groups'] ?? [])[0] ?? $c['group'] ?? 'other'), 'thumb' => self::thumb($slug, $mk, $c), 'model' => $c ? $mk : '', 'rules' => (int) ($own[$k] ?? 0)]; }
+        /* models made for the game that nothing in it draws yet (an upgraded sprite, a new character): listed, so their card says what is left */
+        if ($v) { $drawn = []; foreach ($v['subjects'] as $k => $s) { $drawn[$k] = true; if (!empty($s['model'])) $drawn[(string) $s['model']] = true; }
+            $hooks = array_flip(Cast::hooks($slug));
+            foreach ($cast as $k => $c) if (!isset($drawn[$k]) && !isset($hooks[$k]) && !empty($c['fromSprite']) || (!isset($drawn[$k]) && !isset($hooks[$k]) && !empty($c['file']) && ($c['group'] ?? '') !== 'terrain' && preg_match('/\b2D sprite\b/', (string) ($c['replaces'] ?? ''))))
+                $out[] = ['key' => (string) $k, 'name' => self::name((string) $k, (string) ($c['what'] ?? '')), 'ui' => false, 'about' => (string) ($c['what'] ?? ''), 'group' => 'new', 'thumb' => self::thumb($slug, (string) $k, $c), 'model' => (string) $k, 'rules' => 0]; }
         usort($out, fn($a, $b) => [$a['group'], $a['key']] <=> [$b['group'], $b['key']]);
         return $out;
     }
@@ -40,6 +45,34 @@ class Inspector {
         if (!$sprite || ($sprite['kind'] ?? '') === 'model' || ($item && !empty($item['file']))) return null;
         return Cast::threeRevision($slug) !== '' ? $spriteKey : null;
     }
+    /** Where a thing stands on the way from a drawing to a moving 3D thing in the game: four steps (draw, 3d, move, game), each
+     *  done | busy | ready (a new version waits) | next | later | skip (made from words, or one that need not move) | stuck (one solid
+     *  piece that should move), with what to do next. Only for games that draw in 3D, and never for parts of a screen. */
+    private static function path(string $slug, string $key, ?array $subject, ?array $item, ?array $sprite, string $mk, array $sprites): ?array {
+        if (Cast::threeRevision($slug) === '' || in_array('ui', (array) ($subject['groups'] ?? []), true) || str_contains($key, ':')) return null;
+        $d = GameStore::dir($slug); $is2d = fn($k) => $k !== '' && isset($sprites[$k]) && (((array) $sprites[$k])['kind'] ?? '') !== 'model'; /* the 2D drawing: the one the model was made from, else the thing's own sprite */
+        $from = (string) ($item['fromSprite'] ?? ''); if (!$is2d($from)) $from = $is2d($key) ? $key : ($is2d($mk) ? $mk : '');
+        $has2d = $from !== '' && isset($sprites[$from]) && ((array) $sprites[$from])['kind'] !== 'model'; $kept = $item && !empty($item['file']) && is_file("$d/assets/{$item['file']}");
+        $group = (string) ($item['group'] ?? (($subject['groups'] ?? [])[0] ?? 'other')); $character = in_array($group, ['player', 'enemy', 'boss', 'npc', 'friend', 'critter'], true);
+        $draw = $has2d ? ['state' => 'done', 'say' => 'Drawn in 2D', 'sprite' => $from] : ($kept ? ['state' => 'skip', 'say' => 'Made from words'] : ['state' => 'next', 'say' => 'Draw it, or describe it']);
+        $three = ['state' => 'later', 'say' => 'Made in 3D'];
+        $waiting = Cast::waitingRevisions($slug)[$mk] ?? null; $busy = false;
+        if ($item && !empty($item['job']) && strcmp((string) ($item['kept'] ?? ''), (string) $item['job']) < 0) { try { $st = GameStore::sketchStatus($slug, (string) $item['job']); $busy = empty($st['result']); } catch (\InvalidArgumentException $e) {} }
+        if ($busy) $three = ['state' => 'busy', 'say' => 'The artist is making it'];
+        elseif ($waiting) $three = ['state' => 'ready', 'say' => 'A new version is ready to look at', 'take' => $waiting['id'] . '/' . $waiting['file']];
+        elseif ($kept) $three = ['state' => 'done', 'say' => 'Made in 3D'];
+        elseif ($has2d) $three = ['state' => 'next', 'say' => 'Make it 3D'];
+        $move = ['state' => 'later', 'say' => 'Make it move'];
+        if ($kept) { $names = $kept ? Upgrade::partsIn("$d/assets/{$item['file']}") : []; $jointed = count(array_intersect($names, array_keys(Upgrade::PARTS))) >= 4;
+            $poses = is_file("$d/assets/{$mk}.poses.json") ? (array) (GameStore::readPoses($slug, $mk)['motions'] ?? []) : []; $posed = array_keys(array_filter($poses, fn($m) => !empty($m['keys'])));
+            if ($posed) $move = ['state' => 'done', 'say' => count($posed) . ' move' . (count($posed) === 1 ? '' : 's') . ': ' . implode(', ', array_map(fn($n) => str_replace(['_', '-'], ' ', $n), array_slice($posed, 0, 4))) . (count($posed) > 4 ? '…' : ''), 'jointed' => $jointed];
+            elseif ($jointed) $move = ['state' => 'next', 'say' => 'Make it move', 'rig' => $has2d && ((array) $sprites[$from])['kind'] === 'rig'];
+            elseif ($character) $move = ['state' => 'stuck', 'say' => 'It is one solid piece: it needs arms and legs to move'];
+            else $move = ['state' => 'skip', 'say' => 'Does not need to move']; }
+        $inGame = $subject !== null || in_array($mk, Cast::hooks($slug), true);
+        $game = $inGame ? ['state' => 'done', 'say' => 'In the game'] : ['state' => $kept ? 'next' : 'later', 'say' => 'Put it in the game'];
+        return ['draw' => $draw, '3d' => $three, 'move' => $move, 'game' => $game, 'model' => $mk, 'cost' => ['art' => RunCosts::estimate($slug, 'art')['cost'], 'build' => RunCosts::estimate($slug, 'chat')['cost']]];
+    }
     /** How the pose editor opens for a 3D model: its key, and its waiting new version when there is one (posed before it is kept); null for anything not 3D */
     private static function poseOpen(string $slug, string $key, ?array $sprite): ?array {
         $w = is_file(Cast::path($slug)) ? (Cast::waitingRevisions($slug)[$key] ?? null) : null; $take = $w && str_ends_with((string) $w['file'], '.glb') ? $w['id'] . '/' . $w['file'] : '';
@@ -62,7 +95,7 @@ class Inspector {
             if ($w === '*') { $forAll++; continue; } if ($w === $key || (str_starts_with($w, 'group:') && in_array(substr($w, 6), $groups, true))) $built[(string) ($s['name'] ?? $s['id'] ?? '')][] = $it; }
         return ['key' => $key, 'name' => (string) ($subject['name'] ?? '') ?: self::name($key, (string) ($subject['about'] ?? $item['what'] ?? '')), 'ui' => in_array('ui', $groups, true), 'about' => (string) ($subject['about'] ?? $item['what'] ?? ''), 'groups' => array_values(array_diff($groups, ['ui'])), 'look' => self::look($slug, $mk, $item, $sprite), 'rules' => $rules, 'built' => $built, 'builtForAll' => $forAll, 'listed' => (bool) $cat,
             'bestiary' => self::resistances($slug, (array) ($subject['bestiary'] ?? [])), 'wired' => $v !== null,
-            'open' => ['rules' => "/editor/sprites/?game={$slug}&who=" . rawurlencode($key) . '#events', 'model' => $item ? "/editor/sprites/?game={$slug}&item=" . rawurlencode($mk) . '#3d' : null, 'bestiary' => !empty($subject['bestiary']) ? "/game/gameeditor/{$slug}?e=bestiary&game={$slug}" : null, 'pose' => self::poseOpen($slug, $mk, $sprite), 'upgrade' => self::upgradeOpen($slug, $item, $sprite, isset($sprites[$mk]) ? $mk : $key)]];
+            'open' => ['rules' => "/editor/sprites/?game={$slug}&who=" . rawurlencode($key) . '#events', 'model' => $item ? "/editor/sprites/?game={$slug}&item=" . rawurlencode($mk) . '#3d' : null, 'bestiary' => !empty($subject['bestiary']) ? "/game/gameeditor/{$slug}?e=bestiary&game={$slug}" : null, 'pose' => self::poseOpen($slug, $mk, $sprite), 'upgrade' => self::upgradeOpen($slug, $item, $sprite, isset($sprites[$mk]) ? $mk : $key)], 'path' => self::path($slug, $key, $subject, $item, $sprite, $mk, $sprites)];
     }
     private static function look(string $slug, string $key, ?array $item, ?array $sprite): ?array {
         if ($item) { $has = !empty($item['file']); return ['kind' => 'model', 'kept' => $has, 'strip' => self::thumb($slug, $key, $item), 'size' => $item['size'] ?? null, 'note' => (string) ($item['note'] ?? ''), 'colours' => array_values((array) ($item['colours'] ?? [])), 'moves' => (string) ($item['moves'] ?? ''), 'replaces' => (string) ($item['replaces'] ?? ''), 'recipe' => !empty($item['recipe']), 'versions' => count((array) ($item['history'] ?? []))]; }
