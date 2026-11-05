@@ -35,6 +35,7 @@ button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--a
 .list button small { color: var(--muted); }
 .list button.on small { color: inherit; }
 .part { padding-left: calc(11px + var(--depth, 0) * 12px) !important; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; } .chips button { min-height: 28px; padding: 2px 8px; font-size: 13px; }
 .add { display: flex; gap: 6px; } .add input { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; }
 .opts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
 .opts input[type=number] { width: 64px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 7px; background: transparent; }
@@ -73,6 +74,7 @@ button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--a
     <section>
       <h2>Motions</h2>
       <div class="list" id="motions"></div>
+      <div class="chips" id="chips"></div>
       <div class="add" style="margin-top:6px"><input id="newMotion" placeholder="a new motion, e.g. run" aria-label="Name a new motion" pattern="[a-z][a-z0-9_\-]{0,40}"><button id="addMotion">Add</button></div>
       <div class="opts" id="motionOpts" style="margin-top:8px">
         <label><input type="checkbox" id="loop"> loops</label>
@@ -131,7 +133,7 @@ const facing = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vecto
 const orbit = new OrbitControls(camera, renderer.domElement); orbit.target.set(0, 0.9, 0); orbit.enableDamping = true; orbit.update();
 const gizmo = new TransformControls(camera, renderer.domElement); gizmo.setMode('rotate'); gizmo.setSpace('local'); gizmo.setSize(0.8); scene.add(gizmo);
 gizmo.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; if (e.value) { snapshot(); dragging = true; } else { dragging = false; commitPart('turned ' + sel); } });
-gizmo.addEventListener('objectChange', () => { if (dragging) writePart(sel); });
+gizmo.addEventListener('objectChange', () => { if (dragging) writePart(sel); draw(); });
 function fit() { const w = stage.clientWidth, h = stage.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix(); }
 new ResizeObserver(() => { fit(); draw(); }).observe(stage); addEventListener('resize', () => { fit(); draw(); });
 function draw() { if (outline) outline.update(); renderer.render(scene, camera); } // also outside the animation loop, which a hidden tab pauses
@@ -140,6 +142,7 @@ function draw() { if (outline) outline.update(); renderer.render(scene, camera);
 const S = { key: '', model: null, parts: {}, order: [], data: { motions: {} }, motion: '', t: 0, playing: false, dirty: false, copied: null, undo: [], redo: [] };
 let sel = '', dragging = false, outline = null;
 const motion = () => S.data.motions[S.motion];
+const COMMON = ['idle', 'run', 'crouch', 'sword', 'throw', 'blowgun', 'victory']; // the motions a game usually plays (Ninja Mirage plays these); any other can be named
 const keyAt = (t = S.t) => { const m = motion(); return m ? m.keys.find(k => Math.abs(k.t - t) < 0.005) : null; };
 const r4 = v => Math.round(v * 1e4) / 1e4;
 
@@ -152,13 +155,14 @@ function touched() { S.dirty = true; $('saveBtn').disabled = false; status('Not 
 function currentRot() { const out = {}, q = new THREE.Quaternion(), e = new THREE.Euler();
   for (const n of S.order) { const p = S.parts[n]; q.copy(p.rest).invert().multiply(p.node.quaternion); if (Math.abs(q.w) > 0.99999) continue; e.setFromQuaternion(q, 'XYZ'); out[n] = [r4(e.x), r4(e.y), r4(e.z)]; }
   return out; }
-function ensureKey() { // the key pose at the playhead, made from what the figure shows when there is none
-  const m = motion(); if (!m) return null; let k = keyAt(); if (k) return k;
+function ensureKey() { // the key pose at the playhead, made from what the figure shows when there is none; a turn with no motion chosen starts one
+  if (!motion()) { const n = S.data.motions.idle ? 'pose' + (Object.keys(S.data.motions).length + 1) : 'idle'; S.data.motions[n] = { loop: true, seconds: 1, keys: [] }; S.motion = n; S.t = 0; $('scrub').value = 0; started = n; }
+  const m = motion(); let k = keyAt(); if (k) return k;
   k = { t: r4(S.t), rot: currentRot() }; m.keys.push(k); m.keys.sort((a, b) => a.t - b.t); return k; }
 function writePart(n) { const k = ensureKey(); if (!k || !S.parts[n]) return; const p = S.parts[n], q = p.rest.clone().invert().multiply(p.node.quaternion), e = new THREE.Euler().setFromQuaternion(q, 'XYZ');
   if (Math.abs(q.w) > 0.99999) delete k.rot[n]; else k.rot[n] = [r4(e.x), r4(e.y), r4(e.z)]; }
-function commitPart(what) { touched(); drawKeys(); lastWhat = what; }
-let lastWhat = '';
+function commitPart(what) { touched(); drawKeys(); draw(); lastWhat = what; if (started) { status(`Started the motion "${started}" for that turn: rename it by adding the one you meant, or keep posing it.`); started = ''; } }
+let lastWhat = '', started = '';
 
 /* showing: the motion at the playhead, the parts list, the strip */
 function pose() { if (!S.model || dragging) return; if (S.motion && Poses.has(S.key, S.motion)) Poses.apply(S.model, S.key, [[S.motion, S.t, 1]]); else for (const n of S.order) S.parts[n].node.quaternion.copy(S.parts[n].rest); draw(); }
@@ -166,7 +170,9 @@ function show() { drawMotions(); drawParts(); drawKeys(); pose(); fit(); draw();
 function drawMotions() {
   const names = Object.keys(S.data.motions);
   $('motions').innerHTML = names.length ? names.map(n => { const m = S.data.motions[n]; return `<button data-m="${esc(n)}" class="${n === S.motion ? 'on' : ''}">${esc(n)} <small>${m.keys.length} key${m.keys.length === 1 ? '' : 's'}${m.loop ? ' · loops' : ''}</small></button>`; }).join('')
-    : '<p style="margin:0;color:var(--muted);font-size:13px">No motions yet. Name one below (run, idle, sword…) to start posing it.</p>';
+    : '<p style="margin:0;color:var(--muted);font-size:13px">No motions yet. Pick one below, or just turn a limb: that starts “idle”.</p>';
+  const left = COMMON.filter(n => !S.data.motions[n]); $('chips').innerHTML = left.map(n => `<button type="button" data-add="${n}">+ ${n}</button>`).join('');
+  $('chips').querySelectorAll('[data-add]').forEach(b => b.onclick = () => { $('newMotion').value = b.dataset.add; $('addMotion').click(); });
   $('motions').querySelectorAll('[data-m]').forEach(b => b.onclick = () => { S.motion = b.dataset.m; S.t = 0; $('scrub').value = 0; stop(); show(); });
   const m = motion(); $('motionOpts').style.display = m ? '' : 'none'; if (m) { $('loop').checked = !!m.loop; $('seconds').value = m.seconds || 1; }
   for (const id of ['addKey', 'copyKey', 'mirrorKey', 'playBtn', 'prevKey', 'nextKey']) $(id).disabled = !m || !S.model; $('pasteKey').disabled = !m || !S.copied;
@@ -266,13 +272,15 @@ async function loadModel(key) {
   } catch (e) { status('Did not load: ' + e.message, true); noModel(`${key} did not load`, e.message); }
 }
 
+window.__pose = { S, gizmo, pick: n => pick(n) }; // for the forge's own checks: the state and the ring control, read-only use
 let cast = {};
 (async () => {
   if (!GAME) { noModel('No game named', 'Open this from the Studio, or add ?game=<the game> to the address.'); status(''); return; }
   try { const r = await fetch(`/games/${encodeURIComponent(GAME)}/assets/models.json`, { cache: 'no-store' }); if (r.status === 404) { noModel('No 3D models yet', 'This game has no 3D cast to pose.'); status(''); return; }
     if (!r.ok) throw new Error('models.json answered ' + r.status); cast = (await r.json()).items || {}; }
   catch (e) { status('Did not load: ' + e.message, true); return; }
-  const keys = Object.keys(cast).filter(k => cast[k].file); if (!keys.length) { noModel('No 3D models yet', 'This game has no 3D cast to pose.'); status(''); return; }
+  const ORDER = ['player', 'enemy', 'boss', 'npc', 'pickup', 'prop', 'terrain', 'other'], rank = k => { const i = ORDER.indexOf(cast[k].group || 'other'); return i < 0 ? ORDER.length : i; };
+  const keys = Object.keys(cast).filter(k => cast[k].file).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b)); // the player's model first: the one people pose if (!keys.length) { noModel('No 3D models yet', 'This game has no 3D cast to pose.'); status(''); return; }
   $('modelSel').innerHTML = keys.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join(''); const want = Q.get('key'); $('modelSel').value = keys.includes(want) ? want : keys[0];
   $('modelSel').onchange = () => loadModel($('modelSel').value); token().catch(e => status(e.message, true)); loadModel($('modelSel').value);
 })();
