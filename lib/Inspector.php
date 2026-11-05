@@ -28,6 +28,12 @@ class Inspector {
     private static function thumb(string $slug, string $k, array $c): string {
         if (empty($c['v'])) return ''; $f = "thumbs/{$k}-{$c['v']}.webp"; return is_file(GameStore::dir($slug) . "/$f") ? "/games/{$slug}/$f" : '';
     }
+    /** How the pose editor opens for a 3D model: its key, and its waiting new version when there is one (posed before it is kept); null for anything not 3D */
+    private static function poseOpen(string $slug, string $key, ?array $sprite): ?array {
+        $w = is_file(Cast::path($slug)) ? (Cast::waitingRevisions($slug)[$key] ?? null) : null; $take = $w && str_ends_with((string) $w['file'], '.glb') ? $w['id'] . '/' . $w['file'] : '';
+        if (($sprite['kind'] ?? '') !== 'model' && $take === '') return null;
+        return ['key' => $key, 'take' => $take];
+    }
     /** One thing's card. Throws InvalidArgumentException when the game has no such thing. */
     public static function card(string $slug, string $key): array {
         $v = Rules::vocab($slug); $cast = is_file(Cast::path($slug)) ? Cast::read($slug)['items'] : []; $sprites = (array) GameStore::readSprites($slug)['sprites'];
@@ -44,7 +50,7 @@ class Inspector {
             if ($w === '*') { $forAll++; continue; } if ($w === $key || (str_starts_with($w, 'group:') && in_array(substr($w, 6), $groups, true))) $built[(string) ($s['name'] ?? $s['id'] ?? '')][] = $it; }
         return ['key' => $key, 'name' => (string) ($subject['name'] ?? '') ?: self::name($key, (string) ($subject['about'] ?? $item['what'] ?? '')), 'ui' => in_array('ui', $groups, true), 'about' => (string) ($subject['about'] ?? $item['what'] ?? ''), 'groups' => array_values(array_diff($groups, ['ui'])), 'look' => self::look($slug, $key, $item, $sprite), 'rules' => $rules, 'built' => $built, 'builtForAll' => $forAll, 'listed' => (bool) $cat,
             'bestiary' => self::resistances($slug, (array) ($subject['bestiary'] ?? [])), 'wired' => $v !== null,
-            'open' => ['rules' => "/editor/sprites/?game={$slug}&who=" . rawurlencode($key) . '#events', 'model' => $item ? "/editor/sprites/?game={$slug}&item=" . rawurlencode($key) . '#3d' : null, 'bestiary' => !empty($subject['bestiary']) ? "/game/gameeditor/{$slug}?e=bestiary&game={$slug}" : null]];
+            'open' => ['rules' => "/editor/sprites/?game={$slug}&who=" . rawurlencode($key) . '#events', 'model' => $item ? "/editor/sprites/?game={$slug}&item=" . rawurlencode($key) . '#3d' : null, 'bestiary' => !empty($subject['bestiary']) ? "/game/gameeditor/{$slug}?e=bestiary&game={$slug}" : null, 'pose' => self::poseOpen($slug, $key, $sprite)]];
     }
     private static function look(string $slug, string $key, ?array $item, ?array $sprite): ?array {
         if ($item) { $has = !empty($item['file']); return ['kind' => 'model', 'kept' => $has, 'strip' => self::thumb($slug, $key, $item), 'size' => $item['size'] ?? null, 'note' => (string) ($item['note'] ?? ''), 'colours' => array_values((array) ($item['colours'] ?? [])), 'moves' => (string) ($item['moves'] ?? ''), 'replaces' => (string) ($item['replaces'] ?? ''), 'recipe' => !empty($item['recipe']), 'versions' => count((array) ($item['history'] ?? []))]; }

@@ -65,7 +65,8 @@
     P.innerHTML = `<div class="ch-go" style="margin:0 0 8px"><b style="flex:1">The Concept</b><span class="small muted">The builder plans and builds from this. A task line looks like - [ ] T19: …</span><button type="button" class="go" id="docSave" disabled>Save</button></div><textarea id="docText" spellcheck="true"${framed ? ' readonly' : ''}></textarea>`; $('docText').value = r.text;
     $('docText').oninput = () => { $('docSave').disabled = framed; }; $('docSave').onclick = async () => { $('docSave').disabled = true; try { await Forge.api(`/game/doc/${SLUG}`, { text: $('docText').value }); hint('The Concept is saved. Work shows anything newly planned.'); loadPlanned(); loadTimeline(); } catch (e) { $('docSave').disabled = false; hint('Not saved: ' + e.message); } }; }
 
-  $('card').addEventListener('click', e => { const a = e.target.closest('a[data-rules]'); if (a) { e.preventDefault(); setRules(true, a.dataset.rules); } });
+  $('card').addEventListener('click', e => { const a = e.target.closest('a[data-rules]'); if (a) { e.preventDefault(); setRules(true, a.dataset.rules); }
+    const p = e.target.closest('[data-pose]'); if (p) setEditor('pose', 'key=' + encodeURIComponent(p.dataset.pose) + (p.dataset.take ? '&take=' + encodeURIComponent(p.dataset.take) : '')); });
 
   // ---- the list folds away for more game, and stays that way in this browser ----
   // On a screen narrower than the three columns need, the game comes first: the list starts folded until someone says otherwise
@@ -124,7 +125,7 @@
     if (!c.listed) h += '<div class="muted small">Not listed yet (the Events tab can ask the builder to list it).</div>'; else if (!systems.length) h += '<div class="muted small">Nothing listed for it specifically.</div>';
     for (const [name, items] of systems) h += fold(name, items.length, items.map(i => { const now = i.now && i.now.length && (i.rule === 'yes' || i.via); return `<div class="bi">${esc(i.does || '')}<div class="muted small">when ${esc(i.when || '')} <span class="pill${now ? ' rule-now' : ''}">${now ? 'a rule now' : i.rule === 'no' ? 'stays in code' : i.rule === 'partly' ? 'partly a rule' : 'can be a rule'}</span></div></div>`; }).join(''));
     if (c.builtForAll) h += `<div class="small muted" style="margin-top:6px">Plus ${c.builtForAll} that apply to everything: see the Events tab.</div>`;
-    const O = c.open; h += `<div class="links"><a href="${esc(O.rules)}" data-rules="${esc(c.key)}">Edit rules</a>${O.model ? `<a href="${esc(O.model)}" target="_blank">Model and revisions</a>` : ''}${O.bestiary ? `<a href="${esc(O.bestiary)}" target="_blank">Bestiary</a>` : ''}</div>`;
+    const O = c.open; h += `<div class="links">${O.pose ? `<button type="button" class="go" data-pose="${esc(O.pose.key)}" data-take="${esc(O.pose.take || '')}" title="Turn its limbs in 3D: key poses for each motion">Pose it${O.pose.take ? ' (new version)' : ''}</button>` : ''}<a href="${esc(O.rules)}" data-rules="${esc(c.key)}">Edit rules</a>${O.model ? `<a href="${esc(O.model)}" target="_blank">Model and revisions</a>` : ''}${O.bestiary ? `<a href="${esc(O.bestiary)}" target="_blank">Bestiary</a>` : ''}</div>`;
     return h; }
 
   // ---- the change box: one sentence about what is picked, the ways it could go with what each costs, then the chosen one followed to its end (lib/ChangeBox.php) ----
