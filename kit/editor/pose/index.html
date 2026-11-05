@@ -165,7 +165,7 @@ function draw() { if (outline) outline.update(); renderer.render(scene, camera);
 const S = { key: '', model: null, parts: {}, order: [], data: { motions: {} }, motion: '', t: 0, playing: false, dirty: false, copied: null, undo: [], redo: [] };
 let sel = '', dragging = false, outline = null;
 const motion = () => S.data.motions[S.motion];
-const COMMON = ['idle', 'run', 'crouch', 'jump', 'sword', 'throw', 'blowgun', 'victory']; // the motions a game usually plays (Ninja Mirage plays these); any other can be named
+const COMMON = { player: ['idle', 'run', 'crouch', 'jump', 'sword', 'throw', 'blowgun', 'victory'], enemy: ['idle', 'run', 'alert', 'drowsy', 'sounding'], boss: ['idle', 'run', 'alert', 'attack'], other: ['idle', 'run'] }; // the motions a game usually plays (Ninja Mirage plays these); any other can be named
 const keyAt = (t = S.t) => { const m = motion(); return m ? m.keys.find(k => Math.abs(k.t - t) < 0.005) : null; };
 const r4 = v => Math.round(v * 1e4) / 1e4;
 
@@ -217,7 +217,7 @@ function drawMotions() {
   const names = Object.keys(S.data.motions);
   $('motions').innerHTML = names.length ? names.map(n => { const m = S.data.motions[n]; return `<button data-m="${esc(n)}" class="${n === S.motion ? 'on' : ''}">${esc(n)} <small>${m.keys.length} key${m.keys.length === 1 ? '' : 's'}${m.loop ? ' · loops' : ''}</small></button>`; }).join('')
     : '<p style="margin:0;color:var(--muted);font-size:13px">No motions yet. Pick one below, or just turn a limb: that starts “idle”.</p>';
-  const left = COMMON.filter(n => !S.data.motions[n]); $('chips').innerHTML = left.map(n => `<button type="button" data-add="${n}">+ ${n}</button>`).join('');
+  const left = (COMMON[(cast[S.key] || {}).group] || COMMON.other).filter(n => !S.data.motions[n]); $('chips').innerHTML = left.map(n => `<button type="button" data-add="${n}">+ ${n}</button>`).join('');
   $('chips').querySelectorAll('[data-add]').forEach(b => b.onclick = () => { $('newMotion').value = b.dataset.add; $('addMotion').click(); });
   $('motions').querySelectorAll('[data-m]').forEach(b => b.onclick = () => { S.motion = b.dataset.m; S.t = 0; $('scrub').value = 0; stop(); show(); });
   const m = motion(); $('motionOpts').style.display = m ? '' : 'none'; if (m) { $('loop').checked = !!m.loop; $('seconds').value = m.seconds || 1; }
