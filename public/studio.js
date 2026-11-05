@@ -56,7 +56,7 @@
       if (name === 'concept') { if (editFrame) editFrame.classList.remove('on'); openConcept(); }
       else { $('conceptPane').classList.remove('on'); if (!editFrame) { editFrame = document.createElement('iframe'); editFrame.id = 'rulesFrame'; editFrame.title = 'An editor'; $('game').parentNode.appendChild(editFrame); } editFrame.classList.add('on'); editFrame.title = EDITORS[name]; const src = editorSrc(name, who); if (name !== was || who) editFrame.src = src; }
       if (typeof UX !== 'undefined') UX.act('editor', name); }
-    else { fitGame(); if (N) N.freeze(false); if (was === 'rules') applyLive('rule').then(said => hint('Back in the game. ' + said)); else if (was && was !== 'concept') { $('changed').hidden = false; hint('Back in the game. Reload it to hear and see what you changed.'); } else hint('Back in the game.'); frame.focus(); } }
+    else { fitGame(); if (N) N.freeze(false); if (was === 'rules') applyLive('rule').then(said => hint('Back in the game. ' + said)); else if (was === 'pose') applyLive('poses').then(said => hint('Back in the game. ' + said)); else if (was && was !== 'concept') { $('changed').hidden = false; hint('Back in the game. Reload it to hear and see what you changed.'); } else hint('Back in the game.'); frame.focus(); } }
   const setRules = (on, who) => setEditor(on ? 'rules' : '', who);
   $('tabGame').onclick = () => setEditor(''); $('tabRules').onclick = () => setEditor(editing || 'rules', !editing && current && (!element || things.some(t => t.key === current)) ? current : '');
   document.querySelectorAll('[data-editor]').forEach(b => { b.onclick = () => setEditor(b.dataset.editor); });
