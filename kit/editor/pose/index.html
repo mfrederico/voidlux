@@ -6,15 +6,12 @@
    helpers that make or bring a move. On the figure: how you change it (turn a part / move it up or down), the camera's views, and a
    picture of its body to pick a part on. Under it, one row: play, the move's poses as dots on a line, add a pose; above that, what
    you can do with the pose you are on. Every target is at least 40px (44 on a touch screen); the words are a person's, not the code's. */
-:root {
-  --bg: #f5f2fa; --surface: #ffffff; --ink: #1d1530; --muted: #6b6080; --line: #e2dbee; --accent: #9a6400; --focus: #7a3cff;
-  --on-bg: #ffdcae; --on-fg: #7a3b00; --stage: #ece6f5; --key: #7a3cff; --danger: #b3261e; --glass: rgba(255, 255, 255, .86);
-  --body: system-ui, -apple-system, "Segoe UI", sans-serif; --mono: ui-monospace, "SF Mono", Menlo, monospace; --tap: 40px;
-}
-@media (prefers-color-scheme: dark) { :root {
+:root { /* always the Studio's dark: it sits inside the Studio, which is dark whatever the computer's setting (a light editor there read as a white block) */
   --bg: #120a1e; --surface: #1b1428; --ink: #f1ecfa; --muted: #a59bb8; --line: #2e2440; --accent: #ffd166; --focus: #b48cff;
   --on-bg: #5a3a12; --on-fg: #ffd9a8; --stage: #0d0716; --key: #b48cff; --danger: #ff8a80; --glass: rgba(27, 20, 40, .86); color-scheme: dark;
-} }
+  --body: system-ui, -apple-system, "Segoe UI", sans-serif; --mono: ui-monospace, "SF Mono", Menlo, monospace; --tap: 40px;
+}
+button.primary { color: #1b1428; }
 @media (pointer: coarse) { :root { --tap: 44px; } }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -23,7 +20,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 button { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 6px 12px; cursor: pointer; min-height: var(--tap); }
 button:hover:not(:disabled) { border-color: var(--muted); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-@media (prefers-color-scheme: dark) { button.primary { color: #1b1428; } }
 button:disabled { opacity: .4; cursor: default; }
 button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--accent); font-weight: 600; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
@@ -116,7 +112,7 @@ select { min-height: var(--tap); border: 1px solid var(--line); border-radius: 1
       <div class="opts" id="motionOpts">
         <label><input type="checkbox" id="loop"> Repeats over and over</label>
         <label>One go takes <input type="number" id="seconds" min="0.05" max="30" step="0.05"> seconds</label>
-        <button id="groundAll" title="Every pose of this move: the whole figure moved so its feet stand on the ground">Stand every pose on the ground</button>
+        <button id="groundAll" title="Every pose of this move whose feet are near the ground: moved so they stand on it (poses up in the air, like a jump, stay there)">Stand every pose on the ground</button>
         <button id="delMotion" class="danger" title="Remove this move and its poses">Remove this move</button>
       </div>
     </section>
@@ -248,9 +244,9 @@ function setLift(v, what) { if (!motion()) { status('Pick a move first: the heig
 $('liftUp').onclick = () => setLift(currentLift() + 0.01 * 1.8 / S.unit, 'raised the figure');
 $('liftDown').onclick = () => setLift(currentLift() - 0.01 * 1.8 / S.unit, 'lowered the figure');
 /* every key of the motion grounded: each key shown in turn, its lowest point measured, its height set so that point is on the ground */
-$('groundAll').onclick = () => { const m = motion(); if (!m || !m.keys.length) { status('This move has no poses yet.', true); return; } snapshot(); const t0 = S.t;
-  for (const k of m.keys) { S.t = k.t; pose(); S.model.updateMatrixWorld(true); const low = new THREE.Box3().setFromObject(S.root, true).min.y, v = r4(currentLift() - low / S.unit); if (Math.abs(v) < 1e-4) delete k.lift; else k.lift = v; }
-  S.t = t0; $('scrub').value = t0; commitPart('stood every pose of ' + S.motion + ' on the ground'); pose(); drawParts(); status(`All ${m.keys.length} poses of ${title(S.motion)} stand on the ground now. Save to keep it.`); };
+$('groundAll').onclick = () => { const m = motion(); if (!m || !m.keys.length) { status('This move has no poses yet.', true); return; } snapshot(); const t0 = S.t; let air = 0, grounded = 0;
+  for (const k of m.keys) { S.t = k.t; pose(); S.model.updateMatrixWorld(true); const box = new THREE.Box3().setFromObject(S.root, true), low = box.min.y, tall = Math.max(1e-6, box.max.y - box.min.y); if (low > 0.05 * tall) { air++; continue; } /* clearly in the air (a jump, a hop): it stays up there */ const v = r4(currentLift() - low / S.unit); if (Math.abs(v) < 1e-4) delete k.lift; else k.lift = v; grounded++; }
+  S.t = t0; $('scrub').value = t0; commitPart('stood every pose of ' + S.motion + ' on the ground'); pose(); drawParts(); status(`${grounded} pose${grounded === 1 ? '' : 's'} of ${title(S.motion)} stand on the ground now${air ? `; ${air} in the air stay up there` : ''}. Save to keep it.`); };
 /* moving: the gizmo becomes an up/down arrow on the whole figure; what it moves is that key pose's height */
 let moving = false;
 function setMoving(on) { moving = !!on && !!S.model && S.order.length > 1; $('moveMode').classList.toggle('on', moving); $('moveMode').setAttribute('aria-pressed', moving); $('turnMode').classList.toggle('on', !moving); $('turnMode').setAttribute('aria-pressed', !moving); $('heightBox').hidden = !moving;
@@ -339,8 +335,14 @@ $('mirrorKey').onclick = () => { const cur = currentRot(), out = {}, q = new THR
 $('resetPart').onclick = () => { if (!sel) return; snapshot(); const k = ensureKey(); delete k.rot[sel]; commitPart('rested ' + sel); pose(); drawParts(); };
 
 /* motions */
-const VIEWS = { side: [0, 1.0, 4.2], back: [0, 1.0, -4.2], front: [4.2, 1.0, 0], angle: [1.2, 1.4, 3.6] };
-document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { const v = VIEWS[b.dataset.view]; camera.position.set(...v); orbit.target.set(0, 0.9, 0); orbit.update(); document.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('on', x === b)); draw(); });
+const VIEWS = { side: [0, 0.12, 1], back: [0, 0.12, -1], front: [1, 0.12, 0], angle: [0.32, 0.36, 0.95] }; // directions; frame() sets how far
+let view = 'angle';
+/* the figure fills most of the stage's height, whatever its size and the stage's shape, seen from the chosen side */
+function frame(v) { if (v) view = v; let h = 1.8, mid = 0.9; if (S.root) { S.model.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(S.root, true); h = Math.max(0.2, b.max.y - Math.min(0, b.min.y)); mid = h / 2; }
+  const half = THREE.MathUtils.degToRad(camera.fov / 2), fitH = (h * 1.12) / 2 / Math.tan(half), fitW = (h * 0.9) / 2 / (Math.tan(half) * Math.max(0.6, camera.aspect)), dist = Math.max(fitH, fitW, 1.2);
+  const d = new THREE.Vector3(...VIEWS[view]).normalize(); camera.position.set(d.x * dist, mid + d.y * dist, d.z * dist); orbit.target.set(0, mid, 0); orbit.update();
+  document.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('on', x.dataset.view === view)); draw(); }
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => frame(b.dataset.view));
 const FOLD = 'vl-pose-bodyfold'; const setFold = on => { $('bodyBox').classList.toggle('bodyfold', on); $('bodyFold').textContent = on ? 'Show' : 'Hide'; try { localStorage.setItem(FOLD, on ? '1' : ''); } catch (e) {} };
 $('bodyFold').onclick = () => setFold(!$('bodyBox').classList.contains('bodyfold')); try { if (localStorage.getItem(FOLD)) setFold(true); } catch (e) {}
 $('addMotion').onclick = () => { const n = $('newMotion').value.trim().toLowerCase(); if (!/^[a-z][a-z0-9_-]{0,40}$/.test(n)) { status('A move\'s name uses small letters and numbers, like run or big-jump.', true); return; }
@@ -473,7 +475,7 @@ async function loadModel(key) {
     Poses.set(key, S.data); S.motion = Object.keys(S.data.motions)[0] || ''; S.t = 0; $('scrub').value = 0;
     if (S.dirty) { show(); status('Your changes from last time are back. Save them, or Undo to drop them.'); } else if (stashed) { show(); status('These are the saved poses: they changed since your last unsaved changes, which wait behind Bring back my changes.'); } else status((take ? 'The artist\'s new version (not in the game yet) · ' : '') + (S.order.length > 1 ? `${S.order.length} parts` : '')); show();
     try { if (parent !== window) parent.postMessage({ type: 'forge:pose-model', key }, location.origin); } catch (e) {} // the Studio's card follows the model shown here
-    setupRigs();
+    setupRigs(); frame();
     const own = S.order.filter(n => S.parts[n].node.isMesh || S.parts[n].node.children.some(ch => ch.isMesh && !S.parts[ch.name])).length; // parts with a shape of their own: one is a solid piece
     if (own < 2) noModel(`${key} is one solid piece`, 'It was made as one solid piece, so it has no parts to turn. Ask the artist for a version with separate arms and legs, and it can be posed here.');
   } catch (e) { status('Did not load: ' + e.message, true); noModel(`${key} did not load`, e.message); }
