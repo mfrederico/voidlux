@@ -2,140 +2,172 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poses · VoidLux Studio</title>
 <style>
-/* Layout: the 3D figure fills the stage; the motions and the parts sit beside it (under it on a phone); the strip of key poses
-   runs under the stage. Click a limb, drag the rings to turn it: that is a key pose at the strip's playhead. */
+/* Layout, for landscape screens (a desktop, a tablet on its side): the figure takes the room. Down the left: its moves, as tiles, and
+   helpers that make or bring a move. On the figure: how you change it (turn a part / move it up or down), the camera's views, and a
+   picture of its body to pick a part on. Under it, one row: play, the move's poses as dots on a line, add a pose; above that, what
+   you can do with the pose you are on. Every target is at least 40px (44 on a touch screen); the words are a person's, not the code's. */
 :root {
   --bg: #f5f2fa; --surface: #ffffff; --ink: #1d1530; --muted: #6b6080; --line: #e2dbee; --accent: #9a6400; --focus: #7a3cff;
-  --on-bg: #ffdcae; --on-fg: #7a3b00; --stage: #ece6f5; --key: #7a3cff; --danger: #b3261e;
-  --body: system-ui, -apple-system, "Segoe UI", sans-serif; --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --on-bg: #ffdcae; --on-fg: #7a3b00; --stage: #ece6f5; --key: #7a3cff; --danger: #b3261e; --glass: rgba(255, 255, 255, .86);
+  --body: system-ui, -apple-system, "Segoe UI", sans-serif; --mono: ui-monospace, "SF Mono", Menlo, monospace; --tap: 40px;
 }
 @media (prefers-color-scheme: dark) { :root {
   --bg: #120a1e; --surface: #1b1428; --ink: #f1ecfa; --muted: #a59bb8; --line: #2e2440; --accent: #ffd166; --focus: #b48cff;
-  --on-bg: #5a3a12; --on-fg: #ffd9a8; --stage: #0d0716; --key: #b48cff; --danger: #ff8a80; color-scheme: dark;
+  --on-bg: #5a3a12; --on-fg: #ffd9a8; --stage: #0d0716; --key: #b48cff; --danger: #ff8a80; --glass: rgba(27, 20, 40, .86); color-scheme: dark;
 } }
+@media (pointer: coarse) { :root { --tap: 44px; } }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 14px; line-height: 1.45; display: grid; grid-template-rows: auto 1fr; }
-button, input, select { font: inherit; color: inherit; }
-button { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 11px; cursor: pointer; min-height: 34px; }
-button:hover { border-color: var(--muted); }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.4; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 6px 12px; cursor: pointer; min-height: var(--tap); }
+button:hover:not(:disabled) { border-color: var(--muted); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 @media (prefers-color-scheme: dark) { button.primary { color: #1b1428; } }
-button:disabled { opacity: .45; cursor: default; }
-button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--accent); }
-:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.top { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); }
-.top h1 { font-size: 20px; margin: 0; }
-.top .status { color: var(--muted); font-size: 13px; margin-left: auto; }
-.main { display: grid; grid-template-columns: 250px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
-.side { grid-row: 1 / span 2; border-right: 1px solid var(--line); overflow-y: auto; overflow-x: hidden; padding: 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; min-width: 0; }
-.side section { min-width: 0; } /* everything in the panel fits its width: nothing runs on under the stage */
-.side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; }
-.list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
-.list button { text-align: left; display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
-.list button small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.list button small { color: var(--muted); }
-.list button.on small { color: inherit; }
-.part { padding-left: calc(11px + var(--depth, 0) * 12px) !important; }
-.busy-badge { display: inline-block; justify-self: start; padding: 5px 13px; border-radius: 99px; font-size: 13px; font-weight: 600; color: #17120a; background: linear-gradient(90deg, #ffb547, #ff3d9a, #c58aff, #7de0ff, #9bf06a, #ffb547); background-size: 500% 100%; animation: busy-cycle 5s linear infinite; } /* the Studio's "someone is working" badge */
-.busy-badge[hidden] { display: none; } @keyframes busy-cycle { from { background-position: 0 0; } to { background-position: 125% 0; } } @media (prefers-reduced-motion: reduce) { .busy-badge { animation: none; background: var(--accent); } }
-#rigBox summary { cursor: pointer; font-size: 13px; color: var(--muted); } #rigBox[open] { display: grid; gap: 6px; } #rigBox label { display: grid; gap: 3px; font-size: 13px; } #rigBox label.chk, #rigMotions label { display: flex; gap: 5px; align-items: center; } #rigMotions label { font-size: 13px; border: 1px solid var(--line); border-radius: 99px; padding: 2px 8px; }
-.ask { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; } .ask summary { cursor: pointer; font-size: 13px; color: var(--muted); } .ask[open] { display: grid; gap: 6px; } .ask textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; resize: vertical; } .cost { font-size: 12.5px; color: var(--muted); }
-.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; } .chips button { min-height: 28px; padding: 2px 8px; font-size: 13px; }
-.add { display: flex; gap: 6px; min-width: 0; } .add input { flex: 1 1 0; width: 0; min-width: 0; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; }
-.opts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
-.opts input[type=number] { width: 64px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 7px; background: transparent; }
-.stage { position: relative; background: var(--stage); min-height: 260px; }
-.stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
-.hint { position: absolute; left: 12px; bottom: 10px; right: 12px; color: var(--muted); font-size: 12.5px; pointer-events: none; }
+button:disabled { opacity: .4; cursor: default; }
+button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--accent); font-weight: 600; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
 [hidden] { display: none !important; } /* a class's display must not bring back what is hidden: the empty layer would sit over the stage and take every click */
-.empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--muted); }
-.empty div { max-width: 46ch; } .empty b { color: var(--ink); display: block; font-size: 16px; margin-bottom: 4px; }
-.strip { border-top: 1px solid var(--line); padding: 10px 16px 12px; display: grid; gap: 8px; }
-.track { position: relative; height: 34px; }
-.track input[type=range] { position: absolute; inset: 0; width: 100%; margin: 0; }
-.keys { position: absolute; left: 8px; right: 8px; top: 0; height: 12px; pointer-events: none; }
-.keys i { position: absolute; top: 0; width: 12px; height: 12px; margin-left: -6px; transform: rotate(45deg); background: var(--key); border-radius: 2px; }
-.keys i.here { outline: 2px solid var(--accent); }
-.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.row .sep { flex: 1; }
-.at { font-family: var(--mono); font-size: 12.5px; color: var(--muted); min-width: 9ch; }
+select { min-height: var(--tap); border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 0 8px; }
+/* the top: what is being posed, what happened, undo and save */
+.top { display: flex; gap: 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); min-width: 0; }
+.top h1 { font-size: 18px; margin: 0; white-space: nowrap; }
+.top label { display: flex; gap: 6px; align-items: center; white-space: nowrap; color: var(--muted); font-size: 14px; }
+.top .status { color: var(--muted); font-size: 14px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top .status:hover { white-space: normal; }
+.main { display: grid; grid-template-columns: clamp(210px, 18vw, 260px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
+/* the left: the moves and the helpers */
+.side { grid-row: 1 / span 2; border-right: 1px solid var(--line); overflow-y: auto; overflow-x: hidden; padding: 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-content: start; min-width: 0; }
+.side section { min-width: 0; display: grid; gap: 6px; }
+.side h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0; }
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.tile { display: grid; justify-items: center; gap: 0; padding: 6px 4px; min-height: 64px; text-align: center; border-radius: 12px; min-width: 0; }
+.tile .ic { font-size: 24px; line-height: 1.1; } .tile .nm { font-weight: 600; font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .tile small { font-size: 11.5px; color: var(--muted); } .tile.on small { color: inherit; }
+.tile.new { border-style: dashed; color: var(--muted); }
+.newbox { display: grid; gap: 6px; padding: 8px; border: 1px dashed var(--line); border-radius: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; } .chips button { padding: 4px 10px; border-radius: 99px; }
+.add { display: flex; gap: 6px; min-width: 0; } .add input { flex: 1 1 0; width: 0; min-width: 0; min-height: var(--tap); padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: transparent; }
+.opts { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); font-size: 14px; }
+.opts label { display: flex; gap: 8px; align-items: center; } .opts input[type=checkbox] { width: 20px; height: 20px; } .opts input[type=number] { width: 70px; min-height: var(--tap); padding: 0 6px; border: 1px solid var(--line); border-radius: 8px; background: transparent; }
+.help { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.help > summary { cursor: pointer; list-style: none; padding: 10px 12px; min-height: var(--tap); font-weight: 600; display: flex; gap: 8px; align-items: center; } .help > summary::-webkit-details-marker { display: none; }
+.help > summary small { font-weight: 400; color: var(--muted); }
+.help[open] > summary { border-bottom: 1px solid var(--line); } .help .in { display: grid; gap: 8px; padding: 10px 12px; } .help label { display: grid; gap: 4px; font-size: 14px; } .help label.chk { display: flex; gap: 8px; align-items: center; }
+.help textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: transparent; resize: vertical; }
+#rigMotions label { display: flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 99px; padding: 4px 10px; min-height: 36px; font-size: 14px; }
+.cost { font-size: 13px; color: var(--muted); }
+.busy-badge { display: inline-block; justify-self: start; padding: 6px 14px; border-radius: 99px; font-size: 14px; font-weight: 600; color: #17120a; background: linear-gradient(90deg, #ffb547, #ff3d9a, #c58aff, #7de0ff, #9bf06a, #ffb547); background-size: 500% 100%; animation: busy-cycle 5s linear infinite; } /* the Studio's "someone is working" badge */
+@keyframes busy-cycle { from { background-position: 0 0; } to { background-position: 125% 0; } } @media (prefers-reduced-motion: reduce) { .busy-badge { animation: none; background: var(--accent); } }
 .danger { color: var(--danger); }
+/* the figure, with its tools floating on it */
+.stage { position: relative; background: var(--stage); min-height: 0; overflow: hidden; }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.float { position: absolute; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 6px; border-radius: 14px; background: var(--glass); border: 1px solid var(--line); backdrop-filter: blur(6px); }
+.float .grp { display: flex; } .float .grp button { border-radius: 0; } .float .grp button:first-child { border-radius: 10px 0 0 10px; } .float .grp button:last-child { border-radius: 0 10px 10px 0; } .float .grp button + button { border-left: 0; }
+#tools { left: 10px; top: 10px; max-width: calc(100% - 210px); }
+#views { left: 10px; bottom: 10px; }
+#heightBox { display: flex; gap: 6px; align-items: center; } .at { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+#bodyBox { right: 10px; top: 10px; flex-direction: column; align-items: stretch; width: 178px; max-height: calc(100% - 20px); overflow-y: auto; flex-wrap: nowrap; }
+#bodyBox h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); display: flex; justify-content: space-between; align-items: center; }
+#bodyBox h3 button { min-height: 36px; padding: 0 8px; font-size: 12px; text-transform: none; letter-spacing: 0; }
+#body svg { width: 100%; height: auto; display: block; } #body svg [data-p] { cursor: pointer; fill: var(--surface); stroke: var(--muted); stroke-width: 2; } #body svg [data-p]:hover { fill: var(--on-bg); } #body svg [data-p].on { fill: var(--accent); stroke: var(--accent); } #body svg [data-p].turned { stroke: var(--key); stroke-width: 3; } #body svg [data-p].none { opacity: .25; pointer-events: none; }
+#parts { display: grid; gap: 4px; } #parts button { text-align: left; min-height: var(--tap); padding: 4px 10px; font-size: 14px; display: flex; justify-content: space-between; gap: 6px; } #parts small { color: var(--key); }
+#partName { font-weight: 600; font-size: 14px; text-align: center; min-height: 20px; }
+.bodyfold #body, .bodyfold #parts, .bodyfold #partName, .bodyfold #resetPart { display: none; } #bodyBox.bodyfold { width: auto; }
+.hint { position: absolute; left: 50%; transform: translateX(-50%); bottom: 12px; max-width: min(520px, calc(100% - 420px)); color: var(--muted); font-size: 13px; text-align: center; pointer-events: none; }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--muted); background: var(--stage); }
+.empty div { max-width: 46ch; } .empty b { color: var(--ink); display: block; font-size: 17px; margin-bottom: 4px; }
+/* under the figure: the pose you are on, then play and the line of poses */
+.strip { border-top: 1px solid var(--line); padding: 6px 12px 8px; display: grid; gap: 6px; }
+.posebar { display: flex; gap: 6px; align-items: center; min-height: var(--tap); flex-wrap: nowrap; overflow-x: auto; } .posebar .lbl { color: var(--muted); font-size: 14px; white-space: nowrap; } .posebar button { white-space: nowrap; }
+.timeline { display: flex; gap: 8px; align-items: center; }
+.track { position: relative; height: 52px; flex: 1; min-width: 120px; }
+.track input[type=range] { position: absolute; left: 0; right: 0; bottom: 2px; width: 100%; height: 24px; margin: 0; accent-color: var(--key); }
+.keys { position: absolute; left: 10px; right: 10px; top: 0; height: 26px; }
+.keys i { position: absolute; top: 2px; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%; background: var(--key); border: 3px solid var(--surface); box-shadow: 0 0 0 1px var(--key); cursor: grab; touch-action: none; }
+.keys i.here { background: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.keys i:active { cursor: grabbing; }
+#playBtn { min-width: 92px; font-weight: 600; }
 @media (max-width: 760px) {
-  html, body { height: auto; } /* the page scrolls: the stage, then the strip, then the motions and parts at their full height */
-  body { grid-template-rows: auto auto; }
-  .main { grid-template-columns: minmax(0, 1fr); grid-template-rows: min(56vh, 420px) auto auto; }
-  .side { grid-row: 3; border-right: 0; border-top: 1px solid var(--line); overflow: visible; }
-  .stage { grid-row: 1; } .strip { grid-row: 2; }
+  html, body { height: auto; overflow: visible; } body { grid-template-rows: auto auto; }
+  .main { grid-template-columns: minmax(0, 1fr); grid-template-rows: min(60vh, 440px) auto auto; }
+  .side { grid-row: 3; border-right: 0; border-top: 1px solid var(--line); overflow: visible; } .stage { grid-row: 1; } .strip { grid-row: 2; }
 }
 </style>
 </head><body>
 <header class="top">
   <h1>Poses</h1>
-  <label>Model <select id="modelSel" aria-label="Which 3D model"></select></label>
+  <label>Who <select id="modelSel" aria-label="Which character or thing"></select></label>
   <span class="status" id="status" role="status">Loading…</span>
-  <button id="draftBtn" hidden title="Your changes from before, which were never saved">Bring back my unsaved draft</button>
-  <button id="takeBtn" hidden title="The poses the builder just wrote">Load the builder's poses</button>
-  <button id="saveBtn" class="primary" disabled title="Save the poses into the game (Ctrl+S)">Save poses</button>
+  <button id="draftBtn" hidden title="Your changes from before, which were never saved">Bring back my changes</button>
+  <button id="takeBtn" hidden title="The poses the builder just made">Load the builder's poses</button>
+  <button id="undoBtn" disabled title="Undo (Ctrl+Z)" aria-label="Undo">↶ Undo</button><button id="redoBtn" disabled title="Redo (Ctrl+Y)" aria-label="Redo">↷ Redo</button>
+  <button id="saveBtn" class="primary" disabled title="Save into the game (Ctrl+S)">Save poses</button>
 </header>
 <div class="main">
   <aside class="side">
     <section>
-      <h2>Motions</h2>
-      <div class="list" id="motions"></div>
-      <div class="chips" id="chips"></div>
-      <div class="add" style="margin-top:6px"><input id="newMotion" placeholder="a new motion, e.g. run" aria-label="Name a new motion" pattern="[a-z][a-z0-9_\-]{0,40}"><button id="addMotion">Add</button></div>
-      <div class="opts" id="motionOpts" style="margin-top:8px">
-        <label><input type="checkbox" id="loop"> loops</label>
-        <label>lasts <input type="number" id="seconds" min="0.05" max="30" step="0.05"> s</label>
-        <button id="delMotion" class="danger" title="Remove this motion and its key poses">Remove</button>
+      <h2>Moves</h2>
+      <div class="tiles" id="motions"></div>
+      <div class="newbox" id="newBox" hidden>
+        <div class="chips" id="chips"></div>
+        <div class="add"><input id="newMotion" placeholder="or name your own" aria-label="Name a new move" pattern="[a-z][a-z0-9_\-]{0,40}"><button id="addMotion">Add</button></div>
       </div>
-      <details class="ask" id="askBox"><summary>Ask the builder to pose it</summary>
-        <textarea id="askText" rows="3" placeholder="e.g. a low, sneaky run: knees high, arms swept back, head down" aria-label="How the motion should look"></textarea>
+      <div class="opts" id="motionOpts">
+        <label><input type="checkbox" id="loop"> Repeats over and over</label>
+        <label>One go takes <input type="number" id="seconds" min="0.05" max="30" step="0.05"> seconds</label>
+        <button id="groundAll" title="Every pose of this move: the whole figure moved so its feet stand on the ground">Stand every pose on the ground</button>
+        <button id="delMotion" class="danger" title="Remove this move and its poses">Remove this move</button>
+      </div>
+    </section>
+    <section>
+      <h2>Helpers</h2>
+      <details class="help ask" id="askBox"><summary>🪄 Ask the builder to pose it <small>(costs)</small></summary><div class="in">
+        <textarea id="askText" rows="3" placeholder="e.g. a low, sneaky run: knees high, arms swept back, head down" aria-label="How the move should look"></textarea>
         <div class="cost" id="askCost"></div>
         <button id="askBtn" class="primary">Ask the builder</button>
         <span class="busy-badge" id="askBusy" hidden role="status"></span>
-      </details>
-    </section>
-    <section id="rigSec" hidden>
-      <details id="rigBox"><summary>Bring motions from a 2D rig</summary>
-        <label>2D rig <select id="rigSel" aria-label="Which 2D rig"></select></label>
+      </div></details>
+      <div id="rigSec" hidden><details class="help" id="rigBox"><summary>📥 Moves from the 2D drawing <small>(free)</small></summary><div class="in">
+        <label>From <select id="rigSel" aria-label="Which 2D drawing"></select></label>
         <div class="chips" id="rigMotions"></div>
-        <label class="chk"><input type="checkbox" id="rigReplace"> Replace motions already posed</label>
-        <button id="rigGo">Bring them across</button>
-        <div class="cost">Free: each motion sampled from the 2D rig as key poses you can change here. Feet held by the 2D rig may slide between keys: Ground every key helps.</div>
-      </details>
-    </section>
-    <section>
-      <h2>Parts</h2>
-      <div class="list" id="parts"></div>
-      <div class="row" style="margin-top:6px"><button id="resetPart" disabled title="Put this part back as it stands at rest, in this key pose">Rest this part</button></div>
+        <label class="chk"><input type="checkbox" id="rigReplace"> Replace moves I have posed</label>
+        <button id="rigGo" class="primary">Bring them across</button>
+        <div class="cost">Each move comes across as poses you can change here. Feet can slide a little between poses: "Stand every pose on the ground" helps.</div>
+      </div></details></div>
     </section>
   </aside>
   <div class="stage" id="stage">
+    <div class="float" id="tools">
+      <div class="grp" role="group" aria-label="What dragging does"><button id="turnMode" class="on" aria-pressed="true" title="Drag a coloured ring to turn the part you picked">↻ Turn</button><button id="moveMode" aria-pressed="false" title="Drag the arrow to move the whole figure up or down in this pose">↕ Up / down</button></div>
+      <span id="heightBox" hidden><button id="liftDown" title="A little lower, in this pose" aria-label="Lower">▼</button><span class="at" id="liftAt" title="How high the whole figure is in this pose">height 0</span><button id="liftUp" title="A little higher, in this pose" aria-label="Higher">▲</button></span>
+      <button id="ground" title="Move the whole figure so its feet stand on the ground, in this pose">⤓ Feet on the ground</button>
+    </div>
+    <div class="float" id="views" role="group" aria-label="Look from"><span class="at">Look from</span><div class="grp"><button data-view="side" title="Its right side">Side</button><button data-view="back" title="Its left side">Other side</button><button data-view="front" title="The front">Front</button><button data-view="angle" class="on" title="Above and to one side">Angle</button></div></div>
+    <div class="float" id="bodyBox">
+      <h3>Pick a part <button id="bodyFold" title="Fold this away">Hide</button></h3>
+      <div id="body"></div>
+      <div id="partName" aria-live="polite"></div>
+      <div id="parts"></div>
+      <button id="resetPart" disabled title="Put this part back as it stands at rest, in this pose">Straighten this part</button>
+    </div>
     <div class="empty" id="empty" hidden></div>
-    <div class="hint" id="hint">Click a limb, then drag a ring to turn it. Drag the background to look around, scroll to zoom.</div>
+    <div class="hint" id="hint">Tap a part of the body, then drag a coloured ring to turn it. Drag the background to look around.</div>
   </div>
   <div class="strip">
-    <div class="track"><div class="keys" id="keys"></div><input type="range" id="scrub" min="0" max="1" step="0.01" value="0" aria-label="Where in the motion"></div>
-    <div class="row">
-      <button id="playBtn" title="Play the motion (Space)">▶ Play</button>
-      <span class="at" id="at">0.00</span>
-      <button id="prevKey" title="The key pose before (,)">◀ key</button><button id="nextKey" title="The key pose after (.)">key ▶</button>
-      <span class="sep"></span>
-      <button id="addKey" title="Make a key pose here from what the figure shows now">Add a key pose here</button>
-      <button id="copyKey" title="Copy the pose shown">Copy</button><button id="pasteKey" title="Paste the copied pose here" disabled>Paste</button>
-      <button id="mirrorKey" title="Swap left and right: the pose shown, mirrored, here (for the other half of a stride)">Mirror L↔R</button>
-      <button id="delKey" class="danger" disabled title="Remove the key pose here">Remove key</button>
+    <div class="posebar" id="posebar">
+      <span class="lbl" id="poseLbl">This pose:</span>
+      <button id="copyKey" title="Copy this pose">Copy</button><button id="pasteKey" title="Put the copied pose here" disabled>Paste</button>
+      <button id="mirrorKey" title="This pose with left and right swapped: the other half of a step">Swap left and right</button>
+      <button id="delKey" class="danger" disabled title="Remove this pose">Remove pose</button>
     </div>
-    <div class="row">
-      <button id="undoBtn" disabled title="Undo (Ctrl+Z)">↶ Undo</button><button id="redoBtn" disabled title="Redo (Ctrl+Y, Ctrl+Shift+Z or Ctrl+R)">↷ Redo</button>
-      <span class="sep"></span>
-      <span class="at" id="liftAt" title="How far the whole figure is raised in this pose">height 0</span>
-      <button id="liftDown" title="Lower the whole figure a little in this pose">▼</button><button id="liftUp" title="Raise the whole figure a little in this pose">▲</button>
-      <button id="ground" title="Lower or raise the whole figure so its lowest point stands on the ground, in this pose">Feet on the ground</button>
-      <button id="groundAll" title="Every key pose of this motion: the whole figure moved so its lowest point stands on the ground">Ground every key</button>
-      <button id="moveMode" aria-pressed="false" title="Drag the whole figure up or down in this key pose, with an arrow instead of the rings">↕ Move up/down</button>
+    <div class="timeline">
+      <button id="playBtn" title="Play the move (Space)">▶ Play</button>
+      <button id="prevKey" title="The pose before (,)" aria-label="The pose before">◀</button>
+      <div class="track"><div class="keys" id="keys"></div><input type="range" id="scrub" min="0" max="1" step="0.01" value="0" aria-label="Where in the move"></div>
+      <button id="nextKey" title="The pose after (.)" aria-label="The pose after">▶</button>
+      <span class="at" id="at">0.00</span>
+      <button id="addKey" class="primary" title="Keep what the figure shows now as a pose here">＋ Add a pose here</button>
     </div>
   </div>
 </div>
@@ -165,7 +197,7 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x554466, 1.6)); const sun = new T
 const grid = new THREE.GridHelper(4, 16, 0x9a88b8, 0xc8bcdc); grid.material.transparent = true; grid.material.opacity = 0.5; scene.add(grid);
 const facing = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0.005, 0), 0.9, 0xd08a00, 0.12, 0.07); scene.add(facing); // which way the figure faces in the game
 const orbit = new OrbitControls(camera, renderer.domElement); orbit.target.set(0, 0.9, 0); orbit.enableDamping = true; orbit.update();
-const gizmo = new TransformControls(camera, renderer.domElement); gizmo.setMode('rotate'); gizmo.setSpace('local'); gizmo.setSize(0.8); scene.add(gizmo);
+const gizmo = new TransformControls(camera, renderer.domElement); gizmo.setMode('rotate'); gizmo.setSpace('local'); gizmo.setSize(matchMedia('(pointer: coarse)').matches ? 1.15 : 0.85); // a finger needs bigger rings scene.add(gizmo);
 gizmo.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; if (e.value) { snapshot(); dragging = true; } else { dragging = false; commitPart(moving ? 'moved the figure' : 'turned ' + sel); } });
 gizmo.addEventListener('objectChange', () => { if (dragging) { if (moving) writeLift(); else writePart(sel); } draw(); });
 function fit() { const w = stage.clientWidth, h = stage.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix(); }
@@ -176,6 +208,24 @@ function draw() { if (outline) outline.update(); renderer.render(scene, camera);
 const S = { key: '', model: null, parts: {}, order: [], data: { motions: {} }, motion: '', t: 0, playing: false, dirty: false, copied: null, undo: [], redo: [] };
 let sel = '', dragging = false, outline = null;
 const motion = () => S.data.motions[S.motion];
+/* a person's words for a part and a move: never the code's (upperArmL, crouch_move) */
+const NICE = { torso: 'Body', head: 'Head', upperArmL: 'Left upper arm', lowerArmL: 'Left forearm', upperArmR: 'Right upper arm', lowerArmR: 'Right forearm', thighL: 'Left thigh', shinL: 'Left shin', thighR: 'Right thigh', shinR: 'Right shin' };
+const words = n => n.replace(/[_-]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\d+$/, '').trim().toLowerCase();
+const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+const nice = n => { if (NICE[n]) return NICE[n]; if (S.parts[n] && S.parts[n].top) return 'Whole figure'; const m = /^(.*?[a-z])(L|R)$/.exec(n); return m ? (m[2] === 'L' ? 'Left ' : 'Right ') + words(m[1]) : cap(words(n)); };
+const title = n => cap(words(n));
+const ICON = { idle: '🧍', walk: '🚶', run: '🏃', crouch: '🧎', crouch_move: '🐾', jump: '🤸', hop: '🐇', sword: '⚔️', attack: '💥', throw: '🎯', blowgun: '💨', victory: '🙌', alert: '❗', drowsy: '😴', sounding: '📢', wave: '👋', dance: '💃', fall: '🍂', hurt: '🤕' };
+const icon = n => ICON[n] || ICON[n.split(/[_-]/)[0]] || '🎬';
+const STD = ['head', 'torso', 'upperArmR', 'lowerArmR', 'upperArmL', 'lowerArmL', 'thighR', 'shinR', 'thighL', 'shinL'];
+/* the body seen from the front, to tap a part on: its right is on your left, as when it faces you */
+const BODY_SVG = `<svg viewBox="0 0 120 178" role="img" aria-label="The body: tap a part to pick it">
+  <circle data-p="head" cx="60" cy="20" r="15"><title>Head</title></circle>
+  <rect data-p="torso" x="41" y="38" width="38" height="54" rx="9"><title>Body</title></rect>
+  <rect data-p="upperArmR" x="24" y="40" width="14" height="31" rx="7"><title>Right upper arm</title></rect><rect data-p="lowerArmR" x="22" y="73" width="14" height="30" rx="7"><title>Right forearm</title></rect>
+  <rect data-p="upperArmL" x="82" y="40" width="14" height="31" rx="7"><title>Left upper arm</title></rect><rect data-p="lowerArmL" x="84" y="73" width="14" height="30" rx="7"><title>Left forearm</title></rect>
+  <rect data-p="thighR" x="43" y="95" width="16" height="35" rx="7"><title>Right thigh</title></rect><rect data-p="shinR" x="43" y="132" width="16" height="35" rx="7"><title>Right shin</title></rect>
+  <rect data-p="thighL" x="61" y="95" width="16" height="35" rx="7"><title>Left thigh</title></rect><rect data-p="shinL" x="61" y="132" width="16" height="35" rx="7"><title>Left shin</title></rect>
+  <text x="4" y="176" font-size="10" fill="currentColor" opacity=".6">its right</text><text x="116" y="176" font-size="10" fill="currentColor" opacity=".6" text-anchor="end">its left</text></svg>`;
 const COMMON = { player: ['idle', 'walk', 'run', 'crouch', 'jump', 'sword', 'throw', 'blowgun', 'victory'], enemy: ['idle', 'walk', 'run', 'alert', 'drowsy', 'sounding'], boss: ['idle', 'run', 'alert', 'attack'], other: ['idle', 'run'] }; // the motions a game usually plays (Ninja Mirage plays these); any other can be named
 const keyAt = (t = S.t) => { const m = motion(); return m ? m.keys.find(k => Math.abs(k.t - t) < 0.005) : null; };
 const r4 = v => Math.round(v * 1e4) / 1e4;
@@ -194,21 +244,21 @@ function currentRot() { const out = {}, q = new THREE.Quaternion(), e = new THRE
   return out; }
 /* the whole figure's height in the pose shown: the root part above or below where it stands at rest, in the model's own units */
 function currentLift() { const top = S.order.find(n => S.parts[n].top); if (!top) return 0; const P = S.parts[top]; return P.node.position.clone().sub(P.restPos).dot(P.up); }
-function setLift(v, what) { if (!motion()) { status('Pick or add a motion first: the height belongs to a key pose in it.', true); return; } snapshot(); const k = ensureKey(); v = r4(v); if (Math.abs(v) < 1e-4) delete k.lift; else k.lift = v; commitPart(what); pose(); drawParts(); }
+function setLift(v, what) { if (!motion()) { status('Pick a move first: the height belongs to one of its poses.', true); return; } snapshot(); const k = ensureKey(); v = r4(v); if (Math.abs(v) < 1e-4) delete k.lift; else k.lift = v; commitPart(what); pose(); drawParts(); }
 $('liftUp').onclick = () => setLift(currentLift() + 0.01 * 1.8 / S.unit, 'raised the figure');
 $('liftDown').onclick = () => setLift(currentLift() - 0.01 * 1.8 / S.unit, 'lowered the figure');
 /* every key of the motion grounded: each key shown in turn, its lowest point measured, its height set so that point is on the ground */
-$('groundAll').onclick = () => { const m = motion(); if (!m || !m.keys.length) { status('This motion has no key poses yet.', true); return; } snapshot(); const t0 = S.t;
+$('groundAll').onclick = () => { const m = motion(); if (!m || !m.keys.length) { status('This move has no poses yet.', true); return; } snapshot(); const t0 = S.t;
   for (const k of m.keys) { S.t = k.t; pose(); S.model.updateMatrixWorld(true); const low = new THREE.Box3().setFromObject(S.root, true).min.y, v = r4(currentLift() - low / S.unit); if (Math.abs(v) < 1e-4) delete k.lift; else k.lift = v; }
-  S.t = t0; $('scrub').value = t0; commitPart('grounded every key of ' + S.motion); pose(); drawParts(); status(`All ${m.keys.length} key poses of ${S.motion} stand on the ground now. Save poses to keep it.`); };
+  S.t = t0; $('scrub').value = t0; commitPart('stood every pose of ' + S.motion + ' on the ground'); pose(); drawParts(); status(`All ${m.keys.length} poses of ${title(S.motion)} stand on the ground now. Save to keep it.`); };
 /* moving: the gizmo becomes an up/down arrow on the whole figure; what it moves is that key pose's height */
 let moving = false;
-function setMoving(on) { moving = !!on && !!S.model && S.order.length > 1; $('moveMode').classList.toggle('on', moving); $('moveMode').setAttribute('aria-pressed', moving);
+function setMoving(on) { moving = !!on && !!S.model && S.order.length > 1; $('moveMode').classList.toggle('on', moving); $('moveMode').setAttribute('aria-pressed', moving); $('turnMode').classList.toggle('on', !moving); $('turnMode').setAttribute('aria-pressed', !moving); $('heightBox').hidden = !moving;
   const top = S.order.find(n => S.parts[n].top);
-  if (moving && top) { gizmo.setMode('translate'); gizmo.setSpace('world'); gizmo.showX = gizmo.showZ = false; gizmo.showY = true; gizmo.attach(S.parts[top].node); $('hint').textContent = 'Drag the green arrow to move the whole figure up or down in this key pose. ↕ again to turn limbs.'; }
-  else { gizmo.setMode('rotate'); gizmo.setSpace('local'); gizmo.showX = gizmo.showY = gizmo.showZ = true; if (sel && S.parts[sel]) gizmo.attach(S.parts[sel].node); else gizmo.detach(); $('hint').textContent = 'Click a limb, then drag a ring to turn it. Drag the background to look around, scroll to zoom.'; }
+  if (moving && top) { gizmo.setMode('translate'); gizmo.setSpace('world'); gizmo.showX = gizmo.showZ = false; gizmo.showY = true; gizmo.attach(S.parts[top].node); $('hint').textContent = 'Drag the green arrow to move the whole figure up or down in this pose. ↻ Turn goes back to turning parts.'; }
+  else { gizmo.setMode('rotate'); gizmo.setSpace('local'); gizmo.showX = gizmo.showY = gizmo.showZ = true; if (sel && S.parts[sel]) gizmo.attach(S.parts[sel].node); else gizmo.detach(); $('hint').textContent = 'Tap a part of the body, then drag a coloured ring to turn it. Drag the background to look around.'; }
   draw(); }
-$('moveMode').onclick = () => setMoving(!moving);
+$('moveMode').onclick = () => setMoving(true); $('turnMode').onclick = () => setMoving(false);
 function writeLift() { const top = S.order.find(n => S.parts[n].top); if (!top) return; const P = S.parts[top], lf = P.node.position.clone().sub(P.restPos).dot(P.up);
   P.node.position.copy(P.restPos).addScaledVector(P.up, lf); const k = ensureKey(); if (!k) return; const v = r4(lf); if (Math.abs(v) < 1e-4) delete k.lift; else k.lift = v; drawLift(); }
 $('ground').onclick = () => { if (!S.model) return; S.model.updateMatrixWorld(true); const low = new THREE.Box3().setFromObject(S.root, true).min.y; setLift(currentLift() - low / S.unit, 'put the feet on the ground'); };
@@ -218,7 +268,7 @@ function ensureKey() { // the key pose at the playhead, made from what the figur
   k = { t: r4(S.t), rot: currentRot() }; const lf = currentLift(); if (lf) k.lift = r4(lf); m.keys.push(k); m.keys.sort((a, b) => a.t - b.t); return k; }
 function writePart(n) { const k = ensureKey(); if (!k || !S.parts[n]) return; const p = S.parts[n], q = p.rest.clone().invert().multiply(p.node.quaternion), e = new THREE.Euler().setFromQuaternion(q, 'XYZ');
   if (Math.abs(q.w) > 0.99999) delete k.rot[n]; else k.rot[n] = [r4(e.x), r4(e.y), r4(e.z)]; }
-function commitPart(what) { touched(); drawKeys(); draw(); lastWhat = what; if (started) { status(`Started the motion "${started}" for that turn: rename it by adding the one you meant, or keep posing it.`); started = ''; } }
+function commitPart(what) { touched(); drawKeys(); draw(); lastWhat = what; if (started) { status(`That turn started a new move, "${title(started)}". Keep posing it, or add the move you meant.`); started = ''; } }
 let lastWhat = '', started = '';
 
 /* showing: the motion at the playhead, the parts list, the strip */
@@ -226,22 +276,37 @@ function pose() { if (!S.model || dragging) return; if (S.motion && Poses.has(S.
 function show() { drawMotions(); drawParts(); drawKeys(); pose(); fit(); draw(); }
 function drawMotions() {
   const names = Object.keys(S.data.motions);
-  $('motions').innerHTML = names.length ? names.map(n => { const m = S.data.motions[n]; return `<button data-m="${esc(n)}" class="${n === S.motion ? 'on' : ''}">${esc(n)} <small>${m.keys.length} key${m.keys.length === 1 ? '' : 's'}${m.loop ? ' · loops' : ''}</small></button>`; }).join('')
-    : '<p style="margin:0;color:var(--muted);font-size:13px">No motions yet. Pick one below, or just turn a limb: that starts “idle”.</p>';
-  const left = (COMMON[(cast[S.key] || {}).group] || COMMON.other).filter(n => !S.data.motions[n]); $('chips').innerHTML = left.map(n => `<button type="button" data-add="${n}">+ ${n}</button>`).join('');
+  $('motions').innerHTML = names.map(n => { const m = S.data.motions[n], k = m.keys.length; return `<button class="tile ${n === S.motion ? 'on' : ''}" data-m="${esc(n)}" title="${esc(title(n))}"><span class="ic">${icon(n)}</span><span class="nm">${esc(title(n))}</span><small>${k ? k + ' pose' + (k === 1 ? '' : 's') : 'not posed yet'}</small></button>`; }).join('')
+    + `<button class="tile new" id="newTile" title="Add a move"><span class="ic">＋</span><span class="nm">New move</span><small>&nbsp;</small></button>`;
+  const left = (COMMON[(cast[S.key] || {}).group] || COMMON.other).filter(n => !S.data.motions[n]); $('chips').innerHTML = left.map(n => `<button type="button" data-add="${n}">${icon(n)} ${esc(title(n))}</button>`).join('');
   $('chips').querySelectorAll('[data-add]').forEach(b => b.onclick = () => { $('newMotion').value = b.dataset.add; $('addMotion').click(); });
   $('motions').querySelectorAll('[data-m]').forEach(b => b.onclick = () => { S.motion = b.dataset.m; S.t = 0; $('scrub').value = 0; stop(); show(); });
-  const m = motion(); $('motionOpts').style.display = m ? '' : 'none'; if (m) { $('loop').checked = !!m.loop; $('seconds').value = m.seconds || 1; }
+  $('newTile').onclick = () => { $('newBox').hidden = !$('newBox').hidden; if (!$('newBox').hidden) $('newMotion').focus(); };
+  if (!names.length && S.model) $('newBox').hidden = false; // nothing to pick yet: the ways to start are open
+  const m = motion(); $('motionOpts').hidden = !m; if (m) { $('loop').checked = !!m.loop; $('seconds').value = m.seconds || 1; }
   for (const id of ['addKey', 'copyKey', 'mirrorKey', 'playBtn', 'prevKey', 'nextKey']) $(id).disabled = !m || !S.model; drawAsk(); $('pasteKey').disabled = !m || !S.copied;
 }
 function drawParts() {
-  $('parts').innerHTML = S.order.map(n => { const k = keyAt(), turned = k && k.rot[n]; return `<button class="part ${n === sel ? 'on' : ''}" data-p="${esc(n)}" style="--depth:${S.parts[n].depth}">${esc(n)} <small>${turned ? 'turned' : ''}</small></button>`; }).join('')
-    || '<p style="margin:0;color:var(--muted);font-size:13px">This model has no named parts to turn.</p>';
+  const k = keyAt(), B = $('body'); if (!B.firstChild) B.innerHTML = BODY_SVG;
+  const std = STD.filter(n => S.parts[n]).length >= 4; B.hidden = !std;
+  B.querySelectorAll('[data-p]').forEach(e => { const n = e.dataset.p; e.classList.toggle('none', !S.parts[n]); e.classList.toggle('on', n === sel); e.classList.toggle('turned', !!(k && k.rot[n])); e.onclick = () => pick(n); });
+  const extra = S.order.filter(n => !(std && STD.includes(n)));
+  $('parts').innerHTML = extra.map(n => `<button data-p="${esc(n)}" class="${n === sel ? 'on' : ''}">${esc(nice(n))}${k && k.rot[n] ? ' <small title="turned in this pose">●</small>' : ''}</button>`).join('');
   $('parts').querySelectorAll('[data-p]').forEach(b => b.onclick = () => pick(b.dataset.p));
-  $('resetPart').disabled = !sel || !motion();
+  $('partName').textContent = sel ? nice(sel) : S.order.length > 1 ? (std ? 'Tap a part of the body' : 'Pick a part') : '';
+  $('bodyBox').hidden = S.order.length < 2; $('resetPart').disabled = !sel || !motion();
 }
-function drawKeys() { const m = motion(); $('keys').innerHTML = m ? m.keys.map(k => `<i style="left:${k.t * 100}%" class="${Math.abs(k.t - S.t) < 0.005 ? 'here' : ''}"></i>`).join('') : '';
-  $('at').textContent = S.t.toFixed(2) + (keyAt() ? ' key' : ''); $('delKey').disabled = !keyAt(); drawMotions(); drawLift(); }
+function drawKeys() { const m = motion(), here = keyAt();
+  $('keys').innerHTML = m ? m.keys.map((k, n) => `<i data-i="${n}" style="left:${k.t * 100}%" class="${k === here ? 'here' : ''}" title="Pose ${n + 1}: tap to go there, drag to move it"></i>`).join('') : '';
+  $('at').textContent = here ? `pose ${m.keys.indexOf(here) + 1} of ${m.keys.length}` : Math.round(S.t * 100) + '%';
+  $('poseLbl').textContent = !m ? 'Pick a move' : here ? 'This pose:' : 'Between poses:'; $('delKey').disabled = !here; drawMotions(); drawLift(); }
+$('keys').addEventListener('pointerdown', e => { const d = e.target.closest('i[data-i]'), m = motion(); if (!d || !m) return; e.preventDefault(); e.stopPropagation();
+  const k = m.keys[+d.dataset.i], box = $('keys').getBoundingClientRect(); let moved = false; d.setPointerCapture(e.pointerId);
+  const mv = ev => { const t = Math.round(Math.max(0, Math.min(1, (ev.clientX - box.left) / box.width)) * 100) / 100; if (Math.abs(t - k.t) < 0.005 || m.keys.some(o => o !== k && Math.abs(o.t - t) < 0.01)) return;
+    if (!moved) { snapshot(); moved = true; } k.t = t; S.t = t; $('scrub').value = t; d.style.left = t * 100 + '%'; stop(); pose(); };
+  const up = () => { d.removeEventListener('pointermove', mv); d.removeEventListener('pointerup', up); d.removeEventListener('pointercancel', up);
+    if (moved) { m.keys.sort((a, b) => a.t - b.t); commitPart('moved a pose'); drawParts(); } else { S.t = k.t; $('scrub').value = k.t; stop(); drawKeys(); drawParts(); pose(); } };
+  d.addEventListener('pointermove', mv); d.addEventListener('pointerup', up); d.addEventListener('pointercancel', up); });
 function drawLift() { const v = S.model ? currentLift() * S.unit / 1.8 * 100 : 0; $('liftAt').textContent = 'height ' + (Math.abs(v) < 0.5 ? '0' : (v > 0 ? '+' : '') + Math.round(v) + '%'); for (const id of ['liftUp', 'liftDown', 'ground', 'groundAll', 'moveMode']) $(id).disabled = !S.model || S.order.length < 2; $('undoBtn').disabled = !S.undo.length; $('redoBtn').disabled = !S.redo.length; }
 function pick(n) { if (moving && n) setMoving(false); sel = n && S.parts[n] ? n : ''; if (sel) gizmo.attach(S.parts[sel].node); else gizmo.detach();
   if (outline) { outline.parent && outline.parent.remove(outline); outline = null; }
@@ -262,9 +327,9 @@ let playFrom = 0; function stop() { S.playing = false; $('playBtn').textContent 
 $('playBtn').onclick = () => { if (S.playing) return stop(); S.playing = true; playFrom = performance.now() - S.t * (motion().seconds || 1) * 1000; $('playBtn').textContent = '❚❚ Pause'; };
 const jumpKey = dir => { const m = motion(); if (!m || !m.keys.length) return; const ks = m.keys.map(k => k.t); const t = dir > 0 ? ks.find(x => x > S.t + 0.004) ?? ks[0] : [...ks].reverse().find(x => x < S.t - 0.004) ?? ks[ks.length - 1]; S.t = t; $('scrub').value = t; stop(); drawKeys(); drawParts(); pose(); };
 $('prevKey').onclick = () => jumpKey(-1); $('nextKey').onclick = () => jumpKey(1);
-$('addKey').onclick = () => { if (keyAt()) { status('There is a key pose here already: turn a part to change it.'); return; } snapshot(); ensureKey(); commitPart('a key pose at ' + S.t.toFixed(2)); drawParts(); };
+$('addKey').onclick = () => { if (keyAt()) { status('There is a pose here already: turn a part to change it.'); return; } snapshot(); ensureKey(); commitPart('a key pose at ' + S.t.toFixed(2)); drawParts(); };
 $('delKey').onclick = () => { const m = motion(), k = keyAt(); if (!k) return; snapshot(); m.keys.splice(m.keys.indexOf(k), 1); commitPart('removed a key pose'); pose(); drawParts(); };
-$('copyKey').onclick = () => { S.copied = currentRot(); S.copiedLift = r4(currentLift()); $('pasteKey').disabled = false; status('Copied the pose at ' + S.t.toFixed(2)); };
+$('copyKey').onclick = () => { S.copied = currentRot(); S.copiedLift = r4(currentLift()); $('pasteKey').disabled = false; status('Copied. Go to another moment and press Paste.'); };
 $('pasteKey').onclick = () => { if (!S.copied) return; snapshot(); const k = ensureKey(); k.rot = JSON.parse(JSON.stringify(S.copied)); if (S.copiedLift) k.lift = S.copiedLift; else delete k.lift; commitPart('pasted a pose'); pose(); drawParts(); };
 /* mirror: left and right swap (thighL <-> thighR), and each turn is reflected through the figure's middle (the x-y plane: it faces +x) */
 const twin = n => n.replace(/(L|R|Left|Right|_l|_r|\.L|\.R)$/, s => ({ L: 'R', R: 'L', Left: 'Right', Right: 'Left', _l: '_r', _r: '_l', '.L': '.R', '.R': '.L' }[s]));
@@ -274,26 +339,30 @@ $('mirrorKey').onclick = () => { const cur = currentRot(), out = {}, q = new THR
 $('resetPart').onclick = () => { if (!sel) return; snapshot(); const k = ensureKey(); delete k.rot[sel]; commitPart('rested ' + sel); pose(); drawParts(); };
 
 /* motions */
-$('addMotion').onclick = () => { const n = $('newMotion').value.trim().toLowerCase(); if (!/^[a-z][a-z0-9_-]{0,40}$/.test(n)) { status('A motion name is lower case letters, digits, - and _ (e.g. run)', true); return; }
-  if (S.data.motions[n]) { S.motion = n; show(); return; } snapshot(); S.data.motions[n] = { loop: /run|walk|idle|swim|fly|sneak/.test(n), seconds: /run/.test(n) ? 0.6 : 1, keys: [] }; S.motion = n; S.t = 0; $('scrub').value = 0; $('newMotion').value = ''; touched(); show(); };
+const VIEWS = { side: [0, 1.0, 4.2], back: [0, 1.0, -4.2], front: [4.2, 1.0, 0], angle: [1.2, 1.4, 3.6] };
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { const v = VIEWS[b.dataset.view]; camera.position.set(...v); orbit.target.set(0, 0.9, 0); orbit.update(); document.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('on', x === b)); draw(); });
+const FOLD = 'vl-pose-bodyfold'; const setFold = on => { $('bodyBox').classList.toggle('bodyfold', on); $('bodyFold').textContent = on ? 'Show' : 'Hide'; try { localStorage.setItem(FOLD, on ? '1' : ''); } catch (e) {} };
+$('bodyFold').onclick = () => setFold(!$('bodyBox').classList.contains('bodyfold')); try { if (localStorage.getItem(FOLD)) setFold(true); } catch (e) {}
+$('addMotion').onclick = () => { const n = $('newMotion').value.trim().toLowerCase(); if (!/^[a-z][a-z0-9_-]{0,40}$/.test(n)) { status('A move\'s name uses small letters and numbers, like run or big-jump.', true); return; }
+  if (S.data.motions[n]) { S.motion = n; show(); return; } snapshot(); S.data.motions[n] = { loop: /run|walk|idle|swim|fly|sneak|hop/.test(n), seconds: /run/.test(n) ? 0.6 : 1, keys: [] }; S.motion = n; S.t = 0; $('scrub').value = 0; $('newMotion').value = ''; $('newBox').hidden = true; touched(); show(); };
 $('newMotion').onkeydown = e => { if (e.key === 'Enter') $('addMotion').click(); };
 $('loop').onchange = () => { snapshot(); motion().loop = $('loop').checked; touched(); drawMotions(); pose(); };
 $('seconds').onchange = () => { snapshot(); motion().seconds = Math.max(0.05, Math.min(30, +$('seconds').value || 1)); touched(); };
-$('delMotion').onclick = () => { const m = motion(); if (!m) return; if (m.keys.length && !$('delMotion').dataset.sure) { $('delMotion').dataset.sure = 1; $('delMotion').textContent = `Remove ${S.motion} and its ${m.keys.length} key${m.keys.length === 1 ? '' : 's'}?`; setTimeout(() => { delete $('delMotion').dataset.sure; $('delMotion').textContent = 'Remove'; }, 4000); return; }
-  delete $('delMotion').dataset.sure; $('delMotion').textContent = 'Remove'; snapshot(); delete S.data.motions[S.motion]; S.motion = Object.keys(S.data.motions)[0] || ''; touched(); show(); };
+$('delMotion').onclick = () => { const m = motion(); if (!m) return; if (m.keys.length && !$('delMotion').dataset.sure) { $('delMotion').dataset.sure = 1; $('delMotion').textContent = `Tap again to remove ${title(S.motion)} and its ${m.keys.length} pose${m.keys.length === 1 ? '' : 's'}`; setTimeout(() => { delete $('delMotion').dataset.sure; $('delMotion').textContent = 'Remove this move'; }, 4000); return; }
+  delete $('delMotion').dataset.sure; $('delMotion').textContent = 'Remove this move'; snapshot(); delete S.data.motions[S.motion]; S.motion = Object.keys(S.data.motions)[0] || ''; touched(); show(); };
 
 /* asking the builder to pose the chosen motion from words: a paid run; the editor watches for the poses and offers them */
 let stashed = null, watching = null;
 function drawAsk() { const m = motion(); $('askBox').style.display = m && S.order.length > 1 ? '' : 'none'; if (!m) return;
   const saved = S.base ? (JSON.parse(S.base)[S.motion] || { keys: [] }).keys.length : 0, verb = saved ? 'change' : 'pose'; // a motion with saved keys is changed, not made again
-  $('askBox').querySelector('summary').textContent = `Ask the builder to ${verb} ${S.motion}`; $('askBtn').textContent = `Ask the builder to ${verb} ${S.motion}`;
+  $('askBox').querySelector('summary').innerHTML = `🪄 Ask the builder to ${verb} ${esc(title(S.motion))} <small>(costs)</small>`; $('askBtn').textContent = `Ask the builder to ${verb} ${title(S.motion)}`;
   const on = asking && asking.key === S.key; $('askBtn').hidden = !!on; $('askText').disabled = !!on; $('askBusy').hidden = !on; // one ask at a time: the badge stands in for the button until the poses land
   if (on) $('askBusy').textContent = `The builder is ${asking.verb === 'change' ? 'changing' : 'posing'} ${asking.motion}…`;
   $('askText').placeholder = saved ? 'e.g. a little less lean, arms a touch lower, the same otherwise' : 'e.g. a low, sneaky run: knees high, arms swept back, head down';
   $('askCost').textContent = S.ask ? (S.ask.busy ? 'The builder is busy: this goes with its next run. ' : '') + S.ask.cost + (saved ? ` It starts from the ${saved} saved key${saved === 1 ? '' : 's'} and changes only what you ask${S.dirty ? '; save first, or your unsaved changes are not part of it' : ''}. Undo it from Changes.` : '') : ''; }
 let asking = null; const askKey = () => `vl-pose-asking:${GAME}`;
 const remember = a => { asking = a; try { if (a) localStorage.setItem(askKey(), JSON.stringify(a)); else localStorage.removeItem(askKey()); } catch (e) {} drawAsk(); };
-$('askBtn').onclick = async () => { const text = $('askText').value.trim(); if (text.length < 3) { status('Say how the motion should look.', true); return; } if (asking) return;
+$('askBtn').onclick = async () => { const text = $('askText').value.trim(); if (text.length < 3) { status('Say how the move should look.', true); return; } if (asking) return;
   const saved = S.base ? (JSON.parse(S.base)[S.motion] || { keys: [] }).keys.length : 0; remember({ key: S.key, motion: S.motion, verb: saved ? 'change' : 'pose', at: Date.now() }); status('Sending…');
   try { if (!CSRF) await token(); const parts = S.order.map(n => ({ name: n, parent: S.parts[n].parent, at: S.parts[n].at }));
     const r = await fetch(apiUrl('poseask'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: S.key, motion: S.motion, text, parts, axes: S.axes }) }); const j = await r.json();
@@ -334,18 +403,18 @@ async function drawRigMotions() { let rig; try { rig = await rigOf($('rigSel').v
   $('rigMotions').innerHTML = Object.keys(rig.motions || {}).map(m => { const posed = S.data.motions[m] && S.data.motions[m].keys.length; return `<label><input type="checkbox" value="${esc(m)}"${posed ? '' : ' checked'}> ${esc(m)}${posed ? ' (posed)' : ''}</label>`; }).join('') || 'It has no motions.'; }
 $('rigSel').onchange = drawRigMotions;
 $('rigGo').onclick = async () => { let rig; try { rig = await rigOf($('rigSel').value); } catch (e) { status(e.message, true); return; }
-  const names = [...$('rigMotions').querySelectorAll('input:checked')].map(i => i.value), replace = $('rigReplace').checked; if (!names.length) { status('Tick the motions to bring across.', true); return; }
+  const names = [...$('rigMotions').querySelectorAll('input:checked')].map(i => i.value), replace = $('rigReplace').checked; if (!names.length) { status('Tick the moves to bring across.', true); return; }
   let got; try { got = Poses.rigMotions(Rig, rig, { axes: S.axes, height: 1.8 / S.unit, names }); } catch (e) { status('They could not come across: ' + e.message, true); return; }
   snapshot(); const brought = [], kept = [];
   for (const [m, v] of Object.entries(got)) { if (S.data.motions[m] && S.data.motions[m].keys.length && !replace) { kept.push(m); continue; } S.data.motions[m] = v; brought.push(m); }
   if (!brought.length) { S.undo.pop(); status(`Nothing brought: ${kept.join(', ')} ${kept.length > 1 ? 'are' : 'is'} posed already (tick Replace to bring ${kept.length > 1 ? 'them' : 'it'} anyway).`, true); return; }
   S.motion = brought[0]; S.t = 0; $('scrub').value = 0; commitPart('brought ' + brought.join(', ') + ' from ' + $('rigSel').value); show(); drawRigMotions();
-  status(`Brought ${brought.join(', ')} across from ${$('rigSel').value}${kept.length ? ` (kept your ${kept.join(', ')})` : ''}. Press Play to see them, Ground every key if one floats, then Save poses.`); if (typeof UX !== 'undefined') UX.act('rigmotions', brought.length); };
+  status(`Brought ${brought.join(', ')} across from ${$('rigSel').value}${kept.length ? ` (kept your ${kept.join(', ')})` : ''}. Press Play to see them. If the feet float, use Stand every pose on the ground. Then Save.`); if (typeof UX !== 'undefined') UX.act('rigmotions', brought.length); };
 
 /* saving */
 async function save() { if (!S.dirty) return; saveState(true); $('saveBtn').textContent = 'Saving…'; status('Saving…');
   try { if (!CSRF) await token(); const r = await fetch(apiUrl('poses'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: S.key, motions: S.data.motions, what: lastWhat }) }); const j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'the forge answered ' + r.status); S.dirty = false; S.base = JSON.stringify(S.data.motions); keepDraft(); status('Saved. The game plays these once its builder has wired them in.'); if (typeof UX !== 'undefined') UX.act('save', S.key);
+    if (!r.ok) throw new Error(j.error || 'the forge answered ' + r.status); S.dirty = false; S.base = JSON.stringify(S.data.motions); keepDraft(); status('Saved into the game.'); if (typeof UX !== 'undefined') UX.act('save', S.key);
     try { parent.postMessage({ forgeSaved: 'poses', key: S.key }, location.origin); } catch (e) {} }
   catch (e) { status('Not saved: ' + e.message, true); saveState(false); } }
 $('saveBtn').onclick = save;
@@ -402,11 +471,11 @@ async function loadModel(key) {
       else { stashed = draft.data; $('draftBtn').hidden = false; } } // the saved poses changed since (the builder posed something): they open, the draft waits for a press
     try { const a = JSON.parse(localStorage.getItem(askKey()) || 'null'); if (a && a.key === key) { if (S.ask && S.ask.busy) { asking = a; watch(key, a.motion); } else remember(null); } } catch (e) {} // a builder run asked for from here, still going
     Poses.set(key, S.data); S.motion = Object.keys(S.data.motions)[0] || ''; S.t = 0; $('scrub').value = 0;
-    if (S.dirty) { show(); status('Your unsaved poses are back. Save them, or Ctrl+Z to drop them.'); } else if (stashed) { show(); status('These are the saved poses, changed since your unsaved draft.'); } else status((take ? 'The artist\'s new version (not in the game yet) · ' : '') + (S.order.length > 1 ? `${S.order.length} parts` : '')); show();
+    if (S.dirty) { show(); status('Your changes from last time are back. Save them, or Undo to drop them.'); } else if (stashed) { show(); status('These are the saved poses: they changed since your last unsaved changes, which wait behind Bring back my changes.'); } else status((take ? 'The artist\'s new version (not in the game yet) · ' : '') + (S.order.length > 1 ? `${S.order.length} parts` : '')); show();
     try { if (parent !== window) parent.postMessage({ type: 'forge:pose-model', key }, location.origin); } catch (e) {} // the Studio's card follows the model shown here
     setupRigs();
     const own = S.order.filter(n => S.parts[n].node.isMesh || S.parts[n].node.children.some(ch => ch.isMesh && !S.parts[ch.name])).length; // parts with a shape of their own: one is a solid piece
-    if (own < 2) noModel(`${key} is one solid piece`, 'There are no limbs to turn: it was made as a single mesh. Ask the artist for a new version as separate named parts (torso, head, upperArmL, thighL …) and it can be posed here.');
+    if (own < 2) noModel(`${key} is one solid piece`, 'It was made as one solid piece, so it has no parts to turn. Ask the artist for a version with separate arms and legs, and it can be posed here.');
   } catch (e) { status('Did not load: ' + e.message, true); noModel(`${key} did not load`, e.message); }
 }
 
