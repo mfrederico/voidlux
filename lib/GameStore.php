@@ -582,15 +582,17 @@ class GameStore {
             if (!preg_match('/^[A-Za-z][A-Za-z0-9_.-]{0,40}$/D', $n) || ($par !== '' && !preg_match('/^[A-Za-z][A-Za-z0-9_.-]{0,40}$/D', $par)) || count($at) !== 3) throw new \InvalidArgumentException('the parts list is not { name, parent, at: [x, y, z] }');
             $rows[] = "{$n}" . ($par !== '' ? " (under {$par})" : ' (the root)') . " turns at [" . implode(', ', $at) . ']'; }
         if (!$rows) throw new \InvalidArgumentException('this model has no named parts to pose');
-        $has = is_file(self::dir($slug) . "/assets/{$key}.poses.json");
-        return "Pose the \"{$motion}\" motion of the 3D model {$key}, as the owner describes it: \"{$text}\"\n\n"
+        $has = is_file(self::dir($slug) . "/assets/{$key}.poses.json"); $now = $has ? (self::readPoses($slug, $key)['motions'][$motion] ?? null) : null; $now = is_array($now) && !empty($now['keys']) ? $now : null;
+        $ask = $now ? "Change the \"{$motion}\" motion of the 3D model {$key} as the owner asks: \"{$text}\"\n\nThe owner likes it as it is: keep its keys, their times and every turn the request does not touch, and change only what it asks for (a small change stays small). It is now:\n" . json_encode($now, JSON_UNESCAPED_SLASHES) . "\n\n"
+            : "Pose the \"{$motion}\" motion of the 3D model {$key}, as the owner describes it: \"{$text}\"\n\n";
+        return $ask
             . "Write it as key poses in assets/{$key}.poses.json" . ($has ? ' (it exists: change only the motion "' . $motion . '" and keep every other motion exactly as it is)' : ' (it does not exist yet: make it)') . ". "
             . "The format is { \"motions\": { \"{$motion}\": { \"loop\": true|false, \"seconds\": n, \"keys\": [ { \"t\": 0..1, \"rot\": { \"part\": [x, y, z] } } ] } } }: "
             . "each rot is the part's turn away from how it stands at rest, Euler XYZ in radians, in its own frame; a part a key leaves out is at rest. ../../kit/js/kit-poses.js plays it (eased between keys; a loop goes from its last key back round to its first); read its header.\n\n"
             . "The model faces +x, y is up, +z is its right side. Its parts, with where each one turns (in the pose editor's units: the figure is 1.8 tall, standing on y = 0):\n- " . implode("\n- ", $rows) . "\n"
             . "Each part's rest frame lines up with the model's, so for a limb hanging down: a positive turn about z swings its end forward (+x), negative swings it back; a positive turn about x swings its end toward -z (the figure's left side); about y twists it. A shin or lower arm bends at the knee or elbow the same way (a knee bends with a negative z turn of the shin).\n\n"
-            . "Use 4 to 8 keys, enough to read well, few enough for the owner to adjust by hand in the pose editor. A run or walk loops with t = 0 and t = 0.5 as mirror images (left and right swapped); the game drives it by the stride, so seconds only sets the editor's preview. Keep turns within what a body can do.\n"
-            . "Check: node can parse the file, every part name is in the list above, every rot is three numbers. No soak is needed for this. Commit it in one commit that says which motion was posed.";
+            . ($now ? '' : "Use 4 to 8 keys, enough to read well, few enough for the owner to adjust by hand in the pose editor. ") . "A run or walk loops with t = 0 and t = 0.5 as mirror images (left and right swapped); the game drives it by the stride, so seconds only sets the editor's preview. Keep turns within what a body can do.\n"
+            . "Check: node can parse the file, every part name is in the list above, every rot is three numbers. No soak is needed for this. Commit it in one commit that says which motion was " . ($now ? 'changed, and how' : 'posed') . '.';
     }
     public static function cleanPoses(array $b): array {
         $out = []; $part = '/^[A-Za-z][A-Za-z0-9_.-]{0,40}$/D';

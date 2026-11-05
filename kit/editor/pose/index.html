@@ -238,8 +238,10 @@ $('delMotion').onclick = () => { const m = motion(); if (!m) return; if (m.keys.
 /* asking the builder to pose the chosen motion from words: a paid run; the editor watches for the poses and offers them */
 let stashed = null, watching = null;
 function drawAsk() { const m = motion(); $('askBox').style.display = m && S.order.length > 1 ? '' : 'none'; if (!m) return;
-  $('askBox').querySelector('summary').textContent = `Ask the builder to pose ${S.motion}`; $('askBtn').textContent = `Ask the builder to pose ${S.motion}`;
-  $('askCost').textContent = S.ask ? (S.ask.busy ? 'The builder is busy: this goes with its next run. ' : '') + S.ask.cost + (m.keys.length ? ` Its poses replace the ${m.keys.length} key${m.keys.length === 1 ? '' : 's'} ${S.motion} has now (undo it from Changes).` : '') : ''; }
+  const saved = S.base ? (JSON.parse(S.base)[S.motion] || { keys: [] }).keys.length : 0, verb = saved ? 'change' : 'pose'; // a motion with saved keys is changed, not made again
+  $('askBox').querySelector('summary').textContent = `Ask the builder to ${verb} ${S.motion}`; $('askBtn').textContent = `Ask the builder to ${verb} ${S.motion}`;
+  $('askText').placeholder = saved ? 'e.g. a little less lean, arms a touch lower, the same otherwise' : 'e.g. a low, sneaky run: knees high, arms swept back, head down';
+  $('askCost').textContent = S.ask ? (S.ask.busy ? 'The builder is busy: this goes with its next run. ' : '') + S.ask.cost + (saved ? ` It starts from the ${saved} saved key${saved === 1 ? '' : 's'} and changes only what you ask${S.dirty ? '; save first, or your unsaved changes are not part of it' : ''}. Undo it from Changes.` : '') : ''; }
 $('askBtn').onclick = async () => { const text = $('askText').value.trim(); if (text.length < 3) { status('Say how the motion should look.', true); return; }
   $('askBtn').disabled = true; status('Sending…');
   try { if (!CSRF) await token(); const parts = S.order.map(n => ({ name: n, parent: S.parts[n].parent, at: S.parts[n].at }));
