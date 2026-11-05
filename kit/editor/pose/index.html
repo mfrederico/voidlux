@@ -121,6 +121,8 @@ button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--a
       <span class="at" id="liftAt" title="How far the whole figure is raised in this pose">height 0</span>
       <button id="liftDown" title="Lower the whole figure a little in this pose">▼</button><button id="liftUp" title="Raise the whole figure a little in this pose">▲</button>
       <button id="ground" title="Lower or raise the whole figure so its lowest point stands on the ground, in this pose">Feet on the ground</button>
+      <button id="groundAll" title="Every key pose of this motion: the whole figure moved so its lowest point stands on the ground">Ground every key</button>
+      <button id="moveMode" aria-pressed="false" title="Drag the whole figure up or down in this key pose, with an arrow instead of the rings">↕ Move up/down</button>
     </div>
   </div>
 </div>
@@ -150,8 +152,8 @@ const grid = new THREE.GridHelper(4, 16, 0x9a88b8, 0xc8bcdc); grid.material.tran
 const facing = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0.005, 0), 0.9, 0xd08a00, 0.12, 0.07); scene.add(facing); // which way the figure faces in the game
 const orbit = new OrbitControls(camera, renderer.domElement); orbit.target.set(0, 0.9, 0); orbit.enableDamping = true; orbit.update();
 const gizmo = new TransformControls(camera, renderer.domElement); gizmo.setMode('rotate'); gizmo.setSpace('local'); gizmo.setSize(0.8); scene.add(gizmo);
-gizmo.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; if (e.value) { snapshot(); dragging = true; } else { dragging = false; commitPart('turned ' + sel); } });
-gizmo.addEventListener('objectChange', () => { if (dragging) writePart(sel); draw(); });
+gizmo.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; if (e.value) { snapshot(); dragging = true; } else { dragging = false; commitPart(moving ? 'moved the figure' : 'turned ' + sel); } });
+gizmo.addEventListener('objectChange', () => { if (dragging) { if (moving) writeLift(); else writePart(sel); } draw(); });
 function fit() { const w = stage.clientWidth, h = stage.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix(); }
 new ResizeObserver(() => { fit(); draw(); }).observe(stage); addEventListener('resize', () => { fit(); draw(); });
 function draw() { if (outline) outline.update(); renderer.render(scene, camera); } // also outside the animation loop, which a hidden tab pauses
@@ -160,7 +162,7 @@ function draw() { if (outline) outline.update(); renderer.render(scene, camera);
 const S = { key: '', model: null, parts: {}, order: [], data: { motions: {} }, motion: '', t: 0, playing: false, dirty: false, copied: null, undo: [], redo: [] };
 let sel = '', dragging = false, outline = null;
 const motion = () => S.data.motions[S.motion];
-const COMMON = ['idle', 'run', 'crouch', 'sword', 'throw', 'blowgun', 'victory']; // the motions a game usually plays (Ninja Mirage plays these); any other can be named
+const COMMON = ['idle', 'run', 'crouch', 'jump', 'sword', 'throw', 'blowgun', 'victory']; // the motions a game usually plays (Ninja Mirage plays these); any other can be named
 const keyAt = (t = S.t) => { const m = motion(); return m ? m.keys.find(k => Math.abs(k.t - t) < 0.005) : null; };
 const r4 = v => Math.round(v * 1e4) / 1e4;
 
@@ -181,6 +183,20 @@ function currentLift() { const top = S.order.find(n => S.parts[n].top); if (!top
 function setLift(v, what) { if (!motion()) { status('Pick or add a motion first: the height belongs to a key pose in it.', true); return; } snapshot(); const k = ensureKey(); v = r4(v); if (Math.abs(v) < 1e-4) delete k.lift; else k.lift = v; commitPart(what); pose(); drawParts(); }
 $('liftUp').onclick = () => setLift(currentLift() + 0.01 * 1.8 / S.unit, 'raised the figure');
 $('liftDown').onclick = () => setLift(currentLift() - 0.01 * 1.8 / S.unit, 'lowered the figure');
+/* every key of the motion grounded: each key shown in turn, its lowest point measured, its height set so that point is on the ground */
+$('groundAll').onclick = () => { const m = motion(); if (!m || !m.keys.length) { status('This motion has no key poses yet.', true); return; } snapshot(); const t0 = S.t;
+  for (const k of m.keys) { S.t = k.t; pose(); S.model.updateMatrixWorld(true); const low = new THREE.Box3().setFromObject(S.root, true).min.y, v = r4(currentLift() - low / S.unit); if (Math.abs(v) < 1e-4) delete k.lift; else k.lift = v; }
+  S.t = t0; $('scrub').value = t0; commitPart('grounded every key of ' + S.motion); pose(); drawParts(); status(`All ${m.keys.length} key poses of ${S.motion} stand on the ground now. Save poses to keep it.`); };
+/* moving: the gizmo becomes an up/down arrow on the whole figure; what it moves is that key pose's height */
+let moving = false;
+function setMoving(on) { moving = !!on && !!S.model && S.order.length > 1; $('moveMode').classList.toggle('on', moving); $('moveMode').setAttribute('aria-pressed', moving);
+  const top = S.order.find(n => S.parts[n].top);
+  if (moving && top) { gizmo.setMode('translate'); gizmo.setSpace('world'); gizmo.showX = gizmo.showZ = false; gizmo.showY = true; gizmo.attach(S.parts[top].node); $('hint').textContent = 'Drag the green arrow to move the whole figure up or down in this key pose. ↕ again to turn limbs.'; }
+  else { gizmo.setMode('rotate'); gizmo.setSpace('local'); gizmo.showX = gizmo.showY = gizmo.showZ = true; if (sel && S.parts[sel]) gizmo.attach(S.parts[sel].node); else gizmo.detach(); $('hint').textContent = 'Click a limb, then drag a ring to turn it. Drag the background to look around, scroll to zoom.'; }
+  draw(); }
+$('moveMode').onclick = () => setMoving(!moving);
+function writeLift() { const top = S.order.find(n => S.parts[n].top); if (!top) return; const P = S.parts[top], lf = P.node.position.clone().sub(P.restPos).dot(P.up);
+  P.node.position.copy(P.restPos).addScaledVector(P.up, lf); const k = ensureKey(); if (!k) return; const v = r4(lf); if (Math.abs(v) < 1e-4) delete k.lift; else k.lift = v; drawLift(); }
 $('ground').onclick = () => { if (!S.model) return; S.model.updateMatrixWorld(true); const low = new THREE.Box3().setFromObject(S.root, true).min.y; setLift(currentLift() - low / S.unit, 'put the feet on the ground'); };
 function ensureKey() { // the key pose at the playhead, made from what the figure shows when there is none; a turn with no motion chosen starts one
   if (!motion()) { const n = S.data.motions.idle ? 'pose' + (Object.keys(S.data.motions).length + 1) : 'idle'; S.data.motions[n] = { loop: true, seconds: 1, keys: [] }; S.motion = n; S.t = 0; $('scrub').value = 0; started = n; }
@@ -212,8 +228,8 @@ function drawParts() {
 }
 function drawKeys() { const m = motion(); $('keys').innerHTML = m ? m.keys.map(k => `<i style="left:${k.t * 100}%" class="${Math.abs(k.t - S.t) < 0.005 ? 'here' : ''}"></i>`).join('') : '';
   $('at').textContent = S.t.toFixed(2) + (keyAt() ? ' key' : ''); $('delKey').disabled = !keyAt(); drawMotions(); drawLift(); }
-function drawLift() { const v = S.model ? currentLift() * S.unit / 1.8 * 100 : 0; $('liftAt').textContent = 'height ' + (Math.abs(v) < 0.5 ? '0' : (v > 0 ? '+' : '') + Math.round(v) + '%'); for (const id of ['liftUp', 'liftDown', 'ground']) $(id).disabled = !S.model || S.order.length < 2; $('undoBtn').disabled = !S.undo.length; $('redoBtn').disabled = !S.redo.length; }
-function pick(n) { sel = n && S.parts[n] ? n : ''; if (sel) gizmo.attach(S.parts[sel].node); else gizmo.detach();
+function drawLift() { const v = S.model ? currentLift() * S.unit / 1.8 * 100 : 0; $('liftAt').textContent = 'height ' + (Math.abs(v) < 0.5 ? '0' : (v > 0 ? '+' : '') + Math.round(v) + '%'); for (const id of ['liftUp', 'liftDown', 'ground', 'groundAll', 'moveMode']) $(id).disabled = !S.model || S.order.length < 2; $('undoBtn').disabled = !S.undo.length; $('redoBtn').disabled = !S.redo.length; }
+function pick(n) { if (moving && n) setMoving(false); sel = n && S.parts[n] ? n : ''; if (sel) gizmo.attach(S.parts[sel].node); else gizmo.detach();
   if (outline) { outline.parent && outline.parent.remove(outline); outline = null; }
   if (sel) { outline = new THREE.BoxHelper(S.parts[sel].node, 0xd08a00); scene.add(outline); }
   drawParts(); draw(); }
@@ -306,6 +322,7 @@ addEventListener('pagehide', keepDraft);
 function noModel(title, text) { $('empty').hidden = false; $('empty').innerHTML = `<div><b>${esc(title)}</b>${esc(text)}</div>`; $('hint').hidden = true; }
 async function loadModel(key) {
   keepDraft();
+  if (moving) setMoving(false);
   S.key = key; S.dirty = false; S.undo.length = S.redo.length = 0; saveState(true); pick(''); if (S.model) scene.remove(S.model); S.model = null; S.parts = {}; S.order = []; $('empty').hidden = true; $('hint').hidden = false;
   const it = cast[key]; status('Loading ' + key + '…');
   try {
