@@ -122,7 +122,7 @@ document.title = `Poses · ${GAME} · VoidLux Studio`;
 Poses.init(THREE);
 
 /* the stage */
-const stage = $('stage'), renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); renderer.setPixelRatio(Math.min(2, devicePixelRatio)); stage.prepend(renderer.domElement);
+const stage = $('stage'), renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); renderer.setPixelRatio(Math.min(2, devicePixelRatio)); stage.prepend(renderer.domElement);
 const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(35, 1, 0.01, 100); camera.position.set(1.2, 1.4, 3.6);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x554466, 1.6)); const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(2, 4, 3); scene.add(sun);
 const grid = new THREE.GridHelper(4, 16, 0x9a88b8, 0xc8bcdc); grid.material.transparent = true; grid.material.opacity = 0.5; scene.add(grid);
@@ -144,7 +144,7 @@ const r4 = v => Math.round(v * 1e4) / 1e4;
 function snapshot() { S.undo.push(JSON.stringify(S.data)); if (S.undo.length > 80) S.undo.shift(); S.redo.length = 0; }
 function undo() { if (!S.undo.length) return; S.redo.push(JSON.stringify(S.data)); S.data = JSON.parse(S.undo.pop()); Poses.set(S.key, S.data); if (!motion()) S.motion = Object.keys(S.data.motions)[0] || ''; touched(); show(); if (typeof UX !== 'undefined') UX.undo && UX.undo(); }
 function redo() { if (!S.redo.length) return; S.undo.push(JSON.stringify(S.data)); S.data = JSON.parse(S.redo.pop()); Poses.set(S.key, S.data); touched(); show(); }
-function touched() { S.dirty = true; $('saveBtn').disabled = false; status('Not saved yet'); }
+function touched() { S.dirty = true; $('saveBtn').disabled = false; status('Not saved yet'); keepDraft(); }
 
 /* the pose the figure shows now, as offsets from rest, for every part a key names or the figure has turned */
 function currentRot() { const out = {}, q = new THREE.Quaternion(), e = new THREE.Euler();
@@ -219,7 +219,7 @@ $('delMotion').onclick = () => { const m = motion(); if (!m) return; if (m.keys.
 /* saving */
 async function save() { if (!S.dirty) return; $('saveBtn').disabled = true; status('Saving…');
   try { if (!CSRF) await token(); const r = await fetch(apiUrl('poses'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: S.key, motions: S.data.motions, what: lastWhat }) }); const j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'the forge answered ' + r.status); S.dirty = false; status('Saved. The game plays these once its builder has wired them in.'); if (typeof UX !== 'undefined') UX.act('save', S.key);
+    if (!r.ok) throw new Error(j.error || 'the forge answered ' + r.status); S.dirty = false; keepDraft(); status('Saved. The game plays these once its builder has wired them in.'); if (typeof UX !== 'undefined') UX.act('save', S.key);
     try { parent.postMessage({ forgeSaved: 'poses', key: S.key }, location.origin); } catch (e) {} }
   catch (e) { status('Not saved: ' + e.message, true); $('saveBtn').disabled = false; } }
 $('saveBtn').onclick = save;
@@ -232,12 +232,15 @@ addEventListener('keydown', e => { if (e.target.matches('input, select, textarea
   else if (e.key === ' ' && motion()) { e.preventDefault(); $('playBtn').click(); }
   else if (e.key === ',') jumpKey(-1); else if (e.key === '.') jumpKey(1);
   else if (e.key === 'Escape') pick(''); });
-addEventListener('beforeunload', e => { if (S.dirty) { e.preventDefault(); e.returnValue = ''; } });
+/* unsaved poses are a draft in this browser, kept as they change and offered back when the editor opens again: no leave-page prompt */
+const draftKey = () => `vl-pose-draft:${GAME}:${S.key}`;
+const keepDraft = () => { try { if (S.dirty) localStorage.setItem(draftKey(), JSON.stringify(S.data)); else localStorage.removeItem(draftKey()); } catch (e) {} };
+addEventListener('pagehide', keepDraft);
 
 /* loading: the game's 3D cast, then the chosen model and its poses */
 function noModel(title, text) { $('empty').hidden = false; $('empty').innerHTML = `<div><b>${esc(title)}</b>${esc(text)}</div>`; $('hint').hidden = true; }
 async function loadModel(key) {
-  if (S.dirty && !confirmLeave()) { $('modelSel').value = S.key; return; }
+  keepDraft();
   S.key = key; S.dirty = false; S.undo.length = S.redo.length = 0; $('saveBtn').disabled = true; pick(''); if (S.model) scene.remove(S.model); S.model = null; S.parts = {}; S.order = []; $('empty').hidden = true; $('hint').hidden = false;
   const it = cast[key]; status('Loading ' + key + '…');
   try {
@@ -253,12 +256,13 @@ async function loadModel(key) {
       if (ch.name && !geomOnly) { S.parts[ch.name] = { node: ch, rest: ch.quaternion.clone(), depth: d }; S.order.push(ch.name); walk(ch, d + 1); } else walk(ch, d); } };
     walk(root, 0); holder.userData.poseParts = S.parts;
     S.data = { motions: Array.isArray(poses.motions) ? {} : poses.motions || {} }; for (const m of Object.values(S.data.motions)) m.keys = m.keys || [];
+    let draft = null; try { draft = JSON.parse(localStorage.getItem(draftKey()) || 'null'); } catch (e) {}
+    if (draft && draft.motions && JSON.stringify(draft.motions) !== JSON.stringify(S.data.motions)) { S.undo.push(JSON.stringify(S.data)); S.data = draft; S.dirty = true; $('saveBtn').disabled = false; }
     Poses.set(key, S.data); S.motion = Object.keys(S.data.motions)[0] || ''; S.t = 0; $('scrub').value = 0;
-    status((take ? 'The artist\'s new version (not in the game yet) · ' : '') + (S.order.length > 1 ? `${S.order.length} parts` : '')); show();
+    if (S.dirty) { show(); status('Your unsaved poses are back. Save them, or Ctrl+Z to drop them.'); } else status((take ? 'The artist\'s new version (not in the game yet) · ' : '') + (S.order.length > 1 ? `${S.order.length} parts` : '')); show();
     if (S.order.length < 2) noModel(`${key} is one solid piece`, 'There are no limbs to turn: it was made as a single mesh. Ask the artist for a new version as separate named parts (torso, head, upperArmL, thighL …) and it can be posed here.');
   } catch (e) { status('Did not load: ' + e.message, true); noModel(`${key} did not load`, e.message); }
 }
-function confirmLeave() { return window.confirm('Leave without saving these poses?'); } // ui: a native leave guard, only with unsaved poses
 
 let cast = {};
 (async () => {
