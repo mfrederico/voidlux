@@ -132,7 +132,8 @@ const gizmo = new TransformControls(camera, renderer.domElement); gizmo.setMode(
 gizmo.addEventListener('dragging-changed', e => { orbit.enabled = !e.value; if (e.value) { snapshot(); dragging = true; } else { dragging = false; commitPart('turned ' + sel); } });
 gizmo.addEventListener('objectChange', () => { if (dragging) writePart(sel); });
 function fit() { const w = stage.clientWidth, h = stage.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix(); }
-new ResizeObserver(fit).observe(stage);
+new ResizeObserver(() => { fit(); draw(); }).observe(stage); addEventListener('resize', () => { fit(); draw(); });
+function draw() { if (outline) outline.update(); renderer.render(scene, camera); } // also outside the animation loop, which a hidden tab pauses
 
 /* the state: the model, its parts, the poses (the shape of assets/<key>.poses.json) */
 const S = { key: '', model: null, parts: {}, order: [], data: { motions: {} }, motion: '', t: 0, playing: false, dirty: false, copied: null, undo: [], redo: [] };
@@ -159,8 +160,8 @@ function commitPart(what) { touched(); drawKeys(); lastWhat = what; }
 let lastWhat = '';
 
 /* showing: the motion at the playhead, the parts list, the strip */
-function pose() { if (!S.model || dragging) return; if (S.motion && Poses.has(S.key, S.motion)) Poses.apply(S.model, S.key, [[S.motion, S.t, 1]]); else for (const n of S.order) S.parts[n].node.quaternion.copy(S.parts[n].rest); }
-function show() { drawMotions(); drawParts(); drawKeys(); pose(); }
+function pose() { if (!S.model || dragging) return; if (S.motion && Poses.has(S.key, S.motion)) Poses.apply(S.model, S.key, [[S.motion, S.t, 1]]); else for (const n of S.order) S.parts[n].node.quaternion.copy(S.parts[n].rest); draw(); }
+function show() { drawMotions(); drawParts(); drawKeys(); pose(); fit(); draw(); }
 function drawMotions() {
   const names = Object.keys(S.data.motions);
   $('motions').innerHTML = names.length ? names.map(n => { const m = S.data.motions[n]; return `<button data-m="${esc(n)}" class="${n === S.motion ? 'on' : ''}">${esc(n)} <small>${m.keys.length} key${m.keys.length === 1 ? '' : 's'}${m.loop ? ' · loops' : ''}</small></button>`; }).join('')
@@ -180,7 +181,7 @@ function drawKeys() { const m = motion(); $('keys').innerHTML = m ? m.keys.map(k
 function pick(n) { sel = n && S.parts[n] ? n : ''; if (sel) gizmo.attach(S.parts[sel].node); else gizmo.detach();
   if (outline) { outline.parent && outline.parent.remove(outline); outline = null; }
   if (sel) { outline = new THREE.BoxHelper(S.parts[sel].node, 0xd08a00); scene.add(outline); }
-  drawParts(); }
+  drawParts(); draw(); }
 
 /* picking on the stage: a click (not a drag) on the figure picks the part it hit */
 const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(); let down = null;
@@ -277,6 +278,6 @@ let cast = {};
 
 /* the loop: play, then draw */
 renderer.setAnimationLoop(now => { if (S.playing && motion()) { const sec = motion().seconds || 1; let t = (now - playFrom) / 1000 / sec; if (t > 1) { if (motion().loop) { t %= 1; } else { t = 1; stop(); } } S.t = t; $('scrub').value = t; $('at').textContent = t.toFixed(2); pose(); }
-  if (outline) outline.update(); orbit.update(); renderer.render(scene, camera); });
+  orbit.update(); draw(); });
 </script>
 </body></html>
