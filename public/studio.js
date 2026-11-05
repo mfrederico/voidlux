@@ -57,10 +57,10 @@
   const EDITORS = { rules: 'Rules', concept: 'The Concept', sprites: 'Sprites and 3D', sfx: 'Sound effects', tracker: 'Music', config: 'Game settings', pose: '3D poses', bestiary: 'Bestiary' };
   let editFrame = null, editing = '';
   const editorSrc = (name, who) => name === 'rules' ? `/editor/sprites/?game=${encodeURIComponent(SLUG)}&v=${EDITOR_V.sprites || 0}${who ? '&who=' + encodeURIComponent(who) : ''}#events` : name === 'sprites' && who ? `/editor/sprites/?game=${encodeURIComponent(SLUG)}&v=${EDITOR_V.sprites || 0}&${who}#make` : name === 'pose' ? `/editor/pose/?game=${encodeURIComponent(SLUG)}&v=${EDITOR_V.pose || 0}${who ? '&' + (who.includes('=') ? who : 'key=' + encodeURIComponent(who)) : ''}` : name === 'bestiary' ? `/game/gameeditor/${encodeURIComponent(SLUG)}?e=bestiary&game=${encodeURIComponent(SLUG)}` : `/editor/${name}/?game=${encodeURIComponent(SLUG)}&v=${EDITOR_V[name] || 0}`;
-  /* the panel folds while an editor is open: by itself below 1500px wide, else as the person last chose (kept in this browser) */
+  /* the panel folds while an editor is open, so the editor has the whole width, unless the person chose to keep it open (kept in this browser) */
   const CARDOFF = 'studio-card-editing';
   function cardFold(off, remember) { const st = document.querySelector('.st'); st.classList.toggle('cardoff', off); $('cardFold').setAttribute('aria-pressed', off); $('cardFold').textContent = off ? '⟨' : '⟩'; $('cardFold').title = (off ? 'Show the panel' : 'Fold this panel away for a bigger editor') + ' (Alt+P)'; if (remember) { try { localStorage.setItem(CARDOFF, off ? 'off' : 'on'); } catch (e) {} } setTimeout(() => { try { editFrame && editFrame.contentWindow.dispatchEvent(new Event('resize')); } catch (e) {} }, 60); }
-  const cardWanted = () => { let v = null; try { v = localStorage.getItem(CARDOFF); } catch (e) {} return v === 'off' || (v !== 'on' && innerWidth < 1500); };
+  const cardWanted = () => { let v = null; try { v = localStorage.getItem(CARDOFF); } catch (e) {} return v !== 'on'; }; /* an editor opens full width; ⟨ (Alt+P) brings the panel back, and that choice is kept */
   $('cardFold').onclick = () => cardFold(!document.querySelector('.st').classList.contains('cardoff'), true);
   addEventListener('keydown', e => { if (e.altKey && !e.ctrlKey && (e.key === 'p' || e.key === 'P' || e.code === 'KeyP') && editing) { e.preventDefault(); $('cardFold').click(); } });
   function setEditor(name, who) { const page = document.querySelector('.st'); if (name === editing && !who) return; const was = editing; editing = name; setInspect(false); page.classList.toggle('editing', !!name); if (!name) page.classList.remove('cardoff'); else if (!was) cardFold(cardWanted(), false);
@@ -91,7 +91,7 @@
   function fitGame() { const tell = () => { try { W().dispatchEvent(new Event('resize')); } catch (e) {} }; tell(); setTimeout(tell, 60); }
   // the keyboard goes back to the game: Space must jump, not press this button again
   $('listFold').onclick = () => { foldList(!document.querySelector('.st').classList.contains('nolist')); if (!inspecting) { try { frame.focus(); W().focus(); } catch (e) {} } };
-  { let saved = null; try { saved = localStorage.getItem(LISTOFF); } catch (e) {} if (saved === '1') foldList(true, false); else if (saved === null && matchMedia('(max-width: 1100px)').matches) foldList(true, false); else foldList(false, false); }
+  { let saved = null; try { saved = localStorage.getItem(LISTOFF); } catch (e) {} if (saved === '1') foldList(true, false); else if (saved === null && matchMedia('(max-width: 1499px)').matches) foldList(true, false); /* a tablet on its side: the game first, the list behind ☰ */ else foldList(false, false); }
   // More closes when you are done with it
   addEventListener('pointerdown', e => { const m = document.querySelector('.st-more'); if (m.open && !m.contains(e.target)) m.open = false; }); addEventListener('keydown', e => { const m = document.querySelector('.st-more'); if (e.key === 'Escape' && m.open) m.open = false; });
 

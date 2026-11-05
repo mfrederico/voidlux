@@ -71,6 +71,12 @@ details { border-top: 1px solid var(--line); padding: 5px 0; } summary { cursor:
 @media (min-width: 641px) and (max-width: 1100px) and (orientation: landscape) { .st { grid-template: 48px minmax(0, 1fr) / 190px minmax(0, 1fr) minmax(280px, 32vw); } }
 @media (min-width: 641px) and (max-width: 1100px) and (orientation: portrait) { .st { grid-template: 48px minmax(280px, 56vh) minmax(0, 1fr) / 190px minmax(0, 1fr); } .st-stage { grid-column: 1 / -1; grid-row: 2; } .st-list { grid-row: 3; } .st-card { grid-row: 3; border-left: 0; border-top: 1px solid var(--line); } .st-list { border-top: 1px solid var(--line); } }
 /* a finger needs more than a mouse */
+/* targets a person can hit without aiming: 38-40px with a mouse, 40-44 on a touch screen (a child's finger, a tablet) */
+.st-top button, .st-top select, .st-more summary { min-height: 38px; } #listFold { min-width: 38px; } .pt button { min-height: 40px; } .th { min-height: 36px; } .gr { min-height: 36px; } #find { min-height: 38px; }
+.st-top > a[href="/forge"] { display: inline-flex; align-items: center; min-height: 38px; padding: 0 4px; }
+.st-card .links > * { min-height: 38px; display: inline-flex; align-items: center; } .st-card details > summary { min-height: 36px; display: flex; align-items: center; gap: 6px; cursor: pointer; } .ch-x { min-width: 30px; min-height: 30px; } #changeForm button { min-height: 38px; } .st-more details > summary { min-height: 36px; display: flex; align-items: center; } .st-more a { display: flex; align-items: center; min-height: 38px; }
+/* a narrower desktop or a tablet on its side (1101-1499px): the panel takes less, the game more */
+@media (min-width: 1101px) and (max-width: 1499px) { .st { grid-template-columns: 230px minmax(0, 1fr) 340px; } .st.nolist { grid-template-columns: 0 minmax(0, 1fr) 340px; } }
 @media (pointer: coarse) { .st-top button, .st-more summary { min-height: 40px; } .pt button { min-height: 44px; } .th, .gr { min-height: 40px; } .tl-u { min-height: 34px; padding: 4px 12px; } }
 @media (max-width: 640px) { .st { display: flex; flex-direction: column; } .st-stage { height: 56vw; flex: none; } .st-list { max-height: 34vh; order: 3; border-right: 0; } .st-top { flex: none; height: 48px; } .st-top .st-more, .st-top .st-hint, .st-top > b, .st-top .wide { display: none; } .st-top { gap: 6px; padding: 0 8px; } .st-top button { padding: 5px 8px; white-space: nowrap; } .st-top a { white-space: nowrap; font-size: 13px; } }
 </style></head><body>
