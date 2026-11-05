@@ -1,7 +1,7 @@
 <?php
 /* On the browserdrive plugin's page (/browserdrive), through the layout's scripts slot (the plugin's own files stay as installed):
    its long how-it-works paragraph goes, and the top says what the page needs from you, an API key for the agent or script that drives
-   it, with the link to make or manage one, and the pages a session may open and scripts, all under one folded Settings (open while there is no key). */
+   it, with the link to make or manage one, the pages a session may open, scripts and how agents connect: every setting under one Settings fold (open while there is no key). */
 $path = parse_url((string) Flight::request()->url, PHP_URL_PATH);
 if ($path !== '/browserdrive' || !Flight::hasLevel(LEVELS['ADMIN'])) return;
 $me = Flight::getMember();
@@ -16,9 +16,11 @@ $notice = $live
 <template id="bdTopTpl"><div class="bd-top"><details class="bd-settings"<?= $live ? '' : ' open' ?>><summary>Settings</summary><div class="bd-settings-in"><?= $notice ?></div></details></div></template>
 <style>.bd-top { display: grid; gap: 10px; } .bd-settings > summary { cursor: pointer; min-height: 38px; display: flex; align-items: center; font-weight: 600; } .bd-settings-in { padding-top: 8px; display: grid; gap: 8px; }</style>
 <script>
-(() => { const bd = document.querySelector('.bd'), tpl = document.getElementById('bdTopTpl'); if (!bd || !tpl) return;
+(() => { const go = () => { const bd = document.querySelector('.bd'), tpl = document.getElementById('bdTopTpl'); if (!bd || !tpl || bd.querySelector('.bd-top')) return;
   for (const p of bd.querySelectorAll(':scope > p')) if (p.textContent.trim().startsWith('Leave this page open')) p.remove(); // the how-it-works paragraph
-  const top = tpl.content.firstElementChild.cloneNode(true), h1 = bd.querySelector('h1'); (h1 ? h1.after(top) : bd.prepend(top));
-  const form = bd.querySelector('form[action="/browserdrive/allow"]'); if (form) top.querySelector('.bd-settings-in').appendChild(form);
-})();
+  const top = tpl.content.firstElementChild.cloneNode(true), h1 = bd.querySelector('h1'), box = top.querySelector('.bd-settings-in'); (h1 ? h1.after(top) : bd.prepend(top));
+  /* every setting in one place: the pages a session may open and scripts (the plugin's form), and how agents and scripts connect */
+  for (const f of bd.querySelectorAll(':scope > form')) box.appendChild(f);
+  for (const p of bd.querySelectorAll(':scope > p')) if (/API key|browserdrive_drive|client/.test(p.textContent)) box.appendChild(p); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go(); })();
 </script>
