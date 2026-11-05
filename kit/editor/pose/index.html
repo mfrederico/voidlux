@@ -165,7 +165,7 @@ function draw() { if (outline) outline.update(); renderer.render(scene, camera);
 const S = { key: '', model: null, parts: {}, order: [], data: { motions: {} }, motion: '', t: 0, playing: false, dirty: false, copied: null, undo: [], redo: [] };
 let sel = '', dragging = false, outline = null;
 const motion = () => S.data.motions[S.motion];
-const COMMON = { player: ['idle', 'run', 'crouch', 'jump', 'sword', 'throw', 'blowgun', 'victory'], enemy: ['idle', 'run', 'alert', 'drowsy', 'sounding'], boss: ['idle', 'run', 'alert', 'attack'], other: ['idle', 'run'] }; // the motions a game usually plays (Ninja Mirage plays these); any other can be named
+const COMMON = { player: ['idle', 'walk', 'run', 'crouch', 'jump', 'sword', 'throw', 'blowgun', 'victory'], enemy: ['idle', 'walk', 'run', 'alert', 'drowsy', 'sounding'], boss: ['idle', 'run', 'alert', 'attack'], other: ['idle', 'run'] }; // the motions a game usually plays (Ninja Mirage plays these); any other can be named
 const keyAt = (t = S.t) => { const m = motion(); return m ? m.keys.find(k => Math.abs(k.t - t) < 0.005) : null; };
 const r4 = v => Math.round(v * 1e4) / 1e4;
 

@@ -25,7 +25,10 @@
   over.addEventListener('click', e => { if (!inspecting) return; const { list } = at(e); if (!list.length) { hint('Nothing there: click a monster, a thing on the ground or part of the screen.'); return; } lastPick = list[0]; if (typeof UX !== 'undefined') UX.act('inspect', list[0].key); if (list[0].title) showElement(list[0]); else show(list[0].key, list[0]); });
   $('inspect').onclick = () => setInspect(!inspecting);
   let jumpTo = '';
-  function fillJumps() { const J = $('jump'); let list = []; try { list = W().forgeScenes || []; } catch (e) {} J.hidden = !list.length; J.innerHTML = '<option value="">Jump to…</option>' + list.map(s => `<option value="${esc(s.id)}">${esc(s.label)}</option>`).join(''); J.value = ''; }
+  /* the game's places, once it has made them: a game that boots after its own modules load (three.js, poses) makes them a moment after the frame's load, so look again for a while */
+  let jumpTry = null;
+  function fillJumps(tries = 0) { clearTimeout(jumpTry); const J = $('jump'); let list = []; try { list = W().forgeScenes || []; } catch (e) {} J.hidden = !list.length; J.innerHTML = '<option value="">Jump to…</option>' + list.map(s => `<option value="${esc(s.id)}">${esc(s.label)}</option>`).join(''); J.value = '';
+    if (!list.length && tries < 30) jumpTry = setTimeout(() => fillJumps(tries + 1), 500); }
   $('jump').onchange = () => { const id = $('jump').value; if (!id) return; if (typeof UX !== 'undefined') UX.act('jump', id); setInspect(false); jumpTo = id; intoPlay = false; hint('Going there…'); frame.src = `/game/shotframe/${SLUG}?r=${Date.now()}`; };
   const reload = (play, q = '') => { setInspect(false); intoPlay = play; frame.src = `/games/${SLUG}/?${q}r=${Date.now()}`; document.querySelector('.st-more').open = false; };
   $('restart').onclick = () => reload(true); $('titleScreen').onclick = () => reload(false); $('changed').onclick = () => reload(true); $('runBot').onclick = () => reload(false, 'bot=1&'); $('runProf').onclick = () => reload(true, 'fps=1&');
