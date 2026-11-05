@@ -14,8 +14,8 @@ class Inspector {
         $rules = Rules::read($slug)['rules']; $own = []; foreach ($rules as $r) $own[$r['who'] ?? ''] = ($own[$r['who'] ?? ''] ?? 0) + 1;
         $keys = $v ? array_keys($v['subjects']) : ($cast ? array_keys($cast) : array_keys($sprites));
         $out = [];
-        foreach ($keys as $k) { $s = $v['subjects'][$k] ?? []; $c = $cast[$k] ?? [];
-            $out[] = ['key' => $k, 'name' => (string) ($s['name'] ?? '') ?: self::name($k, (string) ($s['about'] ?? $c['what'] ?? '')), 'ui' => in_array('ui', (array) ($s['groups'] ?? []), true), 'about' => (string) ($s['about'] ?? $c['what'] ?? ''), 'group' => (string) (($s['groups'] ?? [])[0] ?? $c['group'] ?? 'other'), 'thumb' => self::thumb($slug, $k, $c), 'rules' => (int) ($own[$k] ?? 0)]; }
+        foreach ($keys as $k) { $s = $v['subjects'][$k] ?? []; $mk = self::modelKey($k, $s, $cast); $c = $cast[$mk] ?? [];
+            $out[] = ['key' => $k, 'name' => (string) ($s['name'] ?? '') ?: self::name($k, (string) ($s['about'] ?? $c['what'] ?? '')), 'ui' => in_array('ui', (array) ($s['groups'] ?? []), true), 'about' => (string) ($s['about'] ?? $c['what'] ?? ''), 'group' => (string) (($s['groups'] ?? [])[0] ?? $c['group'] ?? 'other'), 'thumb' => self::thumb($slug, $mk, $c), 'rules' => (int) ($own[$k] ?? 0)]; }
         usort($out, fn($a, $b) => [$a['group'], $a['key']] <=> [$b['group'], $b['key']]);
         return $out;
     }
@@ -28,6 +28,13 @@ class Inspector {
     private static function thumb(string $slug, string $k, array $c): string {
         if (empty($c['v'])) return ''; $f = "thumbs/{$k}-{$c['v']}.webp"; return is_file(GameStore::dir($slug) . "/$f") ? "/games/{$slug}/$f" : '';
     }
+    /** The 3D model that draws a subject: the vocabulary's "model" when it names one (the player keyed by its old 2D rig, drawn by the model ninja), else the subject's own key.
+     *  A "model" the cast does not have is the vocabulary's mistake, said as one. */
+    private static function modelKey(string $key, array $subject, array $cast): string {
+        $m = (string) ($subject['model'] ?? ''); if ($m === '') return $key;
+        if (!isset($cast[$m])) throw new \RuntimeException("assets/events-vocab.json: {$key} is drawn by the model \"{$m}\", which is not in the 3D cast (assets/models.json)");
+        return $m;
+    }
     /** How the pose editor opens for a 3D model: its key, and its waiting new version when there is one (posed before it is kept); null for anything not 3D */
     private static function poseOpen(string $slug, string $key, ?array $sprite): ?array {
         $w = is_file(Cast::path($slug)) ? (Cast::waitingRevisions($slug)[$key] ?? null) : null; $take = $w && str_ends_with((string) $w['file'], '.glb') ? $w['id'] . '/' . $w['file'] : '';
@@ -37,7 +44,7 @@ class Inspector {
     /** One thing's card. Throws InvalidArgumentException when the game has no such thing. */
     public static function card(string $slug, string $key): array {
         $v = Rules::vocab($slug); $cast = is_file(Cast::path($slug)) ? Cast::read($slug)['items'] : []; $sprites = (array) GameStore::readSprites($slug)['sprites'];
-        $subject = $v['subjects'][$key] ?? null; $item = $cast[$key] ?? null; $sprite = isset($sprites[$key]) ? (array) $sprites[$key] : null;
+        $subject = $v['subjects'][$key] ?? null; $mk = self::modelKey($key, (array) $subject, $cast); $item = $cast[$mk] ?? null; $sprite = isset($sprites[$mk]) ? (array) $sprites[$mk] : (isset($sprites[$key]) ? (array) $sprites[$key] : null);
         if ($subject === null && $item === null && $sprite === null) throw new \InvalidArgumentException("this game has no thing called {$key}");
         $groups = array_values((array) ($subject['groups'] ?? []));
         // the rules that reach it: its own, then its groups', then those for everything
@@ -48,9 +55,9 @@ class Inspector {
         $built = []; $forAll = 0; $cat = Rules::builtin($slug);
         foreach ((array) ($cat['systems'] ?? []) as $s) foreach ((array) ($s['items'] ?? []) as $it) { $w = (string) ($it['who'] ?? '');
             if ($w === '*') { $forAll++; continue; } if ($w === $key || (str_starts_with($w, 'group:') && in_array(substr($w, 6), $groups, true))) $built[(string) ($s['name'] ?? $s['id'] ?? '')][] = $it; }
-        return ['key' => $key, 'name' => (string) ($subject['name'] ?? '') ?: self::name($key, (string) ($subject['about'] ?? $item['what'] ?? '')), 'ui' => in_array('ui', $groups, true), 'about' => (string) ($subject['about'] ?? $item['what'] ?? ''), 'groups' => array_values(array_diff($groups, ['ui'])), 'look' => self::look($slug, $key, $item, $sprite), 'rules' => $rules, 'built' => $built, 'builtForAll' => $forAll, 'listed' => (bool) $cat,
+        return ['key' => $key, 'name' => (string) ($subject['name'] ?? '') ?: self::name($key, (string) ($subject['about'] ?? $item['what'] ?? '')), 'ui' => in_array('ui', $groups, true), 'about' => (string) ($subject['about'] ?? $item['what'] ?? ''), 'groups' => array_values(array_diff($groups, ['ui'])), 'look' => self::look($slug, $mk, $item, $sprite), 'rules' => $rules, 'built' => $built, 'builtForAll' => $forAll, 'listed' => (bool) $cat,
             'bestiary' => self::resistances($slug, (array) ($subject['bestiary'] ?? [])), 'wired' => $v !== null,
-            'open' => ['rules' => "/editor/sprites/?game={$slug}&who=" . rawurlencode($key) . '#events', 'model' => $item ? "/editor/sprites/?game={$slug}&item=" . rawurlencode($key) . '#3d' : null, 'bestiary' => !empty($subject['bestiary']) ? "/game/gameeditor/{$slug}?e=bestiary&game={$slug}" : null, 'pose' => self::poseOpen($slug, $key, $sprite)]];
+            'open' => ['rules' => "/editor/sprites/?game={$slug}&who=" . rawurlencode($key) . '#events', 'model' => $item ? "/editor/sprites/?game={$slug}&item=" . rawurlencode($mk) . '#3d' : null, 'bestiary' => !empty($subject['bestiary']) ? "/game/gameeditor/{$slug}?e=bestiary&game={$slug}" : null, 'pose' => self::poseOpen($slug, $mk, $sprite)]];
     }
     private static function look(string $slug, string $key, ?array $item, ?array $sprite): ?array {
         if ($item) { $has = !empty($item['file']); return ['kind' => 'model', 'kept' => $has, 'strip' => self::thumb($slug, $key, $item), 'size' => $item['size'] ?? null, 'note' => (string) ($item['note'] ?? ''), 'colours' => array_values((array) ($item['colours'] ?? [])), 'moves' => (string) ($item['moves'] ?? ''), 'replaces' => (string) ($item['replaces'] ?? ''), 'recipe' => !empty($item['recipe']), 'versions' => count((array) ($item['history'] ?? []))]; }

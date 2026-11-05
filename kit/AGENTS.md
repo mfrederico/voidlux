@@ -138,7 +138,7 @@ How things react (an enemy hit by fire starts burning, at most three times; a bu
 **rules**, not code: the producer writes them on the sprite page's Events tab, `../../kit/js/kit-events.js` runs them, and
 its header is the format. Your part, once per game and whenever the game learns a new trick:
 - `assets/events-vocab.json`: the **subjects** (each kind of thing, keyed by its sprite or model key, with groups such as
-  player, enemy, boss, prop, pickup), the **events** the game emits (spawn, hit, die, touch, pickup…, each with the fields
+  player, enemy, boss, prop, pickup; a subject keyed by something else but drawn by a 3D model says which: `"model": "ninja"`, so the Studio shows and poses that model), the **events** the game emits (spawn, hit, die, touch, pickup…, each with the fields
   the code knows then: hit has type, amount, source) and the **actions** it can do (each wrapping the game's own function,
   with settings and defaults; `"lasting": true` for one with a duration). The producer can use nothing else, so declare
   what the game really does, in words a producer reads.
