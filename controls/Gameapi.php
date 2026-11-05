@@ -94,7 +94,7 @@ class Gameapi extends BaseControls\Control {
      *  from the owner's words, into assets/<key>.poses.json, leaving every other motion as it is. A paid builder run (the editor shows the estimate first). */
     public function poseask($params = []): void {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; if (!$this->post()) { $this->raw(['error' => 'POST only'], 405); return; }
-        try { $b = $this->getJsonInput() ?? []; $r = GameStore::askBuilder($g->slug, GameStore::poseBrief($g->slug, (string) ($b['key'] ?? ''), (string) ($b['motion'] ?? ''), (string) ($b['text'] ?? ''), (array) ($b['parts'] ?? [])), (int) $this->member->id);
+        try { $b = $this->getJsonInput() ?? []; $r = GameStore::askBuilder($g->slug, GameStore::poseBrief($g->slug, (string) ($b['key'] ?? ''), (string) ($b['motion'] ?? ''), (string) ($b['text'] ?? ''), (array) ($b['parts'] ?? []), (array) ($b['axes'] ?? [])), (int) $this->member->id);
             $this->raw(['ok' => true, 'queued' => !empty($r['queued']), 'busy' => !empty($r['busy'])]); }
         catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); } catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 409); }
     }

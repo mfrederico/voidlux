@@ -177,7 +177,7 @@ function currentRot() { const out = {}, q = new THREE.Quaternion(), e = new THRE
   for (const n of S.order) { const p = S.parts[n]; q.copy(p.rest).invert().multiply(p.node.quaternion); if (Math.abs(q.w) > 0.99999) continue; e.setFromQuaternion(q, 'XYZ'); out[n] = [r4(e.x), r4(e.y), r4(e.z)]; }
   return out; }
 /* the whole figure's height in the pose shown: the root part above or below where it stands at rest, in the model's own units */
-function currentLift() { const top = S.order.find(n => S.parts[n].top); return top ? S.parts[top].node.position.y - S.parts[top].restY : 0; }
+function currentLift() { const top = S.order.find(n => S.parts[n].top); if (!top) return 0; const P = S.parts[top]; return P.node.position.clone().sub(P.restPos).dot(P.up); }
 function setLift(v, what) { if (!motion()) { status('Pick or add a motion first: the height belongs to a key pose in it.', true); return; } snapshot(); const k = ensureKey(); v = r4(v); if (Math.abs(v) < 1e-4) delete k.lift; else k.lift = v; commitPart(what); pose(); drawParts(); }
 $('liftUp').onclick = () => setLift(currentLift() + 0.01 * 1.8 / S.unit, 'raised the figure');
 $('liftDown').onclick = () => setLift(currentLift() - 0.01 * 1.8 / S.unit, 'lowered the figure');
@@ -192,7 +192,7 @@ function commitPart(what) { touched(); drawKeys(); draw(); lastWhat = what; if (
 let lastWhat = '', started = '';
 
 /* showing: the motion at the playhead, the parts list, the strip */
-function pose() { if (!S.model || dragging) return; if (S.motion && Poses.has(S.key, S.motion)) Poses.apply(S.model, S.key, [[S.motion, S.t, 1]]); else for (const n of S.order) { const P = S.parts[n]; P.node.quaternion.copy(P.rest); if (P.top) P.node.position.y = P.restY; } drawLift(); draw(); }
+function pose() { if (!S.model || dragging) return; if (S.motion && Poses.has(S.key, S.motion)) Poses.apply(S.model, S.key, [[S.motion, S.t, 1]]); else for (const n of S.order) { const P = S.parts[n]; P.node.quaternion.copy(P.rest); if (P.top) P.node.position.copy(P.restPos); } drawLift(); draw(); }
 function show() { drawMotions(); drawParts(); drawKeys(); pose(); fit(); draw(); }
 function drawMotions() {
   const names = Object.keys(S.data.motions);
@@ -262,7 +262,7 @@ function drawAsk() { const m = motion(); $('askBox').style.display = m && S.orde
 $('askBtn').onclick = async () => { const text = $('askText').value.trim(); if (text.length < 3) { status('Say how the motion should look.', true); return; }
   $('askBtn').disabled = true; status('Sending…');
   try { if (!CSRF) await token(); const parts = S.order.map(n => ({ name: n, parent: S.parts[n].parent, at: S.parts[n].at }));
-    const r = await fetch(apiUrl('poseask'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: S.key, motion: S.motion, text, parts }) }); const j = await r.json();
+    const r = await fetch(apiUrl('poseask'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: S.key, motion: S.motion, text, parts, axes: S.axes }) }); const j = await r.json();
     if (!r.ok) throw new Error(j.error || 'the forge answered ' + r.status);
     status(j.queued ? `The builder is busy: posing ${S.motion} goes with its next run. This page picks it up when it lands.` : `The builder is posing ${S.motion}. This page picks it up when it lands (a few minutes).`); if (typeof UX !== 'undefined') UX.act('poseask', S.motion);
     watch(S.key, S.motion); }
@@ -321,8 +321,13 @@ async function loadModel(key) {
        is not one, nor an empty marker a modelling tool left behind (cam:front) */
     const shaped = o => { let any = false; o.traverse(x => { if (x.isMesh) any = true; }); return any; };
     const walk = (o, d) => { for (const ch of o.children) { if (!shaped(ch)) continue; const geomOnly = ch.isMesh && !ch.children.length && ch.parent !== root && ch.parent.name && ch.name.startsWith(ch.parent.name);
-      if (ch.name && !geomOnly) { S.parts[ch.name] = { node: ch, rest: ch.quaternion.clone(), restY: ch.position.y, top: d === 0, depth: d }; S.order.push(ch.name); walk(ch, d + 1); } else walk(ch, d); } };
+      if (ch.name && !geomOnly) { S.parts[ch.name] = { node: ch, rest: ch.quaternion.clone(), restPos: ch.position.clone(), up: Poses.upIn(ch, holder), top: d === 0, depth: d }; S.order.push(ch.name); walk(ch, d + 1); } else walk(ch, d); } };
     walk(root, 0); holder.userData.poseParts = S.parts; holder.updateMatrixWorld(true);
+    /* the units a lift is kept in: the root part's parent's (the model's own, through any wrapper a modelling tool put round it), as editor units */
+    const topN = S.order.find(n => S.parts[n].top); S.unit = topN ? S.parts[topN].node.parent.getWorldScale(new THREE.Vector3()).x : s;
+    /* which way each of the root part's own axes points on the figure, for the builder's brief: a tool may lay a model out z-up */
+    S.axes = {}; if (topN) { const q = S.parts[topN].node.getWorldQuaternion(new THREE.Quaternion()), say = v => { const a = [['forward', 1, 0, 0], ['back', -1, 0, 0], ['up', 0, 1, 0], ['down', 0, -1, 0], ['right', 0, 0, 1], ['left', 0, 0, -1]]; return a.reduce((b, c) => (v.x * c[1] + v.y * c[2] + v.z * c[3]) > (v.x * b[1] + v.y * b[2] + v.z * b[3]) ? c : b)[0]; };
+      for (const [k, v] of [['x', [1, 0, 0]], ['y', [0, 1, 0]], ['z', [0, 0, 1]]]) S.axes[k] = say(new THREE.Vector3(...v).applyQuaternion(q)); }
     for (const n of S.order) { const p = S.parts[n]; p.at = p.node.getWorldPosition(new THREE.Vector3()).toArray().map(v => Math.round(v * 100) / 100); let up = p.node.parent; while (up && !(up.name && S.parts[up.name])) up = up.parent; p.parent = up ? up.name : ''; }
     S.data = { motions: Array.isArray(poses.motions) ? {} : poses.motions || {} }; for (const m of Object.values(S.data.motions)) m.keys = m.keys || [];
     S.base = JSON.stringify(S.data.motions); S.ask = poses.ask || null; $('draftBtn').hidden = $('takeBtn').hidden = true;

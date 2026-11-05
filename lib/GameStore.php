@@ -573,7 +573,7 @@ class GameStore {
         self::writeAtomic("$dir/$key.poses.json", json_encode($p, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION) . "\n"); self::git(self::dir($slug), ['add', "assets/$key.poses.json"]); return $p;
     }
     /** The builder's brief for posing one motion from the owner's words: the file, the parts and their joints, which way each turn goes. */
-    public static function poseBrief(string $slug, string $key, string $motion, string $text, array $parts): string {
+    public static function poseBrief(string $slug, string $key, string $motion, string $text, array $parts, array $axes = []): string {
         if (!preg_match(self::SPRITE_KEY, $key)) throw new \InvalidArgumentException('not a model key');
         if (!preg_match(self::SPRITE_KEY, $motion)) throw new \InvalidArgumentException('a motion name is lower case letters, digits, - and _ (e.g. run)');
         $text = trim(preg_replace('/\s+/', ' ', $text)); if (mb_strlen($text) < 3) throw new \InvalidArgumentException('say how the motion should look'); $text = mb_substr($text, 0, 600);
@@ -590,9 +590,19 @@ class GameStore {
             . "The format is { \"motions\": { \"{$motion}\": { \"loop\": true|false, \"seconds\": n, \"keys\": [ { \"t\": 0..1, \"rot\": { \"part\": [x, y, z] } } ] } } }: "
             . "each rot is the part's turn away from how it stands at rest, Euler XYZ in radians, in its own frame; a part a key leaves out is at rest. ../../kit/js/kit-poses.js plays it (eased between keys; a loop goes from its last key back round to its first); read its header.\n\n"
             . "The model faces +x, y is up, +z is its right side. Its parts, with where each one turns (in the pose editor's units: the figure is 1.8 tall, standing on y = 0):\n- " . implode("\n- ", $rows) . "\n"
-            . "Each part's rest frame lines up with the model's, so for a limb hanging down: a positive turn about z swings its end forward (+x), negative swings it back; a positive turn about x swings its end toward -z (the figure's left side); about y twists it. A shin or lower arm bends at the knee or elbow the same way (a knee bends with a negative z turn of the shin).\n\n"
+            . self::poseAxes($axes) . "\n\n"
             . ($now ? '' : "Use 4 to 8 keys, enough to read well, few enough for the owner to adjust by hand in the pose editor. ") . "A run or walk loops with t = 0 and t = 0.5 as mirror images (left and right swapped); the game drives it by the stride, so seconds only sets the editor's preview. Keep turns within what a body can do.\n"
             . "Check: node can parse the file, every part name is in the list above, every rot is three numbers. No soak is needed for this. Commit it in one commit that says which motion was " . ($now ? 'changed, and how' : 'posed') . '.';
+    }
+    /** Which way each turn swings a limb, from where the root part's own axes point on the figure (the pose editor measures them: a modelling
+     *  tool may lay a model out z-up inside a turned wrapper). Every part's frame lines up with the root's. */
+    private static function poseAxes(array $axes): string {
+        $dirs = ['forward', 'back', 'up', 'down', 'right', 'left']; $a = [];
+        foreach (['x', 'y', 'z'] as $k) { $v = (string) ($axes[$k] ?? ''); if (!in_array($v, $dirs, true)) throw new \InvalidArgumentException('the pose editor did not say which way the model\'s axes point'); $a[$k] = $v; }
+        $by = array_flip($a); $side = $by['right'] ?? $by['left'] ?? null; $front = $by['forward'] ?? $by['back'] ?? null; $twist = $by['up'] ?? $by['down'] ?? null;
+        if ($side === null || $front === null || $twist === null) throw new \InvalidArgumentException('the model\'s axes do not line up with forward, up and its sides');
+        $fwd = $a[$side] === 'right' ? 'positive' : 'negative'; $back = $fwd === 'positive' ? 'negative' : 'positive'; $toLeft = $a[$front] === 'forward' ? 'positive' : 'negative';
+        return "In each part's own frame x points {$a['x']}, y points {$a['y']} and z points {$a['z']} on the figure (every part's frame lines up with the root's). So for a limb hanging down: a {$fwd} turn about {$side} swings its end forward, {$back} swings it back; a {$toLeft} turn about {$front} swings its end toward the figure's left side; about {$twist} twists it. A knee or elbow bends with a {$back} turn about {$side} of the shin or lower arm. Measure, do not assume: these differ from model to model.";
     }
     public static function cleanPoses(array $b): array {
         $out = []; $part = '/^[A-Za-z][A-Za-z0-9_.-]{0,40}$/D';
