@@ -348,5 +348,5 @@
   if (window.top === window) poll(); else { $('attached').textContent = ''; Forge.api(`/game/events/${SLUG}?since=0`).then(r => feedBuilder(r.events || [], r.agent)).catch(e => console.error(e)); } // inside another page's frame (a browser-drive session looking at this page) it is not the runner
   addEventListener('beforeunload', e => { if (ForgeRunner.busy()) { e.preventDefault(); e.returnValue = ''; } });
 
-  Forge.api(`/studio/things/${SLUG}`).then(r => { things = r.things || []; drawList(); }).catch(e => { $('things').innerHTML = `<p class="bad small" style="padding:8px">The list could not be read: ${esc(e.message)}</p>`; });
+  Forge.api(`/studio/things/${SLUG}`).then(r => { things = r.things || []; if (typeof RuleWords !== 'undefined') RuleWords.names = Object.fromEntries(things.map(t => [t.key, t.name])); drawList(); }).catch(e => { $('things').innerHTML = `<p class="bad small" style="padding:8px">The list could not be read: ${esc(e.message)}</p>`; });
 })();
