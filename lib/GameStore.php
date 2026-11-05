@@ -572,6 +572,26 @@ class GameStore {
         $p = self::cleanPoses($b); $dir = self::dir($slug) . '/assets'; if (!is_dir($dir)) mkdir($dir, 0775, true);
         self::writeAtomic("$dir/$key.poses.json", json_encode($p, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION) . "\n"); self::git(self::dir($slug), ['add', "assets/$key.poses.json"]); return $p;
     }
+    /** The builder's brief for posing one motion from the owner's words: the file, the parts and their joints, which way each turn goes. */
+    public static function poseBrief(string $slug, string $key, string $motion, string $text, array $parts): string {
+        if (!preg_match(self::SPRITE_KEY, $key)) throw new \InvalidArgumentException('not a model key');
+        if (!preg_match(self::SPRITE_KEY, $motion)) throw new \InvalidArgumentException('a motion name is lower case letters, digits, - and _ (e.g. run)');
+        $text = trim(preg_replace('/\s+/', ' ', $text)); if (mb_strlen($text) < 3) throw new \InvalidArgumentException('say how the motion should look'); $text = mb_substr($text, 0, 600);
+        $rows = [];
+        foreach (array_slice($parts, 0, 40) as $p) { if (!is_array($p)) continue; $n = (string) ($p['name'] ?? ''); $par = (string) ($p['parent'] ?? ''); $at = array_map(fn($v) => round((float) $v, 2), array_slice(array_values((array) ($p['at'] ?? [])), 0, 3));
+            if (!preg_match('/^[A-Za-z][A-Za-z0-9_.-]{0,40}$/D', $n) || ($par !== '' && !preg_match('/^[A-Za-z][A-Za-z0-9_.-]{0,40}$/D', $par)) || count($at) !== 3) throw new \InvalidArgumentException('the parts list is not { name, parent, at: [x, y, z] }');
+            $rows[] = "{$n}" . ($par !== '' ? " (under {$par})" : ' (the root)') . " turns at [" . implode(', ', $at) . ']'; }
+        if (!$rows) throw new \InvalidArgumentException('this model has no named parts to pose');
+        $has = is_file(self::dir($slug) . "/assets/{$key}.poses.json");
+        return "Pose the \"{$motion}\" motion of the 3D model {$key}, as the owner describes it: \"{$text}\"\n\n"
+            . "Write it as key poses in assets/{$key}.poses.json" . ($has ? ' (it exists: change only the motion "' . $motion . '" and keep every other motion exactly as it is)' : ' (it does not exist yet: make it)') . ". "
+            . "The format is { \"motions\": { \"{$motion}\": { \"loop\": true|false, \"seconds\": n, \"keys\": [ { \"t\": 0..1, \"rot\": { \"part\": [x, y, z] } } ] } } }: "
+            . "each rot is the part's turn away from how it stands at rest, Euler XYZ in radians, in its own frame; a part a key leaves out is at rest. ../../kit/js/kit-poses.js plays it (eased between keys; a loop goes from its last key back round to its first); read its header.\n\n"
+            . "The model faces +x, y is up, +z is its right side. Its parts, with where each one turns (in the pose editor's units: the figure is 1.8 tall, standing on y = 0):\n- " . implode("\n- ", $rows) . "\n"
+            . "Each part's rest frame lines up with the model's, so for a limb hanging down: a positive turn about z swings its end forward (+x), negative swings it back; a positive turn about x swings its end toward -z (the figure's left side); about y twists it. A shin or lower arm bends at the knee or elbow the same way (a knee bends with a negative z turn of the shin).\n\n"
+            . "Use 4 to 8 keys, enough to read well, few enough for the owner to adjust by hand in the pose editor. A run or walk loops with t = 0 and t = 0.5 as mirror images (left and right swapped); the game drives it by the stride, so seconds only sets the editor's preview. Keep turns within what a body can do.\n"
+            . "Check: node can parse the file, every part name is in the list above, every rot is three numbers. No soak is needed for this. Commit it in one commit that says which motion was posed.";
+    }
     public static function cleanPoses(array $b): array {
         $out = []; $part = '/^[A-Za-z][A-Za-z0-9_.-]{0,40}$/D';
         foreach (array_slice((array) ($b['motions'] ?? []), 0, 24, true) as $name => $m) {

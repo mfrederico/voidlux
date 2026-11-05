@@ -37,6 +37,7 @@ button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--a
 .list button small { color: var(--muted); }
 .list button.on small { color: inherit; }
 .part { padding-left: calc(11px + var(--depth, 0) * 12px) !important; }
+.ask { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; } .ask summary { cursor: pointer; font-size: 13px; color: var(--muted); } .ask[open] { display: grid; gap: 6px; } .ask textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; resize: vertical; } .cost { font-size: 12.5px; color: var(--muted); }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; } .chips button { min-height: 28px; padding: 2px 8px; font-size: 13px; }
 .add { display: flex; gap: 6px; min-width: 0; } .add input { flex: 1 1 0; width: 0; min-width: 0; padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; }
 .opts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
@@ -70,6 +71,8 @@ button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--a
   <h1>Poses</h1>
   <label>Model <select id="modelSel" aria-label="Which 3D model"></select></label>
   <span class="status" id="status" role="status">Loading…</span>
+  <button id="draftBtn" hidden title="Your changes from before, which were never saved">Bring back my unsaved draft</button>
+  <button id="takeBtn" hidden title="The poses the builder just wrote">Load the builder's poses</button>
   <button id="saveBtn" class="primary" disabled title="Save the poses into the game (Ctrl+S)">Save poses</button>
 </header>
 <div class="main">
@@ -84,6 +87,11 @@ button.on { background: var(--on-bg); color: var(--on-fg); border-color: var(--a
         <label>lasts <input type="number" id="seconds" min="0.05" max="30" step="0.05"> s</label>
         <button id="delMotion" class="danger" title="Remove this motion and its key poses">Remove</button>
       </div>
+      <details class="ask" id="askBox"><summary>Ask the builder to pose it</summary>
+        <textarea id="askText" rows="3" placeholder="e.g. a low, sneaky run: knees high, arms swept back, head down" aria-label="How the motion should look"></textarea>
+        <div class="cost" id="askCost"></div>
+        <button id="askBtn" class="primary">Ask the builder</button>
+      </details>
     </section>
     <section>
       <h2>Parts</h2>
@@ -178,7 +186,7 @@ function drawMotions() {
   $('chips').querySelectorAll('[data-add]').forEach(b => b.onclick = () => { $('newMotion').value = b.dataset.add; $('addMotion').click(); });
   $('motions').querySelectorAll('[data-m]').forEach(b => b.onclick = () => { S.motion = b.dataset.m; S.t = 0; $('scrub').value = 0; stop(); show(); });
   const m = motion(); $('motionOpts').style.display = m ? '' : 'none'; if (m) { $('loop').checked = !!m.loop; $('seconds').value = m.seconds || 1; }
-  for (const id of ['addKey', 'copyKey', 'mirrorKey', 'playBtn', 'prevKey', 'nextKey']) $(id).disabled = !m || !S.model; $('pasteKey').disabled = !m || !S.copied;
+  for (const id of ['addKey', 'copyKey', 'mirrorKey', 'playBtn', 'prevKey', 'nextKey']) $(id).disabled = !m || !S.model; drawAsk(); $('pasteKey').disabled = !m || !S.copied;
 }
 function drawParts() {
   $('parts').innerHTML = S.order.map(n => { const k = keyAt(), turned = k && k.rot[n]; return `<button class="part ${n === sel ? 'on' : ''}" data-p="${esc(n)}" style="--depth:${S.parts[n].depth}">${esc(n)} <small>${turned ? 'turned' : ''}</small></button>`; }).join('')
@@ -227,10 +235,35 @@ $('seconds').onchange = () => { snapshot(); motion().seconds = Math.max(0.05, Ma
 $('delMotion').onclick = () => { const m = motion(); if (!m) return; if (m.keys.length && !$('delMotion').dataset.sure) { $('delMotion').dataset.sure = 1; $('delMotion').textContent = `Remove ${S.motion} and its ${m.keys.length} key${m.keys.length === 1 ? '' : 's'}?`; setTimeout(() => { delete $('delMotion').dataset.sure; $('delMotion').textContent = 'Remove'; }, 4000); return; }
   delete $('delMotion').dataset.sure; $('delMotion').textContent = 'Remove'; snapshot(); delete S.data.motions[S.motion]; S.motion = Object.keys(S.data.motions)[0] || ''; touched(); show(); };
 
+/* asking the builder to pose the chosen motion from words: a paid run; the editor watches for the poses and offers them */
+let stashed = null, watching = null;
+function drawAsk() { const m = motion(); $('askBox').style.display = m && S.order.length > 1 ? '' : 'none'; if (!m) return;
+  $('askBox').querySelector('summary').textContent = `Ask the builder to pose ${S.motion}`; $('askBtn').textContent = `Ask the builder to pose ${S.motion}`;
+  $('askCost').textContent = S.ask ? (S.ask.busy ? 'The builder is busy: this goes with its next run. ' : '') + S.ask.cost + (m.keys.length ? ` Its poses replace the ${m.keys.length} key${m.keys.length === 1 ? '' : 's'} ${S.motion} has now (undo it from Changes).` : '') : ''; }
+$('askBtn').onclick = async () => { const text = $('askText').value.trim(); if (text.length < 3) { status('Say how the motion should look.', true); return; }
+  $('askBtn').disabled = true; status('Sending…');
+  try { if (!CSRF) await token(); const parts = S.order.map(n => ({ name: n, parent: S.parts[n].parent, at: S.parts[n].at }));
+    const r = await fetch(apiUrl('poseask'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: S.key, motion: S.motion, text, parts }) }); const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'the forge answered ' + r.status);
+    status(j.queued ? `The builder is busy: posing ${S.motion} goes with its next run. This page picks it up when it lands.` : `The builder is posing ${S.motion}. This page picks it up when it lands (a few minutes).`); if (typeof UX !== 'undefined') UX.act('poseask', S.motion);
+    watch(S.key, S.motion); }
+  catch (e) { status('Not sent: ' + e.message, true); } finally { $('askBtn').disabled = false; } };
+function watch(key, name) { const was = JSON.stringify(S.base ? JSON.parse(S.base)[name] || null : null); clearInterval(watching);
+  watching = setInterval(async () => { if (S.key !== key) { clearInterval(watching); return; }
+    try { const r = await fetch(apiUrl('poses', { key }), { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); if (!r.ok) return; const j = await r.json(); const now = JSON.stringify((j.motions || {})[name] || null);
+      if (now === was) return; clearInterval(watching); fresh = j;
+      if (!S.dirty) takeFresh(); else { $('takeBtn').hidden = false; status(`The builder posed ${name}. Load its poses: your unsaved changes stay as a draft.`); } } catch (e) {} }, 15000); }
+let fresh = null;
+function takeFresh() { if (!fresh) return; if (S.dirty) { stashed = JSON.parse(JSON.stringify(S.data)); $('draftBtn').hidden = false; }
+  S.data = { motions: Array.isArray(fresh.motions) ? {} : fresh.motions || {} }; for (const m of Object.values(S.data.motions)) m.keys = m.keys || []; S.base = JSON.stringify(S.data.motions); S.dirty = false; $('saveBtn').disabled = true; keepDraft();
+  Poses.set(S.key, S.data); if (!motion()) S.motion = Object.keys(S.data.motions)[0] || ''; $('takeBtn').hidden = true; fresh = null; show(); status(`The builder's poses are in. Press Play to see ${S.motion}, then adjust any key.`); }
+$('takeBtn').onclick = takeFresh;
+$('draftBtn').onclick = () => { if (!stashed) return; snapshot(); S.data = stashed; stashed = null; Poses.set(S.key, S.data); if (!motion()) S.motion = Object.keys(S.data.motions)[0] || ''; $('draftBtn').hidden = true; touched(); show(); status('Your unsaved draft is back. Ctrl+Z goes back to the saved poses.'); };
+
 /* saving */
 async function save() { if (!S.dirty) return; $('saveBtn').disabled = true; status('Saving…');
   try { if (!CSRF) await token(); const r = await fetch(apiUrl('poses'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ key: S.key, motions: S.data.motions, what: lastWhat }) }); const j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'the forge answered ' + r.status); S.dirty = false; keepDraft(); status('Saved. The game plays these once its builder has wired them in.'); if (typeof UX !== 'undefined') UX.act('save', S.key);
+    if (!r.ok) throw new Error(j.error || 'the forge answered ' + r.status); S.dirty = false; S.base = JSON.stringify(S.data.motions); keepDraft(); status('Saved. The game plays these once its builder has wired them in.'); if (typeof UX !== 'undefined') UX.act('save', S.key);
     try { parent.postMessage({ forgeSaved: 'poses', key: S.key }, location.origin); } catch (e) {} }
   catch (e) { status('Not saved: ' + e.message, true); $('saveBtn').disabled = false; } }
 $('saveBtn').onclick = save;
@@ -245,7 +278,7 @@ addEventListener('keydown', e => { if (e.target.matches('input, select, textarea
   else if (e.key === 'Escape') pick(''); });
 /* unsaved poses are a draft in this browser, kept as they change and offered back when the editor opens again: no leave-page prompt */
 const draftKey = () => `vl-pose-draft:${GAME}:${S.key}`;
-const keepDraft = () => { try { if (S.dirty) localStorage.setItem(draftKey(), JSON.stringify(S.data)); else localStorage.removeItem(draftKey()); } catch (e) {} };
+const keepDraft = () => { try { if (S.dirty) localStorage.setItem(draftKey(), JSON.stringify({ base: S.base, data: S.data })); else localStorage.removeItem(draftKey()); } catch (e) {} }; // the draft remembers the saved poses it was made from
 addEventListener('pagehide', keepDraft);
 
 /* loading: the game's 3D cast, then the chosen model and its poses */
@@ -265,12 +298,17 @@ async function loadModel(key) {
     /* the parts: every named node below the scene, in tree order; a mesh that only carries its parent's look (torso > torso_mesh) is not one */
     const walk = (o, d) => { for (const ch of o.children) { const geomOnly = ch.isMesh && !ch.children.length && ch.parent !== root && ch.parent.name && ch.name.startsWith(ch.parent.name);
       if (ch.name && !geomOnly) { S.parts[ch.name] = { node: ch, rest: ch.quaternion.clone(), depth: d }; S.order.push(ch.name); walk(ch, d + 1); } else walk(ch, d); } };
-    walk(root, 0); holder.userData.poseParts = S.parts;
+    walk(root, 0); holder.userData.poseParts = S.parts; holder.updateMatrixWorld(true);
+    for (const n of S.order) { const p = S.parts[n]; p.at = p.node.getWorldPosition(new THREE.Vector3()).toArray().map(v => Math.round(v * 100) / 100); let up = p.node.parent; while (up && !(up.name && S.parts[up.name])) up = up.parent; p.parent = up ? up.name : ''; }
     S.data = { motions: Array.isArray(poses.motions) ? {} : poses.motions || {} }; for (const m of Object.values(S.data.motions)) m.keys = m.keys || [];
+    S.base = JSON.stringify(S.data.motions); S.ask = poses.ask || null; $('draftBtn').hidden = $('takeBtn').hidden = true;
     let draft = null; try { draft = JSON.parse(localStorage.getItem(draftKey()) || 'null'); } catch (e) {}
-    if (draft && draft.motions && JSON.stringify(draft.motions) !== JSON.stringify(S.data.motions)) { S.undo.push(JSON.stringify(S.data)); S.data = draft; S.dirty = true; $('saveBtn').disabled = false; }
+    if (draft && draft.motions && !draft.data) draft = { base: null, data: draft }; // a draft from before drafts kept their base: offered, never laid over the saved poses
+    if (draft && draft.data && draft.data.motions && JSON.stringify(draft.data.motions) !== S.base) {
+      if (draft.base === S.base) { S.undo.push(JSON.stringify(S.data)); S.data = draft.data; S.dirty = true; $('saveBtn').disabled = false; }
+      else { stashed = draft.data; $('draftBtn').hidden = false; } } // the saved poses changed since (the builder posed something): they open, the draft waits for a press
     Poses.set(key, S.data); S.motion = Object.keys(S.data.motions)[0] || ''; S.t = 0; $('scrub').value = 0;
-    if (S.dirty) { show(); status('Your unsaved poses are back. Save them, or Ctrl+Z to drop them.'); } else status((take ? 'The artist\'s new version (not in the game yet) · ' : '') + (S.order.length > 1 ? `${S.order.length} parts` : '')); show();
+    if (S.dirty) { show(); status('Your unsaved poses are back. Save them, or Ctrl+Z to drop them.'); } else if (stashed) { show(); status('These are the saved poses, changed since your unsaved draft.'); } else status((take ? 'The artist\'s new version (not in the game yet) · ' : '') + (S.order.length > 1 ? `${S.order.length} parts` : '')); show();
     if (S.order.length < 2) noModel(`${key} is one solid piece`, 'There are no limbs to turn: it was made as a single mesh. Ask the artist for a new version as separate named parts (torso, head, upperArmL, thighL …) and it can be posed here.');
   } catch (e) { status('Did not load: ' + e.message, true); noModel(`${key} did not load`, e.message); }
 }

@@ -87,8 +87,16 @@ class Gameapi extends BaseControls\Control {
         try {
             if ($this->post()) { $b = $this->getJsonInput() ?? []; $k = (string) ($b['key'] ?? ''); $p = GameStore::savePoses($g->slug, $k, $b);
                 Timeline::record($g->slug, 'Posed ' . $k . (!empty($b['what']) ? ': ' . mb_substr((string) $b['what'], 0, 80) : ''), 'art', $this->who(), ["assets/$k.poses.json"], $k, true); $this->raw(['ok' => true] + $p); }
-            $this->raw(GameStore::readPoses($g->slug, (string) $this->getParam('key', '')));
+            $this->raw(GameStore::readPoses($g->slug, (string) $this->getParam('key', '')) + ['ask' => ['cost' => \app\RunCosts::estimate($g->slug, 'chat')['cost'], 'busy' => (bool) GameStore::agentState($g->slug)['busy']]]);
         } catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); } catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 500); }
+    }
+    /** POST /gameapi/poseask/<slug> { key, motion, text, parts: [{ name, parent, at: [x, y, z] }] }: the builder writes key poses for one motion
+     *  from the owner's words, into assets/<key>.poses.json, leaving every other motion as it is. A paid builder run (the editor shows the estimate first). */
+    public function poseask($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; if (!$this->post()) { $this->raw(['error' => 'POST only'], 405); return; }
+        try { $b = $this->getJsonInput() ?? []; $r = GameStore::askBuilder($g->slug, GameStore::poseBrief($g->slug, (string) ($b['key'] ?? ''), (string) ($b['motion'] ?? ''), (string) ($b['text'] ?? ''), (array) ($b['parts'] ?? [])), (int) $this->member->id);
+            $this->raw(['ok' => true, 'queued' => !empty($r['queued']), 'busy' => !empty($r['busy'])]); }
+        catch (\InvalidArgumentException $e) { $this->raw(['error' => $e->getMessage()], 400); } catch (\RuntimeException $e) { $this->raw(['error' => $e->getMessage()], 409); }
     }
     /** POST /gameapi/ux/<slug>: the editors' ergonomics events (kit/editor/ux.js), appended to .studio/ux.jsonl for the retrospective.
      *  No CSRF token (sent by sendBeacon as a page closes); sign-in and access to the game are required, and only known fields are kept. */
