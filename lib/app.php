@@ -11,6 +11,7 @@
 \app\Chrome::add('dashboard', 'app/dashboard');
 \app\Chrome::add('team', 'app/team');
 \app\Chrome::add('footer', 'app/footer');
+\app\Chrome::add('scripts', 'app/browserdrive-top'); // the browserdrive plugin's page: an API key panel and its settings up top (views/app/browserdrive-top.php)
 \app\Chrome::$levelNames = [1 => 'Root', 50 => 'Admin', 100 => 'Maker', 101 => 'Visitor'];
 \app\Index::$home = [\app\Home::class, 'index'];
 
