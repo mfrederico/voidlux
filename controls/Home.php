@@ -10,13 +10,26 @@ use \Flight as Flight;
 class Home extends BaseControls\Control {
     // nav: none — it IS the front door
     public function index($params = []): void {
-        $this->render('home/index', ['loggedIn' => Flight::isLoggedIn(), 'games' => self::publicGames()], false);
+        $this->render('home/index', ['loggedIn' => Flight::isLoggedIn(), 'games' => self::publicGames(), 'costs' => self::costs()], false);
+    }
+    /** What a change and a whole game have cost here, from the same figures the Studio quotes: {change, game} each {n, usual, high} or null. */
+    public static function costs(): array {
+        $t = RunCosts::table();
+        return ['change' => $t['kinds']['chat'] ?? null, 'game' => $t['games'] ?? null];
+    }
+    /** A brief cut for a card: at a word, with an ellipsis, never mid-word. */
+    public static function blurb(string $brief, int $max = 140): string {
+        $brief = trim(preg_replace('/\s+/', ' ', $brief));
+        if (mb_strlen($brief) <= $max) return $brief;
+        $cut = mb_substr($brief, 0, $max);
+        $sp = mb_strrpos($cut, ' ');
+        return rtrim($sp > $max * 0.6 ? mb_substr($cut, 0, $sp) : $cut, ' ,;:-') . '…';
     }
     /** Published games their owners made public, newest first: what the world may play. */
     public static function publicGames(): array {
         $games = [];
         foreach (\app\Bean::find('game', "published_url <> '' AND is_public = 1 ORDER BY published_at DESC") as $g) {
-            $games[] = ['slug' => (string) $g->slug, 'title' => (string) $g->title, 'url' => (string) $g->publishedUrl, 'brief' => mb_substr((string) $g->brief, 0, 140), 'price' => $g->price === null ? null : (float) $g->price,
+            $games[] = ['slug' => (string) $g->slug, 'title' => (string) $g->title, 'url' => (string) $g->publishedUrl, 'brief' => self::blurb((string) $g->brief), 'price' => $g->price === null ? null : (float) $g->price,
                         'tags' => json_decode((string) $g->tags, true) ?: [], 'cover' => GameStore::cover((string) $g->slug) !== '', 'gif' => GameStore::gif((string) $g->slug) !== '', 'at' => (string) $g->publishedAt,
                         'updated' => max((int) strtotime((string) $g->publishedAt ?: '@0'), GameStore::lastTouched((string) $g->slug))];
         }
