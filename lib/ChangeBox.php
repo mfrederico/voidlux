@@ -9,6 +9,8 @@
 namespace app;
 
 class ChangeBox {
+    /** The most a change may say: the box shows a count near it and the server refuses more (a cut-off message would be read as the whole of it). */
+    public const MAX_TEXT = 4000;
     private const WORDS = [ // what points at each way, in the order they are tried: "faster when hit" is a rule, not a number
         'note' => '/\b(later|notes?|remember|idea|maybe|someday)\b/i',
         'words' => '/\b(text|words?|wording|says?|rename\w*|spelling|typo|call it|label|title|heading|description)\b/i',
@@ -52,7 +54,8 @@ class ChangeBox {
     }
     /** Starts the change. Returns what the page follows: {way, id?, queued?, before?}. A refusal throws with the reason. */
     public static function start(string $slug, string $way, string $text, string $key, array $values, int $memberId, string $who, string $label = '', string $context = ''): array {
-        $text = trim(mb_substr($text, 0, 1200)); $thing = self::thing($slug, $key, $label, $context);
+        $text = trim($text); if (mb_strlen($text) > self::MAX_TEXT) throw new \InvalidArgumentException('That is ' . mb_strlen($text) . ' characters; the box takes ' . self::MAX_TEXT . '. Say it shorter, or send it in two parts.'); // refused, never cut short without a word
+        $thing = self::thing($slug, $key, $label, $context);
         if ($way !== 'numbers' && $text === '') throw new \InvalidArgumentException('Say what you want different.');
         switch ($way) {
             case 'numbers':

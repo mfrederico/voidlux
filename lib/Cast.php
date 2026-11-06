@@ -250,7 +250,7 @@ class Cast {
     private static function requestsFile(string $slug): string { return GameStore::studioDir($slug) . '/cast-requests.json'; }
     private static function readRequests(string $slug): array { $f = self::requestsFile($slug); return is_file($f) ? (json_decode((string) file_get_contents($f), true) ?: []) : []; }
     public static function request(string $slug, string $text, int $memberId): array {
-        $text = trim(mb_substr($text, 0, 1200)); if ($text === '') throw new \InvalidArgumentException('describe the change');
+        $text = trim($text); if (mb_strlen($text) > 4000) throw new \InvalidArgumentException('That is ' . mb_strlen($text) . ' characters; a change is described in up to 4000. Say it shorter.'); if ($text === '') throw new \InvalidArgumentException('describe the change');
         $c = self::read($slug); $kept = array_filter($c['items'], fn($it) => !empty($it['file'])); if (!$kept) throw new \InvalidArgumentException('no models are kept yet: make them first');
         $id = date('Ymd-His') . '-' . bin2hex(random_bytes(3)); $dir = GameStore::sketchDir($slug, $id); mkdir($dir, 0775, true);
         $req = ['id' => $id, 'note' => $text, 'key' => 'cast', 'maker' => 'cast', 'cast' => ['request' => true], 'by' => $memberId, 'at' => time()];

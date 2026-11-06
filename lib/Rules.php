@@ -94,7 +94,7 @@ class Rules {
     // ---- rules from words ----
     private static function propFile(string $slug): string { return GameStore::studioDir($slug) . '/rule-requests.json'; }
     public static function describe(string $slug, string $text, int $memberId, string $extra = '', string $after = '', string $about = ''): array {
-        $text = trim(mb_substr($text, 0, 1200)); if ($text === '') throw new \InvalidArgumentException('describe the rule');
+        $text = trim($text); if (mb_strlen($text) > 4000) throw new \InvalidArgumentException('That is ' . mb_strlen($text) . ' characters; a rule is described in up to 4000. Say it shorter.'); if ($text === '') throw new \InvalidArgumentException('describe the rule');
         $v = self::vocab($slug); if (!$v) throw new \InvalidArgumentException('the game declares no events yet: wire events into the game first');
         if ($about === '*') $about = ''; // "everything" is no context
         if ($about !== '' && !(isset($v['subjects'][$about]) || (str_starts_with($about, 'group:') && array_filter($v['subjects'], fn($s) => in_array(substr($about, 6), (array) ($s['groups'] ?? []), true))))) throw new \InvalidArgumentException("\"{$about}\" is not a subject or group the game has");

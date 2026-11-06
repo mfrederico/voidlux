@@ -576,7 +576,7 @@ class GameStore {
     public static function poseBrief(string $slug, string $key, string $motion, string $text, array $parts, array $axes = []): string {
         if (!preg_match(self::SPRITE_KEY, $key)) throw new \InvalidArgumentException('not a model key');
         if (!preg_match(self::SPRITE_KEY, $motion)) throw new \InvalidArgumentException('a motion name is lower case letters, digits, - and _ (e.g. run)');
-        $text = trim(preg_replace('/\s+/', ' ', $text)); if (mb_strlen($text) < 3) throw new \InvalidArgumentException('say how the motion should look'); $text = mb_substr($text, 0, 600);
+        $text = trim(preg_replace('/\s+/', ' ', $text)); if (mb_strlen($text) < 3) throw new \InvalidArgumentException('say how the motion should look'); if (mb_strlen($text) > 2000) throw new \InvalidArgumentException('That is ' . mb_strlen($text) . ' characters; say how the move should look in up to 2000.');
         $rows = [];
         foreach (array_slice($parts, 0, 40) as $p) { if (!is_array($p)) continue; $n = (string) ($p['name'] ?? ''); $par = (string) ($p['parent'] ?? ''); $at = array_map(fn($v) => round((float) $v, 2), array_slice(array_values((array) ($p['at'] ?? [])), 0, 3));
             if (!preg_match('/^[A-Za-z][A-Za-z0-9_.-]{0,40}$/D', $n) || ($par !== '' && !preg_match('/^[A-Za-z][A-Za-z0-9_.-]{0,40}$/D', $par)) || count($at) !== 3) throw new \InvalidArgumentException('the parts list is not { name, parent, at: [x, y, z] }');
@@ -778,7 +778,7 @@ class GameStore {
     public static function sketchDir(string $slug, string $id): string { return self::dir($slug) . '/sketches/' . $id; }
     /** @param array{note?:string,style?:string,pixel?:bool,size?:int,key?:string,palette?:array,png?:string} $b */
     public static function startSketch(string $slug, array $b, int $memberId): array {
-        $note = trim(mb_substr((string) ($b['note'] ?? ''), 0, 600)); $png = (string) ($b['png'] ?? '');
+        $note = trim((string) ($b['note'] ?? '')); if (mb_strlen($note) > 2000) throw new \InvalidArgumentException('That note is ' . mb_strlen($note) . ' characters; the artist takes up to 2000. Say it shorter.'); $png = (string) ($b['png'] ?? ''); // refused, never cut short without a word
         if ($note === '' && $png === '' && empty($b['animate']) && empty($b['rigjob']) && empty($b['vectorize']) && empty($b['reskin']) && empty($b['asset'])) throw new \InvalidArgumentException('a sketch needs a drawing, a note, or both');
         $size = max(8, min(256, (int) ($b['size'] ?? 32))); $key = (string) ($b['key'] ?? 'sprite'); if (!preg_match(self::SPRITE_KEY, $key)) $key = 'sprite';
         $style = trim(mb_substr((string) ($b['style'] ?? 'pixel art'), 0, 120)); $pixel = !empty($b['pixel']);

@@ -193,6 +193,9 @@
     box.querySelectorAll('input[name=way]').forEach(i => { i.onchange = sync; }); sync();
     $('changeBack').onclick = () => { box.innerHTML = ''; }; $('changeGo').onclick = () => go(r); if (typeof UX !== 'undefined') UX.act('change-ways', r.suggested); }
   const said = () => element ? { label: element.title, context: `${element.kind || ''}: ${element.about || ''}` } : current ? { label: nameOf(current), context: (things.find(t => t.key === current) || {}).about || '' } : {};
+  /* the box says how much is left as it nears its limit (4000, ChangeBox::MAX_TEXT): a long message is never cut short without a word */
+  const countLeft = () => { const t = $('changeText'), n = t.value.length, max = +t.maxLength || 4000, c = $('changeCount'); c.hidden = n < max * 0.8; c.textContent = n >= max ? `That is the most it takes: ${max} characters. Send it in two parts if there is more.` : `${max - n} characters left`; c.classList.toggle('bad', n >= max); };
+  $('changeText').addEventListener('input', countLeft);
   $('changeForm').onsubmit = async e => { e.preventDefault(); const text = $('changeText').value.trim(); if (!text) { $('changeText').focus(); return; } if (job) { plain('The last change is still going: it shows here when it is done.'); return; }
     try { drawWays(await Forge.api(`/studio/ways/${SLUG}`, { text, key: current, ...said() })); } catch (err) { box.innerHTML = `<p class="bad small">${esc(err.message)}</p>`; } };
   $('changeText').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('changeForm').requestSubmit(); } };

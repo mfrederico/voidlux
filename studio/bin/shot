@@ -13,7 +13,10 @@ python3 -c "import json,sys,time; json.dump({'id':sys.argv[1],'secs':int(sys.arg
 echo "shot: asking a producer's browser (request $ID)…" >&2
 CLAIM_BY=$(( $(date +%s) + WAIT )); DEADLINE=$(( $(date +%s) + WAIT + SECS + 60 ))
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-  if [ -f ".studio/shots/$ID.png" ]; then echo ".studio/shots/$ID.png"; [ -f ".studio/shots/$ID.json" ] && cat ".studio/shots/$ID.json" >&2 && echo >&2; exit 0; fi
+  if [ -f ".studio/shots/$ID.png" ]; then echo ".studio/shots/$ID.png"; [ -f ".studio/shots/$ID.json" ] && cat ".studio/shots/$ID.json" >&2 && echo >&2
+    # what the picture shows, in light: a very dark frame is the game's own (a lamp off, a fade), not a capture that failed
+    LOOK=$(node "$(dirname "$0")/shot-look.mjs" ".studio/shots/$ID.png" 2>&1) && echo "shot: what it shows: $LOOK" >&2 || echo "shot: the light check could not read the picture: $LOOK" >&2
+    exit 0; fi
   [ -f .studio/shot-request.json ] || break
   if [ "$(date +%s)" -gt "$CLAIM_BY" ] && grep -q '"claimed": 0' .studio/shot-request.json 2>/dev/null; then break; fi
   sleep 1
