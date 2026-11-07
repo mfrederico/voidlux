@@ -29,6 +29,31 @@ class Studio extends BaseControls\Control {
     }
     /** The messages the page before left for this one (the forge's "Created", or why a build did not start): the Studio's own layout shows them, once. */
     private function takeFlash(): array { $f = array_values(array_filter((array) ($_SESSION['flash'] ?? []), fn($x) => is_array($x) && trim((string) ($x['message'] ?? '')) !== '')); unset($_SESSION['flash']); return $f; }
+    /** The builder at work, drawn as wires into the parts of the game it reads and changes (views/studio/wires.php, public/wires.js). */
+    public function wires($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params, false)) return;
+        $this->render('studio/wires', ['title' => (string) $g->title . ' · at work', 'slug' => (string) $g->slug, 'gameTitle' => (string) $g->title], false);
+    }
+    /** GET /studio/wiredata/<slug>?since=<t>: the game's events newer than t, trimmed to what the picture needs, its files, and whether a run is on.
+     *  Read only: unlike the Studio's own feed it claims no playtest for this page (it cannot run one). */
+    public function wiredata($params = []): void {
+        if (!$this->requireLogin()) return; if (!$g = $this->game($params)) return; $slug = (string) $g->slug;
+        $since = (float) $this->getParam('since', 0); $f = GameStore::dir($slug) . '/.studio/events.jsonl'; $out = [];
+        if (is_file($f)) { $size = filesize($f); $h = fopen($f, 'r'); if ($size > 3000000) { fseek($h, $size - 3000000); fgets($h); } // the newest 3 MB: plenty of runs
+            $cut = fn($v, $n) => mb_substr(trim((string) $v), 0, $n);
+            while (($l = fgets($h)) !== false) { $e = json_decode($l, true); if (!is_array($e) || (float) ($e['t'] ?? 0) <= $since) continue; $k = (string) ($e['kind'] ?? ''); $t = (float) $e['t'];
+                if ($k === 'tool') { $in = (array) ($e['input'] ?? []); $out[] = ['kind' => 'tool', 't' => $t, 'name' => $cut($e['name'] ?? '', 80), 'file' => $cut($in['file'] ?? $in['file_path'] ?? '', 200), 'command' => $cut($in['command'] ?? '', 900), 'query' => $cut($in['query'] ?? $in['title'] ?? '', 120)]; }
+                elseif ($k === 'result') $out[] = ['kind' => 'result', 't' => $t];
+                elseif (in_array($k, ['text', 'prompt', 'note', 'art', 'rule', 'artdone'], true)) $out[] = ['kind' => $k, 't' => $t, 'text' => $cut($e['text'] ?? '', 280), 'mode' => (string) ($e['mode'] ?? ''), 'by' => (string) ($e['by'] ?? '')];
+                elseif ($k === 'done') $out[] = ['kind' => 'done', 't' => $t, 'ok' => !empty($e['ok']), 'cost' => (float) ($e['cost'] ?? 0), 'turns' => (int) ($e['turns'] ?? 0), 'text' => $cut($e['text'] ?? '', 200)];
+                elseif ($k === 'stage') $out[] = ['kind' => 'stage', 't' => $t, 'stage' => (string) ($e['stage'] ?? ''), 'text' => $cut($e['text'] ?? '', 160)];
+                elseif ($k === 'soak') $out[] = ['kind' => 'soak', 't' => $t, 'ok' => !empty($e['ok']), 'fps' => (float) ($e['fps'] ?? 0), 'errors' => count((array) ($e['errors'] ?? []))];
+                elseif (in_array($k, ['checkpoint', 'idle'], true)) $out[] = ['kind' => $k, 't' => $t, 'label' => (string) ($e['label'] ?? '')];
+            } fclose($h); }
+        [$rc, $ls] = GameStore::git(GameStore::dir($slug), ['ls-files']); $files = $rc === 0 ? array_values(array_filter(explode("\n", trim((string) $ls)))) : [];
+        $a = GameStore::agentState($slug);
+        Flight::jsonSuccess(['events' => array_slice($out, -6000), 'files' => array_slice($files, 0, 2000), 'agent' => ['busy' => (bool) $a['busy'], 'mode' => (string) ($a['mode'] ?? ''), 'started' => (string) ($a['started'] ?? '')], 'now' => microtime(true)]);
+    }
     public function ways($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $b = $this->getJsonInput() ?? [];
         try { Flight::jsonSuccess(ChangeBox::ways((string) $g->slug, (string) ($b['text'] ?? ''), (string) ($b['key'] ?? ''), (string) ($b['label'] ?? ''), (string) ($b['context'] ?? ''))); } catch (\InvalidArgumentException $e) { Flight::jsonError($e->getMessage(), 400); }
