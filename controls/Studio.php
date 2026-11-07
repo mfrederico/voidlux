@@ -25,8 +25,10 @@ class Studio extends BaseControls\Control {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params, false)) return;
         $v = []; foreach (['sfx', 'tracker', 'sprites', 'config', 'pose'] as $e) $v[$e] = (int) @filemtime(GameStore::root() . "/kit/editor/{$e}/index.html");
         $own = array_values(array_filter(Game::GAME_EDITORS, fn($e) => is_file(GameStore::dir((string) $g->slug) . "/editor/{$e}/index.html")));
-        $this->render('studio/open', ['title' => (string) $g->title . ' · Studio', 'slug' => (string) $g->slug, 'gameTitle' => (string) $g->title, 'editorV' => $v, 'ownEditors' => $own, 'unconfirmed' => !EmailConfirm::confirmed($this->member)], false);
+        $this->render('studio/open', ['title' => (string) $g->title . ' · Studio', 'slug' => (string) $g->slug, 'gameTitle' => (string) $g->title, 'editorV' => $v, 'ownEditors' => $own, 'unconfirmed' => !EmailConfirm::confirmed($this->member), 'flash' => $this->takeFlash()], false);
     }
+    /** The messages the page before left for this one (the forge's "Created", or why a build did not start): the Studio's own layout shows them, once. */
+    private function takeFlash(): array { $f = array_values(array_filter((array) ($_SESSION['flash'] ?? []), fn($x) => is_array($x) && trim((string) ($x['message'] ?? '')) !== '')); unset($_SESSION['flash']); return $f; }
     public function ways($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $b = $this->getJsonInput() ?? [];
         try { Flight::jsonSuccess(ChangeBox::ways((string) $g->slug, (string) ($b['text'] ?? ''), (string) ($b['key'] ?? ''), (string) ($b['label'] ?? ''), (string) ($b['context'] ?? ''))); } catch (\InvalidArgumentException $e) { Flight::jsonError($e->getMessage(), 400); }

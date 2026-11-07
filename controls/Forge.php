@@ -79,14 +79,20 @@ class Forge extends BaseControls\Control {
         if (!$this->requireLogin()) return;
         $templates = GameStore::templates();
         $teams = Bean::getAll('SELECT t.id, t.name FROM team t JOIN teammember tm ON t.id = tm.team_id WHERE tm.member_id = ? AND t.is_active = 1 ORDER BY t.name', [(int) $this->member->id]);
-        $form = ['title' => '', 'slug' => '', 'brief' => '', 'template' => 'blank', 'team_id' => 0, 'pipeline' => 0]; $problems = [];
+        /* first the big choice, a 2D game or a 3D game (each starts empty); "an existing game" keeps the other templates */
+        $kind = (string) $this->getParam('kind', ''); $kinds = ['2d' => 'empty-2d', '3d' => 'empty-3d'];
+        if (Flight::request()->method !== 'POST' && !isset($kinds[$kind]) && $kind !== 'existing') { $this->render('forge/choose', ['title' => 'Summon a game']); return; }
+        $confirmed = EmailConfirm::confirmed($this->member);
+        $form = ['title' => '', 'slug' => '', 'brief' => '', 'template' => $kinds[$kind] ?? 'blank', 'team_id' => 0, 'pipeline' => 0]; $problems = [];
         if (Flight::request()->method === 'POST') {
             $this->validateCSRF();
-            $form = ['title' => trim((string) $this->getParam('title')), 'slug' => trim((string) $this->getParam('slug')), 'brief' => trim((string) $this->getParam('brief')), 'template' => ((string) $this->getParam('template', '')) ?: 'blank', 'team_id' => (int) $this->getParam('team_id', 0), 'pipeline' => (int) $this->getParam('pipeline', 0)];
+            $form = ['title' => trim((string) $this->getParam('title')), 'slug' => trim((string) $this->getParam('slug')), 'brief' => trim((string) $this->getParam('brief')), 'template' => ((string) $this->getParam('template', '')) ?: 'empty-2d', 'team_id' => (int) $this->getParam('team_id', 0), 'pipeline' => (int) $this->getParam('pipeline', 0)];
             if ($form['slug'] === '') $form['slug'] = substr(preg_replace('/^[^a-z]+|-+$/', '', preg_replace('/[^a-z0-9]+/', '-', strtolower($form['title']))), 0, 40);
             if ($form['title'] === '') $problems['title'] = 'Give the game a name.';
             if (!preg_match(GameStore::SLUG, $form['slug'])) $problems['slug'] = 'Lowercase letters, digits and dashes, 2 to 41 characters.';
             if ($form['team_id'] > 0 && !in_array($form['team_id'], array_map(fn($t) => (int) $t['id'], $teams), true)) $problems['team_id'] = 'Not one of your teams.';
+            if (!isset($templates[$form['template']])) $problems['template'] = 'Not one of the forge\'s starting points.';
+            if ($form['pipeline'] && !$confirmed) $problems['pipeline'] = 'Confirm your email first (/verify): then the builder can make it. You can create the game now and build it once you have.';
             if ($form['pipeline'] && $form['brief'] === '') $problems['brief'] = 'Say what the game is: the builder plans from this, and you are about to pay for it.';
             if (mb_strlen($form['brief']) > 4000) $problems['brief'] = 'That is ' . mb_strlen($form['brief']) . ' characters and the brief holds 4000. Shorten it; once the game exists its Concept can hold the rest.';
             if (!$problems) {
@@ -98,9 +104,9 @@ class Forge extends BaseControls\Control {
                 if (!$form['pipeline']) { $this->flash('success', 'Created. Nothing has been spent: build it when you are ready.'); Flight::redirect('/studio/open/' . $g->slug); return; }
                 try { GameStore::startRunner($g->slug, 'pipeline', '', (int) $this->member->id); $this->flash('success', 'Created. The planner is reading the brief.'); }
                 catch (\Throwable $e) { $this->logger->error('The first build did not start', ['game' => $g->slug, 'error' => $e->getMessage()]); $this->flash('error', 'The game was created, but its build did not start: ' . $e->getMessage()); }
-                Flight::redirect('/game/view/' . $g->slug . '#build'); return;
+                Flight::redirect('/studio/open/' . $g->slug); return; // the Studio shows the game, and this message
             }
         }
-        $this->render('forge/summon', ['title' => 'Summon a game', 'estimate' => RunCosts::estimate('', 'new'), 'form' => $form, 'problems' => $problems, 'templates' => $templates, 'teams' => $teams]);
+        $this->render('forge/summon', ['title' => 'Summon a game', 'estimate' => RunCosts::estimate('', 'new'), 'form' => $form, 'problems' => $problems, 'templates' => $templates, 'teams' => $teams, 'kind' => $kind ?: (($form['template'] === 'empty-3d') ? '3d' : ($form['template'] === 'empty-2d' ? '2d' : 'existing')), 'confirmed' => $confirmed]);
     }
 }
