@@ -32,5 +32,9 @@ foreach (\app\Bean::find('game') as $g) {
         if (is_file($aq) && trim((string) file_get_contents($aq)) !== '') { if ($dry) $did[] = "$slug: queued sprite jobs"; elseif ($n = \app\GameStore::startQueuedArt($slug)) $did[] = "$slug: $n queued sprite job(s)"; }
     } catch (\Throwable $e) { fwrite(STDERR, date('c') . " ERROR sweep $slug: " . $e->getMessage() . "\n"); }
 }
+/* once a day: deleted games older than GameStore::TRASH_DAYS leave the trash for good (the day it last ran is kept in data/) */
+$stamp = \app\Paths::root() . '/data/trash-purged'; if (!$dry && (!is_file($stamp) || trim((string) file_get_contents($stamp)) !== date('Y-m-d'))) {
+    try { foreach (\app\GameStore::purgeTrash() as $n) $kept[] = "trash: removed $n for good"; file_put_contents($stamp, date('Y-m-d')); } catch (\Throwable $e) { fwrite(STDERR, date('c') . ' ERROR sweep trash: ' . $e->getMessage() . "\n"); }
+}
 if ($did) echo date('c') . ($dry ? ' would start: ' : ' started: ') . implode('; ', $did) . "\n";
 if ($kept) echo date('c') . ' upkeep: ' . implode('; ', $kept) . "\n";

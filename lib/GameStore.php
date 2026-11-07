@@ -96,6 +96,40 @@ class GameStore {
         \Flight::get('log')->info('A game was deleted', ['game' => $slug, 'by' => $by, 'folder' => $to]);
         return $to;
     }
+    /** How long a deleted game waits in the trash before the sweep removes it for good. */
+    public const TRASH_DAYS = 30;
+    /** What is in the trash, newest first: [{ name, slug, title, by, at (unix), daysLeft, owner }]. */
+    public static function trashed(): array {
+        $out = []; $d = self::trashDir(); if (!is_dir($d)) return [];
+        foreach (scandir($d) as $n) { if ($n[0] === '.' || !is_dir("$d/$n")) continue;
+            $row = is_file("$d/$n/game-row.json") ? json_decode((string) file_get_contents("$d/$n/game-row.json"), true) : null;
+            if (!is_array($row)) { $out[] = ['name' => $n, 'slug' => '', 'title' => $n, 'by' => '', 'at' => (int) filemtime("$d/$n"), 'owner' => 0, 'broken' => 'its game-row.json is missing or unreadable, so it cannot be put back from here']; continue; }
+            $at = strtotime((string) ($row['deleted_at'] ?? '')) ?: (int) filemtime("$d/$n");
+            $out[] = ['name' => $n, 'slug' => (string) ($row['slug'] ?? ''), 'title' => (string) ($row['title'] ?? $n), 'by' => (string) ($row['deleted_by'] ?? ''), 'at' => $at, 'owner' => (int) ($row['member_id'] ?? 0), 'broken' => ''];
+        }
+        foreach ($out as &$t) $t['daysLeft'] = max(0, self::TRASH_DAYS - (int) floor((time() - $t['at']) / 86400)); unset($t);
+        usort($out, fn($a, $b) => $b['at'] <=> $a['at']); return $out;
+    }
+    /** Puts a deleted game back as it was: its folder to games/, its database row again. Its notes stay deleted. Refused when its name is taken since. */
+    public static function restore(string $name, string $by): object {
+        if (!preg_match('/^[a-z0-9-]+-\d{8}-\d{6}$/', $name)) throw new \InvalidArgumentException('Not a deleted game.');
+        $from = self::trashDir() . '/' . $name; if (!is_dir($from)) throw new \InvalidArgumentException('That deleted game is not in the trash any more.');
+        $row = json_decode((string) @file_get_contents("$from/game-row.json"), true); if (!is_array($row) || empty($row['slug'])) throw new \RuntimeException("{$name}: its game-row.json is missing or unreadable, so it cannot be put back from here.");
+        $slug = (string) $row['slug']; $to = self::gamesDir() . '/' . $slug;
+        if (self::row($slug) || file_exists($to)) throw new \InvalidArgumentException("A game named {$slug} exists now, so this one cannot take its name back. Delete or rename that one first.");
+        $g = Bean::dispense('game'); foreach ($row as $k => $v) { if (in_array($k, ['id', 'deleted_by', 'deleted_at'], true)) continue; $g->$k = $v; } // its own columns, as they were
+        if (!rename($from, $to)) throw new \RuntimeException("The folder could not be moved back from the trash ({$from}); nothing was restored.");
+        @unlink("$to/game-row.json"); Bean::store($g);
+        \Flight::get('log')->info('A deleted game was put back', ['game' => $slug, 'by' => $by]); return $g;
+    }
+    /** The sweep's daily clean-up: deleted games older than TRASH_DAYS are removed for good. Returns the names removed. */
+    public static function purgeTrash(): array {
+        $gone = [];
+        foreach (self::trashed() as $t) { if ($t['daysLeft'] > 0) continue; $p = self::trashDir() . '/' . $t['name'];
+            exec('rm -rf -- ' . escapeshellarg($p) . ' 2>&1', $o, $rc); if ($rc !== 0 || is_dir($p)) throw new \RuntimeException("{$t['name']} could not be removed from the trash: " . implode(' ', $o));
+            $gone[] = $t['name']; }
+        return $gone;
+    }
     public static function canOpen(object $g, int $memberId, int $level): bool {
         if ($level <= LEVELS['ADMIN']) return true;
         if ((int) $g->memberId === $memberId) return true;

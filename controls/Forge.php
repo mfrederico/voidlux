@@ -19,6 +19,21 @@ class Forge extends BaseControls\Control {
         $this->render('forge/index', ['title' => 'The forge', 'games' => $games]);
     }
 
+    /** Deleted games, for admins: what is in the trash, how long each has left (GameStore::TRASH_DAYS), and Restore. */
+    public function trash($params = []): void {
+        if (!$this->requireLogin()) return; if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/forge'); return; }
+        $owners = []; foreach (GameStore::trashed() as $t) if ($t['owner'] && !isset($owners[$t['owner']])) { $m = Bean::load('member', $t['owner']); $owners[$t['owner']] = $m->id ? (string) ($m->username ?: $m->email) : 'a member who is gone'; }
+        $this->render('forge/trash', ['title' => 'Deleted games', 'rows' => GameStore::trashed(), 'owners' => $owners, 'days' => GameStore::TRASH_DAYS]);
+    }
+    /** POST /forge/restore { name }: an admin puts a deleted game back (GameStore::restore). */
+    public function restore($params = []): void {
+        if (!$this->requireLogin()) return; if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/forge'); return; }
+        if (Flight::request()->method !== 'POST') { Flight::redirect('/forge/trash'); return; } $this->validateCSRF();
+        try { $g = GameStore::restore((string) $this->getParam('name', ''), (string) ($this->member->username ?: $this->member->email)); $this->flash('success', $g->title . ' is back in the forge, as it was when it was deleted (its notes stay deleted).'); Flight::redirect('/studio/open/' . $g->slug); }
+        catch (\InvalidArgumentException $e) { $this->flash('error', $e->getMessage()); Flight::redirect('/forge/trash'); }
+        catch (\RuntimeException $e) { $this->logger->error('A deleted game could not be put back', ['name' => (string) $this->getParam('name', ''), 'error' => $e->getMessage()]); $this->flash('error', $e->getMessage()); Flight::redirect('/forge/trash'); }
+    }
+
     /** The retrospective's ledger: every hour's measures, findings, note and proposals, newest first (lib/Retro.php). */
     public function retro($params = []): void {
         if (!$this->requireLogin()) return; if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/forge'); return; }
