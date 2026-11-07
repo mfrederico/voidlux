@@ -19,7 +19,9 @@ $notice = $live
 .bd-settings-in { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: min(680px, 92vw); display: grid; gap: 10px; padding: 14px; border: 1px solid rgba(127,127,127,.35); border-radius: 12px; background: var(--bs-body-bg, #1b1428); box-shadow: 0 12px 32px rgba(0,0,0,.35); }
 /* the driven page in the middle of the stage, scaled from its top centre; the plugin's pointer, outline and caption follow it by --bd-dx */
 .bd-stage { position: relative; display: flex; justify-content: center; } #bdFrame { flex: none; transform-origin: top center !important; }
-.bd-ptr, .bd-box { translate: var(--bd-dx, 0px) 0; }</style>
+.bd-ptr, .bd-box { translate: var(--bd-dx, 0px) 0; }
+/* black behind and inside the driven page until it draws: the plugin's white was blinding in a dark room */
+.bd-stage, #bdFrame { background: #000 !important; border-color: #222 !important; }</style>
 <script>
 (() => { const go = () => { const bd = document.querySelector('.bd'), tpl = document.getElementById('bdTopTpl'); if (!bd || !tpl || bd.querySelector('.bd-settings')) return;
   for (const p of bd.querySelectorAll(':scope > p')) if (p.textContent.trim().startsWith('Leave this page open')) p.remove(); // the how-it-works paragraph
