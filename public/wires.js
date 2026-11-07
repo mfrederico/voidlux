@@ -67,7 +67,9 @@
   let W = 0, H = 0, VW = 0, VH = 0, spine = [], cards = [];
   // Everything is laid out in a space that zooms: at 1 it is the window; while it builds, it zooms out until every part fits.
   function layout() {
-    const R = S.rec, dpr = R ? R.scale : Math.min(2, devicePixelRatio || 1); W = R ? R.w : innerWidth; H = R ? R.h : innerHeight; // recording: the video's own stage, whatever the window if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    const R = S.rec, dpr = R ? R.scale : Math.min(2, devicePixelRatio || 1); W = R ? R.w : innerWidth; H = R ? R.h : innerHeight; // recording: the video's own stage, whatever the window
+    if (R) { const k = Math.min(innerWidth / W, (innerHeight - 50) / H); Object.assign(cv.style, { inset: 'auto', width: W * k + 'px', height: H * k + 'px', left: (innerWidth - W * k) / 2 + 'px', top: 50 + 'px' }); } else cv.style.cssText = ''; // the whole frame, under the bar
+    if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
     const Z = S.zoom; VW = W / Z; VH = H / Z; g.setTransform(dpr * Z, 0, 0, dpr * Z, 0, 0);
     const padTop = R ? R.top : 120, padBottom = R ? R.bottom : 210, top = padTop / Z, bottom = (H - padBottom) / Z, maxRows = S.all ? 14 : MAXROWS, two = VW / VH < 0.8;
     const x0 = two ? Math.max(150, VW * 0.22) : Math.max(240, VW * 0.32), avail = VW - 18 - x0, nc = two ? 2 : 3, cw = Math.min(290, (avail - (nc - 1) * 40) / nc), gap = nc > 1 ? (avail - cw) / (nc - 1) : 0, cols = [x0, x0 + gap, x0 + 2 * gap], // a tall video: two columns
@@ -205,13 +207,14 @@
     if (S.building) endBuild(); const list = S.events.filter(e => BUILT.has(e.kind)); if (!list.length) { alertBox('Nothing to film yet: the builder has not worked on this game.'); return; }
     S.rec = Object.assign({}, SHAPES[shape], { phase: 'build', mime, chunks: [], seconds }); document.body.classList.add('recording'); S.zoom = 1; layout();
     const rec = new MediaRecorder(cv.captureStream(30), { mimeType: mime, videoBitsPerSecond: 10e6 }); S.rec.recorder = rec;
-    rec.ondataavailable = e => { if (e.data && e.data.size) S.rec && S.rec.chunks.push(e.data); }; rec.start(500);
+    const chunks = S.rec.chunks; rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); }; rec.start(1000); // the last chunk comes after stop(): it must still have somewhere to go
     startBuild(); S.building.speed = Math.max(1, planSeconds(list) / Math.max(6, seconds - 7.5)); $('speed').hidden = true; $('build').textContent = '■ Stop recording'; }
   function finishRecording(keep) { const R = S.rec; if (!R) return; S.rec = null;
     R.recorder.onstop = () => { document.body.classList.remove('recording'); S.zoom = 1; layout(); $('build').textContent = '▶ Watch it build from run 1';
       if (!keep) return; const blob = new Blob(R.chunks, { type: R.mime.split(';')[0] }), url = URL.createObjectURL(blob), ext = R.mime.includes('mp4') ? 'mp4' : 'webm';
       $('vidPlay').src = url; $('vidSave').href = url; $('vidSave').download = `${SLUG}-voidlux-${R.label}.${ext}`;
       $('vidInfo').textContent = `${R.label} · ${R.w * R.scale}×${R.h * R.scale} · ${(blob.size / 1048576).toFixed(1)} MB · ${ext.toUpperCase()}` + (ext === 'webm' ? ' (this browser records WebM only: most social sites want MP4, so convert it first, or record in Chrome)' : '');
+      const info = $('vidInfo').textContent; $('vidPlay').onloadedmetadata = () => { const d = $('vidPlay').duration; if (isFinite(d)) $('vidInfo').textContent = info.replace(' · ' + ext.toUpperCase(), ` · ${d.toFixed(1)} s · ${ext.toUpperCase()}`); };
       $('vid').hidden = false; };
     R.recorder.stop(); if (S.building) endBuild(); }
   const alertBox = t => { $('vidInfo').textContent = t; $('vidPlay').removeAttribute('src'); $('vidSave').hidden = true; $('vid').hidden = false; };

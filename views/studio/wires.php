@@ -21,7 +21,7 @@
   .mkp { position: absolute; right: 0; top: 40px; width: 300px; background: #120f1e; border: 1px solid #3a3352; border-radius: 10px; padding: 12px 14px; text-transform: none; letter-spacing: 0; color: #e9e4f7; display: grid; gap: 6px; box-shadow: 0 12px 40px #000a; }
   .mkp .mkh { color: #a79fc0; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; margin-top: 4px; } .mkp label { display: flex; gap: 8px; align-items: center; cursor: pointer; } .mkp p { margin: 4px 0 0; color: #a79fc0; font-size: 11px; }
   .mkp button { margin-top: 6px; background: #ff3d9a; color: #fff; }
-  body.recording .title, body.recording .panels, body.recording .tip { display: none; } body.recording #wires { object-fit: contain; } body.recording #live::after { content: ' · recording'; }
+  body.recording .title, body.recording .panels, body.recording .tip { display: none; } body.recording #wires { position: fixed; outline: 1px solid #3a3352; } body.recording #live::after { content: ' · recording'; }
   .vid { position: fixed; inset: 0; z-index: 5; background: #000c; display: grid; place-items: center; } .vid[hidden] { display: none; }
   .vid .box { background: #120f1e; border: 1px solid #3a3352; border-radius: 12px; padding: 16px; display: grid; gap: 10px; max-width: 92vw; }
   .vid video { max-height: 70vh; max-width: 88vw; background: #000; border-radius: 6px; } #vidInfo { color: #a79fc0; font-size: 12px; max-width: 640px; }
