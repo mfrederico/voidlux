@@ -12,7 +12,16 @@
 \app\Chrome::add('team', 'app/team');
 \app\Chrome::add('footer', 'app/footer');
 \app\Chrome::add('scripts', 'app/browserdrive-top');
-\app\Chrome::add('scripts', 'app/form-guard'); // sign-up and password reset: FormGuard's hidden field and page stamp (lib/FormGuard.php)
+\app\Chrome::add('scripts', 'app/form-guard');
+// A new member's confirmation link goes out by itself: on the first page they open after signing up, once (lib/EmailConfirm.php).
+// Not for a background request, a member who has a link already or is confirmed, or an account older than 30 days.
+\Flight::before('start', function () {
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET' || !empty($_SERVER['HTTP_X_REQUESTED_WITH']) || empty($_SESSION['member'])) return;
+    $path = (string) parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH); if (preg_match('#^/(gameapi|api|mcp|communications|rt|assets|games|kit|editor|verify)(/|$)#', $path)) return;
+    $m = \Flight::getMember(); if (!$m || !$m->id || \app\EmailConfirm::confirmed($m) || trim((string) $m->confirmSentAt) !== '' || strtotime((string) $m->createdAt) < time() - 30 * 86400) return;
+    try { \app\EmailConfirm::send($m); $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Welcome! We sent a link to ' . $m->email . ': open it to confirm your email, and the builder can start making your games.']; }
+    catch (\Throwable $e) { \Flight::get('log')->error('The welcome confirmation link did not go', ['member' => (int) $m->id, 'error' => $e->getMessage()]); }
+}); // sign-up and password reset: FormGuard's hidden field and page stamp (lib/FormGuard.php)
 // FormGuard: a sign-up or reset posted by a form-filling bot is refused before the runtime's Auth sees it (a bot made member 79 on 2026-11-04)
 \Flight::before('start', function () {
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') return;
