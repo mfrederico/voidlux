@@ -179,13 +179,18 @@
   function reset() { S.runs = []; S.nodes = new Map(); S.wires = new Map(); S.steps = 0; S.cost = 0; S.focus = -1; S.log = []; S.born = {}; parts.length = 0; $('log').innerHTML = ''; }
   function startBuild() { if (S.replaying) { clearInterval(S.replaying); S.replaying = null; }
     const all = S.events.slice(), list = all.filter(e => BUILT.has(e.kind)); if (!list.length) return;
-    reset(); S.events = []; S.all = true; S.building = { list, k: 0, acc: 0, hold: 0.8, speed: 1, rate: 1, all }; pace(S.building);
+    reset(); S.events = []; S.all = true; S.building = { list, at: schedule(list), k: 0, clock: 0, speed: 1, all };
     $('build').textContent = '■ Stop'; $('speed').hidden = false; $('speed').textContent = 'Speed 1×'; layout(); }
-  function pace(B) { let n = 0, j = B.k; while (j < B.list.length && opensRun(B.list[j])) { n++; j++; } for (; j < B.list.length; j++) { if (opensRun(B.list[j])) break; n++; if (B.list[j].kind === 'done') break; } B.rate = n / runTime(n); } // this run's steps spread over its time
-  function build(dt) { const B = S.building; if (B.hold > 0) { B.hold -= dt * B.speed; return; }
-    B.acc += dt * B.rate * B.speed; const batch = [];
-    while (B.acc >= 1 && B.k < B.list.length) { const e = B.list[B.k++]; B.acc--; batch.push(e);
-      const nx = B.list[B.k]; if (nx && ((opensRun(nx) && !opensRun(e)) || e.kind === 'done')) { B.hold = PAUSE; B.acc = 0; pace(B); break; } }
+  /* When each step plays, in seconds at 1×: a moment's pause, then each run's steps spread evenly over its time (runTime) with a pause
+     before the next. Fixed in advance, so a video of N seconds is N seconds whatever the frame rate. */
+  function schedule(list) { const at = []; let t = 0.8, j = 0;
+    while (j < list.length) { const from = j; while (j < list.length && opensRun(list[j])) j++;
+      for (; j < list.length; j++) { if (opensRun(list[j])) break; if (list[j].kind === 'done') { j++; break; } }
+      const n = j - from, span = runTime(n); for (let k = 0; k < n; k++) at.push(t + span * (k / n)); t += span + PAUSE; }
+    return at; }
+  function build(dt) { const B = S.building; B.clock += dt * B.speed; const batch = [];
+    while (B.at.length < B.list.length) B.at.push(Math.max(B.clock, B.at[B.at.length - 1] || 0) + 0.15); // steps that arrived while it builds
+    while (B.k < B.list.length && B.at[B.k] <= B.clock) batch.push(B.list[B.k++]);
     if (batch.length) { ingest(batch, true); S.focus = S.runs.length - 1; panels(); }
     if (B.k >= B.list.length) endBuild(); }
   function endBuild() { const B = S.building; S.building = null; if (S.rec && S.rec.phase === 'build') { S.rec.phase = 'hold'; S.rec.t = performance.now(); } const t = B.all; reset(); S.events = []; ingest(t, false); fillLog(); $('build').textContent = '▶ Watch it build from run 1'; $('speed').hidden = true; }
@@ -198,9 +203,7 @@
   const SHAPES = { tall: { w: 720, h: 1280, scale: 1.5, top: 270, bottom: 150, label: 'tall' }, square: { w: 900, h: 900, scale: 1.2, top: 175, bottom: 95, label: 'square' },
                    wide: { w: 1280, h: 720, scale: 1.5, top: 128, bottom: 82, label: 'wide' } };
   const MIMES = ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
-  function planSeconds(list) { let t = 0.8, n = 0, j = 0; // how long the build takes at 1×, with the same pacing build() uses
-    while (j < list.length) { n = 0; while (j < list.length && opensRun(list[j])) { n++; j++; } for (; j < list.length; j++) { if (opensRun(list[j])) break; n++; if (list[j].kind === 'done') { j++; break; } } t += runTime(n) + PAUSE; }
-    return t; }
+  const planSeconds = list => { const at = schedule(list); return (at[at.length - 1] || 0) + PAUSE; }; // how long the build takes at 1×
   function startRecording(shape, seconds) {
     if (typeof MediaRecorder === 'undefined' || !cv.captureStream) { alertBox('This browser cannot record a video of the page. Chrome, Edge or Firefox can.'); return; }
     const mime = MIMES.find(m => MediaRecorder.isTypeSupported(m)); if (!mime) { alertBox('This browser records no video format we know.'); return; }
@@ -208,7 +211,7 @@
     S.rec = Object.assign({}, SHAPES[shape], { phase: 'build', mime, chunks: [], seconds }); document.body.classList.add('recording'); S.zoom = 1; layout();
     const rec = new MediaRecorder(cv.captureStream(30), { mimeType: mime, videoBitsPerSecond: 10e6 }); S.rec.recorder = rec;
     const chunks = S.rec.chunks; rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); }; rec.start(1000); // the last chunk comes after stop(): it must still have somewhere to go
-    startBuild(); S.building.speed = Math.max(1, planSeconds(list) / Math.max(6, seconds - 7.5)); $('speed').hidden = true; $('build').textContent = '■ Stop recording'; }
+    startBuild(); S.building.speed = planSeconds(list) / Math.max(6, seconds - 5); $('speed').hidden = true; $('build').textContent = '■ Stop recording'; } // the build fills all but about 5 s: 1.4 s on the whole game, then 3.4 s of end card
   function finishRecording(keep) { const R = S.rec; if (!R) return; S.rec = null;
     R.recorder.onstop = () => { document.body.classList.remove('recording'); S.zoom = 1; layout(); $('build').textContent = '▶ Watch it build from run 1';
       if (!keep) return; const blob = new Blob(R.chunks, { type: R.mime.split(';')[0] }), url = URL.createObjectURL(blob), ext = R.mime.includes('mp4') ? 'mp4' : 'webm';
@@ -221,6 +224,7 @@
   function wrap(text, width, lines) { const words = String(text).replace(/\s+/g, ' ').trim().split(' '), out = []; let cur = '';
     for (const w of words) { const t = cur ? cur + ' ' + w : w; if (g.measureText(t).width > width && cur) { out.push(cur); cur = w; if (out.length === lines) break; } else cur = t; }
     if (out.length < lines && cur) out.push(cur); if (out.length === lines && words.join(' ').length > out.join(' ').length) out[lines - 1] = out[lines - 1].replace(/\s*\S*$/, '') + '…'; return out; }
+  const plainAsk = t => String(t).replace(/^About [\s\S]*?, picked in the Studio[^:]*:\s*/, '').replace(/^(Sprite job|Model job):\s*/i, ''); // what the person typed, without the Studio's note of what they pointed at
   function caption(now) { const R = S.rec, w = R.w, h = R.h, tall = h > w, r = S.runs[S.focus];
     g.setTransform(R.scale, 0, 0, R.scale, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
     let gr = g.createLinearGradient(0, 0, 0, R.top); gr.addColorStop(0, '#07060c'); gr.addColorStop(0.8, '#07060cee'); gr.addColorStop(1, '#07060c00'); g.fillStyle = gr; g.fillRect(0, 0, w, R.top);
@@ -230,7 +234,7 @@
     g.font = `700 ${big}px ui-monospace, Menlo, monospace`; g.fillStyle = '#fff'; g.shadowColor = '#c58aff'; g.shadowBlur = 18; g.fillText(GAME.toUpperCase(), pad, pad + 14 + big); g.shadowBlur = 0;
     if (r) { const y0 = pad + 30 + big + (tall ? 14 : 4); g.font = `600 ${tall ? 17 : 13}px ui-monospace, Menlo, monospace`; g.fillStyle = '#ffcc00';
       g.fillText(`RUN ${r.i + 1}  ·  ${new Date(r.t0 * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' }).toUpperCase()}`, pad, y0);
-      if (r.ask && R.top > 150) { g.font = `${tall ? 19 : 15}px ui-monospace, Menlo, monospace`; g.fillStyle = '#e9e4f7'; wrap('“' + r.ask + '”', w - pad * 2, tall ? 4 : 2).forEach((l, k) => g.fillText(l, pad, y0 + (tall ? 32 : 24) + k * (tall ? 26 : 20))); } }
+      if (r.ask && R.top > 150) { g.font = `${tall ? 19 : 15}px ui-monospace, Menlo, monospace`; g.fillStyle = '#e9e4f7'; wrap('“' + plainAsk(r.ask) + '”', w - pad * 2, tall ? 4 : 2).forEach((l, k) => g.fillText(l, pad, y0 + (tall ? 32 : 24) + k * (tall ? 26 : 20))); } }
     const fy = h - pad + 2, stat = (label, v, x) => { g.font = `700 ${tall ? 30 : 22}px ui-monospace, Menlo, monospace`; g.fillStyle = '#ffcc00'; g.fillText(String(v), x, fy - (tall ? 22 : 16)); g.font = `${tall ? 13 : 11}px ui-monospace, Menlo, monospace`; g.fillStyle = '#a79fc0'; g.fillText(label, x, fy); };
     stat('RUNS', S.runs.length, pad); stat('PARTS', S.nodes.size, pad + (tall ? 130 : 110)); stat('STEPS', S.steps, pad + (tall ? 260 : 220));
     g.textAlign = 'right'; g.font = `700 ${tall ? 22 : 17}px ui-monospace, Menlo, monospace`; g.fillStyle = '#fff'; g.fillText('voidlux.com', w - pad, fy);
