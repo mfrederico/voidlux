@@ -11,7 +11,7 @@ const Scenes = {
     playRect() { return { x: Game.W / 2 - 120, y: CFG.H / 2 + 60, w: 240, h: 60 }; },
     soundRect() { return { x: Game.W / 2 - 90, y: CFG.H / 2 + 140, w: 180, h: 40 }; },
     draw(c) {
-      Render.world(c); c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(0, 0, Game.W, CFG.H);
+      Render.stage(c); c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(0, 0, Game.W, CFG.H);
       Draw.text(Game.title.toUpperCase(), Game.W / 2, CFG.H / 2 - 60, 72, '#ffcc00', 'center');
       const r = this.playRect(); Draw.button(r.x + r.w / 2, r.y + r.h / 2, r.w, r.h, 'PLAY', '#9b87ff', '#111');
       const s = this.soundRect(); Draw.button(s.x + s.w / 2, s.y + s.h / 2, s.w, s.h, Settings.data.sound ? 'SOUND ON' : 'SOUND OFF', 'rgba(255,255,255,0.12)', '#fff', 15);
