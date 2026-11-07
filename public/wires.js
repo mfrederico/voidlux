@@ -43,7 +43,8 @@
   function ingest(list, animate) {
     for (const e of list) { S.events.push(e); S.since = Math.max(S.since, e.t);
       let run = S.runs[S.runs.length - 1];
-      if (!run || run.done || ((e.kind === 'prompt' || e.kind === 'stage') && run.steps > 0)) { if (e.kind === 'result' || e.kind === 'idle') continue; run = { i: S.runs.length, t0: e.t, t1: e.t, label: '', ask: '', said: '', cost: 0, steps: 0, done: false, touched: new Map() }; S.runs.push(run); }
+      const opens = e.kind === 'prompt' || e.kind === 'stage' || e.kind === 'tool'; // what follows a run's end (idle, checkpoint, notes) belongs to that run
+      if (!run || (run.done && opens) || ((e.kind === 'prompt' || e.kind === 'stage') && run.steps > 0)) { if (!opens) continue; run = { i: S.runs.length, t0: e.t, t1: e.t, label: '', ask: '', said: '', cost: 0, steps: 0, done: false, touched: new Map() }; S.runs.push(run); }
       run.t1 = e.t;
       if (e.kind === 'prompt') { run.ask = e.text; run.label = run.label || (e.mode === 'chat' ? 'asked' : e.mode || 'run'); }
       if (e.kind === 'stage') { run.label = e.stage || run.label; run.ask = run.ask || e.text; }
@@ -56,7 +57,8 @@
         if (animate) { node.flash = 1; burst(w, t.dir, 10); } }
       if (animate && (e.kind === 'tool' || e.kind === 'soak' || e.kind === 'done' || e.kind === 'stage')) logLine(e);
     }
-    if (S.focus < 0 || S.focus === S.runs.length - 2 || !animate) S.focus = S.runs.length - 1;
+    if (!animate) { const r = S.live ? S.runs[S.runs.length - 1] : S.runs.filter(x => x.steps).pop(); S.focus = r ? r.i : S.runs.length - 1; } // opens on the run working now, else the last that did something
+    else if (S.focus < 0 || S.focus === S.runs.length - 2) S.focus = S.runs.length - 1;
     layout(); panels();
   }
 
@@ -66,7 +68,8 @@
     const dpr = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight; if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; } g.setTransform(dpr, 0, 0, dpr, 0, 0);
     const top = 120, bottom = H - 210, runs = S.runs.slice(-32), step = Math.max(14, Math.min(30, (bottom - top) / Math.max(1, runs.length)));
     spine = runs.map((r, k) => ({ run: r, x: 78, y: top + k * step }));
-    const cols = [0.36, 0.6, 0.83].map(f => W * f), cw = Math.min(290, W * 0.2), rh = 21, ys = [top - 20, top - 20, top - 20]; cards = [];
+    const x0 = Math.max(240, W * 0.32), avail = W - 18 - x0, cw = Math.min(290, (avail - 2 * 56) / 3), gap = (avail - cw) / 2, cols = [x0, x0 + gap, x0 + 2 * gap], // three columns that end inside the window
+           rh = 21, ys = [top - 20, top - 20, top - 20]; cards = [];
     for (const G of GROUPS) { let rows = [...S.nodes.values()].filter(n => n.g === G.id).sort((a, b) => b.n - a.n); if (!rows.length) continue;
       const more = rows.length > MAXROWS ? rows.splice(MAXROWS - 1) : []; if (more.length) rows.push({ key: G.id + '|+', g: G.id, row: `+ ${more.length} more`, n: more.reduce((s, x) => s + x.n, 0), last: Math.max(...more.map(x => x.last)), flash: 0, merged: more.map(x => x.key) });
       const c = { G, x: cols[G.col], y: ys[G.col], w: cw, rows: rows.map((n, k) => ({ node: n, y: ys[G.col] + 26 + k * rh })) }; c.h = 30 + rows.length * rh; ys[G.col] += c.h + 16; cards.push(c); }
@@ -88,7 +91,8 @@
     g.fillStyle = '#07060c'; g.fillRect(0, 0, W, H);
     g.strokeStyle = 'rgba(155,135,255,0.06)'; g.lineWidth = 1; g.beginPath(); for (let x = 0; x < W; x += 40) { g.moveTo(x, 0); g.lineTo(x, H); } for (let y = 0; y < H; y += 40) { g.moveTo(0, y); g.lineTo(W, y); } g.stroke();
     /* the spine of runs */
-    if (spine.length) { g.fillStyle = '#1a1628'; g.fillRect(64, spine[0].y - 16, 28, spine[spine.length - 1].y - spine[0].y + 32); g.fillStyle = '#c58aff'; g.fillRect(64, spine[0].y - 24, 28, 6); }
+    if (spine.length) { g.fillStyle = '#1a1628'; g.fillRect(64, spine[0].y - 16, 28, spine[spine.length - 1].y - spine[0].y + 32); g.fillStyle = '#c58aff'; g.fillRect(64, spine[0].y - 24, 28, 6);
+      g.font = '600 10px ui-monospace, Menlo, monospace'; g.fillStyle = '#a79fc0'; g.textAlign = 'left'; g.fillText('BUILDER', 10, spine[0].y - 38); g.fillText('RUNS', 10, spine[0].y - 26); } // each number is one run, counted from the game's first
     g.font = '11px ui-monospace, monospace'; g.textAlign = 'right';
     for (const s of spine) { const on = s.run.i === S.focus, live = S.live && s.run === S.runs[S.runs.length - 1] && !s.run.done;
       g.fillStyle = on ? '#fff' : '#8a86b0'; g.fillText(String(s.run.i + 1).padStart(2, '0'), 58, s.y + 4);
@@ -136,7 +140,9 @@
 
   /* ---- choosing a run: click its dot on the spine; hover a row to see what it is ---- */
   cv.addEventListener('click', e => { const s = spine.find(s => Math.hypot(e.clientX - s.x, e.clientY - s.y) < 12 || (Math.abs(e.clientY - s.y) < 8 && e.clientX < 100)); if (s) { S.focus = s.run.i; panels(); } });
-  cv.addEventListener('mousemove', e => { const t = $('tip'); for (const c of cards) for (const r of c.rows) if (e.clientX > c.x && e.clientX < c.x + c.w && e.clientY > r.y && e.clientY < r.y + 17) { t.style.display = 'block'; t.style.left = e.clientX + 14 + 'px'; t.style.top = e.clientY + 10 + 'px'; t.textContent = `${r.node.row}: touched ${r.node.n} times, last ${new Date(r.node.last * 1000).toLocaleString()}`; return; } t.style.display = 'none'; });
+  cv.addEventListener('mousemove', e => { const t = $('tip');
+    const sp = spine.find(s => Math.abs(e.clientY - s.y) < 8 && e.clientX < 100); if (sp) { const r = sp.run; cv.style.cursor = 'pointer'; t.style.display = 'block'; t.style.left = e.clientX + 14 + 'px'; t.style.top = e.clientY + 10 + 'px';
+      t.textContent = `Run ${r.i + 1} of ${S.runs.length} · ${new Date(r.t0 * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · ${r.steps} steps · ${r.touched.size} parts${r.done ? ' · $' + r.cost.toFixed(2) : ''}${r.ask ? '\n' + r.ask.slice(0, 160) + (r.ask.length > 160 ? '…' : '') : ''}\nClick to show it`; return; } cv.style.cursor = ''; for (const c of cards) for (const r of c.rows) if (e.clientX > c.x && e.clientX < c.x + c.w && e.clientY > r.y && e.clientY < r.y + 17) { t.style.display = 'block'; t.style.left = e.clientX + 14 + 'px'; t.style.top = e.clientY + 10 + 'px'; t.textContent = `${r.node.row}: touched ${r.node.n} times, last ${new Date(r.node.last * 1000).toLocaleString()}`; return; } t.style.display = 'none'; });
 
   /* ---- live: new steps as they happen; replay: the last run again, quickly ---- */
   async function poll() { try { const r = await fetch(`/studio/wiredata/${encodeURIComponent(SLUG)}?since=${S.since}`, { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); const j = await r.json(); if (!r.ok || j.success === false) throw new Error(j.error || r.status);

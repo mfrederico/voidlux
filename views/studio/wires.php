@@ -16,7 +16,7 @@
   #log div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } #log .w { color: #ff6bd5; } #log .r { color: #7de0ff; } #log .p { color: #9bf06a; } #log .a { color: #ffb547; } #log .s { color: #fff; }
   #ask { white-space: pre-wrap; color: #d9d2ee; max-height: 150px; overflow: hidden; } #ask .q { color: #ffcc00; }
   #cost .big { font-size: 34px; color: #ffcc00; text-shadow: 0 0 18px #ffcc0088; } #cost .row { display: flex; gap: 6px; align-items: center; font-size: 11px; color: #a79fc0; margin: 2px 0; } #cost i { display: inline-block; height: 7px; background: #c58aff; border-radius: 2px; }
-  .tip { position: fixed; z-index: 3; pointer-events: none; background: #120f1e; border: 1px solid #3a3352; border-radius: 6px; padding: 5px 8px; font-size: 12px; display: none; max-width: 360px; }
+  .tip { position: fixed; z-index: 3; pointer-events: none; white-space: pre-line; background: #120f1e; border: 1px solid #3a3352; border-radius: 6px; padding: 5px 8px; font-size: 12px; display: none; max-width: 360px; }
   @media (max-width: 900px) { .panels { grid-template-columns: 1fr 1fr; height: 160px; } .panels section:nth-child(2) { display: none; } .title { left: 90px; } }
 </style>
 </head><body>
