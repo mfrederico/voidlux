@@ -9,6 +9,7 @@
     { id: 'look', name: 'Look', col: 1, color: '#ffb547' }, { id: 'rules', name: 'Rules', col: 1, color: '#2fd6c3' }, { id: 'sound', name: 'Sound', col: 1, color: '#7de0ff' },
     { id: 'page', name: 'Page', col: 2, color: '#9bf06a' }, { id: 'artist', name: "The artist", col: 2, color: '#ffd166' }, { id: 'tools', name: 'Tools', col: 2, color: '#ff8a5c' },
     { id: 'kit', name: 'The kit (shared)', col: 2, color: '#8a86b0' } ];
+  const TWO = { design: 0, code: 0, page: 0, artist: 0, look: 1, rules: 1, sound: 1, tools: 1, kit: 1 }; // where each card stands in a tall video
   const GROUP = Object.fromEntries(GROUPS.map(x => [x.id, x])), READ = '#7de0ff', PLAY = '#9bf06a', MAXROWS = 7;
   const S = { events: [], since: 0, runs: [], nodes: new Map(), wires: new Map(), parts: [], focus: -1, live: false, steps: 0, cost: 0, frame: 0, t0: performance.now(), replaying: null, log: [], zoom: 1, zoomTo: 1, all: false, building: null, born: {} };
 
@@ -66,16 +67,17 @@
   let W = 0, H = 0, VW = 0, VH = 0, spine = [], cards = [];
   // Everything is laid out in a space that zooms: at 1 it is the window; while it builds, it zooms out until every part fits.
   function layout() {
-    const dpr = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight; if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    const R = S.rec, dpr = R ? R.scale : Math.min(2, devicePixelRatio || 1); W = R ? R.w : innerWidth; H = R ? R.h : innerHeight; // recording: the video's own stage, whatever the window if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
     const Z = S.zoom; VW = W / Z; VH = H / Z; g.setTransform(dpr * Z, 0, 0, dpr * Z, 0, 0);
-    const top = 120 / Z, bottom = (H - 210) / Z, maxRows = S.all ? 14 : MAXROWS;
-    const x0 = Math.max(240, VW * 0.32), avail = VW - 18 - x0, cw = Math.min(290, (avail - 2 * 56) / 3), gap = (avail - cw) / 2, cols = [x0, x0 + gap, x0 + 2 * gap], // three columns that end inside the window
+    const padTop = R ? R.top : 120, padBottom = R ? R.bottom : 210, top = padTop / Z, bottom = (H - padBottom) / Z, maxRows = S.all ? 14 : MAXROWS, two = VW / VH < 0.8;
+    const x0 = two ? Math.max(150, VW * 0.22) : Math.max(240, VW * 0.32), avail = VW - 18 - x0, nc = two ? 2 : 3, cw = Math.min(290, (avail - (nc - 1) * 40) / nc), gap = nc > 1 ? (avail - cw) / (nc - 1) : 0, cols = [x0, x0 + gap, x0 + 2 * gap], // a tall video: two columns
+          colOf = G => two ? TWO[G.id] : G.col, // three columns that end inside the window
           rh = 21, ys = [top - 20, top - 20, top - 20]; cards = [];
     for (const G of GROUPS) { let rows = [...S.nodes.values()].filter(n => n.g === G.id); if (!S.all) rows.sort((a, b) => b.n - a.n); if (!rows.length) continue; // the whole game keeps the order first touched, so new parts appear at the foot
       const more = rows.length > maxRows ? rows.splice(maxRows - 1) : []; if (more.length) rows.push({ key: G.id + '|+', g: G.id, row: `+ ${more.length} more`, n: more.reduce((s, x) => s + x.n, 0), last: Math.max(...more.map(x => x.last)), flash: 0, born: Math.max(...more.map(x => x.born)), merged: more.map(x => x.key) });
-      const c = { G, x: cols[G.col], y: ys[G.col], w: cw, total: rows.reduce((s, x) => s + x.n, 0), rows: rows.map((n, k) => ({ node: n, y: ys[G.col] + 26 + k * rh })) }; c.h = 30 + rows.length * rh; ys[G.col] += c.h + 16; cards.push(c); }
+      const ci = colOf(G), c = { G, x: cols[ci], y: ys[ci], w: cw, total: rows.reduce((s, x) => s + x.n, 0), rows: rows.map((n, k) => ({ node: n, y: ys[ci] + 26 + k * rh })) }; c.h = 30 + rows.length * rh; ys[ci] += c.h + 16; cards.push(c); }
     const tall = Math.max(...ys) - (top - 20); // how tall the cards stand, in the zoomed space
-    S.zoomTo = S.all ? Math.max(0.45, Math.min(1, ((H - 210) - 100) / Math.max(1, tall))) : 1;
+    S.zoomTo = S.all ? Math.max(0.4, Math.min(1, ((H - padBottom) - padTop + 20) / Math.max(1, tall))) : 1;
     const runs = S.all ? S.runs : S.runs.slice(-32), span = Math.max(bottom - top, tall - 20), step = Math.max(S.all ? 3 : 14, Math.min(30, span / Math.max(1, runs.length)));
     spine = runs.map((r, k) => ({ run: r, x: 78, y: top + k * step })); S.spineStep = step;
     S.port = new Map(); for (const c of cards) for (const r of c.rows) { S.port.set(r.node.key, { x: c.x - 6, y: r.y + 8, c, r }); for (const k of r.node.merged || []) S.port.set(k, { x: c.x - 6, y: r.y + 8, c, r }); }
@@ -132,6 +134,7 @@
         g.textAlign = 'right'; g.fillStyle = '#ffcc00'; g.fillText(String(n.n), c.x + c.w - 8, r.y + 12);
         g.beginPath(); g.arc(c.x - 6, r.y + 8, 3.5, 0, Math.PI * 2); g.fillStyle = used ? col : '#4a4568'; g.fill(); }
       g.restore(); }
+    if (S.rec) caption(now);
     requestAnimationFrame(frame); }
   function rr(x, y, w, h, r, topOnly) { g.beginPath(); g.moveTo(x + r, y); g.lineTo(x + w - r, y); g.quadraticCurveTo(x + w, y, x + w, y + r); if (topOnly) { g.lineTo(x + w, y + h); g.lineTo(x, y + h); } else { g.lineTo(x + w, y + h - r); g.quadraticCurveTo(x + w, y + h, x + w - r, y + h); g.lineTo(x + r, y + h); g.quadraticCurveTo(x, y + h, x, y + h - r); } g.lineTo(x, y + r); g.quadraticCurveTo(x, y, x + r, y); g.closePath(); }
   const trim = (s, n) => s.length > n ? '…' + s.slice(-(n - 1)) : s;
@@ -183,9 +186,65 @@
       const nx = B.list[B.k]; if (nx && ((opensRun(nx) && !opensRun(e)) || e.kind === 'done')) { B.hold = PAUSE; B.acc = 0; pace(B); break; } }
     if (batch.length) { ingest(batch, true); S.focus = S.runs.length - 1; panels(); }
     if (B.k >= B.list.length) endBuild(); }
-  function endBuild() { const B = S.building; S.building = null; const t = B.all; reset(); S.events = []; ingest(t, false); fillLog(); $('build').textContent = '▶ Watch it build from run 1'; $('speed').hidden = true; }
-  $('build').onclick = () => S.building ? endBuild() : startBuild();
+  function endBuild() { const B = S.building; S.building = null; if (S.rec && S.rec.phase === 'build') { S.rec.phase = 'hold'; S.rec.t = performance.now(); } const t = B.all; reset(); S.events = []; ingest(t, false); fillLog(); $('build').textContent = '▶ Watch it build from run 1'; $('speed').hidden = true; }
+  $('build').onclick = () => S.rec ? finishRecording(false) : S.building ? endBuild() : startBuild(); // while recording: stop and keep nothing
   $('speed').onclick = () => { const B = S.building; if (!B) return; B.speed = B.speed >= 8 ? 1 : B.speed * 2; $('speed').textContent = `Speed ${B.speed}×`; };
+
+  /* ---- a video of it building, for posting: the browser films its own canvas (MediaRecorder), nothing runs on the server ----
+     The stage is the video's size, not the window's; captions are drawn into the frame (the page's HTML panels are not in a recording):
+     the game's name and the ask of the run on stage at the top, the counts and voidlux.com at the foot, and an end card. */
+  const SHAPES = { tall: { w: 720, h: 1280, scale: 1.5, top: 270, bottom: 150, label: 'tall' }, square: { w: 900, h: 900, scale: 1.2, top: 175, bottom: 95, label: 'square' },
+                   wide: { w: 1280, h: 720, scale: 1.5, top: 128, bottom: 82, label: 'wide' } };
+  const MIMES = ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
+  function planSeconds(list) { let t = 0.8, n = 0, j = 0; // how long the build takes at 1×, with the same pacing build() uses
+    while (j < list.length) { n = 0; while (j < list.length && opensRun(list[j])) { n++; j++; } for (; j < list.length; j++) { if (opensRun(list[j])) break; n++; if (list[j].kind === 'done') { j++; break; } } t += runTime(n) + PAUSE; }
+    return t; }
+  function startRecording(shape, seconds) {
+    if (typeof MediaRecorder === 'undefined' || !cv.captureStream) { alertBox('This browser cannot record a video of the page. Chrome, Edge or Firefox can.'); return; }
+    const mime = MIMES.find(m => MediaRecorder.isTypeSupported(m)); if (!mime) { alertBox('This browser records no video format we know.'); return; }
+    if (S.building) endBuild(); const list = S.events.filter(e => BUILT.has(e.kind)); if (!list.length) { alertBox('Nothing to film yet: the builder has not worked on this game.'); return; }
+    S.rec = Object.assign({}, SHAPES[shape], { phase: 'build', mime, chunks: [], seconds }); document.body.classList.add('recording'); S.zoom = 1; layout();
+    const rec = new MediaRecorder(cv.captureStream(30), { mimeType: mime, videoBitsPerSecond: 10e6 }); S.rec.recorder = rec;
+    rec.ondataavailable = e => { if (e.data && e.data.size) S.rec && S.rec.chunks.push(e.data); }; rec.start(500);
+    startBuild(); S.building.speed = Math.max(1, planSeconds(list) / Math.max(6, seconds - 7.5)); $('speed').hidden = true; $('build').textContent = '■ Stop recording'; }
+  function finishRecording(keep) { const R = S.rec; if (!R) return; S.rec = null;
+    R.recorder.onstop = () => { document.body.classList.remove('recording'); S.zoom = 1; layout(); $('build').textContent = '▶ Watch it build from run 1';
+      if (!keep) return; const blob = new Blob(R.chunks, { type: R.mime.split(';')[0] }), url = URL.createObjectURL(blob), ext = R.mime.includes('mp4') ? 'mp4' : 'webm';
+      $('vidPlay').src = url; $('vidSave').href = url; $('vidSave').download = `${SLUG}-voidlux-${R.label}.${ext}`;
+      $('vidInfo').textContent = `${R.label} · ${R.w * R.scale}×${R.h * R.scale} · ${(blob.size / 1048576).toFixed(1)} MB · ${ext.toUpperCase()}` + (ext === 'webm' ? ' (this browser records WebM only: most social sites want MP4, so convert it first, or record in Chrome)' : '');
+      $('vid').hidden = false; };
+    R.recorder.stop(); if (S.building) endBuild(); }
+  const alertBox = t => { $('vidInfo').textContent = t; $('vidPlay').removeAttribute('src'); $('vidSave').hidden = true; $('vid').hidden = false; };
+  function wrap(text, width, lines) { const words = String(text).replace(/\s+/g, ' ').trim().split(' '), out = []; let cur = '';
+    for (const w of words) { const t = cur ? cur + ' ' + w : w; if (g.measureText(t).width > width && cur) { out.push(cur); cur = w; if (out.length === lines) break; } else cur = t; }
+    if (out.length < lines && cur) out.push(cur); if (out.length === lines && words.join(' ').length > out.join(' ').length) out[lines - 1] = out[lines - 1].replace(/\s*\S*$/, '') + '…'; return out; }
+  function caption(now) { const R = S.rec, w = R.w, h = R.h, tall = h > w, r = S.runs[S.focus];
+    g.setTransform(R.scale, 0, 0, R.scale, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+    let gr = g.createLinearGradient(0, 0, 0, R.top); gr.addColorStop(0, '#07060c'); gr.addColorStop(0.8, '#07060cee'); gr.addColorStop(1, '#07060c00'); g.fillStyle = gr; g.fillRect(0, 0, w, R.top);
+    gr = g.createLinearGradient(0, h - R.bottom, 0, h); gr.addColorStop(0, '#07060c00'); gr.addColorStop(0.35, '#07060cee'); gr.addColorStop(1, '#07060c'); g.fillStyle = gr; g.fillRect(0, h - R.bottom, w, R.bottom);
+    const pad = tall ? 34 : 28, big = tall ? 46 : 34; g.textAlign = 'left';
+    g.font = `700 ${tall ? 15 : 12}px ui-monospace, Menlo, monospace`; g.fillStyle = '#c58aff'; g.fillText('BUILT WITH VOIDLUX', pad, pad + 6);
+    g.font = `700 ${big}px ui-monospace, Menlo, monospace`; g.fillStyle = '#fff'; g.shadowColor = '#c58aff'; g.shadowBlur = 18; g.fillText(GAME.toUpperCase(), pad, pad + 14 + big); g.shadowBlur = 0;
+    if (r) { const y0 = pad + 30 + big + (tall ? 14 : 4); g.font = `600 ${tall ? 17 : 13}px ui-monospace, Menlo, monospace`; g.fillStyle = '#ffcc00';
+      g.fillText(`RUN ${r.i + 1}  ·  ${new Date(r.t0 * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' }).toUpperCase()}`, pad, y0);
+      if (r.ask && R.top > 150) { g.font = `${tall ? 19 : 15}px ui-monospace, Menlo, monospace`; g.fillStyle = '#e9e4f7'; wrap('“' + r.ask + '”', w - pad * 2, tall ? 4 : 2).forEach((l, k) => g.fillText(l, pad, y0 + (tall ? 32 : 24) + k * (tall ? 26 : 20))); } }
+    const fy = h - pad + 2, stat = (label, v, x) => { g.font = `700 ${tall ? 30 : 22}px ui-monospace, Menlo, monospace`; g.fillStyle = '#ffcc00'; g.fillText(String(v), x, fy - (tall ? 22 : 16)); g.font = `${tall ? 13 : 11}px ui-monospace, Menlo, monospace`; g.fillStyle = '#a79fc0'; g.fillText(label, x, fy); };
+    stat('RUNS', S.runs.length, pad); stat('PARTS', S.nodes.size, pad + (tall ? 130 : 110)); stat('STEPS', S.steps, pad + (tall ? 260 : 220));
+    g.textAlign = 'right'; g.font = `700 ${tall ? 22 : 17}px ui-monospace, Menlo, monospace`; g.fillStyle = '#fff'; g.fillText('voidlux.com', w - pad, fy);
+    if (R.phase === 'hold' && now - R.t > 1400) { R.phase = 'end'; R.t = now; }
+    if (R.phase === 'end') { const a = Math.min(1, (now - R.t) / 600); g.textAlign = 'center'; g.fillStyle = `rgba(7,6,12,${0.88 * a})`; g.fillRect(0, 0, w, h); g.globalAlpha = a;
+      g.font = `700 ${tall ? 54 : 44}px ui-monospace, Menlo, monospace`; g.fillStyle = '#fff'; g.shadowColor = '#c58aff'; g.shadowBlur = 24; g.fillText(GAME.toUpperCase(), w / 2, h / 2 - 40); g.shadowBlur = 0;
+      g.font = `${tall ? 22 : 18}px ui-monospace, Menlo, monospace`; g.fillStyle = '#ffcc00'; g.fillText(`${S.runs.length} runs · ${S.steps} steps · built by asking`, w / 2, h / 2 + 8);
+      g.font = `700 ${tall ? 30 : 26}px ui-monospace, Menlo, monospace`; g.fillStyle = '#c58aff'; g.fillText('Make yours at voidlux.com', w / 2, h / 2 + 70); g.globalAlpha = 1;
+      if (now - R.t > 3400) finishRecording(true); }
+    g.setTransform(R.scale * S.zoom, 0, 0, R.scale * S.zoom, 0, 0); }
+  $('mkGo').onclick = () => { const shape = (document.querySelector('input[name=mkShape]:checked') || {}).value || 'tall', secs = +((document.querySelector('input[name=mkLen]:checked') || {}).value || 30);
+    $('mk').open = false; startRecording(shape, secs); };
+  document.addEventListener('visibilitychange', () => { // a hidden tab draws nothing: the recording waits for it rather than filming a frozen picture
+    const R = S.rec, hid = document.hidden; document.body.dataset.hidden = hid ? 'yes' : 'no'; $('live').textContent = hid ? 'paused: this tab is hidden' : S.live ? 'live · building' : 'idle';
+    if (R && R.recorder.state !== 'inactive') { if (hid && R.recorder.state === 'recording') R.recorder.pause(); else if (!hid && R.recorder.state === 'paused') R.recorder.resume(); } });
+  document.body.dataset.hidden = document.hidden ? 'yes' : 'no';
+  $('vidClose').onclick = () => { $('vid').hidden = true; $('vidSave').hidden = false; };
 
   layout(); requestAnimationFrame(frame); poll();
 })();
