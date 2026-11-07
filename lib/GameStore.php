@@ -72,6 +72,30 @@ class GameStore {
         foreach (['/.studio/events.jsonl', '/.git/index', '/.git/logs/HEAD', '/assets/sprites.json', '/GAME.md'] as $f) if (is_file($d . $f)) $m = max($m, (int) filemtime($d . $f));
         return $m;
     }
+    /** Who may delete a game: its owner, or an admin. Team members open and build a team's game; they do not delete it. */
+    public static function canDelete(object $g, int $memberId, int $level): bool { return $level <= LEVELS['ADMIN'] || (int) $g->memberId === $memberId; }
+    /** Where a deleted game's folder goes: not on the web, not in the forge's git (data/), with its database row beside it, so it can be put back. */
+    public static function trashDir(): string { return self::root() . '/data/trash-games'; }
+    /**
+     * Deletes a game: it leaves the forge. Refused while its builder runs (stop it first). A live game is taken offline first (as
+     * Unpublish does). Its folder, history and all, moves to data/trash-games/<slug>-<when>/ with game-row.json (its database row), and
+     * its notes and their votes and comments are removed. A copy on GitHub is left alone. Returns where the folder went.
+     */
+    public static function delete(object $g, int $memberId, string $by): string {
+        $slug = (string) $g->slug; $m = Bean::load('member', $memberId);
+        if (!$m->id || !self::canDelete($g, $memberId, (int) $m->level)) throw new \InvalidArgumentException('Only the game\'s owner, or an admin, can delete it.');
+        if (self::agentState($slug)['busy']) throw new \InvalidArgumentException('The builder is working on it: stop it first, then delete the game.');
+        $live = Releases::liveDir($slug); if ($live !== '' && is_file("$live/index.html") && !is_file("$live/.unpublished")) Releases::unpublish($g, $by);
+        $trash = self::trashDir(); if (!is_dir($trash)) mkdir($trash, 0775, true);
+        $to = $trash . '/' . $slug . '-' . date('Ymd-His'); $from = self::gamesDir() . '/' . $slug;
+        if (is_dir($from) && !rename($from, $to)) throw new \RuntimeException("The game's folder could not be moved to the trash ({$to}); nothing was deleted.");
+        if (!is_dir($to)) mkdir($to, 0775, true);
+        self::writeAtomic("$to/game-row.json", json_encode($g->export() + ['deleted_by' => $by, 'deleted_at' => date('c')], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        foreach (Bean::find('gamenote', 'game_id = ?', [(int) $g->id]) as $n) { foreach (['gamenotevote', 'gamenotecomment'] as $t) foreach (Bean::find($t, 'gamenote_id = ?', [(int) $n->id]) as $x) Bean::trash($x); Bean::trash($n); }
+        Bean::trash($g);
+        \Flight::get('log')->info('A game was deleted', ['game' => $slug, 'by' => $by, 'folder' => $to]);
+        return $to;
+    }
     public static function canOpen(object $g, int $memberId, int $level): bool {
         if ($level <= LEVELS['ADMIN']) return true;
         if ((int) $g->memberId === $memberId) return true;

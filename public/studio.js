@@ -196,6 +196,12 @@
   /* the box says how much is left as it nears its limit (4000, ChangeBox::MAX_TEXT): a long message is never cut short without a word */
   const countLeft = () => { const t = $('changeText'), n = t.value.length, max = +t.maxLength || 4000, c = $('changeCount'); c.hidden = n < max * 0.8; c.textContent = n >= max ? `That is the most it takes: ${max} characters. Send it in two parts if there is more.` : `${max - n} characters left`; c.classList.toggle('bad', n >= max); };
   $('changeText').addEventListener('input', countLeft);
+  /* deleting the game: the owner or an admin types its name (Game::delete); its folder goes to the trash, and the forge says so */
+  $('delOpen').onclick = () => { $('delBox').hidden = !$('delBox').hidden; if (!$('delBox').hidden) $('delName').focus(); };
+  $('delName').oninput = () => { $('delGo').disabled = framed || $('delName').value.trim().toLowerCase() !== TITLE.trim().toLowerCase(); };
+  $('delGo').onclick = async () => { $('delGo').disabled = true; $('delSaid').hidden = true;
+    try { const r = await Forge.api(`/game/delete/${SLUG}`, { confirm: $('delName').value.trim() }); location.href = r.to || '/forge'; }
+    catch (err) { $('delSaid').hidden = false; $('delSaid').textContent = err.message; $('delGo').disabled = false; } };
   $('changeForm').onsubmit = async e => { e.preventDefault(); const text = $('changeText').value.trim(); if (!text) { $('changeText').focus(); return; } if (job) { plain('The last change is still going: it shows here when it is done.'); return; }
     try { drawWays(await Forge.api(`/studio/ways/${SLUG}`, { text, key: current, ...said() })); } catch (err) { box.innerHTML = `<p class="bad small">${esc(err.message)}</p>`; } };
   $('changeText').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('changeForm').requestSubmit(); } };

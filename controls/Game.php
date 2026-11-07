@@ -149,6 +149,15 @@ class Game extends BaseControls\Control {
         }
         catch (\RuntimeException $e) { $this->jsonError($e->getMessage(), 409); }
     }
+    /** POST /game/delete/<slug> { confirm: the game's name, typed }: the owner or an admin deletes it (GameStore::delete: its folder goes to the trash). */
+    public function delete($params = []): void {
+        if (!$this->requireLogin()) return; if (Flight::request()->method !== 'POST') { $this->jsonError('POST only', 405); return; } $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        $b = $this->getJsonInput() ?? []; $typed = trim((string) ($b['confirm'] ?? $this->getParam('confirm', '')));
+        if (mb_strtolower($typed) !== mb_strtolower(trim((string) $g->title))) { $this->jsonError('Type the game\'s name, ' . $g->title . ', to delete it.', 400); return; }
+        try { $title = (string) $g->title; GameStore::delete($g, (int) $this->member->id, (string) ($this->member->username ?: $this->member->email)); $this->flash('success', "{$title} is deleted. Its files are kept in the trash, so an admin can put it back."); $this->jsonSuccess(['to' => '/forge']); }
+        catch (\InvalidArgumentException $e) { $this->jsonError($e->getMessage(), 400); }
+        catch (\RuntimeException $e) { $this->logger->error('A game could not be deleted', ['game' => (string) $g->slug, 'error' => $e->getMessage()]); $this->jsonError($e->getMessage(), 500); }
+    }
     public function stop($params = []): void { if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $this->jsonSuccess(GameStore::stopRunner($g->slug), 'Stopped.'); }
     // ---- GitHub: linking is the owner's or an admin's (it uses the forge's GitHub account); pushing is anyone's on the game ----
     private function gitManager(object $g): bool { if ((int) $g->memberId === (int) $this->member->id || Flight::hasLevel(LEVELS['ADMIN'])) return true; $this->jsonError('Only the game\'s owner or an admin links it to GitHub; anyone on the game can publish and push once it is linked.', 403); return false; }
