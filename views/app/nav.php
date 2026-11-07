@@ -4,6 +4,7 @@ if ($__loggedIn) {
     $__sections['The forge'] = [
         ['url' => '/forge', 'label' => 'Games', 'icon' => 'controller'],
         ['url' => '/forge/summon', 'label' => 'Summon a game', 'icon' => 'stars'],
+        ['url' => '/studio/wires', 'label' => 'Watch them build', 'icon' => 'diagram-3'],
         ['url' => '/forge/retro', 'label' => 'Retro' . (function () { try { $i = \app\Improve::inbox(); $n = $i['decide'] + $i['review']; return $n ? " ($n)" : ''; } catch (\Throwable $e) { return ''; } })(), 'icon' => 'clock-history', 'level' => LEVELS['ADMIN']],
         ['url' => '/forge/github', 'label' => 'GitHub', 'icon' => 'github', 'level' => LEVELS['ADMIN']],
         ['url' => '/forge/trash', 'label' => 'Deleted games', 'icon' => 'trash3', 'level' => LEVELS['ADMIN']],

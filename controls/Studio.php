@@ -31,8 +31,24 @@ class Studio extends BaseControls\Control {
     private function takeFlash(): array { $f = array_values(array_filter((array) ($_SESSION['flash'] ?? []), fn($x) => is_array($x) && trim((string) ($x['message'] ?? '')) !== '')); unset($_SESSION['flash']); return $f; }
     /** The builder at work, drawn as wires into the parts of the game it reads and changes (views/studio/wires.php, public/wires.js). */
     public function wires($params = []): void {
-        if (!$this->requireLogin()) return; if (!$g = $this->game($params, false)) return;
+        if (!$this->requireLogin()) return;
+        if ((string) ($params['operation']->name ?? '') === '') { $this->wirePicker(); return; } // /studio/wires: which game to watch
+        if (!$g = $this->game($params, false)) return;
         $this->render('studio/wires', ['title' => (string) $g->title . ' · at work', 'slug' => (string) $g->slug, 'gameTitle' => (string) $g->title], false);
+    }
+    /** /studio/wires with no game: the games this member may open (all of them for an admin, as on the forge), each with how much the builder
+     *  has done in it, to watch one build from its first run. */
+    private function wirePicker(): void {
+        $rows = [];
+        foreach (GameStore::forMember((int) $this->member->id, Flight::hasLevel(LEVELS['ADMIN'])) as $g) { $slug = (string) $g->slug;
+            $n = ['runs' => 0, 'steps' => 0, 'cost' => 0.0, 'first' => 0, 'last' => 0]; $f = GameStore::dir($slug) . '/.studio/events.jsonl';
+            if (is_file($f) && ($h = fopen($f, 'r'))) { while (($line = fgets($h)) !== false) {
+                if (strpos($line, '"kind":"tool"') !== false) $n['steps']++;
+                elseif (strpos($line, '"kind":"done"') !== false) { $e = json_decode($line, true); if (!is_array($e)) continue; $n['runs']++; $n['cost'] += (float) ($e['cost'] ?? 0); $n['last'] = (int) ($e['t'] ?? 0); $n['first'] = $n['first'] ?: $n['last']; } }
+              fclose($h); }
+            $cover = ''; try { $cover = (string) (GameStore::meta($g)['cover'] ?? ''); } catch (\Throwable $e) { $this->logger->error('wires picker: a game would not read', ['game' => $slug, 'error' => $e->getMessage()]); } // listed without its picture
+            $rows[] = ['slug' => $slug, 'title' => (string) $g->title, 'cover' => $cover] + $n; }
+        $this->render('studio/wires-pick', ['title' => 'Watch them build', 'games' => $rows], false);
     }
     /** GET /studio/wiredata/<slug>?since=<t>: the game's events newer than t, trimmed to what the picture needs, its files, and whether a run is on.
      *  Read only: unlike the Studio's own feed it claims no playtest for this page (it cannot run one). */

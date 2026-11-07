@@ -58,7 +58,7 @@
       if (animate && (e.kind === 'tool' || e.kind === 'soak' || e.kind === 'done' || e.kind === 'stage')) logLine(e);
     }
     if (!animate) { const r = S.live ? S.runs[S.runs.length - 1] : S.runs.filter(x => x.steps).pop(); S.focus = r ? r.i : S.runs.length - 1; } // opens on the run working now, else the last that did something
-    else if (S.focus < 0 || S.focus === S.runs.length - 2) S.focus = S.runs.length - 1;
+    else if (S.focus < 0 || S.focus === S.runs.length - 2 || (S.live && !S.building && S.focus !== S.runs.length - 1 && S.runs[S.runs.length - 1].t0 > Date.now() / 1000 - 600)) S.focus = S.runs.length - 1; // a run that starts while you watch takes the stage
     layout(); panels();
   }
 
@@ -161,7 +161,7 @@
   function fillLog() { const r = S.runs.filter(x => x.steps).pop(); if (r) for (const e of S.events.filter(e => e.t >= r.t0 && e.t <= r.t1 && /tool|soak|done|stage/.test(e.kind)).slice(-11)) logLine(e); } // the log opens on the latest run's steps
   async function poll() { try { const r = await fetch(`/studio/wiredata/${encodeURIComponent(SLUG)}?since=${S.since}`, { cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } }); const j = await r.json(); if (!r.ok || j.success === false) throw new Error(j.error || r.status);
       const d = j.data || j, first = !S.events.length; S.live = !!d.agent.busy; $('live').textContent = S.live ? 'live · ' + (d.agent.mode || 'building') : 'idle'; $('live').classList.toggle('on', S.live);
-      if (d.events.length && S.building) { S.building.list.push(...d.events.filter(e => BUILT.has(e.kind))); S.building.all.push(...d.events); for (const e of d.events) S.since = Math.max(S.since, e.t); } else if (d.events.length) { ingest(d.events, !first); if (first) fillLog(); } }
+      if (d.events.length && S.building) { S.building.list.push(...d.events.filter(e => BUILT.has(e.kind))); S.building.all.push(...d.events); for (const e of d.events) S.since = Math.max(S.since, e.t); } else if (d.events.length) { ingest(d.events, !first); if (first) { fillLog(); if (new URLSearchParams(location.search).has('build')) startBuild(); } } } // ?build=1 (from /studio/wires, the list of games): start watching it build at once
     catch (e) { $('live').textContent = 'not reachable: ' + e.message; } setTimeout(poll, 2000); }
   $('replay').onclick = () => { const run = S.runs.filter(r => r.steps).pop(); if (!run) return; if (S.replaying) clearInterval(S.replaying);
     const evs = S.events.filter(e => e.t >= run.t0 && e.t <= run.t1 && (e.kind === 'tool' || e.kind === 'soak' || e.kind === 'done' || e.kind === 'stage')); let k = 0; S.focus = run.i; panels(); S.log = [];
