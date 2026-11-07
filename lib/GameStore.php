@@ -243,6 +243,7 @@ class GameStore {
 
     /** Start the agent runner (scripts/game-agent.php) detached, in its own process group, so a Stop can take it and its claude down. */
     public static function startRunner(string $slug, string $mode, string $prompt, int $memberId): array {
+        EmailConfirm::need($memberId); // nothing that costs runs for a member who has not confirmed their email (a form-testing bot made an account)
         $s = self::agentState($slug);
         if ($s['busy']) throw new \RuntimeException('an agent run is already going for this game');
         $sd = self::studioDir($slug);
@@ -641,6 +642,7 @@ class GameStore {
      * job: it must not ride along as a side note inside a build task).
      */
     public static function askBuilder(string $slug, string $prompt, int $memberId, bool $own = false): array {
+        EmailConfirm::need($memberId); // nothing that costs runs for a member who has not confirmed their email (a form-testing bot made an account)
         if (self::agentState($slug)['busy']) {
             if ($own) {
                 file_put_contents(self::studioDir($slug) . '/queue.jsonl', json_encode(['prompt' => $prompt, 'memberId' => $memberId, 'at' => time()], JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND);
@@ -778,6 +780,7 @@ class GameStore {
     public static function sketchDir(string $slug, string $id): string { return self::dir($slug) . '/sketches/' . $id; }
     /** @param array{note?:string,style?:string,pixel?:bool,size?:int,key?:string,palette?:array,png?:string} $b */
     public static function startSketch(string $slug, array $b, int $memberId): array {
+        EmailConfirm::need($memberId); // nothing that costs runs for a member who has not confirmed their email (a form-testing bot made an account)
         $note = trim((string) ($b['note'] ?? '')); if (mb_strlen($note) > 2000) throw new \InvalidArgumentException('That note is ' . mb_strlen($note) . ' characters; the artist takes up to 2000. Say it shorter.'); $png = (string) ($b['png'] ?? ''); // refused, never cut short without a word
         if ($note === '' && $png === '' && empty($b['animate']) && empty($b['rigjob']) && empty($b['vectorize']) && empty($b['reskin']) && empty($b['asset'])) throw new \InvalidArgumentException('a sketch needs a drawing, a note, or both');
         $size = max(8, min(256, (int) ($b['size'] ?? 32))); $key = (string) ($b['key'] ?? 'sprite'); if (!preg_match(self::SPRITE_KEY, $key)) $key = 'sprite';

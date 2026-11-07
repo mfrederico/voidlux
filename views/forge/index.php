@@ -1,6 +1,9 @@
 <?php /* The forge: every game the member can open, as cards, and the door to summon one. */ ?>
 <?= \app\Ui::page(['eyebrow' => 'The forge', 'title' => 'Games', 'lead' => 'Yours and your teams\'. Open one to play it, build it, test it, tune its sound and ship it.',
                    'primary' => ['label' => 'Summon a game', 'url' => '/forge/summon', 'icon' => 'stars']]) ?>
+<?php $__me = Flight::getMember(); if ($__me && !\app\EmailConfirm::confirmed($__me)): /* nothing that costs runs before the email is confirmed (lib/EmailConfirm.php) */ ?>
+<?= \app\Ui::notice(['tone' => 'warning', 'title' => 'Confirm your email to start building.', 'text' => 'The builder and the artist work for you once you confirm ' . $__me->email . ': one click on a link we send.', 'action' => ['label' => 'Send me the link', 'url' => '/verify']]) ?>
+<?php endif; ?>
 <?php if (!$games): ?>
 <?= \app\Ui::emptyState(['title' => 'Nothing in the forge yet', 'text' => 'Write a brief: who the player is, what they do every ten seconds, how a run ends, what sells it. The planner does the rest.', 'icon' => 'controller', 'action' => ['label' => 'Summon a game', 'url' => '/forge/summon']]) ?>
 <?php else: ?>

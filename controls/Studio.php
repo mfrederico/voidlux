@@ -25,7 +25,7 @@ class Studio extends BaseControls\Control {
         if (!$this->requireLogin()) return; if (!$g = $this->game($params, false)) return;
         $v = []; foreach (['sfx', 'tracker', 'sprites', 'config', 'pose'] as $e) $v[$e] = (int) @filemtime(GameStore::root() . "/kit/editor/{$e}/index.html");
         $own = array_values(array_filter(Game::GAME_EDITORS, fn($e) => is_file(GameStore::dir((string) $g->slug) . "/editor/{$e}/index.html")));
-        $this->render('studio/open', ['title' => (string) $g->title . ' · Studio', 'slug' => (string) $g->slug, 'gameTitle' => (string) $g->title, 'editorV' => $v, 'ownEditors' => $own], false);
+        $this->render('studio/open', ['title' => (string) $g->title . ' · Studio', 'slug' => (string) $g->slug, 'gameTitle' => (string) $g->title, 'editorV' => $v, 'ownEditors' => $own, 'unconfirmed' => !EmailConfirm::confirmed($this->member)], false);
     }
     public function ways($params = []): void {
         if (!$this->requireLogin()) return; $this->validateCSRF(); if (!$g = $this->game($params)) return; $b = $this->getJsonInput() ?? [];
