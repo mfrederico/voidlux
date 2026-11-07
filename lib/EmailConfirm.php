@@ -30,8 +30,8 @@ class EmailConfirm {
     }
 
     /** Sends the member a fresh link. Throws when it may not yet (once a minute) or when the mail could not go. */
-    public static function send(object $m): void {
-        if (self::confirmed($m)) throw new \InvalidArgumentException('Your email is confirmed already.');
+    public static function send(object $m, bool $evenIfConfirmed = false): void { // evenIfConfirmed: an admin trying the mail on their own address
+        if (self::confirmed($m) && !$evenIfConfirmed) throw new \InvalidArgumentException('Your email is confirmed already.');
         $last = strtotime((string) $m->confirmSentAt) ?: 0; if (time() - $last < self::EVERY) throw new \InvalidArgumentException('A link went a moment ago: give it a minute, and look in your spam folder too.');
         if (!Mailer::isConfigured()) throw new \RuntimeException('Mail is not connected (Connections → Mailgun), so no link can be sent: an admin connects it.');
         $token = bin2hex(random_bytes(24));
