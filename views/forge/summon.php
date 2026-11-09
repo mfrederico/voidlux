@@ -16,3 +16,7 @@ $said = ['2d' => 'A 2D game, starting empty.', '3d' => 'A 3D game, starting empt
 <?= \app\Ui::form(['action' => '/forge/summon', 'fields' => $fields, 'values' => $form, 'problems' => $problems, 'submit' => 'Create the game', 'cancel' => '/forge', 'hidden' => $kind === 'existing' ? [] : ['template' => $form['template']]]) ?>
 <script src="/forge.js"></script>
 <script>Forge.slugFromTitle();</script>
+<script>/* an idea typed on the home page before signing up waits in this browser: it fills an empty brief once, then is forgotten */
+(() => { let idea = ''; try { idea = localStorage.getItem('vl.idea') || ''; } catch (e) {} const b = document.querySelector('[name=brief]'); if (!b) return;
+  if (idea && !b.value.trim()) b.value = idea; if (idea) try { localStorage.removeItem('vl.idea'); } catch (e) {} })();
+</script>

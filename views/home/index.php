@@ -49,7 +49,7 @@ a { color: inherit; }
 .hero-title { font-size: clamp(2.1rem, 4.4vw, 3rem); font-weight: bold; line-height: 1.12; letter-spacing: 0.5px; margin-bottom: 26px; text-wrap: balance; }
 .hero-title .rise { display: inline-block; }
 .hero-title em { font-style: normal; background: linear-gradient(90deg, #ff660088, #ffcc00, #ff660088); background-size: 300% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: shimmer 5s linear infinite; }
-.hero-sub { font-size: 1.05rem; line-height: 1.6; color: #bdbdbd; max-width: 680px; margin: 0 auto 40px; text-wrap: balance; }
+.hero-sub { font-size: 1.05rem; line-height: 1.6; color: #bdbdbd; max-width: 760px; margin: 0 auto 30px; text-wrap: balance; }
 .hero-actions { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
 .btn { display: inline-block; padding: 16px 36px; border-radius: 2px; font-family: inherit; font-size: 0.85rem; letter-spacing: 3px; text-transform: uppercase; text-decoration: none; transition: all 0.3s; cursor: pointer; }
 .btn-primary { background: rgba(204,102,0,0.15); color: var(--ember); border: 1px solid rgba(224,119,0,0.4); }
@@ -68,10 +68,32 @@ a { color: inherit; }
     @keyframes glow-drift { from { transform: translate(-53%, -58%) scale(0.96); opacity: 0.75; } to { transform: translate(-47%, -53%) scale(1.06); opacity: 1; } }
     .hero-title .rise { opacity: 0; animation: rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
     .hero-title .rise:nth-of-type(2) { animation-delay: 0.2s; }
-    .eyebrow, .hero-sub, .hero-actions, .hero-whisper { opacity: 0; animation: rise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
-    .eyebrow { animation-delay: 0.05s; } .hero-sub { animation-delay: 0.5s; } .hero-actions { animation-delay: 0.65s; } .hero-whisper { animation-delay: 0.85s; }
+    .eyebrow, .hero-sub, .hero-actions, .ask, .chips, .hero-or, .hero-whisper { opacity: 0; animation: rise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
+    .eyebrow { animation-delay: 0.05s; } .hero-sub { animation-delay: 0.5s; } .hero-actions, .ask { animation-delay: 0.65s; } .chips, .hero-or { animation-delay: 0.75s; } .hero-whisper { animation-delay: 0.85s; }
     .hero-glow { animation: glow-drift 16s ease-in-out infinite alternate; }
 }
+
+/* the gameplay loop behind the hero: muted, looping, darkened so the words and the box read over it */
+.hero-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; opacity: 0.55; }
+.hero-shade { position: absolute; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(ellipse at center, rgba(6,6,8,0.55), rgba(6,6,8,0.85) 75%), linear-gradient(to bottom, rgba(6,6,8,0.2), rgba(6,6,8,0) 30%, rgba(6,6,8,0.9)); }
+/* the prompt box: say the game here and the forge starts from it */
+.ask { width: min(720px, 100%); margin: 0 auto; background: rgba(10,10,13,0.86); border: 1px solid rgba(224,119,0,0.45); border-radius: 10px; padding: 14px; text-align: left; box-shadow: 0 0 40px rgba(224,119,0,0.12); backdrop-filter: blur(6px); }
+.ask label.say { display: block; font-size: 0.72rem; color: var(--ember); letter-spacing: 3px; text-transform: uppercase; margin: 2px 4px 8px; }
+.ask textarea { width: 100%; min-height: 84px; resize: vertical; background: transparent; border: 0; outline: 0; color: #fff; font: inherit; font-size: 1.05rem; line-height: 1.5; padding: 4px; }
+.ask textarea::placeholder { color: #777; }
+.ask .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.ask .kind { display: inline-flex; border: 1px solid #333; border-radius: 999px; overflow: hidden; }
+.ask .kind input { position: absolute; opacity: 0; pointer-events: none; }
+.ask .kind label { padding: 9px 16px; font-size: 0.8rem; letter-spacing: 2px; color: #aaa; cursor: pointer; min-height: 40px; display: inline-flex; align-items: center; }
+.ask .kind input:checked + label { background: var(--ember); color: #0a0500; font-weight: bold; }
+.ask .kind input:focus-visible + label { outline: 2px solid var(--ember-hi); outline-offset: -2px; }
+.ask .count { margin-left: auto; font-size: 0.7rem; color: #777; }
+.ask button { font-family: inherit; font-size: 0.85rem; letter-spacing: 3px; text-transform: uppercase; background: var(--ember); color: #0a0500; font-weight: bold; border: 1px solid #ffb03a; border-radius: 6px; padding: 12px 22px; cursor: pointer; min-height: 44px; transition: all 0.3s; }
+.ask button:hover { background: var(--ember-hi); box-shadow: 0 0 30px rgba(255,204,0,0.3); }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin: 14px auto 0; max-width: 960px; }
+.chips button { font-family: inherit; font-size: 0.75rem; color: #cfcfcf; background: rgba(10,10,13,0.7); border: 1px solid #333; border-radius: 999px; padding: 8px 14px; cursor: pointer; min-height: 36px; transition: all 0.2s; }
+.chips button:hover { border-color: var(--ember); color: var(--ember-hi); }
+.hero-or { margin-top: 18px; font-size: 0.8rem; } .hero-or a { color: #bdbdbd; letter-spacing: 2px; } .hero-or a:hover { color: var(--ember); }
 
 .divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(204,102,0,0.2), transparent); }
 .section { max-width: 1200px; margin: 0 auto; padding: 72px 24px; }
@@ -148,6 +170,7 @@ a { color: inherit; }
     .hero-sub { font-size: 0.9rem; margin-bottom: 30px; }
     .hero-actions { flex-direction: column; align-items: stretch; gap: 12px; max-width: 360px; margin: 0 auto; }
     .hero-actions .btn { width: 100%; text-align: center; }
+    .ask { padding: 10px; } .ask textarea { font-size: 1rem; min-height: 96px; } .ask .row { gap: 8px; } .ask button { width: 100%; } .ask .count { margin-left: 0; }
     .hero-whisper { font-size: 0.7rem; letter-spacing: 1px; line-height: 2; margin-top: 24px; text-wrap: balance; }
     .btn { padding: 14px 24px; font-size: 0.78rem; letter-spacing: 2px; }
     .section { padding: 48px 16px; } .section-head { margin-bottom: 22px; } .lead { font-size: 0.95rem; margin-bottom: 28px; }
@@ -170,17 +193,29 @@ a { color: inherit; }
     </div>
 </div>
 
-<div class="hero" id="hero">
+<div class="hero" id="hero"<?= !empty($heroVideo) ? ' data-video="1"' : '' ?>>
+    <?php if (!empty($heroVideo)): ?><video class="hero-video" id="heroVideo" autoplay muted loop playsinline preload="auto" poster="/assets/hero/hero-poster.jpg?v=<?= (int) $heroVideo ?>" aria-hidden="true"><source src="/assets/hero/hero-loop.mp4?v=<?= (int) $heroVideo ?>" type="video/mp4"></video><div class="hero-shade"></div><?php endif; ?>
     <div class="hero-glow"></div>
     <div class="hero-content">
         <div class="eyebrow">a game forge for people learning to work with AI</div>
         <h2 class="hero-title"><span class="rise">Make a game.</span><br><span class="rise">Learn to work with <em>AI</em> by making it.</span></h2>
-        <p class="hero-sub">Describe a game in plain words. An AI planner designs it, a builder builds it, a playtester plays it and a reviewer judges it. Then you change anything by pointing at it, and see what each change takes before it runs.</p>
-        <div class="hero-actions">
-            <a href="<?= !empty($loggedIn) ? '/forge/summon' : '/auth/register' ?>" class="btn btn-primary">Summon a game</a>
-            <a href="#play" class="btn btn-ghost">Play one first</a>
+        <p class="hero-sub">Say it in plain words. AI plans it, builds it and playtests it. Then change anything by pointing at it.</p>
+        <form class="ask" id="ask" action="/forge/summon" method="get">
+            <label class="say" for="idea">Describe your game</label>
+            <textarea id="idea" name="brief" maxlength="600" required placeholder="A ninja sneaks through a fortress at night, past sleeping guards, to reach the gate before sunrise."></textarea>
+            <div class="row">
+                <span class="kind" role="radiogroup" aria-label="2D or 3D"><input type="radio" name="kind" id="k2" value="2d"><label for="k2">2D</label><input type="radio" name="kind" id="k3" value="3d" checked><label for="k3">3D</label></span>
+                <span class="count" id="ideaCount">0 / 600</span>
+                <button type="submit">Make my game</button>
+            </div>
+        </form>
+        <div class="chips" aria-label="Ideas to start from">
+            <button type="button" data-idea="A ninja sneaks past sleeping guards to reach the gate before sunrise.">Ninja sneaking past guards</button>
+            <button type="button" data-idea="A glowing centipede winds down through a neon mushroom garden while you blast it apart.">Neon centipede shooter</button>
+            <button type="button" data-idea="A cozy fishing village where you catch fish, sell them at the market and fix up your boat.">Cozy fishing village</button>
+            <button type="button" data-idea="A little robot races through space, dodging asteroids and collecting stars.">Robot racing through space</button>
         </div>
-        <div class="hero-whisper"><b>say it</b> · see what it takes · watch it build · <b>play it</b></div>
+        <div class="hero-or"><a href="#play">or play one first &darr;</a><?php if (empty($loggedIn)): ?> &middot; <span style="color:#8f8f8f">free to start, nothing is spent until you say build</span><?php endif; ?></div>
     </div>
 </div>
 
@@ -267,9 +302,18 @@ a { color: inherit; }
 </div>
 
 <script>
-// the mesh of embers behind the hero
+// the prompt box: a chip fills it, the count follows it, and the idea waits in this browser in case signing up comes first
 (function() {
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const f = document.getElementById('ask'), t = document.getElementById('idea'), n = document.getElementById('ideaCount'); if (!f) return;
+    const count = () => { n.textContent = t.value.length + ' / 600'; }; t.addEventListener('input', count); count();
+    for (const b of document.querySelectorAll('.chips button')) b.addEventListener('click', () => { t.value = b.dataset.idea; count(); t.focus(); });
+    f.addEventListener('submit', () => { try { localStorage.setItem('vl.idea', t.value.trim()); } catch (e) {} });
+})();
+// the gameplay loop: still (its poster) for people who asked for less motion
+(function() { const v = document.getElementById('heroVideo'); if (v && matchMedia('(prefers-reduced-motion: reduce)').matches) { v.removeAttribute('autoplay'); v.pause(); } })();
+// the mesh of embers behind the hero, when there is no gameplay behind it
+(function() {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches || document.getElementById('hero').dataset.video) return;
     const hero = document.getElementById('hero'), canvas = document.createElement('canvas');
     canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1;';
     hero.insertBefore(canvas, hero.firstChild);

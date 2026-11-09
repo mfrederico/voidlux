@@ -50,6 +50,29 @@ class Studio extends BaseControls\Control {
             $rows[] = ['slug' => $slug, 'title' => (string) $g->title, 'cover' => $cover] + $n; }
         $this->render('studio/wires-pick', ['title' => 'Watch them build', 'games' => $rows], false);
     }
+    /** /studio/clip/<slug>: an admin films a few seconds of the game playing itself (its bot, ?bot=1) for the site's own pages (the home
+     *  page's hero). The browser records the game's canvas; the clip is posted to clipsave and kept in data/clips/ to be cut and committed.
+     *  nav: none, an admin's tool reached by its address. */
+    public function clip($params = []): void {
+        if (!$this->requireLogin()) return; if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/forge'); return; }
+        if (!$g = $this->game($params, false)) return;
+        $this->render('studio/clip', ['title' => 'Film ' . (string) $g->title, 'slug' => (string) $g->slug, 'gameTitle' => (string) $g->title], false);
+    }
+    public const CLIP_MAX = 7500000;
+    /** POST /studio/clipsave/<slug> (multipart: clip): an admin's recorded clip, an MP4 or WebM under 7.5 MB, kept as data/clips/<slug>-<time>.<ext>. */
+    public function clipsave($params = []): void {
+        if (!$this->requireLogin()) return; if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::jsonError('Admins only.', 403); return; }
+        $this->validateCSRF(); if (!$g = $this->game($params)) return;
+        $f = $_FILES['clip'] ?? null;
+        if (!$f || ($f['error'] ?? 1) !== UPLOAD_ERR_OK) { Flight::jsonError('No clip arrived (upload error ' . (int) ($f['error'] ?? -1) . ').', 400); return; }
+        if ((int) $f['size'] > self::CLIP_MAX) { Flight::jsonError('The clip is ' . round($f['size'] / 1048576, 1) . ' MB: keep it under 7.5 MB (shorter, or a lower bitrate).', 400); return; }
+        $mime = (string) (new \finfo(FILEINFO_MIME_TYPE))->file($f['tmp_name']); $ext = ['video/mp4' => 'mp4', 'video/webm' => 'webm', 'audio/mp4' => 'mp4'][$mime] ?? '';
+        if ($ext === '') { Flight::jsonError("That is not an MP4 or WebM video (it reads as {$mime}).", 400); return; }
+        $dir = Paths::root() . '/data/clips'; if (!is_dir($dir) && !mkdir($dir, 0775, true)) throw new \RuntimeException("could not make {$dir}");
+        $name = (string) $g->slug . '-' . date('Ymd-His') . '.' . $ext;
+        if (!move_uploaded_file($f['tmp_name'], $dir . '/' . $name)) throw new \RuntimeException("could not keep the clip as {$dir}/{$name}");
+        Flight::jsonSuccess(['file' => 'data/clips/' . $name, 'bytes' => (int) $f['size']], 'Clip kept.');
+    }
     /** GET /studio/wiredata/<slug>?since=<t>: the game's events newer than t, trimmed to what the picture needs, its files, and whether a run is on.
      *  Read only: unlike the Studio's own feed it claims no playtest for this page (it cannot run one). */
     public function wiredata($params = []): void {

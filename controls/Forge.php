@@ -96,9 +96,10 @@ class Forge extends BaseControls\Control {
         $teams = Bean::getAll('SELECT t.id, t.name FROM team t JOIN teammember tm ON t.id = tm.team_id WHERE tm.member_id = ? AND t.is_active = 1 ORDER BY t.name', [(int) $this->member->id]);
         /* first the big choice, a 2D game or a 3D game (each starts empty); "an existing game" keeps the other templates */
         $kind = (string) $this->getParam('kind', ''); $kinds = ['2d' => 'empty-2d', '3d' => 'empty-3d'];
-        if (Flight::request()->method !== 'POST' && !isset($kinds[$kind]) && $kind !== 'existing') { $this->render('forge/choose', ['title' => 'Summon a game']); return; }
+        $idea = mb_substr(trim((string) $this->getParam('brief', '')), 0, 4000); // an idea typed on the home page's hero, carried through the 2D or 3D choice
+        if (Flight::request()->method !== 'POST' && !isset($kinds[$kind]) && $kind !== 'existing') { $this->render('forge/choose', ['title' => 'Summon a game', 'idea' => $idea]); return; }
         $confirmed = EmailConfirm::confirmed($this->member);
-        $form = ['title' => '', 'slug' => '', 'brief' => '', 'template' => $kinds[$kind] ?? 'blank', 'team_id' => 0, 'pipeline' => 0]; $problems = [];
+        $form = ['title' => '', 'slug' => '', 'brief' => $idea, 'template' => $kinds[$kind] ?? 'blank', 'team_id' => 0, 'pipeline' => 0]; $problems = [];
         if (Flight::request()->method === 'POST') {
             $this->validateCSRF();
             $form = ['title' => trim((string) $this->getParam('title')), 'slug' => trim((string) $this->getParam('slug')), 'brief' => trim((string) $this->getParam('brief')), 'template' => ((string) $this->getParam('template', '')) ?: 'empty-2d', 'team_id' => (int) $this->getParam('team_id', 0), 'pipeline' => (int) $this->getParam('pipeline', 0)];
