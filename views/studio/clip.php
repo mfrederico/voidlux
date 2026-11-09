@@ -23,7 +23,9 @@
   const MIMES = ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
   $('secs').textContent = SECS; $('wait').textContent = WAIT;
   const frame = $('game'), stage = $('stage'), fit = () => { frame.style.transform = `scale(${stage.clientWidth / 1280})`; }; fit(); addEventListener('resize', fit);
-  frame.src = `/games/${encodeURIComponent(SLUG)}/?bot=1&r=${Date.now()}`;
+  // ?game=brain%3Dscripted passes the game settings of its own; ?quiet=1 hides a bot's own panels (its thinking, its target marks) while filming
+  const extra = (q.get('game') || '').replace(/[^a-zA-Z0-9=&%._-]/g, '');
+  frame.src = `/games/${encodeURIComponent(SLUG)}/?bot=1${extra ? '&' + extra : ''}&r=${Date.now()}`;
   // the game's systems are top-level consts of its scripts, reached by name in its own window
   const ask = code => { try { return new frame.contentWindow.Function('try { return ' + code + '; } catch (e) { return undefined; }')(); } catch (e) { return undefined; } };
   const state = () => { const st = ask("typeof Game !== 'undefined' ? Game.state : typeof G !== 'undefined' ? G.state : '?'"), t = ask("typeof Game !== 'undefined' ? Game.time : typeof G !== 'undefined' ? (G.time || G.t) : undefined"); return st + (typeof t === 'number' ? ' · game clock ' + t.toFixed(1) + ' s' : ''); };
@@ -38,6 +40,12 @@
     // a hidden tab draws nothing and boots nothing: wait for this tab to be in front and the game to have started up
     while (document.hidden || !ask("typeof Game !== 'undefined' ? Game.state : typeof G !== 'undefined' ? G.state : ''")) { say(document.hidden ? 'waiting: bring this tab to the front' : 'waiting for the game to start up'); await new Promise(r => setTimeout(r, 500)); }
     say(startPlay()); await new Promise(r => setTimeout(r, 800));
+    // ?prep=1: a fixed setup per game for a clip that shows it at its best (never code from the address: this page runs as an admin).
+    // Centipede 3D: level 4 with that level's loadout (its powers, a long body); its doors lead nowhere and its bot does not see them,
+    // so the clip stays in the open world instead of the flat dungeon maze.
+    const PREP = { 'centipede-3d': "(function () { if (typeof G === 'undefined') return 0; G.warpLevel(4); G.enterDungeon = function () {}; if (typeof Bot !== 'undefined') { const s = Bot.sense; Bot.sense = function () { const r = s.apply(this, arguments); if (r) r.entrance = null; return r; }; } return 1; })()" };
+    if (q.get('prep') === '1' && PREP[SLUG]) ask(PREP[SLUG]);
+    if (q.get('quiet') === '1') ask("(typeof Bot !== 'undefined' && Bot) ? (Bot.drawHUD = Bot.draw = function () {}, 1) : 0");
     // filmed from a canvas of this page, copied from the game's every frame here: the game's own canvas sends frames only while it paints
     const copy = document.createElement('canvas'); copy.width = 1280; copy.height = 720; const cg = copy.getContext('2d'); let filming = true;
     const pump = () => { if (!filming) return; try { cg.drawImage(canvas, 0, 0, 1280, 720); } catch (e) {} requestAnimationFrame(pump); }; pump();

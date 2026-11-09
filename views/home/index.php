@@ -74,8 +74,8 @@ a { color: inherit; }
 }
 
 /* the gameplay loop behind the hero: muted, looping, darkened so the words and the box read over it */
-.hero-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; opacity: 0.55; }
-.hero-shade { position: absolute; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(ellipse at center, rgba(6,6,8,0.55), rgba(6,6,8,0.85) 75%), linear-gradient(to bottom, rgba(6,6,8,0.2), rgba(6,6,8,0) 30%, rgba(6,6,8,0.9)); }
+.hero-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; opacity: 0.85; }
+.hero-shade { position: absolute; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(ellipse 55% 60% at center, rgba(6,6,8,0.62), rgba(6,6,8,0.25) 100%), linear-gradient(to bottom, rgba(6,6,8,0.35), rgba(6,6,8,0) 25%, rgba(6,6,8,0) 75%, rgba(6,6,8,0.95)); }
 /* the prompt box: say the game here and the forge starts from it */
 .ask { width: min(720px, 100%); margin: 0 auto; background: rgba(10,10,13,0.86); border: 1px solid rgba(224,119,0,0.45); border-radius: 10px; padding: 14px; text-align: left; box-shadow: 0 0 40px rgba(224,119,0,0.12); backdrop-filter: blur(6px); }
 .ask label.say { display: block; font-size: 0.72rem; color: var(--ember); letter-spacing: 3px; text-transform: uppercase; margin: 2px 4px 8px; }
