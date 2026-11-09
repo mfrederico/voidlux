@@ -194,7 +194,7 @@ a { color: inherit; }
 </div>
 
 <div class="hero" id="hero"<?= !empty($heroVideo) ? ' data-video="1"' : '' ?>>
-    <?php if (!empty($heroVideo)): ?><video class="hero-video" id="heroVideo" autoplay muted loop playsinline preload="auto" poster="/assets/hero/hero-poster.jpg?v=<?= (int) $heroVideo ?>" aria-hidden="true"><source src="/assets/hero/hero-loop.mp4?v=<?= (int) $heroVideo ?>" type="video/mp4"></video><div class="hero-shade"></div><?php endif; ?>
+    <?php if (!empty($heroVideo)): ?><video class="hero-video" id="heroVideo" autoplay muted loop playsinline preload="auto" poster="/assets/hero/hero-poster.jpg?v=<?= (int) $heroVideo ?>" aria-hidden="true"><source media="(max-width: 900px)" src="/assets/hero/hero-loop-small.mp4?v=<?= (int) $heroVideo ?>" type="video/mp4"><source src="/assets/hero/hero-loop.mp4?v=<?= (int) $heroVideo ?>" type="video/mp4"></video><div class="hero-shade"></div><?php endif; ?>
     <div class="hero-glow"></div>
     <div class="hero-content">
         <div class="eyebrow">a game forge for people learning to work with AI</div>

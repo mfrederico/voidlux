@@ -9,6 +9,7 @@
   .bar a { color: #c9b8ff; } #st { color: #ffcc00; } #res { color: #9bf06a; }
   .stage { width: min(100vw - 28px, (100vh - 120px) * 16 / 9); aspect-ratio: 16 / 9; margin: 0 14px; position: relative; background: #000; border: 1px solid #2a2440; }
   .stage iframe { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; border: 0; transform-origin: 0 0; }
+  .stage { aspect-ratio: var(--ar, 16 / 9); width: min(100vw - 28px, (100vh - 120px) * var(--arn, 1.7778)); }
   video { display: block; margin: 10px 14px; max-width: 480px; }
 </style>
 </head><body>
@@ -22,7 +23,11 @@
   const SECS = Math.max(3, Math.min(30, +q.get('s') || 12)), WAIT = Math.max(0, Math.min(60, +(q.get('wait') ?? 6))), $ = id => document.getElementById(id);
   const MIMES = ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
   $('secs').textContent = SECS; $('wait').textContent = WAIT;
-  const frame = $('game'), stage = $('stage'), fit = () => { frame.style.transform = `scale(${stage.clientWidth / 1280})`; }; fit(); addEventListener('resize', fit);
+  // ?w=1600: a wider window, so the game draws more of its world at full size (its height stays 720; the kit allows up to 1600 wide,
+  // Centipede 3D 1700). A wide page like the home page's hero then shows the clip nearly 1:1 instead of enlarged.
+  const GW = Math.max(960, Math.min(1920, +q.get('w') || 1280)), frame = $('game'), stage = $('stage');
+  frame.style.width = GW + 'px'; stage.style.setProperty('--ar', `${GW} / 720`); stage.style.setProperty('--arn', String(GW / 720));
+  const fit = () => { frame.style.transform = `scale(${stage.clientWidth / GW})`; }; fit(); addEventListener('resize', fit);
   // ?game=brain%3Dscripted passes the game settings of its own; ?quiet=1 hides a bot's own panels (its thinking, its target marks) while filming
   const extra = (q.get('game') || '').replace(/[^a-zA-Z0-9=&%._-]/g, '');
   frame.src = `/games/${encodeURIComponent(SLUG)}/?bot=1${extra ? '&' + extra : ''}&r=${Date.now()}`;
@@ -47,10 +52,10 @@
     if (q.get('prep') === '1' && PREP[SLUG]) ask(PREP[SLUG]);
     if (q.get('quiet') === '1') ask("(typeof Bot !== 'undefined' && Bot) ? (Bot.drawHUD = Bot.draw = function () {}, 1) : 0");
     // filmed from a canvas of this page, copied from the game's every frame here: the game's own canvas sends frames only while it paints
-    const copy = document.createElement('canvas'); copy.width = 1280; copy.height = 720; const cg = copy.getContext('2d'); let filming = true;
-    const pump = () => { if (!filming) return; try { cg.drawImage(canvas, 0, 0, 1280, 720); } catch (e) {} requestAnimationFrame(pump); }; pump();
+    const copy = document.createElement('canvas'); copy.width = canvas.width; copy.height = canvas.height; const cg = copy.getContext('2d'); let filming = true; // the size the game draws at
+    const pump = () => { if (!filming) return; try { cg.drawImage(canvas, 0, 0, copy.width, copy.height); } catch (e) {} requestAnimationFrame(pump); }; pump();
     for (let k = WAIT; k > 0; ) { await new Promise(r => setTimeout(r, 1000)); if (document.hidden) { say('waiting: bring this tab to the front'); continue; } k--; say(`the bot is playing (${state()}): filming in ${k} s`); }
-    const chunks = [], rec = new MediaRecorder(copy.captureStream(30), { mimeType: mime, videoBitsPerSecond: 3e6 });
+    const chunks = [], rec = new MediaRecorder(copy.captureStream(30), { mimeType: mime, videoBitsPerSecond: Math.round(3e6 * copy.width / 1280 * 1.3) });
     rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
     const done = new Promise(r => { rec.onstop = r; }); rec.start(1000);
     // the tab hidden part way: the recording waits for it, so the clip has no frozen stretch
