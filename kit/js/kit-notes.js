@@ -152,7 +152,7 @@ const Notes = {
   // drawn from. Hovering lists them beside the pointer; a click pins the list to tick one or several, and the note carries them.
   layers(x, y) {
     let list = [];
-    try { if (typeof window.forgePick === 'function') list = (window.forgePick(x, y) || []).map(t => ({ key: String(t.key || ''), title: t.title || this.nice(t.key), kind: t.kind || 'In the game', x: t.x, y: t.y, r: t.r, rect: t.rect, facts: t.facts || {}, file: this.fileOf(t.key) })); } catch (e) { console.error(e); }
+    try { if (typeof window.forgePick === 'function') list = (window.forgePick(x, y) || []).map(t => Object.assign({}, t, { key: String(t.key || ''), title: t.title || this.nice(t.key), named: !!t.title, kind: t.kind || 'In the game', facts: t.facts || {}, file: this.fileOf(t.key) })); } catch (e) { console.error(e); }
     if (!list.length) { const d = this.describe(x, y); if (d) list.push({ key: 'thing:' + d.label, title: d.label, label: d.label, fields: d.fields, kind: 'In the game', x: d.at.x, y: d.at.y, r: d.r, facts: d.fields || {}, file: '' }); }
     const screen = list.findIndex(t => /^screen:/.test(t.key)), at = screen < 0 ? list.length : screen;
     const parts = this.parts(x, y); let put = at;

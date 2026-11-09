@@ -13,16 +13,44 @@
     if (on && !N) { hint(frame.contentDocument && frame.contentDocument.readyState === 'complete' ? 'This game has no inspect support (it does not load the kit\'s notes): choose from the list.' : 'The game has not finished loading yet.'); return; }
     if (on && typeof W().forgePick !== 'function') { hint('This game does not say what is under the pointer yet: choose from the list.'); return; }
     inspecting = on; if (N) N.freeze(on); if (on) try { if (W().forgeCapture) W().forgeCapture(); } catch (e) { console.error(e); } /* what the screen says, for picking its words */ over.classList.toggle('on', on); $('inspect').classList.toggle('on', on); $('inspect').textContent = on ? 'Resume game' : 'Inspect';
-    ring.style.display = tip.style.display = 'none'; hint(on ? 'Paused. Click anything in the game. Esc resumes.' : 'Press Inspect, then click anything in the game.'); if (!on) frame.focus();
+    ring.style.display = tip.style.display = 'none'; layOff(); hint(on ? 'Paused. Click anything in the game. Esc resumes.' : 'Press Inspect, then click anything in the game.'); if (!on) frame.focus();
   }
-  const at = e => { const r = over.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top; const N = W().Notes, p = N.logical(cx, cy); return { cx, cy, list: W().forgePick(p.x, p.y) || [] }; };
-  over.addEventListener('pointermove', e => { if (!inspecting) return; const { cx, cy, list } = at(e), N = W().Notes;
-    if (!list.length) { ring.style.display = tip.style.display = 'none'; over.style.cursor = 'crosshair'; return; }
+  // everything under the pointer, top layer first (the kit's Notes.layers: the game's forgePick, then each 3D part and material with its file)
+  const at = e => { const r = over.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top; const N = W().Notes, p = N.logical(cx, cy); return { cx, cy, list: (N.layers ? N.layers(p.x, p.y) : W().forgePick(p.x, p.y)) || [] }; };
+  const ringOn = t => { const N = W().Notes, k = N.canvas.getBoundingClientRect().width / N.canvas.width;
+    if (t.rect) { const a = N.css(t.rect.x, t.rect.y), b = N.css(t.rect.x + t.rect.w, t.rect.y + t.rect.h); Object.assign(ring.style, { display: 'block', borderRadius: '8px', left: a.x + 'px', top: a.y + 'px', width: b.x - a.x + 'px', height: b.y - a.y + 'px' }); }
+    else { const c = N.css(t.x, t.y), s = (t.r || 12) * k * 2; Object.assign(ring.style, { display: 'block', borderRadius: '50%', left: c.x - s / 2 + 'px', top: c.y - s / 2 + 'px', width: s + 'px', height: s + 'px' }); } };
+  // the list of layers beside the pointer; pinned by a click, its rows choose which one the card shows
+  document.head.insertAdjacentHTML('beforeend', `<style>
+    .st-layers { position: absolute; z-index: 6; display: none; min-width: 230px; max-width: min(440px, 80%); max-height: 75%; overflow: auto; background: rgba(8,8,12,.95); border: 1px solid #3a3a48; border-radius: 8px; padding: 4px; font: 12px/1.3 ui-monospace, Menlo, monospace; color: #e8e8e8; pointer-events: none; box-shadow: 0 10px 30px rgba(0,0,0,.6); }
+    .st-layers.pinned { pointer-events: auto; border-color: var(--pick, #ff3d9a); } .st-layers .lh { color: var(--pick, #ff3d9a); padding: 4px 6px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+    .st-layers .l { display: grid; padding: 5px 8px; border-radius: 5px; border-top: 1px solid #ffffff10; } .st-layers .l:first-of-type { border-top: 0; } .st-layers .l.sub { padding-left: 22px; }
+    .st-layers .t { color: #fff; } .st-layers .k { color: #9a9aa8; font-size: 11px; } .st-layers .f { color: #7de0ff; font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
+    .st-layers.pinned .l { cursor: pointer; min-height: 30px; } .st-layers.pinned .l:hover { background: #ffffff12; } .st-layers .l.on { background: color-mix(in srgb, var(--pick, #ff3d9a) 22%, transparent); }
+  </style>`);
+  const layEl = document.createElement('div'); layEl.className = 'st-layers'; over.parentNode.appendChild(layEl); let pinned = null;
+  const layHtml = (list, on) => (on >= 0 ? '<div class="lh">Under the pointer: choose one</div>' : '') + list.map((t, i) => `<div class="l${t.sub ? ' sub' : ''}${i === on ? ' on' : ''}" data-i="${i}"><span class="t">${esc(t.title || nameOf(t.key))}</span><span class="k">${esc([t.kind, t.material].filter(Boolean).join(' · '))}</span>${t.file ? `<span class="f"><bdi>${esc(t.file)}</bdi></span>` : ''}</div>`).join('');
+  const layAt = (cx, cy) => { const w = layEl.offsetWidth, h = layEl.offsetHeight, W2 = over.clientWidth, H2 = over.clientHeight; layEl.style.left = Math.max(4, Math.min(W2 - w - 4, cx + 16)) + 'px'; layEl.style.top = Math.max(4, Math.min(H2 - h - 4, cy + 12)) + 'px'; };
+  const layOff = () => { pinned = null; layEl.style.display = 'none'; layEl.classList.remove('pinned'); };
+  // a row of the list, shown in the card: what the game named is the element; a thing it only keyed is looked up among the game's things
+  const choose = (t, i) => { lastPick = t; if (typeof UX !== 'undefined') UX.act('inspect', t.key); ringOn(t);
+    const extra = Object.assign({}, t.material ? { material: t.material } : {}, t.file ? { file: t.file } : {});
+    if (!t.sub && (t.named === false || !t.title)) show(t.key, t); else showElement(Object.assign({}, t, { facts: Object.assign({}, t.facts || {}, extra) }));
+    if (pinned) { pinned.on = i; layEl.innerHTML = layHtml(pinned.list, i); } };
+  layEl.addEventListener('mouseover', e => { const r = e.target.closest('.l'); if (r && pinned) ringOn(pinned.list[+r.dataset.i]); });
+  layEl.addEventListener('mouseleave', () => { if (pinned) ringOn(pinned.list[pinned.on]); });
+  layEl.addEventListener('click', e => { const r = e.target.closest('.l'); if (r && pinned) { e.stopPropagation(); choose(pinned.list[+r.dataset.i], +r.dataset.i); } });
+  over.addEventListener('pointermove', e => { if (!inspecting || pinned) return; const { cx, cy, list } = at(e), N = W().Notes;
+    if (!list.length) { ring.style.display = tip.style.display = layEl.style.display = 'none'; over.style.cursor = 'crosshair'; return; }
+    if (list.length > 1) { tip.style.display = 'none'; ringOn(list[0]); over.style.cursor = 'pointer'; layEl.innerHTML = layHtml(list, -1); layEl.style.display = 'block'; layAt(cx, cy); return; }
+    layEl.style.display = 'none';
     const t = list[0], k = N.canvas.getBoundingClientRect().width / N.canvas.width;
     if (t.rect) { const a = N.css(t.rect.x, t.rect.y), b = N.css(t.rect.x + t.rect.w, t.rect.y + t.rect.h); Object.assign(ring.style, { display: 'block', borderRadius: '8px', left: a.x + 'px', top: a.y + 'px', width: b.x - a.x + 'px', height: b.y - a.y + 'px' }); }
     else { const c = N.css(t.x, t.y), s = t.r * k * 2; Object.assign(ring.style, { display: 'block', borderRadius: '50%', left: c.x - s / 2 + 'px', top: c.y - s / 2 + 'px', width: s + 'px', height: s + 'px' }); } over.style.cursor = 'pointer';
     tip.textContent = t.title || nameOf(t.key); Object.assign(tip.style, { display: 'block', left: Math.min(cx + 14, over.clientWidth - 180) + 'px', top: Math.max(cy - 28, 4) + 'px' }); });
-  over.addEventListener('click', e => { if (!inspecting) return; const { list } = at(e); if (!list.length) { hint('Nothing there: click a monster, a thing on the ground or part of the screen.'); return; } lastPick = list[0]; if (typeof UX !== 'undefined') UX.act('inspect', list[0].key); if (list[0].title) showElement(list[0]); else show(list[0].key, list[0]); });
+  over.addEventListener('click', e => { if (!inspecting) return; const { cx, cy, list } = at(e); if (!list.length) { layOff(); hint('Nothing there: click a monster, a thing on the ground or part of the screen.'); return; }
+    if (list.length > 1) { pinned = { list, on: 0 }; layEl.classList.add('pinned'); layEl.innerHTML = layHtml(list, 0); layEl.style.display = 'block'; layAt(cx, cy); hint('Choose from the list what you meant; click elsewhere for another spot. Esc resumes.'); } else layOff();
+    choose(list[0], 0); });
   $('inspect').onclick = () => setInspect(!inspecting);
   let jumpTo = '';
   /* the game's places, once it has made them: a game that boots after its own modules load (three.js, poses) makes them a moment after the frame's load, so look again for a while */
@@ -36,7 +64,7 @@
   function play() { let said = null;
     try { if (typeof W().forgePlay === 'function') said = W().forgePlay(); } catch (e) { console.error(e); hint('The game could not start by itself: ' + e.message); return; }
     hint(said || 'This game opens on its title screen: start it there.'); frame.focus(); try { W().focus(); } catch (e) {} }
-  const keys = e => { if (e.altKey && e.key.toLowerCase() === 'i') { e.preventDefault(); setInspect(!inspecting); } else if (e.altKey && e.code === 'KeyL') { e.preventDefault(); $('listFold').click(); } else if (e.altKey && e.code === 'KeyN') { e.preventDefault(); setInspect(false); try { W().Notes.toggle(); W().focus(); } catch (x) { hint('This game has no note mode.'); } } else if (e.key === 'Escape' && inspecting) { e.preventDefault(); setInspect(false); } };
+  const keys = e => { if (e.altKey && e.key.toLowerCase() === 'i') { e.preventDefault(); setInspect(!inspecting); } else if (e.altKey && e.code === 'KeyL') { e.preventDefault(); $('listFold').click(); } else if (e.altKey && e.code === 'KeyN') { e.preventDefault(); setInspect(false); try { W().Notes.toggle(); W().focus(); } catch (x) { hint('This game has no note mode.'); } } else if (e.key === 'Escape' && inspecting) { e.preventDefault(); if (pinned) { layOff(); hint('Paused. Click anything in the game. Esc resumes.'); } else setInspect(false); } };
   addEventListener('keydown', keys);
   /* a game that boots after its own modules (three.js) makes its places and its play hook a moment after the frame's load: wait for them, then go on */
   const booted = (fn, tries = 0) => { let ok = false; try { ok = !!(W().forgeScenes || W().forgePlay); } catch (e) {} if (ok || tries >= 32) fn(); else setTimeout(() => booted(fn, tries + 1), 250); };
