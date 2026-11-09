@@ -34,5 +34,6 @@ const Models = (() => {
     size(key) { return cast[key] ? cast[key].size : 0; }, clips(key) { return loaded[key] ? loaded[key].clips : []; },
     on(fn) { subs.push(fn); for (const k of Object.keys(loaded)) try { fn(k); } catch (e) { console.error(e); } },
     keys() { return Object.keys(cast); },
+    file(key) { return cast[key] && cast[key].file ? base + cast[key].file : ''; },
   };
 })();

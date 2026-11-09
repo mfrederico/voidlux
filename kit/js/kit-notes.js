@@ -15,15 +15,15 @@ const Notes = {
   init() {
     this.canvas = document.getElementById('game'); if (!this.canvas) return;
     this.slug = (location.pathname.match(/\/games\/([a-z0-9-]+)\//) || [])[1] || (typeof Game !== 'undefined' ? Game.id : 'game');
-    window.addEventListener('keydown', e => { if (e.altKey && e.code === 'KeyN') { e.preventDefault(); e.stopImmediatePropagation(); this.toggle(); } /* first, and only: a game's own N (a centipede's title starts a new run with it, forgetting the saved one) must never see this */ else if (e.code === 'Escape' && this.open) { e.preventDefault(); this.close(); } }, true);
+    window.addEventListener('keydown', e => { if (e.altKey && e.code === 'KeyN') { e.preventDefault(); e.stopImmediatePropagation(); this.toggle(); } /* first, and only: a game's own N (a centipede's title starts a new run with it, forgetting the saved one) must never see this */ else if (e.code === 'Escape' && this.open) { e.preventDefault(); if (this.lay) this.layersOff(); else this.close(); } else if (e.code === 'Enter' && this.lay && !(this.dlg && this.dlg.contains(e.target))) { e.preventDefault(); this.layersNote(); } }, true);
     window.addEventListener('message', e => { const m = e.data || {}; if (m.type === 'forge:notes') { if (m.on) this.start(); else this.close(); } else if (m.type === 'forge:notes-list') { this.known = Array.isArray(m.notes) ? m.notes : []; if (this.open) this.pins(); } });
     this.canvas.addEventListener('touchstart', e => { if (e.touches.length === 3) { e.preventDefault(); this.toggle(); } else if (this.open && this.picking && e.touches.length === 1) { e.preventDefault(); const t = e.touches[0]; this._tp = { x: t.clientX, y: t.clientY }; } }, { passive: false });
     // on touch there is no hover: the first tap shows the ring on what it would pick (with its name), a second tap near it confirms
     this.canvas.addEventListener('touchend', e => {
       if (!(this.open && this.picking && this._tp)) return; e.preventDefault();
-      const p = this.logical(this._tp.x, this._tp.y); this._tp = null; const what = this.describe(p.x, p.y), at = what ? what.at : p;
-      if (this._armed && Math.hypot(this._armed.x - at.x, this._armed.y - at.y) < 50) { this._armed = null; this.hover = what; this.pick(p); return; }
-      this._armed = at; this.hover = what; this.ring(at, !!what); this.confirmAt(at, what, p);
+      const p = this.logical(this._tp.x, this._tp.y), c = this._tp; this._tp = null;
+      // a tap lists everything under the finger, pinned: tick one or several, then Note these
+      this.layersPin(p, c.x, c.y);
     }, { passive: false });
     this.style(); this.flushQueue();
     // the on-screen way in, for touch and for anyone who does not know Alt+N: only when the forge is around (the Play tab's
@@ -53,8 +53,8 @@ const Notes = {
     const el = this.el = document.createElement('div'); el.className = 'vl-notes'; el.innerHTML = '<div class="vl-notes-bar"><b>NOTE MODE</b> paused · ' + ('ontouchstart' in window ? 'tap a thing, then Pick this · three-finger tap resumes' : 'click anything on the screen · <kbd>Esc</kbd> resumes') + '</div><svg class="vl-notes-wire" width="100%" height="100%"><line x1="0" y1="0" x2="0" y2="0"></line><circle cx="0" cy="0" r="4"></circle></svg><div class="vl-notes-ring"></div>';
     try { const f = this.forge(); if (f) f.postMessage({ type: 'forge:notes-open' }, '*'); } catch (e) {} // the forge scrolls the game into view, sends the notes so far
     document.body.appendChild(el);
-    this._move = e => { if (!this.picking) return; const p = this.logical(e.clientX, e.clientY); this.hover = this.describe(p.x, p.y); this.ring(this.hover ? this.hover.at : p, !!this.hover); };
-    this._click = e => { if (!this.picking) return; const t = e.target; if (this.dlg && this.dlg.contains(t)) return; if (t.closest('.vl-notes-confirm') || t.closest('.vl-notes-btn')) return; if (!this.canvas.contains(t) && t !== this.el && !t.classList.contains('vl-notes-ring') && !t.closest('.vl-notes-pin')) return; /* a pin is a pick too: it sits on the thing it is about */ e.preventDefault(); e.stopPropagation(); const p = this.logical(e.clientX, e.clientY); this.pick(p); };
+    this._move = e => { if (!this.picking || this.lay) return; const p = this.logical(e.clientX, e.clientY); this.layersHover(p, e.clientX, e.clientY); };
+    this._click = e => { if (!this.picking && !this.lay) return; const t = e.target; if (this.layEl && this.layEl.contains(t)) return; if (this.dlg && this.dlg.contains(t)) return; if (t.closest('.vl-notes-confirm') || t.closest('.vl-notes-btn')) return; if (!this.canvas.contains(t) && t !== this.el && !t.classList.contains('vl-notes-ring') && !t.closest('.vl-notes-pin')) return; /* a pin is a pick too: it sits on the thing it is about */ e.preventDefault(); e.stopPropagation(); const p = this.logical(e.clientX, e.clientY); this.layersPin(p, e.clientX, e.clientY); };
     window.addEventListener('mousemove', this._move, true); window.addEventListener('click', this._click, true);
     document.body.classList.add('vl-notes-on'); this.pins(); if (this.btn) this.btn.style.display = 'none';
   },
@@ -75,7 +75,7 @@ const Notes = {
     if (!this.open) return; this.open = false; this.picking = false; this.pause(false);
     window.removeEventListener('mousemove', this._move, true); window.removeEventListener('click', this._click, true);
     if (this.dlg) { this.dlg.remove(); this.dlg = null; } if (this._place) window.removeEventListener('resize', this._place); if (this.el) { this.el.remove(); this.el = null; }
-    document.body.classList.remove('vl-notes-on'); this.picked = null; this.hover = null; this._armed = null; this.confirmOff(); if (this.btn) this.btn.style.display = '';
+    document.body.classList.remove('vl-notes-on'); this.picked = null; this.hover = null; this._armed = null; this.confirmOff(); this.layersOff(true); if (this.btn) this.btn.style.display = '';
     try { const f = this.forge(); if (f) f.postMessage({ type: 'forge:notes-closed' }, '*'); } catch (e) {}
   },
   ring(p, hit) { const r = this.el && this.el.querySelector('.vl-notes-ring'); if (!r) return; const c = this.css(p.x, p.y), s = this.canvas.getBoundingClientRect().width / this.canvas.width; const rad = (hit && this.hover && this.hover.r ? this.hover.r + 10 : 22) * s; r.style.cssText = `left:${c.x - rad}px;top:${c.y - rad}px;width:${rad * 2}px;height:${rad * 2}px;opacity:1;border-color:${hit ? '#ffcc00' : 'rgba(255,255,255,0.5)'}`; },
@@ -113,12 +113,12 @@ const Notes = {
     return { label: best.label, fields, r: best.r, at: best.at, space: best.space };
   },
   crop(p) { try { const w = 240, h = 160, c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, w, h); g.drawImage(this.canvas, Math.max(0, p.x - w / 2), Math.max(0, p.y - h / 2), w, h, 0, 0, w, h); g.strokeStyle = '#ffcc00'; g.lineWidth = 2; g.beginPath(); g.arc(Math.min(w / 2, p.x), Math.min(h / 2, p.y), 14, 0, Math.PI * 2); g.stroke(); return c.toDataURL('image/jpeg', 0.7); } catch (e) { return ''; } },
-  pick(p) {
-    this.confirmOff(); const what = this.describe(p.x, p.y); this.picked = { x: Math.round(p.x), y: Math.round(p.y), scene: this.scene(), what, shot: this.crop(what ? what.at : p), t: Date.now() };
+  pick(p, chosen) {
+    this.confirmOff(); this.layersOff(true); const what = chosen && chosen.length ? this.whatOf(chosen, p) : this.describe(p.x, p.y); this.picked = { x: Math.round(p.x), y: Math.round(p.y), scene: this.scene(), what, shot: this.crop(what ? what.at : p), t: Date.now() };
     this.picking = false; this.ring(what ? what.at : p, !!what);
     if (this.dlg) this.dlg.remove();
     const d = this.dlg = document.createElement('div'); d.className = 'vl-notes-dlg';
-    const where = what ? `<b>${this.esc(what.label)}</b> ${this.esc(JSON.stringify(what.fields || {}))}` : `nothing the game names here: the spot <b>(${this.picked.x}, ${this.picked.y})</b>`;
+    const where = what && what.layers && what.layers.length > 1 ? `<b>${what.layers.length} things here</b><ul class="vl-notes-chosen">${what.layers.map(l => `<li><b>${this.esc(l.title)}</b> <span>${this.esc([l.kind, l.material, l.file].filter(Boolean).join(' · '))}</span></li>`).join('')}</ul>` : what ? `<b>${this.esc(what.label)}</b> ${this.esc(JSON.stringify(what.fields || {}))}${what.layers && what.layers[0] && what.layers[0].file ? `<div class="vl-notes-meta">${this.esc(what.layers[0].file)}</div>` : ''}` : `nothing the game names here: the spot <b>(${this.picked.x}, ${this.picked.y})</b>`;
     const prior = this.about(what, p), priorHtml = prior.length ? `<div class="vl-notes-prior"><b>already noted here</b>${prior.slice(0, 4).map(n => `<div data-note="${n.id}"><i>${this.esc(n.by || 'someone')}</i> · ${this.esc(n.state === 'sent' ? 'sent to build' : 'awaiting verdict')}${n.votes ? ' · ▲' + n.votes : ''}: ${this.esc(n.text)}${n.canManage ? ` <button type="button" data-act="scrap" data-note="${n.id}" title="to the scrapyard">scrap</button><button type="button" data-act="delete" data-note="${n.id}" title="gone for good">delete</button>` : ''}</div>`).join('')}${prior.length > 4 ? `<div>…and ${prior.length - 4} more</div>` : ''}</div>` : '';
     d.innerHTML = `<div class="vl-notes-what">${where}<div class="vl-notes-meta">scene ${this.esc(this.picked.scene)} · (${this.picked.x}, ${this.picked.y})</div></div>${priorHtml}<img class="vl-notes-shot" src="${this.picked.shot}" alt=""><textarea placeholder="What about it? 'too fast', 'make this gold and bigger', 'this should drop a shield'…"></textarea><div class="vl-notes-btns"><button data-act="note">Save note</button><button data-act="build" class="hot">Send to the builder now</button><button data-act="again">Pick again</button><button data-act="close">Resume</button></div>`;
     document.body.appendChild(d); this.place(what ? what.at : p); this._place = () => { if (this.picked) this.place(what ? what.at : p); }; window.addEventListener('resize', this._place); const ta = d.querySelector('textarea'); setTimeout(() => ta.focus(), 50);
@@ -140,13 +140,77 @@ const Notes = {
   send(build, text) {
     if (!text) { const ta = this.dlg && this.dlg.querySelector('textarea'); if (ta) { ta.placeholder = 'Say something about it first.'; ta.focus(); } return; }
     const note = Object.assign({ slug: this.slug, text, build }, this.picked);
-    try { const t = window.forgePick && window.forgePick(this.picked.x, this.picked.y)[0]; if (t) note.thing = t.key; } catch (e) { console.error(e); } // what it points at, so notes about one thing can be found together
+    const L = this.picked.what && this.picked.what.layers; if (L && L.length) { note.thing = L[0].key; } else try { const t = window.forgePick && window.forgePick(this.picked.x, this.picked.y)[0]; if (t) note.thing = t.key; } catch (e) { console.error(e); } // what it points at, so notes about one thing can be found together
     let delivered = false;
     try { const f = this.forge(); if (f) { f.postMessage({ type: 'forge:note', note }, '*'); delivered = true; } } catch (e) {}
     if (!delivered) { try { const q = JSON.parse(localStorage.getItem(this.KEY) || '[]'); q.push(note); localStorage.setItem(this.KEY, JSON.stringify(q.slice(-50))); } catch (e) {} }
     this.toast(delivered ? (build ? 'sent to the build' : `note saved · ${this.known.filter(n => n.state === 'open').length + 1} waiting: send from ✎ Notes in the Studio`) : 'note queued: open the game from the forge to deliver it');
     this.dlg.remove(); this.dlg = null; this.picking = true; this.picked = null; this.wireOff();
   },
+  // ---- everything under the pointer, top layer first: what the game names there (forgePick: the HUD, its things, the scenery,
+  // the words, the screen), then each part and material a ray through the point passes in a 3D stage, with the file each is
+  // drawn from. Hovering lists them beside the pointer; a click pins the list to tick one or several, and the note carries them.
+  layers(x, y) {
+    let list = [];
+    try { if (typeof window.forgePick === 'function') list = (window.forgePick(x, y) || []).map(t => ({ key: String(t.key || ''), title: t.title || this.nice(t.key), kind: t.kind || 'In the game', x: t.x, y: t.y, r: t.r, rect: t.rect, facts: t.facts || {}, file: this.fileOf(t.key) })); } catch (e) { console.error(e); }
+    if (!list.length) { const d = this.describe(x, y); if (d) list.push({ key: 'thing:' + d.label, title: d.label, label: d.label, fields: d.fields, kind: 'In the game', x: d.at.x, y: d.at.y, r: d.r, facts: d.fields || {}, file: '' }); }
+    const screen = list.findIndex(t => /^screen:/.test(t.key)), at = screen < 0 ? list.length : screen;
+    const parts = this.parts(x, y); let put = at;
+    for (const q of parts) { const owner = list.findIndex(t => q.model && (t.key === q.model || t.key === 'thing:' + q.model)); if (owner >= 0) { let i = owner + 1; while (list[i] && list[i].sub) i++; list.splice(i, 0, q); if (i <= put) put++; } else list.splice(put++, 0, q); }
+    const seen = new Set(); return list.filter(t => !seen.has(t.key) && seen.add(t.key)).slice(0, 16);
+  },
+  parts(x, y) {
+    const St = this.global('Stage'); if (!St || !St.ok || !St.scene || !St.cam || !St.T) return [];
+    try {
+      const T = St.T, ray = this._ray || (this._ray = new T.Raycaster()), out = [], seen = new Set();
+      ray.setFromCamera(new T.Vector2(x / this.canvas.width * 2 - 1, -(y / this.canvas.height * 2 - 1)), St.cam);
+      const shown = o => { for (; o; o = o.parent) if (!o.visible) return false; return true; };
+      for (const h of ray.intersectObject(St.scene, true)) {
+        const o = h.object; if (!o.isMesh || seen.has(o.uuid) || !shown(o)) continue; seen.add(o.uuid);
+        let m = o; while (m && !(m.userData && m.userData.model)) m = m.parent; const model = m ? m.userData.model : '';
+        const mat = Array.isArray(o.material) ? o.material[h.face ? h.face.materialIndex : 0] : o.material, matName = mat ? (mat.name || mat.type.replace(/Material$/, '').replace(/^Mesh/, '') + ' material') : '';
+        out.push({ key: 'part:' + (model || 'stage') + ':' + (o.name || (mat && mat.name) || o.uuid.slice(0, 8)), title: o.name || (mat && mat.name) || (model ? 'a part of ' + model : 'part of the stage'), kind: model ? 'Part of ' + model : 'The stage', material: matName, model, file: model ? this.fileOf(model) : '', x, y, r: 10, sub: !!model });
+        if (out.length >= 10) break;
+      }
+      return out;
+    } catch (e) { console.error(e); return []; }
+  },
+  // the file a thing is drawn from: its 3D model (Models), else its sprite, rig or code sprite (Draw's manifest)
+  fileOf(key) {
+    const k = String(key || '').replace(/^(thing|hud|text|scene):/, '');
+    try { const M = this.global('Models'); if (M && M.file) { const f = M.file(k); if (f) return f; } } catch (e) { console.error(e); }
+    try { const D = this.global('Draw'); const m = D && D.meta && D.meta.get && D.meta.get(k); if (m && m.file) return 'assets/' + m.file; } catch (e) { console.error(e); }
+    return '';
+  },
+  nice(key) { const k = String(key || '').replace(/^\w+:/, '').replace(/[-_]+/g, ' '); return k.charAt(0).toUpperCase() + k.slice(1); },
+  whatOf(chosen, p) { const c = chosen[0], cut = (v, n) => String(v || '').slice(0, n);
+    return { label: c.label || c.title, fields: c.fields || c.facts || {}, at: { x: c.x != null ? c.x : p.x, y: c.y != null ? c.y : p.y }, r: c.r,
+      layers: chosen.slice(0, 10).map(l => ({ title: cut(l.title, 80), kind: cut(l.kind, 60), key: cut(l.key, 100), file: cut(l.file, 120), material: cut(l.material, 60) })) }; },
+  layersBox() { if (!this.layEl) { const d = this.layEl = document.createElement('div'); d.className = 'vl-notes-layers'; document.body.appendChild(d); } return this.layEl; },
+  layersHtml(list, pinned) {
+    const row = (t, i) => `<div class="vl-l${t.sub ? ' sub' : ''}${pinned && this.lay.sel.has(i) ? ' on' : ''}" data-i="${i}">${pinned ? '<i></i>' : ''}<span class="t">${this.esc(t.title)}</span><span class="k">${this.esc([t.kind, t.material].filter(Boolean).join(' · '))}</span>${t.file ? `<span class="f"><bdi>${this.esc(t.file)}</bdi></span>` : ''}</div>`;
+    return (pinned ? '<div class="vl-lh">Under the pointer: tick one or several</div>' : '') + list.map(row).join('') + (pinned ? `<div class="vl-lb"><button type="button" data-act="note">Note ${this.lay.sel.size > 1 ? 'these ' + this.lay.sel.size : 'this'}</button><button type="button" data-act="back">Back</button></div>` : '');
+  },
+  layersAt(d, cx, cy) { const w = d.offsetWidth, h = d.offsetHeight; d.style.left = Math.max(6, Math.min(innerWidth - w - 6, cx + 18)) + 'px'; d.style.top = Math.max(6, Math.min(innerHeight - h - 6, cy + 14)) + 'px'; },
+  ringOn(t) { if (!t) return; const hit = { r: t.rect ? Math.max(t.rect.w, t.rect.h) / 2 : t.r }; this.hover = hit; this.ring(t.rect ? { x: t.rect.x + t.rect.w / 2, y: t.rect.y + t.rect.h / 2 } : { x: t.x, y: t.y }, true); },
+  layersHover(p, cx, cy) {
+    const now = performance.now(); if (this._lt && now - this._lt < 70) return; this._lt = now;
+    const list = this.layers(p.x, p.y), d = this.layersBox();
+    if (!list.length) { d.style.display = 'none'; this.hover = null; this.ring(p, false); return; }
+    d.className = 'vl-notes-layers'; d.style.display = 'block'; d.innerHTML = this.layersHtml(list, false); this.layersAt(d, cx, cy); this.ringOn(list[0]);
+  },
+  layersPin(p, cx, cy) {
+    const list = this.layers(p.x, p.y);
+    if (list.length <= 1) { this.pick(p, list); return; }
+    this.lay = { p, list, sel: new Set([0]) }; this.picking = false; const d = this.layersBox(); d.className = 'vl-notes-layers pinned'; d.style.display = 'block';
+    const draw = () => { d.innerHTML = this.layersHtml(list, true); };
+    draw(); this.layersAt(d, cx, cy); this.ringOn(list[0]);
+    d.onmouseover = e => { const r = e.target.closest('.vl-l'); if (r) this.ringOn(list[+r.dataset.i]); };
+    d.onclick = e => { e.preventDefault(); e.stopPropagation(); const b = e.target.closest('button'); if (b) { if (b.dataset.act === 'note') this.layersNote(); else this.layersOff(); return; }
+      const r = e.target.closest('.vl-l'); if (!r) return; const i = +r.dataset.i; if (this.lay.sel.has(i)) { if (this.lay.sel.size > 1) this.lay.sel.delete(i); } else this.lay.sel.add(i); draw(); };
+  },
+  layersNote() { const L = this.lay; if (!L) return; const chosen = [...L.sel].sort((a, b) => a - b).map(i => L.list[i]); this.pick(L.p, chosen); },
+  layersOff(quiet) { this.lay = null; if (this.layEl) { this.layEl.style.display = 'none'; this.layEl.onclick = this.layEl.onmouseover = null; } if (!quiet && this.open && !this.dlg) this.picking = true; },
   // the confirm button beside an aimed ring on touch screens
   confirmAt(at, what, p) {
     this.confirmOff(); const c = this.css(at.x, at.y), b = this.cfm = document.createElement('div'); b.className = 'vl-notes-confirm';
@@ -179,6 +243,22 @@ const Notes = {
       .vl-notes-btn { position: fixed; z-index: 8999; width: 34px; height: 34px; padding: 0; background: rgba(6,6,8,0.85); color: #ffcc00; border: 1px solid #ff6600; border-radius: 50%; font: 16px "IBM Plex Mono", "Courier New", monospace; cursor: pointer; touch-action: none; transition: opacity .3s; } .vl-notes-btn.dim { opacity: .28; } .vl-notes-btn:hover { background: #ff6600; color: #111; }
       .vl-notes-confirm { position: fixed; z-index: 9001; display: flex; align-items: center; gap: 6px; background: #0d0d10; border: 1px solid #ffcc00; border-radius: 999px; padding: 4px 6px 4px 12px; font: 12px "IBM Plex Mono", "Courier New", monospace; color: #ddd; box-shadow: 0 10px 30px rgba(0,0,0,0.6); max-width: 92vw; } .vl-notes-confirm span { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ffcc00; } .vl-notes-confirm button { font: inherit; border-radius: 999px; border: 1px solid #444; background: #1a1a1a; color: #ddd; padding: 5px 10px; } .vl-notes-confirm button[data-act=pick] { background: #ff6600; color: #111; border-color: #ff6600; font-weight: bold; }
       .vl-notes-toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 9002; background: #111; color: #ffcc00; border: 1px solid #333; border-radius: 999px; padding: 6px 14px; font: 13px "IBM Plex Mono", monospace; }`;
+    s.textContent += `
+      .vl-notes-layers { position: fixed; z-index: 9002; display: none; min-width: 240px; max-width: min(460px, 92vw); max-height: 70vh; overflow: auto; background: rgba(8,8,12,0.94); border: 1px solid #3a3a48; border-radius: 6px; padding: 4px; font: 12px/1.3 "IBM Plex Mono", "Courier New", monospace; color: #e8e8e8; pointer-events: none; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
+      .vl-notes-layers.pinned { pointer-events: auto; border-color: #ffcc00; }
+      .vl-notes-layers .vl-lh { color: #ffcc00; padding: 4px 6px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+      .vl-notes-layers .vl-l { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; padding: 5px 8px; border-radius: 4px; border-top: 1px solid #ffffff10; }
+      .vl-notes-layers .vl-l:first-of-type { border-top: 0; } .vl-notes-layers .vl-l.sub { padding-left: 22px; }
+      .vl-notes-layers .vl-l > i { grid-row: span 3; width: 14px; height: 14px; margin-top: 1px; border: 1px solid #777; border-radius: 3px; display: inline-block; }
+      .vl-notes-layers .vl-l.on > i { background: #ffcc00; border-color: #ffcc00; box-shadow: inset 0 0 0 2px #111; }
+      .vl-notes-layers:not(.pinned) .vl-l { grid-template-columns: 1fr; }
+      .vl-notes-layers .t { color: #fff; } .vl-notes-layers .k { color: #9a9aa8; font-size: 11px; }
+      .vl-notes-layers .f { color: #7de0ff; font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
+      .vl-notes-layers.pinned .vl-l { cursor: pointer; } .vl-notes-layers.pinned .vl-l:hover { background: #ffffff12; } .vl-notes-layers .vl-l.on { background: #ffcc0018; }
+      .vl-notes-layers .vl-lb { display: flex; gap: 6px; padding: 6px 4px 2px; } .vl-notes-layers button { font: inherit; border-radius: 4px; border: 1px solid #444; background: #1a1a1a; color: #ddd; padding: 7px 12px; cursor: pointer; min-height: 34px; }
+      .vl-notes-layers button[data-act=note] { background: #ff6600; color: #111; border-color: #ff6600; font-weight: bold; }
+      .vl-notes-chosen { margin: 4px 0 0; padding-left: 16px; } .vl-notes-chosen span { color: #9a9aa8; font-size: 11px; }
+    `;
     document.head.appendChild(s);
   },
 };
