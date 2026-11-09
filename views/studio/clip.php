@@ -13,7 +13,7 @@
 </style>
 </head><body>
 <div class="bar"><b><?= h($gameTitle) ?></b><span>its bot plays · <span id="secs"></span> s filmed after <span id="wait"></span> s</span>
-  <button type="button" id="go">● Film it</button><span id="st">loading the game…</span><span id="res"></span><a href="/studio/open/<?= h($slug) ?>">Back to the Studio</a></div>
+  <button type="button" id="go">● Film it</button><span id="st">loading the game…</span><span id="res"></span><span id="fps" style="color:#7de0ff"></span><a href="/studio/open/<?= h($slug) ?>">Back to the Studio</a></div>
 <div class="stage" id="stage"><iframe id="game" title="<?= h($gameTitle) ?>, playing itself"></iframe></div>
 <video id="out" controls muted playsinline hidden></video>
 <script>
@@ -24,19 +24,32 @@
   $('secs').textContent = SECS; $('wait').textContent = WAIT;
   const frame = $('game'), stage = $('stage'), fit = () => { frame.style.transform = `scale(${stage.clientWidth / 1280})`; }; fit(); addEventListener('resize', fit);
   frame.src = `/games/${encodeURIComponent(SLUG)}/?bot=1&r=${Date.now()}`;
-  const state = () => { try { const w = frame.contentWindow; return w.Game && w.Game.state ? w.Game.state : w.G && w.G.state ? w.G.state : '?'; } catch (e) { return '?'; } };
+  // the game's systems are top-level consts of its scripts, reached by name in its own window
+  const ask = code => { try { return new frame.contentWindow.Function('try { return ' + code + '; } catch (e) { return undefined; }')(); } catch (e) { return undefined; } };
+  const state = () => { const st = ask("typeof Game !== 'undefined' ? Game.state : typeof G !== 'undefined' ? G.state : '?'"), t = ask("typeof Game !== 'undefined' ? Game.time : typeof G !== 'undefined' ? (G.time || G.t) : undefined"); return st + (typeof t === 'number' ? ' · game clock ' + t.toFixed(1) + ' s' : ''); };
+  // into play: the game's own "start of the level" place for the Studio, else its forgePlay (which carries on a saved run)
+  const startPlay = () => { const w = frame.contentWindow; try { const p = (w.forgeScenes || []).find(x => x.id === 'play'); if (p) { p.go(); return 'started at the start of the level'; } if (typeof w.forgePlay === 'function') return w.forgePlay() || 'already playing'; } catch (e) { console.error(e); return 'could not start: ' + e.message; } return 'it has no way to start from here'; };
   const say = t => { $('st').textContent = t; };
   async function film() {
     $('go').disabled = true; $('res').textContent = '';
     let canvas = null; try { canvas = frame.contentDocument.getElementById('game'); } catch (e) {}
     if (!canvas || !canvas.captureStream) { say('The game has no canvas to film yet.'); $('go').disabled = false; return; }
     const mime = MIMES.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)); if (!mime) { say('This browser cannot record video.'); return; }
-    for (let k = WAIT; k > 0; k--) { say(`the bot is playing (${state()}): filming in ${k} s`); await new Promise(r => setTimeout(r, 1000)); }
-    const chunks = [], rec = new MediaRecorder(canvas.captureStream(30), { mimeType: mime, videoBitsPerSecond: 3e6 });
+    // a hidden tab draws nothing and boots nothing: wait for this tab to be in front and the game to have started up
+    while (document.hidden || !ask("typeof Game !== 'undefined' ? Game.state : typeof G !== 'undefined' ? G.state : ''")) { say(document.hidden ? 'waiting: bring this tab to the front' : 'waiting for the game to start up'); await new Promise(r => setTimeout(r, 500)); }
+    say(startPlay()); await new Promise(r => setTimeout(r, 800));
+    // filmed from a canvas of this page, copied from the game's every frame here: the game's own canvas sends frames only while it paints
+    const copy = document.createElement('canvas'); copy.width = 1280; copy.height = 720; const cg = copy.getContext('2d'); let filming = true;
+    const pump = () => { if (!filming) return; try { cg.drawImage(canvas, 0, 0, 1280, 720); } catch (e) {} requestAnimationFrame(pump); }; pump();
+    for (let k = WAIT; k > 0; ) { await new Promise(r => setTimeout(r, 1000)); if (document.hidden) { say('waiting: bring this tab to the front'); continue; } k--; say(`the bot is playing (${state()}): filming in ${k} s`); }
+    const chunks = [], rec = new MediaRecorder(copy.captureStream(30), { mimeType: mime, videoBitsPerSecond: 3e6 });
     rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
     const done = new Promise(r => { rec.onstop = r; }); rec.start(1000);
-    for (let k = SECS; k > 0; k--) { say(`● filming (${state()}): ${k} s left`); await new Promise(r => setTimeout(r, 1000)); }
-    rec.stop(); await done;
+    // the tab hidden part way: the recording waits for it, so the clip has no frozen stretch
+    const vis = () => { if (document.hidden && rec.state === 'recording') rec.pause(); else if (!document.hidden && rec.state === 'paused') rec.resume(); }; document.addEventListener('visibilitychange', vis);
+    for (let k = SECS; k > 0; ) { await new Promise(r => setTimeout(r, 1000)); if (document.hidden) { say('paused: bring this tab to the front'); continue; } k--; say(`● filming (${state()}): ${k} s left`); }
+    document.removeEventListener('visibilitychange', vis);
+    rec.stop(); await done; filming = false;
     const blob = new Blob(chunks, { type: mime.split(';')[0] }), ext = mime.includes('mp4') ? 'mp4' : 'webm';
     $('out').src = URL.createObjectURL(blob); $('out').hidden = false;
     say(`filmed ${(blob.size / 1048576).toFixed(1)} MB: sending it…`);
@@ -48,6 +61,10 @@
     } catch (e) { say('not kept: ' + e.message); }
     $('go').disabled = false;
   }
+  // how many frames this page and the game draw each second: a page that is not drawing films nothing
+  let pf = 0; (function tick() { pf++; requestAnimationFrame(tick); })();
+  let gf = 0, hooked = false; const hookGame = () => { if (hooked) return; try { const w = frame.contentWindow; const t = () => { gf++; w.requestAnimationFrame(t); }; w.requestAnimationFrame(t); hooked = true; } catch (e) {} };
+  setInterval(() => { hookGame(); $('fps').textContent = `page ${pf} fps · game ${gf} fps · ${innerWidth}×${innerHeight}${document.hidden ? ' · hidden' : ''}`; pf = 0; gf = 0; }, 1000);
   $('go').onclick = film;
   frame.addEventListener('load', () => { say(`loaded (${state()})`); if (q.get('go') === '1') film(); });
 })();
