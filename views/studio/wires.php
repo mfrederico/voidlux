@@ -42,6 +42,6 @@
 </div>
 <div class="tip" id="tip"></div>
 <div class="vid" id="vid" hidden><div class="box"><video id="vidPlay" controls playsinline></video><div id="vidInfo"></div><div class="row"><a id="vidSave" download>⬇ Download the video</a><button type="button" id="vidClose">Close</button></div></div></div>
-<script>const SLUG = <?= json_encode($slug) ?>, GAME = <?= json_encode($gameTitle) ?>;</script>
+<script>const SLUG = <?= json_encode($slug) ?>, GAME = <?= json_encode($gameTitle) ?>, CSRF = <?= json_encode(csrf_token()) ?>;</script>
 <script src="/wires.js?v=<?= (int) @filemtime(\app\Paths::root() . '/public/wires.js') ?>"></script>
 </body></html>

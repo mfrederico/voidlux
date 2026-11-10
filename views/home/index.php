@@ -95,6 +95,13 @@ a { color: inherit; }
 .chips button:hover { border-color: var(--ember); color: var(--ember-hi); }
 .hero-or { margin-top: 18px; font-size: 0.8rem; } .hero-or a { color: #bdbdbd; letter-spacing: 2px; } .hero-or a:hover { color: var(--ember); }
 
+/* watch it build: a real game's whole history, every builder run wired into the parts it changed (the Studio's wires page, filmed) */
+.watch { position: relative; border: 1px solid #1d1d24; border-radius: 8px; overflow: hidden; background: #07060c; box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 40px rgba(197,138,255,0.08); }
+.watch video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #07060c; }
+.watch-notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; margin-top: 22px; }
+.watch-notes div { font-size: 0.85rem; color: #adadad; line-height: 1.6; } .watch-notes b { display: block; color: #f2f2f2; font-size: 0.8rem; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+.watch-notes i { font-style: normal; color: #7de0ff; } .watch-notes em { font-style: normal; color: #ff6bd5; }
+
 .divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(204,102,0,0.2), transparent); }
 .section { max-width: 1200px; margin: 0 auto; padding: 72px 24px; }
 .section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 28px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
@@ -221,6 +228,21 @@ a { color: inherit; }
 
 <div class="divider"></div>
 
+<?php if (!empty($watchVideo)): ?>
+<div class="section rv" id="watch">
+    <div class="section-head"><h2>Watch it build itself</h2><span>a real game's whole history, sped up</span></div>
+    <p class="lead">This is Ninja Mirage being made, from an empty template to a 3D stealth game. Each dot on the left is one time the AI builder worked on it. The lines run into the parts of the game it looked at and changed.</p>
+    <div class="watch"><video id="watchVideo" muted loop playsinline preload="metadata" poster="/assets/home/watch-build.jpg?v=<?= (int) $watchVideo ?>" aria-label="Every run of the AI builder on Ninja Mirage, wired into the parts of the game it changed"><source src="/assets/home/watch-build.mp4?v=<?= (int) $watchVideo ?>" type="video/mp4"></video></div>
+    <div class="watch-notes">
+        <div><b>The runs</b>Each one starts from something a person asked for: "put a few rabbits in the game", "let me jump on boxes".</div>
+        <div><b>The light</b><i>Cyan</i> is the builder reading a part; a part's own colour, like <em>pink</em> for the design, is the builder changing it.</div>
+        <div><b>Your game too</b>Every game made here has this page in its Studio, live while the builder works.</div>
+    </div>
+</div>
+
+<div class="divider"></div>
+<?php endif; ?>
+
 <div class="section rv" id="how">
     <div class="section-head"><h2>How it works</h2><span>the loop, in the forge's own words</span></div>
     <p class="lead">You never write code unless you want to. You write briefs, read plans and playtests, and decide. That is the work of working with AI, and a game is the most honest way to learn it: it either plays or it does not.</p>
@@ -308,6 +330,12 @@ a { color: inherit; }
     const count = () => { n.textContent = t.value.length + ' / 600'; }; t.addEventListener('input', count); count();
     for (const b of document.querySelectorAll('.chips button')) b.addEventListener('click', () => { t.value = b.dataset.idea; count(); t.focus(); });
     f.addEventListener('submit', () => { try { localStorage.setItem('vl.idea', t.value.trim()); } catch (e) {} });
+})();
+// watch it build: plays while it is on screen, from the start the first time; for people who asked for less motion it waits with controls
+(function() {
+    const v = document.getElementById('watchVideo'); if (!v) return;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches || !('IntersectionObserver' in window)) { v.controls = true; return; }
+    new IntersectionObserver(es => { for (const e of es) { if (e.isIntersecting) v.play().catch(() => { v.controls = true; }); else v.pause(); } }, { threshold: 0.35 }).observe(v);
 })();
 // the gameplay loop: still (its poster) for people who asked for less motion
 (function() { const v = document.getElementById('heroVideo'); if (v && matchMedia('(prefers-reduced-motion: reduce)').matches) { v.removeAttribute('autoplay'); v.pause(); } })();

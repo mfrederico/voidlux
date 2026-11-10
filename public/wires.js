@@ -202,6 +202,14 @@
      the game's name and the ask of the run on stage at the top, the counts and voidlux.com at the foot, and an end card. */
   const SHAPES = { tall: { w: 720, h: 1280, scale: 1.5, top: 270, bottom: 150, label: 'tall' }, square: { w: 900, h: 900, scale: 1.2, top: 175, bottom: 95, label: 'square' },
                    wide: { w: 1280, h: 720, scale: 1.5, top: 128, bottom: 82, label: 'wide' } };
+  /* ?keep=1 (admins, for the site's own pages such as the home page): the finished video is also sent to the server (Studio::clipsave keeps it
+     in data/clips/); ?len=24 and ?mbps=2.3 keep it under the 7.5 MB an upload may be */
+  const KQ = new URLSearchParams(location.search), KEEP = { on: KQ.get('keep') === '1', len: Math.max(0, Math.min(60, +KQ.get('len') || 0)), mbps: Math.max(0, Math.min(12, +KQ.get('mbps') || 0)) };
+  async function keepOnServer(blob, ext) {
+    const fd = new FormData(); fd.append('clip', blob, `${SLUG}-wires.${ext}`); const base = $('vidInfo').textContent;
+    try { const r = await fetch(`/studio/clipsave/${encodeURIComponent(SLUG)}`, { method: 'POST', body: fd, headers: { 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest' } });
+      const j = await r.json(); if (!r.ok || j.success === false) throw new Error(j.message || j.error || r.status); const d = j.data || j; $('vidInfo').textContent = base + ' · kept on the server as ' + d.file; }
+    catch (e) { $('vidInfo').textContent = base + ' · not kept on the server: ' + e.message; } }
   const MIMES = ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
   const planSeconds = list => { const at = schedule(list); return (at[at.length - 1] || 0) + PAUSE; }; // how long the build takes at 1×
   function startRecording(shape, seconds) {
@@ -209,7 +217,7 @@
     const mime = MIMES.find(m => MediaRecorder.isTypeSupported(m)); if (!mime) { alertBox('This browser records no video format we know.'); return; }
     if (S.building) endBuild(); const list = S.events.filter(e => BUILT.has(e.kind)); if (!list.length) { alertBox('Nothing to film yet: the builder has not worked on this game.'); return; }
     S.rec = Object.assign({}, SHAPES[shape], { phase: 'build', mime, chunks: [], seconds }); document.body.classList.add('recording'); S.zoom = 1; layout();
-    const rec = new MediaRecorder(cv.captureStream(30), { mimeType: mime, videoBitsPerSecond: 10e6 }); S.rec.recorder = rec;
+    const rec = new MediaRecorder(cv.captureStream(30), { mimeType: mime, videoBitsPerSecond: KEEP.mbps ? KEEP.mbps * 1e6 : 10e6 }); S.rec.recorder = rec;
     const chunks = S.rec.chunks; rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); }; rec.start(1000); // the last chunk comes after stop(): it must still have somewhere to go
     startBuild(); S.building.speed = planSeconds(list) / Math.max(6, seconds - 5); $('speed').hidden = true; $('build').textContent = '■ Stop recording'; } // the build fills all but about 5 s: 1.4 s on the whole game, then 3.4 s of end card
   function finishRecording(keep) { const R = S.rec; if (!R) return; S.rec = null;
@@ -218,7 +226,8 @@
       $('vidPlay').src = url; $('vidSave').href = url; $('vidSave').download = `${SLUG}-voidlux-${R.label}.${ext}`;
       $('vidInfo').textContent = `${R.label} · ${R.w * R.scale}×${R.h * R.scale} · ${(blob.size / 1048576).toFixed(1)} MB · ${ext.toUpperCase()}` + (ext === 'webm' ? ' (this browser records WebM only: most social sites want MP4, so convert it first, or record in Chrome)' : '');
       const info = $('vidInfo').textContent; $('vidPlay').onloadedmetadata = () => { const d = $('vidPlay').duration; if (isFinite(d)) $('vidInfo').textContent = info.replace(' · ' + ext.toUpperCase(), ` · ${d.toFixed(1)} s · ${ext.toUpperCase()}`); };
-      $('vid').hidden = false; };
+      $('vid').hidden = false;
+      if (KEEP.on) keepOnServer(blob, ext); };
     R.recorder.stop(); if (S.building) endBuild(); }
   const alertBox = t => { $('vidInfo').textContent = t; $('vidPlay').removeAttribute('src'); $('vidSave').hidden = true; $('vid').hidden = false; };
   function wrap(text, width, lines) { const words = String(text).replace(/\s+/g, ' ').trim().split(' '), out = []; let cur = '';
@@ -245,7 +254,7 @@
       g.font = `700 ${tall ? 30 : 26}px ui-monospace, Menlo, monospace`; g.fillStyle = '#c58aff'; g.fillText('Make yours at voidlux.com', w / 2, h / 2 + 70); g.globalAlpha = 1;
       if (now - R.t > 3400) finishRecording(true); }
     g.setTransform(R.scale * S.zoom, 0, 0, R.scale * S.zoom, 0, 0); }
-  $('mkGo').onclick = () => { const shape = (document.querySelector('input[name=mkShape]:checked') || {}).value || 'tall', secs = +((document.querySelector('input[name=mkLen]:checked') || {}).value || 30);
+  $('mkGo').onclick = () => { const shape = (document.querySelector('input[name=mkShape]:checked') || {}).value || 'tall', secs = KEEP.len || +((document.querySelector('input[name=mkLen]:checked') || {}).value || 30);
     $('mk').open = false; startRecording(shape, secs); };
   document.addEventListener('visibilitychange', () => { // a hidden tab draws nothing: the recording waits for it rather than filming a frozen picture
     const R = S.rec, hid = document.hidden; document.body.dataset.hidden = hid ? 'yes' : 'no'; $('live').textContent = hid ? 'paused: this tab is hidden' : S.live ? 'live · building' : 'idle';

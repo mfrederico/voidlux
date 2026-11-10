@@ -10,8 +10,8 @@ use \Flight as Flight;
 class Home extends BaseControls\Control {
     // nav: none — it IS the front door
     public function index($params = []): void {
-        $hero = Paths::root() . '/public/assets/hero/hero-loop.mp4'; // the gameplay loop behind the hero, once it is cut: until then the ember mesh
-        $this->render('home/index', ['loggedIn' => Flight::isLoggedIn(), 'games' => self::publicGames(), 'costs' => self::costs(), 'heroVideo' => is_file($hero) ? (int) filemtime($hero) : 0], false);
+        $hero = Paths::root() . '/public/assets/hero/hero-loop.mp4'; $watch = Paths::root() . '/public/assets/home/watch-build.mp4'; // the builder at work, under the hero, once it is filmed // the gameplay loop behind the hero, once it is cut: until then the ember mesh
+        $this->render('home/index', ['loggedIn' => Flight::isLoggedIn(), 'games' => self::publicGames(), 'costs' => self::costs(), 'heroVideo' => is_file($hero) ? (int) filemtime($hero) : 0, 'watchVideo' => is_file($watch) ? (int) filemtime($watch) : 0], false);
     }
     /** What a change and a whole game have cost here, from the same figures the Studio quotes: {change, game} each {n, usual, high} or null. */
     public static function costs(): array {
