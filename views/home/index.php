@@ -232,7 +232,7 @@ a { color: inherit; }
 <div class="section rv" id="watch">
     <div class="section-head"><h2>Watch it build itself</h2><span>a real game's whole history, sped up</span></div>
     <p class="lead">This is Ninja Mirage being made, from an empty template to a 3D stealth game. Each dot on the left is one time the AI builder worked on it. The lines run into the parts of the game it looked at and changed.</p>
-    <div class="watch"><video id="watchVideo" muted loop playsinline preload="metadata" poster="/assets/home/watch-build.jpg?v=<?= (int) $watchVideo ?>" aria-label="Every run of the AI builder on Ninja Mirage, wired into the parts of the game it changed"><source src="/assets/home/watch-build.mp4?v=<?= (int) $watchVideo ?>" type="video/mp4"></video></div>
+    <div class="watch"><video id="watchVideo" muted loop playsinline preload="metadata" poster="/assets/home/watch-build.jpg?v=<?= (int) $watchVideo ?>" aria-label="Every run of the AI builder on Ninja Mirage, wired into the parts of the game it changed"><source media="(max-width: 900px)" src="/assets/home/watch-build-small.mp4?v=<?= (int) $watchVideo ?>" type="video/mp4"><source src="/assets/home/watch-build.mp4?v=<?= (int) $watchVideo ?>" type="video/mp4"></video></div>
     <div class="watch-notes">
         <div><b>The runs</b>Each one starts from something a person asked for: "put a few rabbits in the game", "let me jump on boxes".</div>
         <div><b>The light</b><i>Cyan</i> is the builder reading a part; a part's own colour, like <em>pink</em> for the design, is the builder changing it.</div>
